@@ -54,14 +54,52 @@ from db.models import (
     UnitPreset,
 )
 from db.repository import invalidate_factor_bundle
+from engine.types import ItemBasis, UpstreamBasis
 
 
 class FakeBundle:
+    """The bundle dict, plus the two item queries the real `FactorBundle`
+    answers (v1.58).
+
+    `DefaultEngineAdapter.food_item_problems` asks a bundle to resolve each
+    named food and turns the refusal into a §9 detail with a field. The fake
+    adapter delegates that method to the real one -- `serialize_result`
+    already does, for the same reason -- so what has to exist here is the
+    bundle's side of the question, not a second copy of the rule.
+
+    `resolve_food_item` is `engine/bundle.py`'s, six lines and no arithmetic:
+    `None` passes through, a food nobody declared is unknown, and a food whose
+    parent is not the category it arrived with is refused rather than priced
+    at the wrong average. `tests/support/test_fake_engine_agreement.py` runs
+    both implementations over one corpus, which is what stops the copy
+    drifting.
+    """
+
     def __init__(self, data):
         self.data = data
+        self.food_item_category_of = {
+            row["code"]: row["food_category"]
+            for row in data.get("food_items", [])
+        }
 
     def validate(self):
         return self.data.get("_problems", [])
+
+    def has_food_item(self, code):
+        return code in self.food_item_category_of
+
+    def resolve_food_item(self, food_item, food_cat):
+        if food_item is None:
+            return None
+        if food_item not in self.food_item_category_of:
+            raise UnknownCodeError(f"unknown food_item: {food_item!r}")
+        parent = self.food_item_category_of[food_item]
+        if parent != food_cat:
+            raise UnknownCodeError(
+                f"food_item {food_item!r} belongs to food_category "
+                f"{parent!r}, not {food_cat!r}"
+            )
+        return food_item
 
 
 class UnknownCodeError(Exception):
@@ -114,6 +152,10 @@ def _scenario_result(lines, *, with_breakdown, rolled_up=False):
                 upstream=Decimal("0.0000000000"),
                 downstream=Decimal("0.0000000000"),
                 value=merged[code],
+                #: v1.59, `None` for the same reason the rates above are
+                #: zero: a totals-level row is a sum across entries and was
+                #: priced by no single candidate row.
+                upstream_basis=None,
             )
             for code in order
         )
@@ -125,6 +167,12 @@ def _scenario_result(lines, *, with_breakdown, rolled_up=False):
                 upstream=Decimal("0.0000000000"),
                 downstream=Decimal("0.0000000000"),
                 value=line.qty_kg,
+                #: v1.59. `ABSENT` is the truthful member for this fake and
+                #: not a placeholder: it carries no factors at all (its
+                #: `co2e` value *is* the mass), so no candidate row answered,
+                #: which is exactly what §2.2's fifth step means. A member
+                #: naming a row would claim a lookup this adapter never did.
+                upstream_basis=UpstreamBasis.ABSENT,
             )
             for line in lines
         )
@@ -196,6 +244,7 @@ class FakeEngineAdapter:
                 SimpleNamespace(
                     sector_code=entry.sector,
                     food_category_code=entry.food_category,
+                    food_item_code=entry.food_item,
                     current=lines(entry.current),
                     alternative=lines(entry.alternative),
                     total_input_kg=entry.total_input_kg,
@@ -207,9 +256,33 @@ class FakeEngineAdapter:
             gwp_horizon=payload.gwp_horizon,
         )
 
+    def food_item_problems(self, payload, bundle):
+        """Not faked, for the same reason `serialize_result` is not: the
+        mapping from a bundle's refusal to a §9 detail is the piece with no
+        other production caller, and a hand-written copy here would let the
+        API tests agree with something the API does not do."""
+        from api.engine_adapter import DefaultEngineAdapter
+
+        return DefaultEngineAdapter().food_item_problems(payload, bundle)
+
     def calculate(self, request, bundle):
         if bundle.data.get("_raise_formula"):
             raise FormulaError()
+        #: v1.58. The engine resolves the food before it prices a line, and
+        #: refusing here is what keeps a route that skipped
+        #: `food_item_problems` from silently pricing an incoherent pair.
+        standard_mix = next(
+            (
+                row["code"]
+                for row in bundle.data.get("food_categories", [])
+                if row.get("is_standard_mix")
+            ),
+            "",
+        )
+        for entry in request.entries:
+            bundle.resolve_food_item(
+                entry.food_item_code, entry.food_category_code or standard_mix
+            )
         destinations = {row["code"] for row in bundle.data.get("destinations", [])}
         for entry in request.entries:
             for scenario in (entry.current, entry.alternative):
@@ -224,6 +297,18 @@ class FakeEngineAdapter:
             SimpleNamespace(
                 sector_code=entry.sector_code,
                 food_category_code=entry.food_category_code,
+                food_item_code=entry.food_item_code,
+                #: v1.59. Rolled up the way `engine.calculate._item_basis`
+                #: rolls it up, over this fake's own rows: none of them is
+                #: item-level (see `ABSENT` above), so an entry that named a
+                #: food is `CATEGORY` -- which is the honest answer for an
+                #: adapter that priced nothing at that food -- and one that
+                #: named none is `NOT_APPLICABLE`.
+                item_basis=(
+                    ItemBasis.NOT_APPLICABLE
+                    if entry.food_item_code is None
+                    else ItemBasis.CATEGORY
+                ),
                 current=_scenario_result(entry.current, with_breakdown=True),
                 alternative=_scenario_result(entry.alternative, with_breakdown=True)
                 if entry.alternative is not None

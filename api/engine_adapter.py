@@ -61,6 +61,9 @@ class EngineAdapter(Protocol):
     def make_request(self, payload: CalculatePayload) -> Any: ...
     def calculate(self, request: Any, bundle: Any) -> Any: ...
     def serialize_result(self, result: Any) -> dict[str, Any]: ...
+    def food_item_problems(
+        self, payload: CalculatePayload, bundle: Any
+    ) -> list[dict[str, Any]]: ...
 
 
 class DefaultEngineAdapter:
@@ -104,6 +107,12 @@ class DefaultEngineAdapter:
                 EntryInput(
                     sector_code=entry.sector,
                     food_category_code=entry.food_category,
+                    # v1.58. Passed through unresolved, exactly as the two
+                    # codes above are: the engine is what checks a food
+                    # against the vocabulary and against its parent, and a
+                    # second place that did the same check is a second place
+                    # that can disagree with it.
+                    food_item_code=entry.food_item,
                     current=lines(entry.current),
                     alternative=lines(entry.alternative),
                     total_input_kg=entry.total_input_kg,
@@ -114,6 +123,72 @@ class DefaultEngineAdapter:
             ),
             gwp_horizon=payload.gwp_horizon,
         )
+
+    def food_item_problems(
+        self, payload: CalculatePayload, bundle: Any
+    ) -> list[dict[str, Any]]:
+        """The engine's two item refusals, raised early and with a field.
+
+        `FactorBundle.resolve_food_item` refuses a food the bundle has never
+        heard of, and a food whose parent is not the category it arrived with.
+        Both are `UnknownCodeError`, which §4.4 maps to a bare
+        `UNKNOWN_CODE` carrying no `details` at all -- so a front end is told
+        that *something* in the request named a code that does not exist and
+        cannot put the message beside the control the visitor used. Step 2.5
+        is a control per entry, so that is the whole of what the message needs
+        to say.
+
+        **The rule is not restated here.** This asks `bundle` the same
+        question `calculate_scenario` asks it, catches the refusal and gives
+        it a field; the engine still refuses on its own if this is skipped, so
+        the two cannot drift into disagreeing about which pairs are legal.
+        That is the opposite of `admin/expressions.py` and
+        `engine/evaluator.py`, which are two implementations of one rule and
+        need an agreement test to stay honest.
+
+        Matched on the exception's **class name** rather than by importing
+        `engine.errors`, for the reason `api/errors.engine_problem` gives: this
+        module is imported at start-up and `engine/` may not be installed.
+        Anything else the bundle raises is not a documented condition and is
+        re-raised, so it reaches `engine_problem` and lands on
+        `INTERNAL_ERROR` rather than being reported as the visitor's fault.
+
+        An entry whose `food_item` is `None` -- every request written before
+        v1.58 -- asks the bundle nothing and produces nothing.
+        """
+        problems: list[dict[str, Any]] = []
+        for index, entry in enumerate(payload.entries):
+            if entry.food_item is None:
+                continue
+            #: `food_category=None` resolves to the standard mix in the engine
+            #: and is refused outright by `entry_rule_problems` when a food is
+            #: named, so by the time this runs a food always has a category.
+            #: Guarded anyway rather than assumed: this method is public on
+            #: the adapter and the ordering of two checks in one route is not
+            #: something a future caller should have to know.
+            if entry.food_category is None:
+                continue
+            try:
+                bundle.resolve_food_item(entry.food_item, entry.food_category)
+            except Exception as exc:  # noqa: BLE001 - re-raised below
+                if type(exc).__name__ != "UnknownCodeError":
+                    raise
+                known = False
+                try:
+                    known = bool(bundle.has_food_item(entry.food_item))
+                except Exception:  # noqa: BLE001 - a bundle without the query
+                    known = False
+                problems.append(
+                    {
+                        "field": f"entries[{index}].food_item",
+                        "issue": (
+                            "food_item_category_mismatch" if known
+                            else "unknown_food_item"
+                        ),
+                        "message": str(exc),
+                    }
+                )
+        return problems
 
     def calculate(self, request: Any, bundle: Any) -> Any:
         # v1.4 §4.2 names `engine/calculate.py`. The `from engine import
@@ -211,6 +286,18 @@ def _entry(entry: Any) -> dict[str, Any]:
     return {
         "sector": entry.sector_code,
         "food_category": entry.food_category_code,
+        # v1.58. Present and null when the visitor named no food, on the terms
+        # `alternative` and `net_benefit` already travel on: a caller that
+        # reads the key finds it on every entry, and a key that appeared only
+        # sometimes would make "named no food" indistinguishable from "this
+        # response predates the dimension".
+        "food_item": entry.food_item_code,
+        # v1.59. This entry's rows rolled up into the one handle a surface
+        # branches on, computed in the engine so that the results page, the
+        # plain-text export and the PDF read the same value rather than each
+        # rolling the rows up in its own language. `not_applicable` on every
+        # entry that names no food, which is every entry today.
+        "item_basis": entry.item_basis,
         "current": _scenario(entry.current),
         "alternative": _scenario(entry.alternative),
         "net_benefit": _net_benefit(entry.net_benefit),
@@ -261,6 +348,14 @@ def _metric(metric: Any) -> dict[str, Any]:
                 "upstream": row.upstream,
                 "downstream": row.downstream,
                 "value": row.value,
+                # v1.59. Which of §2.2's four candidate rows priced this
+                # line, or `null` on a totals-level row, where a sum across
+                # entries was priced by no single row -- the same reason
+                # `upstream` and `downstream` are zero there. Passed through
+                # as the member; `api/serialization.wire` renders an Enum as
+                # its `value`, so the token on the wire is the contract's and
+                # not a Python repr.
+                "upstream_basis": row.upstream_basis,
             }
             for row in metric.by_destination
         ]

@@ -35,7 +35,10 @@ import pytest
 
 from api import pdf_render
 from api.pdf_render import (
+    ABSENT,
     MOCK_WARNING_FLAG,
+    _CATEGORY_AVERAGE_BODY,
+    _CATEGORY_AVERAGE_FLAG,
     MockWarningMissingError,
     build_context,
     render_html,
@@ -51,6 +54,7 @@ from db.types import (
     TaxonomySnapshot,
 )
 from engine.types import (
+    UpstreamBasis,
     DATA_COMPLETE,
     DATA_INCOMPLETE,
     DATA_NOT_SUPPLIED,
@@ -118,6 +122,11 @@ def _row(destination: str, qty: str, value: str) -> BreakdownRow:
         upstream=Decimal("2.5"),
         downstream=Decimal("-0.4"),
         value=Decimal(value),
+        #: v1.59. An entry-level row, so a member rather than `None`. The
+        #: PDF does not print the basis per line -- it prints the entry's
+        #: roll-up -- but the field is required on the dataclass precisely so
+        #: that a builder cannot leave the question unanswered.
+        upstream_basis=UpstreamBasis.CATEGORY_EVERY_DESTINATION,
     )
 
 
@@ -196,6 +205,10 @@ def _taxonomy(
     return TaxonomySnapshot(
         sectors=(SectorSpec("wholesale_retail", sector_name, None, 30),),
         food_categories=(FoodCategorySpec("fruit", "Fruit", False, 10),),
+        #: v1.58. Empty, and deliberately: `_Taxonomy` names a food item the
+        #: same way it names a category, so a renderer that only worked when
+        #: the vocabulary was populated would work in no deployment today.
+        food_items=(),
         destination_groups=(DestinationGroupSpec("disposal", "Disposal", True, 30),),
         destinations=(
             DestinationSpec("landfill", destination_name, "disposal", None, 30, False),
@@ -206,6 +219,7 @@ def _taxonomy(
         unit_presets=(),
         factor_set_version="MOCK-v0",
         factor_set_is_mock=True,
+        factor_set_item_level_enabled=False,
     )
 
 
@@ -717,24 +731,36 @@ def test_names_come_from_the_taxonomy_and_are_never_translated():
         assert any(row["name"] == MACRON_NAME for row in context["destinations"])
 
 
-def test_an_absent_food_category_names_the_standard_mix():
-    """§6.2: `food_category is None` means "use the standard mix", and the
-    engine resolves it that way but reports the code back as `None`. Printing
-    the field verbatim would tell a reader the food type was unknown when in
-    fact it was the standard mix - which is the kind of quiet mis-statement a
-    document read six months later cannot be corrected on."""
+def test_an_absent_food_category_is_not_printed_as_the_standard_mix():
+    """**They are two answers now, and the document may not print them alike.**
+
+    This assertion was the other way round: the engine resolves a NULL category
+    to the standard mix, so the document substituted the standard-mix row's name
+    for `None`. Contract v1.55's multi-select makes the two separate answers a
+    visitor gives with separate checkboxes - §5.4 requires it - and they are
+    distinguishable on the wire, because the standard mix sends its own `code`
+    while "I do not know, or my waste is not broken down by type" sends `null`.
+    Substituting printed them byte-identically, so a submission that ticked both
+    produced two rows a reader could not tell apart carrying different figures.
+
+    `ABSENT` rather than a new sentence, because `Catalogue.gettext` raises on a
+    missing key: a new string on this path would refuse to render the document
+    in every language that had not translated it yet.
+    """
     taxonomy = _taxonomy()
     mixed = TaxonomySnapshot(
         sectors=taxonomy.sectors,
         food_categories=(
             FoodCategorySpec("standard_mix", "Mixed food waste", True, 5),
         ),
+        food_items=taxonomy.food_items,
         destination_groups=taxonomy.destination_groups,
         destinations=taxonomy.destinations,
         metrics=taxonomy.metrics,
         unit_presets=(),
         factor_set_version="MOCK-v0",
         factor_set_is_mock=True,
+        factor_set_item_level_enabled=False,
     )
     result = _result()
     entry = result.entries[0]
@@ -754,7 +780,15 @@ def test_an_absent_food_category_names_the_standard_mix():
         ),
     )
     context = build_context(unspecified, mixed, "en")
-    assert context["entries"][0]["food_category"] == "Mixed food waste"
+    assert context["entries"][0]["food_category"] != "Mixed food waste", (
+        "a submission that ticked BOTH the standard mix and \"I do not know\" "
+        "prints two rows a reader cannot tell apart"
+    )
+    assert context["entries"][0]["food_category"] == ABSENT, (
+        f"an unstated food type prints as "
+        f"{context['entries'][0]['food_category']!r}; the document's own "
+        f"convention for a field the submission did not state is ABSENT"
+    )
 
 
 def test_an_unknown_code_prints_as_itself():
@@ -1327,6 +1361,35 @@ def test_the_script_faces_are_embedded_in_the_pdf(locale, face):
         assert sibling not in joined, (
             f"{locale} is partly set in {sibling} - the per-language font "
             "ordering in results.css is not doing its job"
+        )
+
+
+def test_the_pdf_and_the_screen_word_the_fallback_disclosure_identically():
+    """Contract v1.59. The same sentence reaches a visitor three ways -- the
+    results page, its plain-text export and this document -- and the three
+    have no code in common: two of them are `web/js/results.js` and the third
+    is `api/pdf_render.py`, in a different language, in a different package.
+
+    **Two copies of a sentence is two sentences the day one is reworded.**
+    The screen's copy is the catalogue key `results.js` passes to `t()`; this
+    module's copy is a module-level constant. They are the same string or a
+    visitor who reads the caveat on screen and then opens the PDF meets a
+    differently-worded one -- and, because `api/i18n` raises on a key no
+    catalogue carries, the PDF would fail outright rather than drift, which
+    is a better failure but still a failure this catches first.
+
+    Asserted against the FRONT END's extracted keys, not against the
+    catalogues: a key both sides had wrong in the same way would sit in every
+    catalogue and agree with itself.
+    """
+    from tests.web import i18n_keys
+
+    rendered = i18n_keys.source_strings()
+    for constant in (_CATEGORY_AVERAGE_FLAG, _CATEGORY_AVERAGE_BODY):
+        assert constant in rendered, (
+            f"{constant!r} is a string this document prints and nothing in "
+            "web/js or web/*.html renders, so the PDF says something the "
+            "screen does not"
         )
 
 

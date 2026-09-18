@@ -200,16 +200,30 @@ TIME_FRAMES = frozenset({"one_week", "one_month", "one_quarter", "one_year"})
 
 
 class EntryPayload(BaseModel):
-    """One `(sector, food_category)` pair and both of its scenarios (§6.2).
+    """One `(sector, food_category, food_item)` triple and both of its
+    scenarios (§6.2).
 
-    Sector and food category sit on the entry, not on the scenario: an
-    entry's two scenarios describe the same point in the supply chain, so a
+    Sector, food category and food item sit on the entry, not on the scenario:
+    an entry's two scenarios describe the same point in the supply chain, so a
     per-scenario sector would make an unrepresentable state representable.
     """
 
     model_config = ConfigDict(extra="forbid")
     sector: str = Field(min_length=1, max_length=64)
     food_category: str | None = Field(default=None, min_length=1, max_length=64)
+    #: v1.58. The named food *within* `food_category` -- "cheese", not
+    #: "dairy". **Absent and `null` mean the same thing**, and that thing is
+    #: "the visitor named a category and no food", which is every request that
+    #: existed before this revision. Unlike `food_category`, `null` is *not*
+    #: resolved to a stand-in: there is no standard food, and inventing one
+    #: would put a number against a food nobody named.
+    #:
+    #: The one state this field may not be in is stated in
+    #: `entry_rule_problems` rather than here: a food with no category is
+    #: refused there, with a field, because a `model_validator` on this class
+    #: reports `entries[i]` and not `entries[i].food_item` and a front end
+    #: cannot bind that to the control the visitor used.
+    food_item: str | None = Field(default=None, min_length=1, max_length=64)
     #: v1.48. Optional, and `None` is not zero: zero claims this stage put
     #: nothing through, which would make the waste share infinite rather than
     #: absent. Three decimal places to match `qty_kg` - a production total is
@@ -305,7 +319,7 @@ def entry_rule_problems(
     *,
     prevention_codes: Collection[str],
 ) -> list[dict[str, Any]]:
-    """The three §6.2 rules Pydantic cannot express. See the module docstring.
+    """The four §6.2 rules Pydantic cannot express. See the module docstring.
 
     Returns one `details` entry per problem, in `entries` order, so a caller
     with two bad entries is told about both rather than about the first.
@@ -321,7 +335,29 @@ def entry_rule_problems(
     """
     problems: list[dict[str, Any]] = []
     prevention = frozenset(prevention_codes)
-    first_seen: dict[tuple[str, str | None], int] = {}
+    #: v1.58: a **triple**, and this is the one rule in this function that
+    #: changes an existing answer rather than adding to it. Two entries naming
+    #: `dairy/cheese` and `dairy/butter` are what a forked chain produces, and
+    #: the pair was refused here while `uq_submission_entry` -- four columns
+    #: since v1.54 -- accepted it.
+    #:
+    #: **The NULLs collapse, and they must.** MySQL treats NULLs as distinct
+    #: inside a UNIQUE key, so `uq_submission_entry` is silent about the two
+    #: states that matter most: a category with no food, twice; and a food
+    #: with no category at all. `uq_submission_entry_generic` is what actually
+    #: enforces them, as a functional index over `COALESCE(food_category_id,
+    #: 0)` and `COALESCE(food_item_id, 0)` -- so the rule here must agree with
+    #: that index and not with the constraint that does not enforce it. A
+    #: Python tuple carrying `None` collapses exactly as `COALESCE(..., 0)`
+    #: does, which is why this is a plain tuple and not a hand-written
+    #: normalisation: `(processing, dairy, None)` twice collides, and
+    #: `(processing, dairy, None)` beside `(processing, dairy, cheese)` does
+    #: not. The second pair is **accepted**, matching the index, and it is the
+    #: right answer on its own terms: §5.4 gives a NULL food category its
+    #: own bucket meaning *the visitor did not break this down by type*, so
+    #: "300 kg of dairy I did not itemise" and "40 kg of cheese I did" are two
+    #: answers about two masses rather than one answer sent twice.
+    first_seen: dict[tuple[str, str | None, str | None], int] = {}
     for index, entry in enumerate(payload.entries):
         offsets = [
             line.destination for line in entry.current
@@ -340,14 +376,34 @@ def entry_rule_problems(
                     ),
                 }
             )
-        key = (entry.sector, entry.food_category)
+        #: v1.58, and refused here rather than by Pydantic so that the
+        #: `details` entry names `entries[i].food_item`. It is the one state
+        #: `ck_submission_entry_item_has_category` refuses at the database:
+        #: `food_category_id IS NULL` already means *did not break it down by
+        #: type*, and §5.4 forbids conflating that with the most specific
+        #: answer the calculator takes. Left to the schema it would arrive as
+        #: an IntegrityError on the write, which is a 500 a visitor cannot act
+        #: on -- the same reason the duplicate rule lives here.
+        if entry.food_item is not None and entry.food_category is None:
+            problems.append(
+                {
+                    "field": f"entries[{index}].food_item",
+                    "issue": "item_without_category",
+                    "message": (
+                        f"names the food {entry.food_item!r} but no "
+                        "food_category; a request that names a food must name "
+                        "the category it belongs to"
+                    ),
+                }
+            )
+        key = (entry.sector, entry.food_category, entry.food_item)
         if key in first_seen:
             problems.append(
                 {
                     "field": f"entries[{index}]",
                     "issue": "duplicate_entry",
                     "message": (
-                        "has the same sector and food category as "
+                        "has the same sector, food category and food as "
                         f"entries[{first_seen[key]}]"
                     ),
                 }

@@ -252,9 +252,35 @@ def test_import_published_carries_the_set_level_settings(
     SOURCE, so a path that copies nothing produces the default and compares
     unequal - the `_make_set` lesson about a fixture whose two sides are
     indistinguishable.
+
+    **The source is given a real item-level row (v1.54 part two), and it has to
+    be.** `import_published_into` now runs
+    `refuse_item_level_without_item_rows` on the target after the copy, so a
+    source carrying `item_level_enabled` with no `factor_upstream` row naming a
+    food is a state the system refuses - and refuses deliberately, because
+    after an import that combination means the copy lost the item dimension.
+    Setting the flag alone was a state `publish_factor_set` would never have
+    let a published set reach in the first place; the row below is what makes
+    this fixture a set that could actually exist.
     """
+    from admin.taxonomy_models import FoodItem
+
     session = _committed_session
     live, draft = two_sets
+    item = FoodItem(code="e6_cheese", name="Cheese",
+                    food_category_id=taxonomy_for_factors.category.id)
+    session.add(item)
+    session.flush()
+    session.add(
+        FactorUpstream(
+            factor_set_id=live.id,
+            sector_id=taxonomy_for_factors.sector.id,
+            food_category_id=taxonomy_for_factors.category.id,
+            food_item_id=item.id,
+            metric_id=taxonomy_for_factors.metric.id,
+            value_per_kg=Decimal("3.4000000000"),
+        )
+    )
     for column, value in _SET_LEVEL_SETTINGS.items():
         setattr(live, column, value)
         setattr(draft, column, not value)

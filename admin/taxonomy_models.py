@@ -5,9 +5,9 @@ these seven are the vocabulary the calculator is defined in, edited by staff
 through the panel, and read by the engine on every calculation. They change
 for entirely different reasons.
 
-Six until v1.54, which added `food_item`. It has no admin screen yet - the
-panel still registers six taxonomy views - and nothing seeds it; see its own
-docstring.
+Six until v1.54, which added `food_item`; the panel registers seven taxonomy
+views from v1.54 part two, which gave it `FoodItemAdmin`. Nothing seeds it;
+see its own docstring.
 
 Every one of them carries `code` (the cross-layer identifier — the API and
 the front end use it, never the primary key) and `active` (the panel does

@@ -1,5 +1,5 @@
 {
-  "factor_set": { "version_label": "MOCK-v0 — PLACEHOLDER", "is_mock": true },
+  "factor_set": { "version_label": "MOCK-v0 — PLACEHOLDER", "is_mock": true, "item_level_enabled": false },
   "sectors": [
     {
       "code": "primary_production",
@@ -50,6 +50,7 @@
     { "code": "staples", "name": "Staples", "is_standard_mix": false, "sort_order": 80 },
     { "code": "beverages", "name": "Beverages (non-dairy)", "is_standard_mix": false, "sort_order": 90 }
   ],
+  "food_items": [],
   "destination_groups": [
     { "code": "reuse", "name": "Reuse", "is_waste": false, "sort_order": 10 },
     { "code": "recycle_recovery", "name": "Recycle and recovery", "is_waste": true, "sort_order": 20 },

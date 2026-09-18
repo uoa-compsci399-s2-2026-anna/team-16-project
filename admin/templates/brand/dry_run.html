@@ -46,6 +46,20 @@
           <select id="food_category" name="food_category"><option value="">Standard mix (composition unknown)</option>{% for category in food_categories %}<option value="{{ category.code }}">{{ category.name }}</option>{% endfor %}</select>
           <p class="field-help">Leaving this on the standard mix is what a visitor who does not know their composition gets, and so the case most worth checking.</p>
         </div>
+        {#- v1.54, and rendered only once foods exist. With an empty food-item
+            table — every deployment today — a select whose only option is
+            "Whole category" is a control that cannot be used and a question a
+            staff member has to work out the answer to. The `data-food-category`
+            attribute carries each food's parent so the page can narrow the list
+            to the chosen category; an item filed under another category is
+            refused by the engine, not priced. -#}
+        {% if food_items %}
+        <div class="dry-run-field">
+          <label for="food_item">Food item</label>
+          <select id="food_item" name="food_item"><option value="">Whole category (no particular food)</option>{% for item in food_items %}<option value="{{ item.code }}" data-food-category="{{ item.food_category }}">{{ item.name }}</option>{% endfor %}</select>
+          <p class="field-help">Which particular food, if this run is meant to exercise an item-level factor — the refinement the calculator asks about only while item-level detail is switched on for the factor set. Leave it on <em>Whole category</em> and the run is the one this form has always sent. A food with no factors of its own is priced at its category's average, so picking one does not guarantee a different number; that is what makes this worth checking here rather than assuming.</p>
+        </div>
+        {% endif %}
         <div class="dry-run-field">
           <label for="gwp_horizon">Methane horizon</label>
           <select id="gwp_horizon" name="gwp_horizon"><option value="100" selected>100 years</option><option value="20">20 years</option></select>

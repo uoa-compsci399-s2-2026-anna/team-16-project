@@ -1,7 +1,7 @@
 import { calculate } from './api.js'
-import { setState, draftEntry } from './state.js'
+import { setState, draftEntry, leafDisplayName } from './state.js'
 import { rowKgString, percentageToKg, kgToPercentage, kgToUnitAmount, unitAmountToKg, unitDisplayPrecision, isPresetUnit, presetUnitCode, PRESET_UNIT } from './units.js'
-import { requestLines, submissionPayload } from './submission.js'
+import { requestLines, submissionLeaves, submissionPayload } from './submission.js'
 import { escapeHtml, formatNumber, slug } from './view.js'
 import { t } from './i18n.js'
 
@@ -110,12 +110,13 @@ const signClass = value => {
 // build `metrics`, so no sort belongs here — and no list of codes does either (§7.6.5).
 const comparableCodes = metrics => Object.keys(metrics).filter(code => code !== MASS_METRIC)
 
-export function currentAllocationPercentages(state) {
-  const presets = state.taxonomy?.unit_presets || []
-  const totals = Object.fromEntries((state.taxonomy.destinations || []).map(destination => [destination.code, 0]))
-  for (const entry of submissionEntries(state)) {
-    for (const line of entry.current || []) totals[line.destination] = (totals[line.destination] || 0) + lineKg(entry, line, presets)
-  }
+/**
+ * **One leaf's own current shares.** Percentages of the mass *that leaf's* current
+ * scenario describes, which is the mass its improved scenario has to redistribute.
+ */
+function leafShares(entry, destinations, presets) {
+  const totals = Object.fromEntries((destinations || []).map(destination => [destination.code, 0]))
+  for (const line of entry.current || []) totals[line.destination] = (totals[line.destination] || 0) + lineKg(entry, line, presets)
   const allocated = Object.values(totals).reduce((sum, value) => sum + value, 0)
   if (!allocated) return totals
   const percentages = Object.fromEntries(Object.entries(totals).map(([code, value]) => [code, Number((value / allocated * 100).toFixed(2))]))
@@ -124,9 +125,44 @@ export function currentAllocationPercentages(state) {
   // 0.15 kg lighter than the current one on a 1,500 kg entry, which §6.2 rejects. The panel
   // must not open on a state the server would refuse. The remainder goes to the largest
   // share, the one place it does not change what the allocation says.
-  const largest = Object.entries(percentages).reduce((best, entry) => (best && best[1] >= entry[1] ? best : entry), null)
+  const largest = Object.entries(percentages).reduce((best, row) => (best && best[1] >= row[1] ? best : row), null)
   if (largest && largest[1] > 0) percentages[largest[0]] = Number((largest[1] + 100 - allocationTotal(percentages)).toFixed(2))
   return percentages
+}
+
+/**
+ * **The current allocation, one map per leaf, in submission order.**
+ *
+ * It was a single submission-wide map, and that made *Match the current allocation* stop
+ * being an identity the moment a chain forked. Measured: 100 kg of dairy sent entirely to
+ * landfill and 200 kg of fruit sent entirely to animal feed came back as one split of
+ * 33.33% landfill / 66.67% animal feed applied to **both** leaves - which describes
+ * neither of them, matches neither Current column, and is not the submission the visitor
+ * made. Owner decision 6 (`design.md` §10) forks the panel for exactly this.
+ *
+ * The shape is an array rather than a map keyed by the leaf's name because two chains may
+ * legitimately carry the same sector and the same food - the duplicate notice warns about
+ * it and does not forbid it - so a name is not an identity here. Position in the
+ * submission is, and it is the same position `entries[]` and `entry_results[]` use.
+ *
+ * @returns {Array<Object<string, number>>} one destination-to-percentage map per leaf
+ */
+export function currentAllocationPercentages(state) {
+  const presets = state.taxonomy?.unit_presets || []
+  const destinations = state.taxonomy?.destinations || []
+  return submissionEntries(state).map(entry => leafShares(entry, destinations, presets))
+}
+
+/**
+ * `state.improvedAllocations`, reconciled to the leaves the submission actually has.
+ *
+ * Every reader goes through it, so a panel opened on three leaves and then re-rendered
+ * after one was removed cannot read a fourth leaf's allocation, and an allocation stored
+ * before the fork (a bare object) cannot be mistaken for leaf zero's.
+ */
+function leafAllocations(state) {
+  const held = Array.isArray(state.improvedAllocations) ? state.improvedAllocations : []
+  return submissionEntries(state).map((_, index) => held[index] || {})
 }
 
 // The entries the submission will carry, in the order `submitCalculation` sends them.
@@ -135,17 +171,35 @@ export function currentAllocationPercentages(state) {
 // keys, and round two added four more that it did not name — so this panel re-sent the
 // submission with `total_input_kg`, `total_value_nzd` and `wasted_value_nzd` absent, under
 // the same token, and §5.3's upsert wrote the absence over the visitor's figures.
+//
+// **And they are LEAVES, not chains.** One supply-chain chain now carries several
+// `entries[]`, each with its own amount and its own destination allocation
+// (`design.md` §10), so every consumer below operates per leaf: the seeded percentages
+// are taken over the same lines the payload carries, and `improvementValidation` checks
+// mass conservation per entry exactly as the server checks it. Handed chains instead,
+// this panel would seed its sliders from allocations that are not in the request and
+// would compare an alternative against a current scenario the server never saw.
 function submissionEntries(state) {
-  return [...state.entries, draftEntry()]
+  return submissionLeaves([...state.entries, draftEntry()])
 }
 
-// The mass every allocation redistributes: every `submissionEntries` entry's own
-// current-scenario total, summed. Item ⑧'s kilogram mode divides and multiplies by this
-// number, and it is the same sum `improvementValidation` already takes per entry (§6.2's
-// own mass-conservation rule) — a second copy of "what does this entry weigh" here would
-// be free to disagree with the one the server-side check is built on.
+// **The mass ONE leaf's allocation redistributes**: that leaf's own current-scenario
+// total. Item ⑧'s unit mode divides and multiplies by this number, and it is the same sum
+// `improvementValidation` takes per entry (§6.2's own mass-conservation rule) — a second
+// copy of "what does this entry weigh" here would be free to disagree with the one the
+// server-side check is built on.
+//
+// **Per leaf and not per submission, since the fork.** A row's `max` in unit mode is "the
+// whole mass being redistributed *here*", and a 100 kg leaf whose slider maxed out at the
+// submission's 300 kg would let a visitor allocate three times the mass that leaf has —
+// which the server refuses, per entry, after they have left the screen with the numbers on
+// it.
+const leafAllocatableKg = (entry, presets) => sumQtyKg(requestLines(entry, presets))
+
+// The submission's whole mass, for the one figure that is about the submission rather than
+// about a leaf: the "Total mass" line under the panel.
 function totalAllocatableKg(state, presets) {
-  return submissionEntries(state).reduce((sum, entry) => sum + sumQtyKg(requestLines(entry, presets)), 0)
+  return submissionEntries(state).reduce((sum, entry) => sum + leafAllocatableKg(entry, presets), 0)
 }
 
 // `percentageToKg`, made safe to print and restated in a row's own display unit: `NaN`
@@ -165,11 +219,13 @@ const displayAmount = (percentage, totalKg, unit, presets) => {
   return Number.isFinite(amount) ? Math.max(0, amount) : 0
 }
 
-// Every destination at 0, not the current share. A visitor modelling an improvement is
-// choosing a new allocation, and seeding the sliders from the old one hides which numbers
-// they have actually decided — the client asked for every slider to start at 0.
+// Every destination at 0, for every leaf — not the current share. A visitor modelling an
+// improvement is choosing a new allocation, and seeding the sliders from the old one hides
+// which numbers they have actually decided; the client asked for every slider to start
+// at 0.
 function zeroAllocations(state) {
-  return Object.fromEntries((state.taxonomy.destinations || []).map(destination => [destination.code, 0]))
+  const empty = Object.fromEntries((state.taxonomy.destinations || []).map(destination => [destination.code, 0]))
+  return submissionEntries(state).map(() => ({ ...empty }))
 }
 
 const polar = (cx, cy, radius, degrees) => {
@@ -192,10 +248,10 @@ function slicePath(start, end) {
 //
 // The centre reports the mass being redistributed, which is the figure the 100% rule is
 // about: every arrangement of these slices moves the same kilograms.
-function PieChart(state, destinations) {
+function PieChart(state, destinations, allocation, totalKg) {
   let cursor = 0
   const slices = destinations.map((destination, index) => {
-    const share = typed(state.improvedAllocations?.[destination.code])
+    const share = typed(allocation?.[destination.code])
     const start = cursor
     cursor += share * 3.6
     return { destination, share, start, end: cursor, colour: PIE_COLOURS[index % PIE_COLOURS.length] }
@@ -212,18 +268,28 @@ function PieChart(state, destinations) {
     return `<g class="improvement-pie-label"><polyline points="${edge.x},${edge.y} ${elbow.x},${elbow.y} ${endX},${elbow.y}" stroke="${slice.colour}"/><circle cx="${edge.x}" cy="${edge.y}" r="3" fill="${slice.colour}"/><text x="${textX}" y="${elbow.y + 4}" text-anchor="${anchor}">${formatNumber(slice.share, 1)}%</text></g>`
   }).join('')
   const legend = slices.map(slice => `<div><i style="background:${slice.colour}"></i><span>${escapeHtml(slice.destination.name)}</span></div>`).join('')
-  return `<svg class="improvement-pie-chart" viewBox="0 0 520 420" role="img" aria-label="${escapeHtml(t('Total allocation'))}">${paths}<circle class="improvement-pie-centre" cx="260" cy="210" r="48" fill="#fff"/><text class="improvement-pie-total" x="260" y="205" text-anchor="middle"><tspan>${formatNumber(totalAllocatableKg(state, state.taxonomy?.unit_presets || []), 2)}</tspan><tspan x="260" dy="20">kg</tspan></text>${labels}</svg><div class="improvement-pie-key">${legend}</div>`
+  return `<svg class="improvement-pie-chart" viewBox="0 0 520 420" role="img" aria-label="${escapeHtml(t('Total allocation'))}">${paths}<circle class="improvement-pie-centre" cx="260" cy="210" r="48" fill="#fff"/><text class="improvement-pie-total" x="260" y="205" text-anchor="middle"><tspan>${formatNumber(totalKg, 2)}</tspan><tspan x="260" dy="20">kg</tspan></text>${labels}</svg><div class="improvement-pie-key">${legend}</div>`
 }
 
 export function openImprovement(state) {
-  const allocations = Object.keys(state.improvedAllocations || {}).length ? state.improvedAllocations : zeroAllocations(state)
-  setState({ improvementOpen: true, improvedAllocations: allocations, improvementChartExpanded: false, improvementError: null })
+  // Reconciled to the leaves rather than kept verbatim: a panel closed on one submission
+  // and reopened on another must not carry a stale leaf's allocation into a new leaf's
+  // sliders, and an allocation stored in the pre-fork shape (a bare object) is not leaf
+  // zero's — `leafAllocations` answers both.
+  const held = leafAllocations(state)
+  const allocations = held.some(leaf => Object.keys(leaf).length) ? held : zeroAllocations(state)
+  setState({ improvementOpen: true, improvedAllocations: allocations, improvementChartExpanded: null, improvementError: null })
 }
 
 // No longer an undo — the panel does not open on the current allocation any more, so
 // there is nothing here to return *to*. It is kept as a shortcut to the current shares,
 // and the button says so: `t('Match the current allocation')`, not `t('Reset to Current')`.
 export function resetImprovement(state) {
+  // **An identity on a forked chain, and that is the whole point of it.** One
+  // submission-wide split applied to every leaf's own mass could satisfy this only when
+  // the leaves happened to agree; `currentAllocationPercentages` is per leaf now, so
+  // pressing this button and pressing Compare Impact reproduces the current scenario
+  // exactly, whatever the leaves do.
   setState({ improvedAllocations: currentAllocationPercentages(state), improvementResult: null, improvementError: null })
 }
 
@@ -324,9 +390,15 @@ function rangeStep(mode, totalKg, rowUnit, presets) {
  */
 export function updateImprovementInput(control, state) {
   const code = control.dataset.improvementCode
+  // **Which leaf's allocation this control edits.** Absent on a single-leaf panel, where
+  // the markup is unchanged by the fork and leaf zero is the only leaf there is.
+  const leafIndex = Number(control.dataset.improvementLeaf || 0)
+  const leaves = submissionEntries(state)
+  const allocations = leafAllocations(state)
+  const mine = allocations[leafIndex] || {}
   const mode = state.improvementMode || 'percentage'
   const presets = state.taxonomy?.unit_presets || []
-  const totalKg = totalAllocatableKg(state, presets)
+  const totalKg = leaves[leafIndex] ? leafAllocatableKg(leaves[leafIndex], presets) : 0
   const rowUnit = mode === 'unit' ? rowUnitFor(state, code) : null
   // Item ⑧: how many decimal places THIS row's own unit is worth printing (see
   // `unitDisplayPrecision`) — two for kilograms, more for tonnes and for a container
@@ -349,7 +421,7 @@ export function updateImprovementInput(control, state) {
   if (control.type === 'range' && percentage !== '') {
     const numericPercentage = Number(percentage)
     if (Number.isFinite(numericPercentage)) {
-      const othersTotal = allocationTotal(state.improvedAllocations) - typed(state.improvedAllocations[code])
+      const othersTotal = allocationTotal(mine) - typed(mine[code])
       const ceiling = Math.max(0, 100 - othersTotal)
       const clamped = Math.min(Math.max(0, numericPercentage), ceiling)
       if (clamped !== numericPercentage) {
@@ -364,7 +436,8 @@ export function updateImprovementInput(control, state) {
       }
     }
   }
-  state.improvedAllocations = { ...state.improvedAllocations, [code]: percentage }
+  allocations[leafIndex] = { ...mine, [code]: percentage }
+  state.improvedAllocations = allocations
   state.improvementResult = null
   state.improvementError = null
   // **No sibling row's `max` is touched here, ever.** Every slider's `max` is fixed at
@@ -375,26 +448,31 @@ export function updateImprovementInput(control, state) {
   // stale ceiling on THIS row either, because this row's own ceiling never moves: typing
   // past it (allowed on the box) mirrors straight onto the slider up to the fixed maximum,
   // exactly as before, with no ordering to get wrong.
-  const total = allocationTotal(state.improvedAllocations)
+  const total = allocationTotal(allocations[leafIndex])
   // Mirrors the *raw* value, not the percentage just computed: every control sharing this
-  // code is rendered in the same mode and the same row unit (§ `ImprovementScenario`), so
-  // the slider and the number box always agree on which unit `.value` is in and a straight
-  // copy is correct. `raw` rather than `control.value` so a range's own drag mirrors its
-  // *rounded* (and, if it applied, *clamped*) figure, not the pointer position that
-  // produced it.
-  document.querySelectorAll(`[data-improvement-code="${CSS.escape(code)}"]`).forEach(input => {
+  // code **and this leaf** is rendered in the same mode and the same row unit
+  // (§ `ImprovementScenario`), so the slider and the number box always agree on which unit
+  // `.value` is in and a straight copy is correct. `raw` rather than `control.value` so a
+  // range's own drag mirrors its *rounded* (and, if it applied, *clamped*) figure, not the
+  // pointer position that produced it.
+  //
+  // **Scoped to the leaf, since the fork.** Unscoped, dragging Landfill on the dairy card
+  // wrote the same number into Landfill on every other food's card - the submission-wide
+  // allocation reappearing through the DOM after it had been removed from the state.
+  const within = document.querySelector(`[data-improvement-leaf-panel="${leafIndex}"]`) || document
+  within.querySelectorAll(`[data-improvement-code="${CSS.escape(code)}"]`).forEach(input => {
     if (input !== control) input.value = raw
   })
   const error = improvementValidation(state)
-  const totalPanel = document.querySelector('.improvement-total')
-  totalPanel?.classList.toggle('invalid', Boolean(error))
-  const totalValue = document.getElementById('improvement-total-value')
+  const totalPanel = within.querySelector ? within.querySelector('.improvement-total') : null
+  ;(totalPanel || document.querySelector('.improvement-total'))?.classList.toggle('invalid', Boolean(error))
+  const totalValue = document.getElementById(`improvement-total-value--${leafIndex}`) || document.getElementById('improvement-total-value')
   if (totalValue) totalValue.textContent = `${total.toFixed(2)}%`
   // This path deliberately patches the DOM rather than re-rendering (a re-render would take
   // the caret out of the box mid-number), so the donut has to be redrawn by hand or it would
   // show the allocation as it stood before the keystroke.
-  const chart = document.querySelector('.improvement-pie-content')
-  if (chart) chart.innerHTML = PieChart(state, sorted(state.taxonomy.destinations))
+  const chart = document.querySelector(`[data-improvement-pie="${leafIndex}"]`)
+  if (chart) chart.innerHTML = PieChart(state, sorted(state.taxonomy.destinations), allocations[leafIndex], totalKg)
   const errorElement = document.getElementById('improvement-inline-error')
   if (errorElement) {
     errorElement.textContent = error
@@ -431,19 +509,33 @@ export function allocationTotal(allocations) {
  */
 export function improvementValidation(state) {
   const mode = state.improvementMode || 'percentage'
-  const values = Object.values(state.improvedAllocations || {})
   const rangeMessage = mode === 'unit'
     ? t('Enter an amount from 0 up to the total, in the unit shown, for every destination.')
     : t('Enter a percentage from 0 to 100 for every destination.')
-  if (values.some(value => value === '' || !Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > 100)) return rangeMessage
-  const total = allocationTotal(state.improvedAllocations)
-  const mismatch = t('Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.', { total: total.toFixed(2) })
-  if (Math.abs(total - 100) > 0.01) return mismatch
   const presets = state.taxonomy?.unit_presets || []
-  for (const entry of submissionEntries(state)) {
-    const currentKg = sumQtyKg(requestLines(entry, presets))
-    const improvedKg = sumQtyKg(improvedLines(entry, state.improvedAllocations, presets))
-    if (Math.abs(improvedKg - currentKg) > MASS_TOLERANCE_KG) return mismatch
+  const leaves = submissionEntries(state)
+  const allocations = leafAllocations(state)
+  // **Every rule is per leaf, since the fork.** Each leaf's own sliders must total 100% of
+  // *its* mass, which is what the server checks per entry — one submission-wide total of
+  // 100% says nothing about whether any individual entry conserves its own mass, and it is
+  // the entry the API refuses.
+  //
+  // The message names the food when there is more than one, because "allocations must
+  // total 100%" pointing at no particular card is unactionable on a five-column panel.
+  const named = (leaf, message) => (leaves.length === 1
+    ? message
+    : t('%(food)s: %(message)s', { food: leafDisplayName(leaf, state.taxonomy), message }))
+  for (const [index, leaf] of leaves.entries()) {
+    const mine = allocations[index] || {}
+    const values = Object.values(mine)
+    if (!values.length) return named(leaf, rangeMessage)
+    if (values.some(value => value === '' || !Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > 100)) return named(leaf, rangeMessage)
+    const total = allocationTotal(mine)
+    const mismatch = t('Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.', { total: total.toFixed(2) })
+    if (Math.abs(total - 100) > 0.01) return named(leaf, mismatch)
+    const currentKg = leafAllocatableKg(leaf, presets)
+    const improvedKg = sumQtyKg(improvedLines(leaf, mine, presets))
+    if (Math.abs(improvedKg - currentKg) > MASS_TOLERANCE_KG) return named(leaf, mismatch)
   }
   return ''
 }
@@ -487,10 +579,21 @@ export async function compareImprovement(state, toPublicMessage = error => error
     // **And the same builder `calculator.js` uses**, for the same reason at one remove: this
     // call lands on the row that call created, so a field this one omits is a field the
     // visitor loses. It omitted four of them, and every destination row's unit besides.
-    const entries = submissionEntries(state)
+    // **`submissionPayload` takes CHAINS and forks them itself.** Handing it
+    // `submissionEntries` - which is already leaves - fans the leaves out a second time,
+    // and a leaf has no `foodCategories`, so every entry came back as one blank
+    // category-less leaf with `current: []` and the API answered 400. The panel is the
+    // second builder of this body and this is exactly the class of drift the module note
+    // in `submission.js` records; `alternativeFor` is still invoked with a leaf, because
+    // that is what `submissionPayload` passes it.
     const presets = state.taxonomy?.unit_presets || []
+    const allocations = leafAllocations(state)
     const response = await calculate(
-      submissionPayload(state, entries, entry => improvedLines(entry, state.improvedAllocations, presets)),
+      // `alternativeFor` is handed the leaf AND its position, and the position is what
+      // selects that leaf's own allocation. Handed one shared map instead, every leaf
+      // received the same shape and a chain whose leaves went to different destinations
+      // could not be improved at all.
+      submissionPayload(state, [...state.entries, draftEntry()], (leaf, index) => improvedLines(leaf, allocations[index] || {}, presets)),
     )
     const token = response.token || state.token
     if (token) sessionStorage.setItem('kaiCalculatorToken', token)
@@ -509,7 +612,7 @@ export async function compareImprovement(state, toPublicMessage = error => error
 // m, mode, totalKg)` was already unreadable at the call site without counting commas
 // against the signature above it. `presets` and `rowUnit` joined them for the same reason
 // item ⑧'s per-row unit selector needs both.
-function DestinationAllocationRow({ destination, current, improved, mode, totalKg, presets, rowUnit }) {
+function DestinationAllocationRow({ destination, current, improved, mode, totalKg, presets, rowUnit, leafIndex }) {
   // The one interpolation on the branch that reached an attribute through neither
   // `escapeHtml` nor `slug`. `destination.code` is `VARCHAR(64)` with no pattern constraint
   // in `db/`, `api/` or `admin/`, and staff edit it through sqladmin's generic CRUD, so a
@@ -520,7 +623,14 @@ function DestinationAllocationRow({ destination, current, improved, mode, totalK
   // (`data-improvement-code` still carries the real code, escaped, and that is what the
   // keystroke path reads — so two codes that slug alike share a label association but never
   // a value.)
-  const id = `improved-${slug(destination.code)}`
+  // **Suffixed by the leaf once there is more than one of it**, for the reason step 3's
+  // field ids are: `<label for>` and `getElementById` need one element per id, and the
+  // fork puts thirteen destinations on screen once per food. A single-leaf panel keeps
+  // today's ids exactly, because it is today's panel.
+  const id = leafIndex === null ? `improved-${slug(destination.code)}` : `improved-${slug(destination.code)}--${leafIndex}`
+  // `data-improvement-leaf` is what `updateImprovementInput` reads to know whose
+  // allocation a keystroke edits; absent on a single-leaf panel, where it defaults to 0.
+  const leafAttr = leafIndex === null ? '' : ` data-improvement-leaf="${leafIndex}"`
   const unitMode = mode === 'unit'
   // Item ⑧: the control's raw `.value` is in the displayed unit, never the stored
   // percentage — `updateImprovementInput` is what converts back on the way in.
@@ -599,13 +709,48 @@ function DestinationAllocationRow({ destination, current, improved, mode, totalK
   const unitControl = unitMode
     ? `<select class="improvement-row-unit" data-improvement-unit-code="${escapeHtml(destination.code)}" aria-label="${escapeHtml(t('Unit'))}" title="${escapeHtml(unitName)}">${rowUnitOptionsHtml(presets, rowUnit)}</select>`
     : `<span>%</span>`
-  return `<div class="improvement-allocation-row"><div><label for="${id}">${escapeHtml(destination.name)}</label><span>${escapeHtml(t('Current'))}: ${formatNumber(current, 2)}%</span></div><div class="improvement-control${unitMode ? ' improvement-control-unit' : ''}"><input id="${id}" type="range" min="0" max="${ceiling}" step="any" value="${escapeHtml(value)}" data-improvement-code="${escapeHtml(destination.code)}" aria-label="${escapeHtml(rangeLabel)}"><div class="percentage-input"><input type="number" min="0" max="${numberMax}" step="${boxStep}" inputmode="decimal" value="${escapeHtml(value)}" data-improvement-code="${escapeHtml(destination.code)}" aria-label="${escapeHtml(boxLabel)}">${unitControl}</div></div></div>`
+  return `<div class="improvement-allocation-row"><div><label for="${id}">${escapeHtml(destination.name)}</label><span>${escapeHtml(t('Current'))}: ${formatNumber(current, 2)}%</span></div><div class="improvement-control${unitMode ? ' improvement-control-unit' : ''}"><input id="${id}" type="range" min="0" max="${ceiling}" step="any" value="${escapeHtml(value)}" data-improvement-code="${escapeHtml(destination.code)}"${leafAttr} aria-label="${escapeHtml(rangeLabel)}"><div class="percentage-input"><input type="number" min="0" max="${numberMax}" step="${boxStep}" inputmode="decimal" value="${escapeHtml(value)}" data-improvement-code="${escapeHtml(destination.code)}"${leafAttr} aria-label="${escapeHtml(boxLabel)}">${unitControl}</div></div></div>`
+}
+
+/**
+ * One leaf's editor: its own donut, its own thirteen destination rows, its own total.
+ *
+ * **A one-leaf submission renders exactly what it rendered before the fork** — no
+ * heading, no wrapper section, the singleton ids — because that is the commonest journey
+ * by far and nothing about it changed. The leaf index still reaches the controls, so the
+ * keystroke path has one code path rather than two.
+ */
+function LeafAllocationEditor({ state, leaf, index, single, current, allocation, mode, presets }) {
+  const totalKg = leafAllocatableKg(leaf, presets)
+  const total = allocationTotal(allocation)
+  const leafIndex = single ? null : index
+  const rows = sorted(state.taxonomy.destinations).map(destination => DestinationAllocationRow({
+    destination,
+    current: current[destination.code] || 0,
+    improved: allocation[destination.code] ?? 0,
+    mode,
+    totalKg,
+    presets,
+    rowUnit: rowUnitFor(state, destination.code),
+    leafIndex,
+  })).join('')
+  const editor = `<div class="improvement-editor"><div class="improvement-pie-wrap"><div class="improvement-pie-content" data-improvement-pie="${index}">${PieChart(state, sorted(state.taxonomy.destinations), allocation, totalKg)}</div><button class="button button-secondary improvement-expand-chart" type="button" data-action="expand-improvement-chart" data-leaf="${index}"><span aria-hidden="true">&#9974;</span> ${escapeHtml(t('Total allocation'))}</button></div><div class="improvement-allocation-list">${rows}</div></div>`
+  // **A one-leaf panel keeps the singleton ids**, for the reason step 3's fields do: it
+  // is the same screen it was before the fork, and `#improvement-total-value` /
+  // `#improvement-total-kg` are what `tests/web/test_step_navigation.py` reads the running
+  // total off. With several leaves each total is its own element, suffixed by the leaf.
+  const totalId = single ? 'improvement-total-value' : `improvement-total-value--${index}`
+  const massId = single ? ' id="improvement-total-kg"' : ''
+  const totalPanel = `<div class="improvement-total ${total && Math.abs(total - 100) > 0.01 ? 'invalid' : ''}" aria-live="polite"><span>${escapeHtml(t('Total allocation'))}</span><strong id="${totalId}">${total.toFixed(2)}%</strong><span class="improvement-total-mass">${escapeHtml(t('Total mass'))}: <strong${massId}>${formatNumber(totalKg, 2)}</strong> kg</span></div>`
+  if (single) return editor + totalPanel
+  return `<section class="improvement-leaf" data-improvement-leaf-panel="${index}"><h3 class="improvement-leaf__heading">${escapeHtml(leafDisplayName(leaf, state.taxonomy))}</h3>${editor}${totalPanel}</section>`
 }
 
 export function ImprovementScenario(state) {
   if (!state.improvementOpen) return `<section class="explore-improvements" id="improvement-section"><h2>${escapeHtml(t('Want to explore potential improvements?'))}</h2><p>${escapeHtml(t('Adjust how your food waste is managed to see how the environmental and economic impacts could change.'))}</p><button class="button button-primary" type="button" data-action="explore-improvements">${escapeHtml(t('Explore Improvements'))}</button></section>`
+  const leaves = submissionEntries(state)
   const current = currentAllocationPercentages(state)
-  const total = allocationTotal(state.improvedAllocations)
+  const allocations = leafAllocations(state)
   const error = improvementValidation(state)
   // Item ⑧: a site manager thinks in tonnes or bins diverted, not in percentage points.
   // This decides only what the sliders and boxes below *display* — see the note on
@@ -618,10 +763,23 @@ export function ImprovementScenario(state) {
   const presets = state.taxonomy?.unit_presets || []
   const totalKg = totalAllocatableKg(state, presets)
   const modeField = `<div class="form-field improvement-mode-field"><label for="improvement-mode">${escapeHtml(t('Unit'))}</label><select id="improvement-mode"><option value="percentage" ${mode === 'percentage' ? 'selected' : ''}>${escapeHtml(t('Percentage'))}</option><option value="unit" ${mode === 'unit' ? 'selected' : ''}>${escapeHtml(t('Unit'))}</option></select></div>`
-  return `<section class="improvement-scenario" id="improvement-section" aria-labelledby="improvement-title"><h2 id="improvement-title">${escapeHtml(t('Create an Improvement Scenario'))}</h2><p>${escapeHtml(t('Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.'))}</p>${modeField}<div class="improvement-editor"><div class="improvement-pie-wrap"><div class="improvement-pie-content">${PieChart(state, sorted(state.taxonomy.destinations))}</div><button class="button button-secondary improvement-expand-chart" type="button" data-action="expand-improvement-chart"><span aria-hidden="true">⛶</span> ${escapeHtml(t('Total allocation'))}</button></div><div class="improvement-allocation-list">${sorted(state.taxonomy.destinations).map(destination => {
-    const improved = state.improvedAllocations[destination.code] ?? 0
-    return DestinationAllocationRow({ destination, current: current[destination.code] || 0, improved, mode, totalKg, presets, rowUnit: rowUnitFor(state, destination.code) })
-  }).join('')}</div></div><div class="improvement-total ${error ? 'invalid' : ''}" aria-live="polite"><span>${escapeHtml(t('Total allocation'))}</span><strong id="improvement-total-value">${total.toFixed(2)}%</strong><span class="improvement-total-mass">${escapeHtml(t('Total mass'))}: <strong id="improvement-total-kg">${formatNumber(totalKg, 2)}</strong> kg</span></div><p class="field-error" id="improvement-inline-error" role="alert" ${error ? '' : 'hidden'}>${escapeHtml(error)}</p>${state.improvementError ? `<p class="field-error" role="alert">${escapeHtml(state.improvementError)}</p>` : ''}<div class="improvement-actions"><button class="button button-secondary" type="button" data-action="reset-improvement">${escapeHtml(t('Match the current allocation'))}</button><button class="button button-secondary" type="button" data-action="cancel-improvement">${escapeHtml(t('Cancel'))}</button><button class="button button-primary" type="button" data-action="compare-improvement" ${error || state.improvementLoading ? 'disabled' : ''}>${escapeHtml(state.improvementLoading ? t('Comparing…') : t('Compare Impact'))}</button></div>${state.improvementChartExpanded ? `<div class="improvement-chart-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(t('Total allocation'))}"><div class="improvement-chart-expanded"><button class="improvement-chart-close" type="button" data-action="close-improvement-chart" aria-label="${escapeHtml(t('Cancel'))}">×</button>${PieChart(state, sorted(state.taxonomy.destinations))}</div></div>` : ''}</section>`
+  const single = leaves.length === 1
+  const editors = leaves.map((leaf, index) => LeafAllocationEditor({
+    state, leaf, index, single, current: current[index] || {}, allocation: allocations[index] || {}, mode, presets,
+  })).join('')
+  // The intro says what is being redistributed. On a forked chain the answer is "each
+  // food's own waste", and saying "the current waste amount" there would read as one pool
+  // the visitor is splitting between foods, which is not what any of these sliders do.
+  const intro = single
+    ? t('Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.')
+    : t('Redistribute each food type\'s own waste across different destinations. Each food type\'s total must remain unchanged.')
+  const expanded = Number.isInteger(state.improvementChartExpanded) ? state.improvementChartExpanded : null
+  const expandedLeaf = expanded !== null ? leaves[expanded] : null
+  const modal = expandedLeaf
+    ? `<div class="improvement-chart-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(t('Total allocation'))}"><div class="improvement-chart-expanded"><button class="improvement-chart-close" type="button" data-action="close-improvement-chart" aria-label="${escapeHtml(t('Cancel'))}">×</button>${single ? '' : `<h3 class="improvement-leaf__heading">${escapeHtml(leafDisplayName(expandedLeaf, state.taxonomy))}</h3>`}${PieChart(state, sorted(state.taxonomy.destinations), allocations[expanded] || {}, leafAllocatableKg(expandedLeaf, presets))}</div></div>`
+    : ''
+  const submissionMass = single ? '' : `<p class="improvement-submission-mass">${escapeHtml(t('Total mass'))}: <strong id="improvement-total-kg">${formatNumber(totalKg, 2)}</strong> kg</p>`
+  return `<section class="improvement-scenario" id="improvement-section" aria-labelledby="improvement-title"><h2 id="improvement-title">${escapeHtml(t('Create an Improvement Scenario'))}</h2><p>${escapeHtml(intro)}</p>${modeField}${editors}${submissionMass}<p class="field-error" id="improvement-inline-error" role="alert" ${error ? '' : 'hidden'}>${escapeHtml(error)}</p>${state.improvementError ? `<p class="field-error" role="alert">${escapeHtml(state.improvementError)}</p>` : ''}<div class="improvement-actions"><button class="button button-secondary" type="button" data-action="reset-improvement">${escapeHtml(t('Match the current allocation'))}</button><button class="button button-secondary" type="button" data-action="cancel-improvement">${escapeHtml(t('Cancel'))}</button><button class="button button-primary" type="button" data-action="compare-improvement" ${error || state.improvementLoading ? 'disabled' : ''}>${escapeHtml(state.improvementLoading ? t('Comparing…') : t('Compare Impact'))}</button></div>${modal}</section>`
 }
 
 /**

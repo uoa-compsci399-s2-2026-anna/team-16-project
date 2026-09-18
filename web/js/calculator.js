@@ -1,7 +1,7 @@
 import { calculate } from './api.js'
-import { state, setState, resetCalculator, entryResultsFrom, draftEntry } from './state.js'
+import { state, setState, resetCalculator, entryResultsFrom, draftEntry, draftLeafFigures, EMPTY_LEAF, entryLeaves, leafDisplayName, leafFigures, leafKey } from './state.js'
 import { containerKg, countLimit, entryTotal, isPlainDecimal, isPresetUnit, kgToTonnes, massToKg, PRESET_UNIT, presetUnitCode, rowKgString } from './units.js'
-import { requestLines, submissionPayload } from './submission.js'
+import { requestLines, submissionLeaves, submissionPayload } from './submission.js'
 import { escapeHtml, formatNumber, slug, stepNav } from './view.js'
 import { t } from './i18n.js'
 import { contributeCalculation, downloadPdf, downloadResults, renderResults } from './results.js'
@@ -46,7 +46,7 @@ const selected = (items, code) => items.find(item => item.code === code)
 export const entryDestinations = () => sorted(state.taxonomy.destinations).filter(destination => !destination.is_prevention)
 // Item ⑥: a line's own unit, defaulting to the entry's — so a fresh row behaves exactly as
 // every row did before this field existed, until a visitor changes one.
-const createLine = (destination, qtyInput = '', unit = state.totalUnit) => ({ id: randomId(), destination, qtyInput, unit })
+const createLine = (destination, qtyInput = '', unit = 'kilograms') => ({ id: randomId(), destination, qtyInput, unit })
 
 // ---------------------------------------------------------------- containers
 //
@@ -85,8 +85,8 @@ const totalOf = entry => entryTotal(entry, presetList())
  * (O-6: no measured per-food density exists), so nothing in a browser can exercise this
  * filter at all.
  */
-export const containerPresets = () => presetList()
-  .filter(preset => !preset.food_category || preset.food_category === state.foodCategory)
+export const containerPresets = (foodCategory = null) => presetList()
+  .filter(preset => !preset.food_category || preset.food_category === foodCategory)
 
 const totalNumber = entry => Number(totalOf(entry).amount) || 0
 
@@ -157,34 +157,286 @@ const MAX_CONTAINER_COUNT = 10000
  * this one by a container at the boundary. Folding the ceiling into the count means the
  * refusal stays the sentence it already was, with a smaller number in it.
  */
-const containerLimit = () => Math.min(MAX_CONTAINER_COUNT, countLimit(state.unitPreset, presetList(), MAX_SCENARIO_KG))
+const containerLimit = figures => Math.min(MAX_CONTAINER_COUNT, countLimit(figures.unitPreset, presetList(), MAX_SCENARIO_KG))
 
 /**
- * Whether the chosen preset would still be on the list under `foodCategory`.
+ * ---------------------------------------------------------------- leaves
  *
- * A preset tied to a food category leaves the list when a different category is chosen,
- * and a selection that is no longer on the list is a conversion the visitor can no longer
- * see being applied to their total. It goes with the category. This is not tidying: a
- * stale factor still in force behind a changed choice is the exact shape of the defects
- * §10 keeps recording.
+ * `presetSurvives` and `presetPatch` stood here. They existed because changing
+ * `state.foodCategory` could strand a container preset that was no longer on the list,
+ * and their `current: []` fallback was the cure. **Under the leaf model a leaf's
+ * category never changes** — unticking a category destroys the leaf, taking its
+ * `leafFigures` entry, its preset and its destination rows with it — so the hazard they
+ * guarded has no path left. What replaces them is `rewriteStrandedUnits` on the 3 -> 4
+ * move below, which is the one remaining case: a row unit set to a category-scoped
+ * preset before this change landed within a live session.
  */
-function presetSurvives(foodCategory) {
-  const preset = selected(presetList(), state.unitPreset)
-  return !preset || !preset.food_category || preset.food_category === foodCategory
+
+/** The draft chain, as `draftEntry()` builds it — the shape every leaf reader takes. */
+const draftChain = () => draftEntry()
+
+/** The draft's leaves, in ticking order. One call, so nothing re-derives the rule. */
+const draftLeaves = () => entryLeaves(state)
+
+/** How many leaves the whole submission would carry — what `MAX_ENTRIES` actually counts. */
+const savedLeafCount = () => state.entries.reduce((count, entry) => count + entryLeaves(entry).length, 0)
+const submissionLeafCount = () => savedLeafCount() + draftLeaves().length
+
+/**
+ * `api/schemas.py`'s `MAX_ENTRIES`, restated on this side — and it counts **leaves**.
+ *
+ * Four chains of five categories is exactly twenty; a fifth is a 400 the form could have
+ * prevented. Step 2 refuses the tick that would take the whole submission past it, which
+ * is the pattern the ceilings block above already follows: a client-side guard may refuse
+ * earlier and more kindly than the API would, and must never refuse something the API
+ * would take.
+ */
+const MAX_LEAVES = 20
+
+/**
+ * **The ceiling rule, and the only statement of it.**
+ *
+ * It takes the chains a submission *would* hold and answers whether that submission
+ * would carry more leaves than the API accepts. Every guard asks it the same question in
+ * the same words, which is what the two halves of the previous arrangement could not do:
+ * step 2 asked `submissionLeafCount() >= MAX_LEAVES` - the count *now*, not the count
+ * after the tick - so at exactly twenty it refused the first tick on an empty draft,
+ * which replaces the draft's category-less leaf with a named one and adds nothing; and
+ * `add-entry` asked nothing at all, so a visitor could open a twenty-first leaf and meet
+ * the ceiling as a 400 two screens later.
+ *
+ * A client-side ceiling may refuse earlier and more kindly than the API, and must never
+ * refuse something the API would take. Stating the prospective submission rather than
+ * the current one is what keeps it on the right side of that.
+ *
+ * @param {Array<object>} chains every chain the submission would hold, draft included
+ * @returns {boolean} true when it would carry more leaves than `MAX_LEAVES`
+ */
+const exceedsLeafCeiling = chains => chains.reduce((count, chain) => count + entryLeaves(chain).length, 0) > MAX_LEAVES
+
+/** The chains the submission would hold with `draft` as its draft. */
+const submissionWith = draft => [...state.entries, draft]
+
+/** The draft's selection as it would stand after one box was ticked. */
+const draftTicking = (code, unspecified) => ({
+  foodCategories: unspecified ? [...state.foodCategories] : [...state.foodCategories, code],
+  foodUnspecified: unspecified ? true : Boolean(state.foodUnspecified),
+  foodItems: state.foodItems || {},
+})
+
+/** Whether ticking one of step 2's boxes would take the submission past the ceiling. */
+const tickRefused = (code, unspecified) => exceedsLeafCeiling(submissionWith(draftTicking(code, unspecified)))
+
+/**
+ * The draft's selection as it would stand after one of step 2.5's boxes was ticked.
+ *
+ * **Ticking a food is not always +1 leaf.** A category with no food ticked is already
+ * one leaf (`entryLeaves`), so the FIRST food under it replaces that leaf rather than
+ * adding to it; the second one adds. Asking the question through `entryLeaves` rather
+ * than counting ticks is what gets that right without restating the leaf rule here --
+ * the mistake step 2's own ceiling note warns about, one level down.
+ */
+const draftTickingItem = (category, item) => ({
+  foodCategories: [...state.foodCategories],
+  foodUnspecified: Boolean(state.foodUnspecified),
+  foodItems: {
+    ...(state.foodItems || {}),
+    [category]: [...((state.foodItems || {})[category] || []), item],
+  },
+})
+
+/** Whether ticking one of step 2.5's boxes would take the submission past the ceiling. */
+const itemTickRefused = (category, item) =>
+  exceedsLeafCeiling(submissionWith(draftTickingItem(category, item)))
+
+/**
+ * Whether step 2.5 is offered at all.
+ *
+ * Three conditions, and each is a different question:
+ *
+ * * **`factor_set.item_level_enabled`** -- the published set prices foods
+ *   individually (§6.1). A non-empty vocabulary is NOT the same question: the
+ *   vocabulary is global taxonomy and exists as soon as staff type it in, whereas
+ *   the flag says the numbers behind the finer question can answer it. Asking a
+ *   more specific question than the factors can answer is what the flag exists to
+ *   prevent.
+ * * **a non-empty vocabulary** -- there is something to offer. `admin/seed.py`
+ *   seeds no `food_item` in some deployments, and a screen of empty groups is
+ *   worse than no screen.
+ * * **at least one category chosen** -- step 2.5 refines step 2 (`spec.md` §3.3).
+ *   A visitor who skipped the categories, or answered "I do not know", has nothing
+ *   to refine, and the step is skipped rather than shown empty.
+ */
+function itemStepOffered() {
+  if (!state.taxonomy?.factor_set?.item_level_enabled) return false
+  if (!(state.taxonomy?.food_items || []).length) return false
+  return state.foodCategories.length > 0
+}
+
+/** The vocabulary under one category, in the taxonomy's own order. */
+const itemsUnder = category =>
+  sorted((state.taxonomy?.food_items || []).filter(item => item.food_category === category))
+
+/**
+ * Whether *Add another supply-chain entry* would take the submission past the ceiling.
+ *
+ * The chain being built is committed and a fresh, empty draft takes its place - and an
+ * empty draft is one leaf, the category-less one, because that is what it will send if
+ * the visitor calculates without touching step 2. So the question is asked about the
+ * list the click actually produces, not about the list before it.
+ */
+const addEntryRefused = () => exceedsLeafCeiling([...state.entries, draftEntry(), EMPTY_DRAFT])
+
+/**
+ * The `value` of step 2's "I do not know" checkbox.
+ *
+ * It is a control value and never a food-category code: `foodUnspecified` is its own
+ * boolean on `state`, and nothing derived from it ever reaches `foodCategories`. The
+ * double underscores keep it outside the `code` space `VARCHAR(64)` staff can type.
+ */
+const UNSPECIFIED_CHOICE = '__unspecified__'
+
+/**
+ * A leaf's name, in the visitor's language.
+ *
+ * **Not decided here.** `state.js`'s `leafDisplayName` is the one place a leaf is named,
+ * because six surfaces show one - steps 3 and 4, the review step, the saved-entry card,
+ * the results page and both exports - and while each decided for itself, one leaf
+ * carried four different names and two different leaves could render the same one. This
+ * is the local spelling of that call and nothing more.
+ */
+const leafName = leaf => leafDisplayName(leaf, state.taxonomy)
+
+/**
+ * A leaf's identity, as an **attribute value**.
+ *
+ * `leafKey` is NUL-joined, and NUL cannot survive a round trip through an HTML attribute:
+ * the parser replaces U+0000 with U+FFFD, so `element.dataset.leaf` came back as a string
+ * that matched no key in `leafFigures` and every keystroke was written into a new,
+ * unreachable record - a field that looked filled and counted as empty. Measured: a waste
+ * amount typed on step 3 left `Enter a waste amount for ...` on Continue with the figure
+ * still on screen.
+ *
+ * `encodeURIComponent` is reversible, produces only attribute-safe characters, and keeps
+ * the key's own collision-safety: the NUL becomes `%00` and nothing else a `code` can
+ * hold encodes to it.
+ */
+const leafAttr = leaf => encodeURIComponent(leafKey(leaf))
+const keyAttr = key => encodeURIComponent(key)
+/** The inverse, for a handler reading `data-leaf` off the control it was given. */
+const leafOf = control => decodeURIComponent(control.dataset.leaf || '')
+
+/** A leaf's identity as a DOM id fragment. `any` for the category-less leaf, never ''. */
+const leafSlug = leaf => slug(`${leaf.foodCategory || 'any'}-${leaf.foodItem || ''}`) || 'any'
+
+/**
+ * A step-3 / step-4 field's `id`.
+ *
+ * **A chain with one leaf keeps today's singleton ids exactly** — `total-waste`,
+ * `unit-count`, `total-unit`, `total-input`, `total-value`, `wasted-value`,
+ * `container-total`. One leaf is the commonest journey by far and its screens are
+ * unchanged by the fork, so nothing about it should change; the suffix appears only
+ * where there is genuinely more than one of the field on screen and `<label for>` and
+ * `getElementById` would otherwise be ambiguous. Every handler below keys on
+ * `data-leaf-field` / `data-leaf` rather than on an id, so the ids are for labelling and
+ * for tests, never for behaviour.
+ */
+const fieldId = (base, leaf, leaves) => (leaves.length === 1 ? base : `${base}--${leafSlug(leaf)}`)
+
+
+/**
+ * Step 2's tick and untick.
+ *
+ * **Appends on tick**, so the selection keeps the order the visitor built it in - which
+ * is the leaf order steps 3 and 4 iterate, so a card never reshuffles when a category is
+ * added. **Removes on untick**, and prunes that leaf's figures with it.
+ *
+ * The ceiling is re-checked here as well as disabling the box, because a disabled
+ * attribute is a rendering and this is the rule.
+ */
+function toggleFoodChoice(target) {
+  const unspecified = target.value === UNSPECIFIED_CHOICE
+  // **Asked about the submission this tick would produce, not the one on screen.** The
+  // same `exceedsLeafCeiling` the `disabled` attribute above was rendered from, so a box
+  // that is tickable cannot be refused here and a box that is refused here cannot have
+  // been tickable. Re-checked all the same, because a `disabled` attribute is a
+  // rendering and this is the rule.
+  if (target.checked && tickRefused(target.value, unspecified)) {
+    target.checked = false
+    return
+  }
+  const foodUnspecified = unspecified ? target.checked : Boolean(state.foodUnspecified)
+  const foodCategories = unspecified
+    ? [...state.foodCategories]
+    : target.checked
+      ? [...state.foodCategories.filter(code => code !== target.value), target.value]
+      : state.foodCategories.filter(code => code !== target.value)
+  const foodItems = Object.fromEntries(foodCategories.map(code => [code, [...((state.foodItems || {})[code] || [])]]))
+  setState({
+    foodCategories,
+    foodUnspecified,
+    foodItems,
+    // **Unticking keeps this leaf's figures, and re-ticking brings them back.**
+    // They are pruned at the boundary instead - `draftEntry()` in state.js drops
+    // every record whose leaf is not live, so nothing dead reaches the request
+    // body, a saved entry, or the fingerprint.
+    //
+    // Pruning HERE was the first fix for a real defect - 400 kg typed under one
+    // category reappeared under the next one - but it overshot. That defect was a
+    // record reaching a DIFFERENT leaf; `leafFigures` is keyed by leaf, so a kept
+    // record can only ever come back to the food it was typed for. Pruning on the
+    // untick instead threw the figures away silently, and re-ticking the same
+    // category did not bring them back: work destroyed, no question asked, for a
+    // food the visitor had named themselves.
+    error: null,
+    errorAt: null,
+  })
 }
 
 /**
- * The state patch that goes with a food-category change.
+ * A row unit that names a food category, rewritten to kilograms.
  *
- * Empty when the chosen container is still on the list. When it is not, the form falls all
- * the way back to a weight rather than keeping `measureMode: 'container'` with nothing
- * selected — which would leave the `<select>` showing kilograms (no option matches the
- * dead value, so the browser falls to the first) while `state` still said container: two
- * halves of one control disagreeing, which is worse than asking again.
+ * `presetSurvives`/`presetPatch` guarded the chain-level case and are gone: a leaf's
+ * category cannot change, so a leaf-scoped preset cannot be stranded. **One case is
+ * left** - a step-4 row whose `unit` is `preset:<code>` naming a category, set before
+ * this change landed within a live session or restored from a `returnTo.draft` snapshot.
+ * A destination row is shared by nothing and measured against no single food, so a
+ * per-food density is not true of it anyway.
  */
-const presetPatch = foodCategory => (presetSurvives(foodCategory)
-  ? {}
-  : { unitPreset: null, measureMode: 'mass', totalUnit: 'kilograms', current: [] })
+function strandedUnit(unit) {
+  if (!isPresetUnit(unit)) return unit
+  const preset = selected(presetList(), presetUnitCode(unit))
+  return preset && preset.food_category ? 'kilograms' : unit
+}
+
+/**
+ * The 3 -> 4 move: **one set of destination rows per leaf**.
+ *
+ * A leaf that already has rows keeps them (with any stranded container unit rewritten);
+ * a leaf that has none gets one row per destination the sector offers, created with an
+ * **explicit** unit - its own leaf's - so that nothing downstream has to fall back to a
+ * chain unit that could later be re-derived under it.
+ *
+ * `state.totalUnit` is fixed here and nowhere else: the leaves' common mass unit when
+ * they share one, `'kilograms'` otherwise. It is what the combined figures on steps 3 and
+ * 5 are stated in, and it is never the unit any row is converted with.
+ */
+function destinationRowsPatch() {
+  const leaves = draftLeaves()
+  const units = new Set(leaves.map(leaf => draftLeafFigures(leaf).totalUnit))
+  const next = { ...state.leafFigures }
+  for (const leaf of leaves) {
+    const figures = draftLeafFigures(leaf)
+    const rows = (figures.current || []).length
+      ? figures.current.map(line => ({ ...line, unit: strandedUnit(line.unit || figures.totalUnit) }))
+      : entryDestinations().map(destination => createLine(destination.code, '', figures.totalUnit))
+    next[leafKey(leaf)] = { ...figures, current: rows }
+  }
+  return { leafFigures: next, totalUnit: units.size === 1 ? [...units][0] : 'kilograms' }
+}
+
+/** A `stepProblemAt` result, as the `state.errorAt` it should be stored under. */
+const leafErrorAt = problem => (problem.leaf ? { leaf: problem.leaf, field: problem.field } : null)
 
 // Item ⑥: a line's own unit may itself be a container preset — `preset:<code>`, the same
 // value space `#total-unit` uses (see `PRESET_OPTION` and `unitSelectValue` below) — so one
@@ -218,21 +470,25 @@ const lineKilograms = (qtyInput, unit) => {
 // has none, and falls back to `state.totalUnit` — the unit every row was implicitly in
 // before a row could differ from its neighbour, so an entry saved under the old behaviour
 // is never reinterpreted.
-const normaliseLines = lines => lines.map(line => ({ ...line, qtyKg: lineKgString(line.qtyInput, line.unit || state.totalUnit) }))
+const normaliseLines = (lines, unit) => (lines || []).map(line => ({ ...line, qtyKg: lineKgString(line.qtyInput, line.unit || unit) }))
 // The running allocation, **in `state.totalUnit`** — the unit the summary and the ceiling
 // are stated in — regardless of which unit each row was typed in. Summing raw `qtyInput`
 // values directly was correct only because every row shared one unit; once a row can carry
 // its own, "5" typed in tonnes and "5" typed in kilograms are not the same five, so the sum
 // has to happen in kilograms first and only the *total* is converted back for display —
 // with `kgToTonnes`, `units.js`'s own conversion, rather than a division re-typed here.
-const allocatedAmount = lines => {
-  const kilograms = lines.reduce((sum, line) => sum + (lineKilograms(line.qtyInput, line.unit || state.totalUnit) || 0), 0)
-  return state.totalUnit === 'tonnes' ? kgToTonnes(kilograms) : kilograms
+const allocatedAmount = (lines, unit) => {
+  const kilograms = (lines || []).reduce((sum, line) => sum + (lineKilograms(line.qtyInput, line.unit || unit) || 0), 0)
+  return unit === 'tonnes' ? kgToTonnes(kilograms) : kilograms
 }
 // `unitPreset` and `unitCount` are here for the same reason `totalAmount` is: they are
 // something the visitor entered, so the Clear button has to appear once either exists.
 // `totalInputKg` joins them for the same reason.
-const hasData = () => Boolean(state.entries.length || state.sector || state.foodCategory || state.totalAmount || state.unitPreset || state.unitCount || state.totalInputKg || state.totalValueNzd || state.wastedValueNzd || state.current.some(line => line.qtyInput !== '') || state.result)
+const leafHasFigures = figures => Boolean(figures.totalAmount || figures.unitPreset || figures.unitCount || figures.totalInputKg || figures.totalValueNzd || figures.wastedValueNzd || (figures.current || []).some(line => line.qtyInput !== ''))
+// Reads `leafFigures` WHOLE, live leaves and parked ones alike. A record for a
+// category that was ticked, filled and unticked is still something the visitor
+// typed, and start-over destroys it, so it has to count as data to clear.
+const hasData = () => Boolean(state.entries.length || state.sector || state.foodCategories.length || state.foodUnspecified || Object.values(state.leafFigures || {}).some(leafHasFigures) || state.result)
 // `draftEntry` now lives in `state.js`: `improvement.js` builds a submission too, and it
 // had its own shorter copy of this shape that was missing every field round two added.
 
@@ -336,21 +592,49 @@ function sectorStep() {
 }
 
 /**
- * The saved entry the draft currently repeats, as a 1-based number, or `undefined`.
+ * Every saved leaf, keyed `(sector, foodCategory, foodItem)`, to the first saved chain
+ * index that holds it.
  *
- * The same `(sector, food_category)` pair `api/schemas.py` refuses and
- * `uq_submission_entry` enforces. **A null food category counts**: "this sector,
- * no breakdown" is as much a pair as any other, and two chains that both leave
- * step 2 alone collide exactly like two that pick the same category.
- *
- * Only saved entries are searched, never the draft against itself.
+ * The same `(sector, food_category)` pair `api/schemas.py:343` keys on and
+ * `uq_submission_entry` enforces, one dimension deeper now that an entry is a leaf. **A
+ * null food category counts**: "this sector, no breakdown" is as much a pair as any
+ * other, and a saved chain that ticked nothing collides with a draft that ticks
+ * "I do not know" - correctly, because they are the same answer.
  */
-function draftRepeatsSavedEntry() {
-  const key = entry => `${entry.sector}\u0000${entry.foodCategory || ''}`
-  const draft = { sector: state.sector, foodCategory: state.foodCategory }
-  if (!state.sector) return undefined
-  const index = state.entries.findIndex(entry => key(entry) === key(draft))
-  return index === -1 ? undefined : index
+const savedLeafKey = (sector, leaf) => `${sector}\u0000${leafKey(leaf)}`
+
+function savedLeafIndex() {
+  const found = new Map()
+  state.entries.forEach((entry, index) => {
+    for (const leaf of entryLeaves(entry)) {
+      const key = savedLeafKey(entry.sector, leaf)
+      if (!found.has(key)) found.set(key, index)
+    }
+  })
+  return found
+}
+
+/**
+ * Which of the draft's leaves repeat which saved entries - one group per colliding
+ * saved chain.
+ *
+ * Two leaves of one chain can never collide with each other: the multi-select is a set,
+ * so they are distinct by construction. Collisions are only ever draft-leaf against
+ * saved-leaf.
+ *
+ * @returns {Array<{index: number, leaves: Array<object>}>}
+ */
+function draftRepeatsSavedEntries() {
+  if (!state.sector) return []
+  const found = savedLeafIndex()
+  const groups = new Map()
+  for (const leaf of draftLeaves()) {
+    const index = found.get(savedLeafKey(state.sector, leaf))
+    if (index === undefined) continue
+    if (!groups.has(index)) groups.set(index, [])
+    groups.get(index).push(leaf)
+  }
+  return [...groups].map(([index, leaves]) => ({ index, leaves }))
 }
 
 /**
@@ -362,20 +646,76 @@ function draftRepeatsSavedEntry() {
  * visitor continue would be a second enforcement in a place that cannot see the
  * whole submission. Continuing lands on the review step with the entry marked -
  * see `entryIndexOf`.
+ *
+ * **The copy has three shapes now**, because "this combination" is wrong in three
+ * different ways once a chain holds several foods: one colliding leaf names the food,
+ * several name the list, and several colliding *chains* get one `<li>` each with its own
+ * Open button.
+ *
+ * **The separator is `t(', ')`, and the key is the separator itself.** It was
+ * `t('List separator')`, which is a *description* of a string rather than the string:
+ * `i18n.js:293` says outright that English is not a catalogue file, so an English key IS
+ * the English output, and the review step read
+ * `DairyList separatorBakery and grainsList separatorFruit`. A catalogue can still
+ * override it - `", "` is as overridable a key as any other, and a locale that joins
+ * lists differently maps it to its own.
  */
 function duplicateNotice() {
-  const index = draftRepeatsSavedEntry()
-  if (index === undefined) return ''
-  const number = index + 1
-  return `<aside class="disclaimer compact duplicate-notice" aria-label="${escapeHtml(t('Important information'))}"><span class="info-icon" aria-hidden="true">i</span><div><strong>${escapeHtml(t('You have already entered this combination'))}</strong><p>${escapeHtml(t('Entry %(number)s already covers this supply-chain stage and food category. Each combination can only be entered once, so add these figures to entry %(number)s instead, or choose a different category here.', { number }))}</p><button class="text-button" type="button" data-action="edit-entry" data-index="${index}">${escapeHtml(t('Open entry %(number)s', { number }))}</button></div></aside>`
+  const groups = draftRepeatsSavedEntries()
+  if (!groups.length) return ''
+  const separator = t(', ')
+  const item = ({ index, leaves }) => {
+    const number = index + 1
+    const foods = leaves.map(leafName)
+    const sentence = foods.length === 1
+      ? t('Entry %(number)s already covers %(food)s at this supply-chain stage. Add these figures to entry %(number)s instead, or untick %(food)s here.', { number, food: foods[0] })
+      : t('Entry %(number)s already covers %(foods)s at this supply-chain stage. Add these figures to entry %(number)s instead, or untick them here.', { number, foods: foods.join(separator) })
+    return `<li><p>${escapeHtml(sentence)}</p><button class="text-button" type="button" data-action="edit-entry" data-index="${index}">${escapeHtml(t('Open entry %(number)s', { number }))}</button></li>`
+  }
+  const single = groups.length === 1 && groups[0].leaves.length === 1
+  const heading = single ? t('You have already entered this combination') : t('Some of these food types are already entered')
+  return `<aside class="disclaimer compact duplicate-notice" aria-label="${escapeHtml(t('Important information'))}"><span class="info-icon" aria-hidden="true">i</span><div><strong>${escapeHtml(heading)}</strong><ul class="duplicate-notice__list">${groups.map(item).join('')}</ul></div></aside>`
 }
 
+/**
+ * Step 2, a **multi-select**.
+ *
+ * `type="checkbox"` on the same `.simple-choice` markup, the same `.selected` class and
+ * the same `id="food-category-<code>"` the radios carried - the ids matter more here,
+ * not less: `interfaces.md:3766` records that a same-step re-render restores focus by
+ * `id`, and a visitor ticks several of these in a row.
+ *
+ * **Ticking order, not `sort_order`, is the leaf order.** The list is sorted as it
+ * always was; the *selection* keeps the order the visitor built it in, so step 3's cards
+ * appear in the order they were created and do not reshuffle when a category is added.
+ *
+ * **"I do not know" is a peer option at the end of the list, not a third bucket on the
+ * wire.** Nothing ticked and "I do not know" ticked are the same submission - both send
+ * `food_category: null` - and that is correct: §5.4's `unspecified` bucket means the user
+ * did not break their waste down by type, and skipping an optional step and saying so are
+ * the same answer to that question. What the tick buys is a visible affirmative answer, a
+ * named row on step 3, and the ability to combine: "300 kg dairy and 200 kg I cannot
+ * identify" is two distinct rows under `COALESCE(food_category_id, 0)` and would
+ * otherwise have to be forced into a named category.
+ *
+ * **The ceiling is `MAX_ENTRIES`, and it counts leaves.** An unticked box is disabled
+ * once the whole submission is at twenty, with the reason said rather than left to the
+ * API to answer 400 for.
+ */
 function foodStep() {
   const categories = sorted(state.taxonomy.food_categories)
-  return `<section class="content-section" aria-labelledby="food-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 2 }))} · ${escapeHtml(t('Optional'))}</p><h1 id="food-title">${escapeHtml(t('What type of food waste are you measuring?'))}</h1><p class="section-intro">${escapeHtml(t('Choose one category if you know it, or continue without selecting an option.'))}</p><fieldset class="choice-fieldset"><legend class="sr-only">${escapeHtml(t('Food type'))}</legend><div class="simple-choice-list">${categories.map(category => {
-    const isSelected = state.foodCategory === category.code
-    return `<label class="simple-choice ${isSelected ? 'selected' : ''}"><input id="food-category-${slug(category.code)}" type="radio" name="food-category" value="${escapeHtml(category.code)}" ${isSelected ? 'checked' : ''}><span><strong>${escapeHtml(category.name)}</strong>${category.is_standard_mix ? `<small>${escapeHtml(t('Recommended if you do not separate food waste by category'))}</small>` : ''}</span>${isSelected ? `<span class="selected-label" aria-hidden="true">✓ ${escapeHtml(t('Selected'))}</span>` : ''}</label>`
-  }).join('')}</div></fieldset>${state.foodCategory ? `<button type="button" class="text-button" data-action="clear-food">${escapeHtml(t('Clear optional selection'))}</button>` : ''}${duplicateNotice()}${stepNav({ step: 1, back: backTarget(1) })}</section>`
+  const chosen = state.foodCategories.length + (state.foodUnspecified ? 1 : 0)
+  // **Per box, and about the tick rather than about the count.** A box is disabled when
+  // ticking *it* would take the submission past the ceiling - which is not the same
+  // question as "is the submission at the ceiling now": ticking the first category on an
+  // empty draft replaces that draft's category-less leaf with a named one and adds
+  // nothing, so refusing it at exactly twenty refused a move the API would have taken.
+  const isTicked = code => (code === UNSPECIFIED_CHOICE ? Boolean(state.foodUnspecified) : state.foodCategories.includes(code))
+  const refused = code => !isTicked(code) && tickRefused(code, code === UNSPECIFIED_CHOICE)
+  const atCeiling = [...categories.map(category => category.code), UNSPECIFIED_CHOICE].some(refused)
+  const choice = (code, label, isSelected, sub, extra = '') =>
+    `<label class="simple-choice ${isSelected ? 'selected' : ''} ${extra}"><input id="food-category-${slug(code)}" type="checkbox" name="food-category" value="${escapeHtml(code)}" ${isSelected ? 'checked' : ''} ${!isSelected && refused(code) ? 'disabled' : ''}><span><strong>${escapeHtml(label)}</strong>${sub ? `<small>${escapeHtml(sub)}</small>` : ''}</span>${isSelected ? `<span class="selected-label" aria-hidden="true">&#10003; ${escapeHtml(t('Selected'))}</span>` : ''}</label>`
+  return `<section class="content-section" aria-labelledby="food-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 2 }))} &middot; ${escapeHtml(t('Optional'))}</p><h1 id="food-title">${escapeHtml(t('What types of food waste are you measuring?'))}</h1><p class="section-intro">${escapeHtml(t('Choose every category that applies, or continue without choosing one.'))}</p><fieldset class="choice-fieldset"><legend class="sr-only">${escapeHtml(t('Food type'))}</legend><p class="choice-count" aria-live="polite">${escapeHtml(t('%(count)s selected', { count: chosen }))}</p><div class="simple-choice-list">${categories.map(category => choice(category.code, category.name, state.foodCategories.includes(category.code), category.is_standard_mix ? t('Recommended if you do not separate food waste by category') : '')).join('')}${choice(UNSPECIFIED_CHOICE, t('I do not know, or my waste is not broken down by type'), state.foodUnspecified, t('Counted as its own answer. If your waste really is a mixture, choose the mixed category above instead.'), 'simple-choice--unspecified')}</div>${atCeiling ? `<p class="field-hint choice-ceiling" role="status">${escapeHtml(t('You can enter at most %(limit)s food types in one calculation. Untick one, or calculate what you have.', { limit: MAX_LEAVES }))}</p>` : ''}</fieldset>${chosen ? `<button type="button" class="text-button" data-action="clear-food">${escapeHtml(t('Clear all selections'))}</button>` : ''}${duplicateNotice()}${stepNav({ step: 1, back: backTarget(1) })}</section>`
 }
 
 /**
@@ -387,8 +727,8 @@ function foodStep() {
  * the tonnes option and convert nothing.
  */
 const PRESET_OPTION = PRESET_UNIT
-const unitSelectValue = () =>
-  (state.measureMode === 'container' ? PRESET_OPTION + (state.unitPreset || '') : state.totalUnit)
+const unitSelectValue = figures =>
+  (figures.measureMode === 'container' ? PRESET_OPTION + (figures.unitPreset || '') : figures.totalUnit)
 
 /**
  * The options `#total-unit` offers, as markup — weights first, then this entry's
@@ -403,8 +743,7 @@ const unitSelectValue = () =>
  * reads a Thai form still listing English container names — the stated and accepted
  * consequence of that rule.
  */
-function unitOptionsHtml(selectedValue) {
-  const presets = containerPresets()
+function unitOptionsHtml(selectedValue, presets = containerPresets()) {
   return `<optgroup label="${escapeHtml(t('Weight'))}"><option value="kilograms" ${selectedValue === 'kilograms' ? 'selected' : ''}>${escapeHtml(t('kilograms'))}</option><option value="tonnes" ${selectedValue === 'tonnes' ? 'selected' : ''}>${escapeHtml(t('tonnes'))}</option></optgroup>${presets.length ? `<optgroup label="${escapeHtml(t('Containers'))}">${presets.map(preset => {
     const value = PRESET_OPTION + preset.code
     return `<option value="${escapeHtml(value)}" ${selectedValue === value ? 'selected' : ''}>${escapeHtml(preset.label)}</option>`
@@ -433,9 +772,9 @@ const rowUnitLabel = unit => (lineUnitIsPreset(unit) ? (selected(presetList(), l
  * `kg` is outside `t()`. §7.7.7: metric units are international notation and are never
  * translated, and `reviewLines` already writes it as a literal for the same reason.
  */
-function containerTotalText() {
-  if (!decimalPattern.test(state.unitCount || '')) return ''
-  const kilograms = containerTotal(state)
+function containerTotalText(figures) {
+  if (!decimalPattern.test(figures.unitCount || '')) return ''
+  const kilograms = containerTotal(figures)
   if (kilograms === '') return ''
   return t('That is about %(mass)s in total.', { mass: `${formatNumber(kilograms, 3)} kg` })
 }
@@ -491,155 +830,388 @@ function containerTotalText() {
  * so the select's `title` carries the option currently selected in full, for
  * hover and assistive technology.
  */
-function amountStep() {
-  const container = state.measureMode === 'container'
-  const amountId = container ? 'unit-count' : 'total-waste'
-  const amountLabel = container ? t('How many containers?') : t('Waste amount')
+function leafPanel(leaf, leaves, index) {
+  const figures = draftLeafFigures(leaf)
+  const key = leafKey(leaf)
+  const single = leaves.length === 1
+  const container = figures.measureMode === 'container'
+  const amountId = fieldId(container ? 'unit-count' : 'total-waste', leaf, leaves)
+  const amountLabel = container
+    ? t('How many containers?')
+    : single ? t('Waste amount') : t('Waste amount for %(food)s', { food: leafName(leaf) })
   const amountHint = container
     ? t('Use up to two decimal places — enter 0.5 for a half-full container.')
     : t('Use up to two decimal places.')
-  const amountValue = container ? state.unitCount : state.totalAmount
-  // `state.error` is reused for three different things on this step now, and each
-  // belongs beside a different field. `amountOnlyValidation` and
-  // `massContradictionValidation`'s messages are both about `amountId` (the waste
-  // amount is the mass contradiction's own subject); `moneyContradictionValidation`'s
-  // is about `#wasted-value` instead, never `amountId`; a server `VALIDATION_ERROR`
-  // naming `total_input_kg`/`total_value_nzd`/`wasted_value_nzd` (see `detailStep`
-  // below) is neither, and carries `errorCode`, which none of the three client
-  // checks ever set. Recomputing all three client checks fresh, rather than
-  // trusting `state.error`'s own history, is what lets this tell them apart: none
-  // of `amountOnlyValidation`/`moneyContradictionValidation`/`massContradictionValidation`
-  // reads `state.error` itself, so whichever one currently agrees with it is the one
-  // that produced it - stale text from an already-fixed field naturally attributes
-  // to none of them instead of mislabelling whatever else is on screen.
+  const amountValue = container ? figures.unitCount : figures.totalAmount
+  // **The place, not the prose.** This used to compare `state.error` against the string
+  // each validator returns; two leaves produce the byte-identical sentence, so the
+  // highlight landed on whichever card was asked first. `state.errorAt` records which
+  // leaf and which field the message belongs to, set by `stepProblem` at the moment the
+  // message was produced.
   const isApiError = state.errorCode === 'VALIDATION_ERROR'
   const isClientError = !isApiError && Boolean(state.error)
-  const amountFieldError = isClientError && (state.error === amountOnlyValidation() || state.error === massContradictionValidation())
-    ? state.error
-    : null
-  const moneyContradictionError = isClientError && state.error === moneyContradictionValidation() ? state.error : null
-  // **The classification's own `else`.** The three checks above are recomputed fresh
-  // from what is currently typed, so a `state.error` left over from something none of
-  // them asks about — the concrete case is `BLOCKED` (§9.2): `clearedError` deliberately
-  // keeps it and its `errorCode` across a step change, so a visitor refused at Calculate
-  // and then returning to this step carries an error that is not a VALIDATION_ERROR and
-  // matches none of the three client checks either. Before this line such an error
-  // matched nothing and rendered nothing — a refused visitor saw no message at all. It
-  // is not a fault in any field on this screen, so — like a VALIDATION_ERROR — it goes
-  // in the banner, not beside a field it was never about.
-  const unmatchedClientError = isClientError && !amountFieldError && !moneyContradictionError ? state.error : null
-  const bannerError = isApiError ? state.error : unmatchedClientError
-  // The three round-two scalar fields' own per-field errors, keyed the same way
-  // `destinationRows` keys a line's — `state.fieldErrors`, by the exact path the server
-  // named (`entries[N].<key>`, always the draft entry's: see `ENTRY_SCALAR_FIELD_STEP`).
-  //
-  // **`wastedValueError` also carries the client-side money contradiction**, the one
-  // check on this step that is not about `amountId` and has nowhere else on screen to
-  // attach to but the figure it actually names.
-  const scalarError = key => state.fieldErrors[`entries[${state.entries.length}].${key}`]
+  const at = state.errorAt
+  const mine = field => (isClientError && at && at.leaf === key && at.field === field ? state.error : null)
+  const amountFieldError = mine('amount')
+  const moneyContradictionError = mine('wastedValue')
+  // The three round-two scalar fields' own per-field errors, keyed by the exact path the
+  // server named. **The draft now occupies a RANGE of request indices** - one per leaf -
+  // so the path is this leaf's own position in the submission, never
+  // `entries[state.entries.length]`.
+  const requestIndex = savedLeafCount() + index
+  const scalarError = field => state.fieldErrors[`entries[${requestIndex}].${field}`]
   const totalInputError = scalarError('total_input_kg')
   const totalValueError = scalarError('total_value_nzd')
   const wastedValueError = scalarError('wasted_value_nzd') || moneyContradictionError
-  return `<section class="content-section" aria-labelledby="amount-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 3 }))}</p><h1 id="amount-title">${escapeHtml(t('How much food waste are you measuring?'))}</h1><p class="section-intro">${escapeHtml(t('Enter the total amount. You will allocate this total across destinations in the next step.'))}</p>${bannerError ? `<p class="field-error api-error ${state.errorCode ? `error-${slug(state.errorCode)}` : ''}" role="alert">${escapeHtml(bannerError)}</p>` : ''}<div class="form-panel amount-grid"><div class="mass-fields"><div class="form-field ${amountFieldError ? 'has-error' : ''}"><label for="${amountId}">${escapeHtml(amountLabel)} <span class="required">${escapeHtml(t('(required)'))}</span></label><p class="field-hint">${escapeHtml(amountHint)}</p><input id="${amountId}" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(amountValue)}" ${amountFieldError ? 'aria-invalid="true" aria-describedby="amount-error"' : ''}>${amountFieldError ? `<p class="field-error" id="amount-error" role="alert">${escapeHtml(amountFieldError)}</p>` : ''}${container ? `<p class="container-total" id="container-total" aria-live="polite">${escapeHtml(containerTotalText())}</p>` : ''}</div><div class="form-field unit-field"><label for="total-unit">${escapeHtml(t('Unit'))} <span class="required">${escapeHtml(t('(required)'))}</span></label><p class="field-hint">${escapeHtml(t('Choose a weight, or the container you fill.'))}</p><select id="total-unit" title="${escapeHtml(rowUnitLabel(unitSelectValue()))}">${unitOptionsHtml(unitSelectValue())}</select></div><div class="form-field ${totalInputError ? 'has-error' : ''}"><label for="total-input">${escapeHtml(t('Total amount produced (%(unit)s)', { unit: unitLabel(state.totalUnit) }))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('So results can show waste as a share of production.'))}</p><input id="total-input" type="number" inputmode="decimal" min="0" step="0.001" value="${escapeHtml(state.totalInputKg)}" ${totalInputError ? 'aria-invalid="true" aria-describedby="total-input-error"' : ''}>${totalInputError ? `<p class="field-error" id="total-input-error" role="alert">${escapeHtml(totalInputError)}</p>` : ''}</div></div><div class="money-fields"><div class="form-field ${totalValueError ? 'has-error' : ''}"><label for="total-value">${escapeHtml(t('Value of production (NZ$)'))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('For statistics only — it never enters the emissions calculation.'))}</p><input id="total-value" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(state.totalValueNzd)}" ${totalValueError ? 'aria-invalid="true" aria-describedby="total-value-error"' : ''}>${totalValueError ? `<p class="field-error" id="total-value-error" role="alert">${escapeHtml(totalValueError)}</p>` : ''}</div><div class="form-field ${wastedValueError ? 'has-error' : ''}"><label for="wasted-value">${escapeHtml(t('Value of the waste (NZ$)'))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('For statistics only — it never enters the emissions calculation.'))}</p><input id="wasted-value" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(state.wastedValueNzd)}" ${wastedValueError ? 'aria-invalid="true" aria-describedby="wasted-value-error"' : ''}>${wastedValueError ? `<p class="field-error" id="wasted-value-error" role="alert">${escapeHtml(wastedValueError)}</p>` : ''}</div></div></div>${stepNav({ step: 2, back: backTarget(2) })}</section>`
+  const unitId = fieldId('total-unit', leaf, leaves)
+  const inputId = fieldId('total-input', leaf, leaves)
+  const valueId = fieldId('total-value', leaf, leaves)
+  const wastedId = fieldId('wasted-value', leaf, leaves)
+  const totalId = fieldId('container-total', leaf, leaves)
+  // The error paragraph is addressed by `aria-describedby` and by three browser tests;
+  // it keeps the singleton spelling for a singleton leaf, exactly as the boxes do.
+  const errorId = fieldId('amount-error', leaf, leaves)
+  const presets = containerPresets(leaf.foodCategory)
+  const data = field => `data-leaf-field="${field}" data-leaf="${keyAttr(key)}"`
+  const mass = `<div class="mass-fields"><div class="form-field ${amountFieldError ? 'has-error' : ''}"><label for="${amountId}">${escapeHtml(amountLabel)} <span class="required">${escapeHtml(t('(required)'))}</span></label><p class="field-hint">${escapeHtml(amountHint)}</p><input id="${amountId}" ${data(container ? 'count' : 'amount')} type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(amountValue)}" ${amountFieldError ? `aria-invalid="true" aria-describedby="${errorId}"` : ''}>${amountFieldError ? `<p class="field-error" id="${errorId}" role="alert">${escapeHtml(amountFieldError)}</p>` : ''}${container ? `<p class="container-total" id="${totalId}" aria-live="polite">${escapeHtml(containerTotalText(figures))}</p>` : ''}</div><div class="form-field unit-field"><label for="${unitId}">${escapeHtml(t('Unit'))} <span class="required">${escapeHtml(t('(required)'))}</span></label><p class="field-hint">${escapeHtml(t('Choose a weight, or the container you fill.'))}</p><select id="${unitId}" ${data('unit')} title="${escapeHtml(rowUnitLabel(unitSelectValue(figures)))}">${unitOptionsHtml(unitSelectValue(figures), presets)}</select></div><div class="form-field ${totalInputError ? 'has-error' : ''}"><label for="${inputId}">${escapeHtml(t('Total amount produced (%(unit)s)', { unit: unitLabel(figures.totalUnit) }))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('So results can show waste as a share of production.'))}</p><input id="${inputId}" ${data('totalInput')} type="number" inputmode="decimal" min="0" step="0.001" value="${escapeHtml(figures.totalInputKg)}" ${totalInputError ? `aria-invalid="true" aria-describedby="${inputId}-error"` : ''}>${totalInputError ? `<p class="field-error" id="${inputId}-error" role="alert">${escapeHtml(totalInputError)}</p>` : ''}</div></div>`
+  const money = `<div class="money-fields"><div class="form-field ${totalValueError ? 'has-error' : ''}"><label for="${valueId}">${escapeHtml(t('Value of production (NZ$)'))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('For statistics only — it never enters the emissions calculation.'))}</p><input id="${valueId}" ${data('totalValue')} type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(figures.totalValueNzd)}" ${totalValueError ? `aria-invalid="true" aria-describedby="${valueId}-error"` : ''}>${totalValueError ? `<p class="field-error" id="${valueId}-error" role="alert">${escapeHtml(totalValueError)}</p>` : ''}</div><div class="form-field ${wastedValueError ? 'has-error' : ''}"><label for="${wastedId}">${escapeHtml(t('Value of the waste (NZ$)'))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('For statistics only — it never enters the emissions calculation.'))}</p><input id="${wastedId}" ${data('wastedValue')} type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(figures.wastedValueNzd)}" ${wastedValueError ? `aria-invalid="true" aria-describedby="${wastedId}-error"` : ''}>${wastedValueError ? `<p class="field-error" id="${wastedId}-error" role="alert">${escapeHtml(wastedValueError)}</p>` : ''}</div></div>`
+  // **One leaf is today's screen, byte for byte.** No card, no legend, no disclosure -
+  // the fork costs the commonest journey nothing, and every measurement
+  // `tests/web/test_step_navigation.py` takes of this step still measures the same thing.
+  if (single) return `<div class="form-panel amount-grid">${mass}${money}</div>`
+  // **The three optional scalars go behind a per-leaf disclosure**, because §7.6.3's rule
+  // is that advancing must never require scrolling and three full panels cannot hold it.
+  // Open when this leaf already carries any of the three, so an entry re-opened by
+  // `edit-entry` never hides a figure the visitor typed.
+  const open = figures.totalInputKg || figures.totalValueNzd || figures.wastedValueNzd
+  return `<fieldset class="form-panel leaf-panel" data-leaf-panel="${keyAttr(key)}"><legend>${escapeHtml(leafName(leaf))}</legend><div class="amount-grid amount-grid--leaf">${mass}</div><details class="leaf-extras" ${open ? 'open' : ''}><summary>${escapeHtml(t('Add production and value figures'))}</summary><p class="field-hint">${escapeHtml(t('Optional — they never enter the emissions calculation.'))}</p>${money}</details></fieldset>`
 }
 
 /**
- * The `entries[N].current[M].qty_kg` path §9 will use to name each row of the draft entry,
- * aligned with `state.current` so the render loop can look up its own row, and `null` for
- * a row the request never carried.
+ * Step 3, one panel per leaf.
  *
- * Two things have to agree with what `submitCalculation` actually posted, and neither
- * follows from the render loop:
+ * **The containers are options on the unit `<select>`, not a second mode with its own
+ * fieldset, and the reason is measured.** The first build of this input put a "By weight /
+ * By container" radio pair above the form: two `.simple-choice` cards and a legend, 169px
+ * at 1278x983 on a step that had 50px of headroom. It pushed the document to 1102px in a
+ * 983px viewport and broke three of `tests/web/test_step_navigation.py`'s assertions at
+ * once - §7.6.3's rule that advancing must never require scrolling, which this project
+ * measures rather than assumes.
  *
- *   * **`buildLines` drops every blank row before sending**, so a row's request index is
- *     its position among the *submitted* lines. That is not its position in
- *     `state.current` as soon as one destination is left empty — which is the normal
- *     case, and a mismatch that predates the contract fork.
- *   * **the draft entry travels last**, at `entries[state.entries.length]`. §9's paths are
- *     rooted at the request body, so a bare `current[i].qty_kg` key can never match one.
+ * **Not a `<table>`, and that is arithmetic rather than preference.** Five inputs across N
+ * rows cannot be a table at 320px: `body { min-width: 320px }` and
+ * `tests/web/test_horizontal_overflow.py` measures `scrollWidth` against `clientWidth` at
+ * 320 and 390 in a real browser with the scrollbar drawn. So the "table" is a stack of
+ * per-leaf cards and each card is exactly today's panel - every existing rule, the 650px
+ * two-column split and the block-flow stacking below it all apply unchanged, per card.
  *
- * Both failures are silent: no error, no console warning, just the generic banner.
+ * **Two vertical groups at `min-width: 650px`, not a grid of five equal cells.**
+ * `.mass-fields` wraps the waste amount, the unit, and the production total - the three
+ * quantities the unit itself governs, in the order a visitor answers them - and
+ * `.money-fields` wraps the two optional NZ$ figures, which may be left entirely empty.
+ *
+ * **The combined total is under the stack, and it is browser-only arithmetic.** Step 4
+ * allocates against each leaf's own amount, but the visitor is about to be shown a matrix
+ * of N columns and the chain's own total is what tells them the fork adds up. It is a sum
+ * of figures already on screen and it never reaches the wire - the same category of
+ * arithmetic `allocatedAmount` already performs.
  */
-function draftFieldPaths() {
-  const entryIndex = state.entries.length
-  let sent = 0
-  return normaliseLines(state.current).map(line => (Number(line.qtyKg) > 0 ? `entries[${entryIndex}].current[${sent++}].qty_kg` : null))
+/**
+ * **Step 2.5, and it is the second panel of step 2 rather than a seventh step.**
+ *
+ * `spec.md` §3.3: *step 2.5 refines step 2; it does not replace it.* One screen, one
+ * group per chosen category, in the order they were ticked -- no nested wizard and no
+ * repeat-per-category pass. A category with **no food ticked stays a category-level
+ * leaf**, which is the natural "I know it was fruit, but not which fruit" answer and
+ * is what `entryLeaves` already does with an empty list.
+ *
+ * **The step number does not advance.** It is the same question asked one level finer,
+ * so the eyebrow still says step 2 and the progress bar does not move; what changes is
+ * the panel. Making it a seventh step would have meant renumbering twenty hard-coded
+ * step references for a panel that is absent from most deployments, and would have made
+ * "step 3 of 7" a lie whenever the flag is off.
+ *
+ * **The ceiling is the same twenty leaves**, asked per box through `entryLeaves` --
+ * see `draftTickingItem` for why ticking a food is not always one more leaf.
+ */
+/**
+ * Step 2.5's tick.
+ *
+ * **Order within a category is ticking order**, for the reason `foodCategories` is:
+ * steps 3 and 4 iterate the leaves, and a list that reshuffled when a box was ticked
+ * would move a visitor's half-filled panel out from under them.
+ *
+ * **An untick drops the food and nothing else.** The category it sat under stays
+ * ticked -- that is step 2's answer -- and unticking the last food under a category
+ * returns it to a category-level leaf, which `entryLeaves` does on its own. The
+ * figures typed against the leaf are kept, exactly as `toggleFoodChoice` keeps them
+ * for a category: re-ticking restores what was typed, and `draftEntry()` prunes at
+ * the boundary so nothing dead is ever sent.
+ */
+function toggleFoodItem(target) {
+  const category = target.dataset.category
+  if (!category) return
+  // Re-checked rather than trusted, for the reason step 2's tick re-checks: a
+  // `disabled` attribute is a rendering, and this is the rule.
+  if (target.checked && itemTickRefused(category, target.value)) {
+    target.checked = false
+    return
+  }
+  const current = (state.foodItems || {})[category] || []
+  const next = target.checked
+    ? [...current.filter(code => code !== target.value), target.value]
+    : current.filter(code => code !== target.value)
+  setState({
+    foodItems: { ...(state.foodItems || {}), [category]: next },
+    error: null,
+    errorAt: null,
+  })
 }
 
-function destinationRows() {
-  const allocationExcess = exceedsTotal(allocatedAmount(state.current), totalNumber(state))
-  const paths = draftFieldPaths()
-  return state.current.map((line, index) => {
-    const destination = selected(state.taxonomy.destinations, line.destination)
-    const serverError = paths[index] ? state.fieldErrors[paths[index]] : null
-    const invalid = Boolean(serverError) || (line.qtyInput !== '' && Number(line.qtyInput) < 0) || (allocationExcess && state.lastChangedDestination === line.destination)
-    // Item ⑥: this row's own unit, defaulting to the entry's — a line saved before this
-    // field existed carries none and is never reinterpreted into a different unit.
-    const rowUnit = line.unit || state.totalUnit
-    return `<div class="destination-row ${invalid ? 'invalid' : ''}"><label for="destination-${line.id}">${escapeHtml(destination?.name || line.destination)}${destination?.description ? `<small>${escapeHtml(destination.description)}</small>` : ''}</label><div class="amount-with-unit"><input id="destination-${line.id}" data-line-field="amount" data-line-id="${line.id}" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(line.qtyInput)}" ${invalid ? 'aria-invalid="true"' : ''} aria-label="${escapeHtml(t('%(destination)s amount in %(unit)s', { destination: destination?.name || line.destination, unit: rowUnitLabel(rowUnit) }))}"><select data-line-field="unit" data-line-id="${line.id}" aria-label="${escapeHtml(t('Unit'))}">${unitOptionsHtml(rowUnit)}</select></div>${serverError ? `<p class="field-error" role="alert">${escapeHtml(serverError)}</p>` : ''}</div>`
-  }).join('')
+function itemStep() {
+  const chosen = Object.values(state.foodItems || {}).reduce((total, items) => total + items.length, 0)
+  const ticked = (category, item) => ((state.foodItems || {})[category] || []).includes(item)
+  const refused = (category, item) => !ticked(category, item) && itemTickRefused(category, item)
+  const atCeiling = state.foodCategories.some(
+    category => itemsUnder(category).some(item => refused(category, item.code)))
+  const group = category => {
+    const definition = selected(state.taxonomy.food_categories, category)
+    const items = itemsUnder(category)
+    const heading = definition?.name || category
+    //: A chosen category the vocabulary has no food for is shown saying so, not
+    //: hidden. Hiding it would make the group list disagree with step 2's ticks,
+    //: and a visitor who ticked five categories and sees four groups has to work
+    //: out which one went missing and why.
+    const body = items.length
+      ? `<div class="simple-choice-list">${items.map(item =>
+          `<label class="simple-choice ${ticked(category, item.code) ? 'selected' : ''}"><input id="food-item-${slug(category)}-${slug(item.code)}" type="checkbox" name="food-item" value="${escapeHtml(item.code)}" data-category="${escapeHtml(category)}" ${ticked(category, item.code) ? 'checked' : ''} ${refused(category, item.code) ? 'disabled' : ''}><span><strong>${escapeHtml(item.name)}</strong></span>${ticked(category, item.code) ? `<span class="selected-label" aria-hidden="true">&#10003; ${escapeHtml(t('Selected'))}</span>` : ''}</label>`).join('')}</div>`
+      : `<p class="field-hint">${escapeHtml(t('No specific foods are listed for this category. It is counted as %(category)s.', { category: heading }))}</p>`
+    return `<fieldset class="choice-fieldset item-group"><legend>${escapeHtml(heading)}</legend>${body}</fieldset>`
+  }
+  return `<section class="content-section" aria-labelledby="item-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 2 }))} &middot; ${escapeHtml(t('Optional'))}</p><h1 id="item-title">${escapeHtml(t('Do you know which foods these were?'))}</h1><p class="section-intro">${escapeHtml(t('Choose the specific foods you measured, or continue without choosing any. A category with no food chosen is counted as that category.'))}</p><p class="choice-count" aria-live="polite">${escapeHtml(t('%(count)s selected', { count: chosen }))}</p>${state.foodCategories.map(group).join('')}${atCeiling ? `<p class="field-hint choice-ceiling" role="status">${escapeHtml(t('You can enter at most %(limit)s food types in one calculation. Untick one, or calculate what you have.', { limit: MAX_LEAVES }))}</p>` : ''}${chosen ? `<button type="button" class="text-button" data-action="clear-items">${escapeHtml(t('Clear all selections'))}</button>` : ''}${stepNav({ step: 1, back: 1, backAction: 'back-to-categories' })}</section>`
 }
 
+function amountStep() {
+  const leaves = draftLeaves()
+  const single = leaves.length === 1
+  const isApiError = state.errorCode === 'VALIDATION_ERROR'
+  const isClientError = !isApiError && Boolean(state.error)
+  // **The classification's own `else`.** A `state.error` that belongs to no leaf field on
+  // this screen - `BLOCKED` (§9.2), which `clearedError` deliberately keeps across a step
+  // change - matched nothing before this line and rendered nothing at all.
+  const bannerError = isApiError ? state.error : (isClientError && !state.errorAt ? state.error : null)
+  const combined = leaves.reduce((sum, leaf) => sum + (totalKilograms(draftLeafFigures(leaf)) || 0), 0)
+  const combinedText = state.totalUnit === 'tonnes' ? kgToTonnes(combined) : combined
+  const heading = single ? t('How much food waste are you measuring?') : t('How much of each did you waste?')
+  const intro = single
+    ? t('Enter the total amount. You will allocate this total across destinations in the next step.')
+    : t('Enter an amount for every food type you chose. You will allocate the combined total across destinations in the next step.')
+  return `<section class="content-section ${single ? '' : 'wide'}" aria-labelledby="amount-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 3 }))}</p><h1 id="amount-title">${escapeHtml(heading)}</h1><p class="section-intro">${escapeHtml(intro)}</p>${bannerError ? `<p class="field-error api-error ${state.errorCode ? `error-${slug(state.errorCode)}` : ''}" role="alert">${escapeHtml(bannerError)}</p>` : ''}<div class="leaf-panel-list">${leaves.map((leaf, index) => leafPanel(leaf, leaves, index)).join('')}</div>${single ? '' : `<p class="combined-total" aria-live="polite"><span>${escapeHtml(t('Combined waste amount'))}</span> <strong data-combined-total>${formatNumber(combinedText, 2)} ${escapeHtml(unitLabel(state.totalUnit))}</strong></p>`}${stepNav({ step: 2, back: backTarget(2) })}</section>`
+}
+
+/**
+ * Every draft line's `entries[N].current[M].qty_kg` path, keyed by the line's own id.
+ *
+ * Three things have to agree with what `submitCalculation` actually posted, and none of
+ * them follows from the render loop:
+ *
+ *   * **`requestLines` drops every blank row before sending**, so a row's request index
+ *     is its position among the *submitted* lines of its own leaf. That is not its
+ *     position in the leaf's `current` as soon as one destination is left empty - which
+ *     is the normal case.
+ *   * **the draft occupies a RANGE of entry indices**, one per leaf, starting after
+ *     every saved chain's leaves. A path rooted at `entries[state.entries.length]` named
+ *     a chain and now names whichever leaf happens to sit there.
+ *   * §9's paths are rooted at the request body, so a bare `current[i].qty_kg` key can
+ *     never match one.
+ *
+ * Keyed by line id rather than returned as a parallel array because the cells are now
+ * rendered leaf by leaf and a flat index across the matrix would have to be re-derived
+ * at every call site.
+ */
+function draftLinePaths() {
+  const paths = new Map()
+  const base = savedLeafCount()
+  draftLeaves().forEach((leaf, leafIndex) => {
+    const figures = draftLeafFigures(leaf)
+    let sent = 0
+    for (const line of normaliseLines(figures.current, figures.totalUnit)) {
+      if (Number(line.qtyKg) > 0) paths.set(line.id, `entries[${base + leafIndex}].current[${sent++}].qty_kg`)
+    }
+  })
+  return paths
+}
+
+/** Every path the draft's own boxes can carry a server message at. */
+const draftFieldPaths = () => [...draftLinePaths().values()]
+
+/**
+ * One cell of the allocation: a destination, for one leaf.
+ *
+ * **The same `.destination-row` element it has always been**, with `data-leaf` added so
+ * the handlers know which leaf's lines they are editing. Above the breakpoint the cells
+ * are placed into the matrix by `--row` / `--col` custom properties and the per-cell
+ * label is hidden in favour of the shared row label down the side; below it, the cells
+ * are ordinary block flow inside their leaf's own group and the label comes back. One
+ * DOM, one media query, two layouts - a second copy of the inputs would mean two
+ * elements holding one figure.
+ */
+function destinationCell(leaf, line, row, column, paths, allocationExcess) {
+  const figures = draftLeafFigures(leaf)
+  const destination = selected(state.taxonomy.destinations, line.destination)
+  const serverError = state.fieldErrors[paths.get(line.id)]
+  const invalid = Boolean(serverError) || (line.qtyInput !== '' && Number(line.qtyInput) < 0) || (allocationExcess && state.lastChangedDestination === line.destination)
+  const rowUnit = line.unit || figures.totalUnit
+  const name = destination?.name || line.destination
+  return `<div class="destination-row ${invalid ? 'invalid' : ''}" style="--row:${row};--col:${column}"><label for="destination-${line.id}">${escapeHtml(name)}${destination?.description ? `<small>${escapeHtml(destination.description)}</small>` : ''}</label><div class="amount-with-unit"><input id="destination-${line.id}" data-line-field="amount" data-line-id="${line.id}" data-leaf="${leafAttr(leaf)}" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(line.qtyInput)}" ${invalid ? 'aria-invalid="true"' : ''} aria-label="${escapeHtml(t('%(destination)s amount in %(unit)s', { destination: name, unit: rowUnitLabel(rowUnit) }))}"><select data-line-field="unit" data-line-id="${line.id}" data-leaf="${leafAttr(leaf)}" aria-label="${escapeHtml(t('Unit'))}">${unitOptionsHtml(rowUnit, containerPresets())}</select></div>${serverError ? `<p class="field-error" role="alert">${escapeHtml(serverError)}</p>` : ''}</div>`
+}
+
+/** One leaf's Total / Allocated / Remaining, in that leaf's own unit. */
+function leafSummary(leaf, row, column, first) {
+  const figures = draftLeafFigures(leaf)
+  const total = totalNumber(figures)
+  const allocated = allocatedAmount(figures.current, figures.totalUnit)
+  const invalid = exceedsTotal(allocated, total) || (figures.current || []).some(line => line.qtyInput !== '' && Number(line.qtyInput) < 0)
+  const unit = unitLabel(figures.totalUnit)
+  return `<div class="allocation-summary ${invalid ? 'invalid' : ''}" ${first ? 'id="current-summary"' : ''} data-summary-leaf="${leafAttr(leaf)}" style="--row:${row};--col:${column}" aria-live="polite"><div><span>${escapeHtml(t('Total waste'))}</span><strong>${formatNumber(total, 2)} ${escapeHtml(unit)}</strong></div><div><span>${escapeHtml(t('Allocated'))}</span><strong data-summary="allocated">${formatNumber(allocated, 2)} ${escapeHtml(unit)}</strong></div><div><span>${escapeHtml(t('Remaining'))}</span><strong data-summary="remaining">${formatNumber(remainingAmount(total, allocated), 2)} ${escapeHtml(unit)}</strong></div></div>`
+}
+
+/**
+ * Step 4, which forks too (`design.md` §10).
+ *
+ * **Every leaf gets its own allocation, not one split divided pro-rata.** The request
+ * body already carries one `current[]` per entry, so this is the shape the contract
+ * expects; a shared split would have to be derived into each entry as
+ * `row_kg x leaf_kg / chain_kg`, and three-decimal `qty_kg` rounding can then leave the
+ * leaves' lines not summing to the figure the visitor typed - which
+ * `improvement.js`'s per-entry mass-conservation check compares. It also means a
+ * submission can say "the dairy went to landfill and the bakery went to animal feed",
+ * which a shared split cannot express at all.
+ *
+ * **A matrix above 650px, per-leaf stacked blocks below it, and that is arithmetic
+ * rather than preference.** 320px less the gutters is 288px; a destination label needs
+ * about 90px, leaving ~198px shared between the leaf columns - 66px each at three leaves
+ * and 40px at five. `tests/web/test_horizontal_overflow.py` measures document
+ * `scrollWidth` against `clientWidth` at 320 and 390 in a real browser and is a hard
+ * gate, so the matrix is scoped to the same `min-width: 650px` the amount step already
+ * splits at.
+ *
+ * **A chain with one leaf is not a matrix at any width.** A matrix of one column is a
+ * list, and this is the commonest journey; it renders exactly the markup it did before
+ * the fork.
+ *
+ * **All thirteen destination rows stay**, matching what this step did before: it lists
+ * every applicable destination and the visitor fills the ones that apply. A "choose
+ * which destinations this chain used" pre-step would shorten the grid a lot and can be
+ * added later if the full one proves too heavy.
+ */
 function destinationStep() {
-  const total = totalNumber(state)
-  const allocated = allocatedAmount(state.current)
-  const summaryInvalid = exceedsTotal(allocated, total) || state.current.some(line => line.qtyInput !== '' && Number(line.qtyInput) < 0)
-  // **The same question `updateLine` asks, asked the same way.** This used to restate
-  // three of `validateCurrentStep`'s rules inline and so knew nothing about the rest: it
-  // is the render path, reached by returning to step 4 from step 5, while `updateLine`'s
-  // `continueButton.disabled = Boolean(error)` is the keystroke path — two lists of rules
-  // for one button, and any rule added to one of them left the other enabling Continue on
-  // a state the other had just refused. There is one list now, and it is the one whose
-  // message the visitor is shown when they press it anyway.
+  const leaves = draftLeaves()
+  const single = leaves.length === 1
+  const paths = draftLinePaths()
+  // **The same question `updateLine` asks, asked the same way.** One list of rules for
+  // one button: any rule added to one of two lists left the other enabling Continue on a
+  // state the other had just refused.
   const canContinue = !validateCurrentStep()
-  return `<section class="content-section wide" aria-labelledby="destination-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 4 }))}</p><h1 id="destination-title">${escapeHtml(t('Where did the food waste go?'))}</h1><p class="section-intro">${escapeHtml(t('Enter an amount for every applicable destination. The combined amount cannot exceed your total waste.'))}</p>
-    <div class="allocation-summary ${summaryInvalid ? 'invalid' : ''}" id="current-summary" aria-live="polite"><div><span>${escapeHtml(t('Total waste'))}</span><strong>${formatNumber(total, 2)} ${escapeHtml(unitLabel(state.totalUnit))}</strong></div><div><span>${escapeHtml(t('Allocated'))}</span><strong data-summary="allocated">${formatNumber(allocated, 2)} ${escapeHtml(unitLabel(state.totalUnit))}</strong></div><div><span>${escapeHtml(t('Remaining'))}</span><strong data-summary="remaining">${formatNumber(remainingAmount(total, allocated), 2)} ${escapeHtml(unitLabel(state.totalUnit))}</strong></div></div>
-    <div class="destination-list">${destinationRows()}</div>
+  const excess = leaf => {
+    const figures = draftLeafFigures(leaf)
+    return exceedsTotal(allocatedAmount(figures.current, figures.totalUnit), totalNumber(figures))
+  }
+  const group = (leaf, column) => {
+    const figures = draftLeafFigures(leaf)
+    const over = excess(leaf)
+    const cells = (figures.current || []).map((line, index) => destinationCell(leaf, line, index + 3, column, paths, over)).join('')
+    return `<div class="leaf-group" data-leaf-group="${leafAttr(leaf)}"><h2 class="leaf-group__heading">${escapeHtml(leafName(leaf))}</h2>${leafSummary(leaf, 2, column, column === 2)}${cells}</div>`
+  }
+  const destinations = (draftLeafFigures(leaves[0]).current || [])
+  const sideLabels = destinations.map((line, index) => {
+    const destination = selected(state.taxonomy.destinations, line.destination)
+    return `<span class="matrix-row-label" style="--row:${index + 3}" aria-hidden="true">${escapeHtml(destination?.name || line.destination)}</span>`
+  }).join('')
+  const columnHeads = leaves.map((leaf, index) => {
+    const figures = draftLeafFigures(leaf)
+    return `<span class="matrix-column-head" style="--col:${index + 2}" aria-hidden="true"><strong>${escapeHtml(leafName(leaf))}</strong><small>${formatNumber(totalNumber(figures), 2)} ${escapeHtml(unitLabel(figures.totalUnit))}</small></span>`
+  }).join('')
+  const body = single
+    ? `<div class="destination-list">${(draftLeafFigures(leaves[0]).current || []).map((line, index) => destinationCell(leaves[0], line, index + 3, 2, paths, excess(leaves[0]))).join('')}</div>`
+    // `data-leaf-count` as well as the custom property: the stylesheet needs the count
+    // in a SELECTOR to decide whether the matrix can fit at all (a media query cannot read
+    // a custom property), and in a VALUE to lay the columns out once it has.
+    : `<div class="allocation-matrix" data-leaf-count="${leaves.length}" style="--leaf-count:${leaves.length}">${sideLabels}${columnHeads}${leaves.map((leaf, index) => group(leaf, index + 2)).join('')}</div>`
+  const intro = single
+    ? t('Enter an amount for every applicable destination. The combined amount cannot exceed your total waste.')
+    : t('Enter an amount for every applicable destination, for each food type. No food type may have more allocated than it has.')
+  return `<section class="content-section wide" aria-labelledby="destination-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 4 }))}</p><h1 id="destination-title">${escapeHtml(t('Where did the food waste go?'))}</h1><p class="section-intro">${escapeHtml(intro)}</p>
+    ${single ? leafSummary(leaves[0], 2, 2, true) : ''}
+    ${body}
     <p class="field-error" id="allocation-error" role="alert">${escapeHtml(state.error || '')}</p>${stepNav({ step: 3, back: backTarget(3), disabled: !canContinue })}</section>`
 }
 
-function reviewLines(entry) {
-  const lines = normaliseEntryLines(entry).filter(line => Number(line.qtyKg) > 0)
+/** One leaf's destination rows, as the visitor typed them and as they reach the wire. */
+function reviewLines(figures) {
+  const lines = normaliseLines(figures.current, figures.totalUnit).filter(line => Number(line.qtyKg) > 0)
+  if (!lines.length) return ''
   return `<dl class="review-destinations">${lines.map(line => {
     const destination = selected(state.taxonomy.destinations, line.destination)
-    // Item ⑥: the unit this row was typed in, not the entry's — the kilograms beside it
+    // Item (6): the unit this row was typed in, not the entry's - the kilograms beside it
     // are what actually reaches the wire, and both are shown so the conversion stays
     // checkable at the one moment a visitor can still compare the two.
-    return `<div><dt>${escapeHtml(destination?.name || line.destination)}</dt><dd>${formatNumber(line.qtyInput, 2)} ${escapeHtml(rowUnitLabel(line.unit || entry.totalUnit))} <small>(${formatNumber(line.qtyKg, 3)} kg)</small></dd></div>`
+    return `<div><dt>${escapeHtml(destination?.name || line.destination)}</dt><dd>${formatNumber(line.qtyInput, 2)} ${escapeHtml(rowUnitLabel(line.unit || figures.totalUnit))} <small>(${formatNumber(line.qtyKg, 3)} kg)</small></dd></div>`
   }).join('')}</dl>`
 }
 
-function normaliseEntryLines(entry) {
-  return entry.current.map(line => ({ ...line, qtyKg: lineKgString(line.qtyInput, line.unit || entry.totalUnit) }))
+/**
+ * Every leaf of one chain, for one of the review step's two blocks.
+ *
+ * **Two blocks, not one, and that is not cosmetic**: each review section carries its own
+ * *Edit* link pointing at the step that answers it (`reviewEdit`), and amounts are
+ * answered on step 3 while allocations are answered on step 4. Folding them together
+ * would leave one of those two steps unreachable from the review screen.
+ */
+function reviewLeafBlocks(chain, kind) {
+  return entryLeaves(chain).map(leaf => {
+    const figures = leafFigures(chain, leaf)
+    const body = kind === 'destinations'
+      ? reviewLines(figures)
+      : `<p><strong>${measuredAs(figures)}</strong> &middot; ${formatNumber(totalKilograms(figures), 3)} kg</p>`
+    return `<div class="review-leaf"><h3>${escapeHtml(leafName(leaf))}</h3>${body}</div>`
+  }).join('')
 }
 
+/** A chain's combined mass, in kilograms - the sum of its leaves. */
+const chainKilograms = chain => entryLeaves(chain).reduce((sum, leaf) => sum + (totalKilograms(leafFigures(chain, leaf)) || 0), 0)
+
 /**
- * What step 3 was told, in the words it was told in — **already escaped**, so no call
+ * What step 3 was told, in the words it was told in - **already escaped**, so no call
  * site may escape it again.
  *
  * A container entry says how many of which container, because "139.200 kg" is not what
  * the visitor entered and is not what they can check. The kilograms are printed beside
  * it, never instead of it. `preset.label` is staff-typed and published as written
  * (§7.7.7), so it is escaped and never translated.
+ *
+ * **It takes a LEAF's figures**, not a chain: `measureMode`, `unitPreset`, `unitCount`,
+ * `totalAmount` and `totalUnit` are all per leaf now.
  */
-function measuredAs(entry) {
-  if (entry.measureMode !== 'container') {
-    return `${formatNumber(entry.totalAmount, 2)} ${escapeHtml(unitLabel(entry.totalUnit))}`
+function measuredAs(figures) {
+  if (figures.measureMode !== 'container') {
+    return `${formatNumber(figures.totalAmount, 2)} ${escapeHtml(unitLabel(figures.totalUnit))}`
   }
-  const preset = selected(presetList(), entry.unitPreset)
-  return `${formatNumber(entry.unitCount, 2)} × ${escapeHtml(preset?.label || entry.unitPreset || '')}`
+  const preset = selected(presetList(), figures.unitPreset)
+  return `${formatNumber(figures.unitCount, 2)} &times; ${escapeHtml(preset?.label || figures.unitPreset || '')}`
 }
 
 /**
- * The message against one whole entry, or `''`.
+ * The message against one whole **chain**, or `''`.
  *
- * Keyed on the bare `entries[N]` path §9 uses for a problem that belongs to no
- * single field. `entryIndexOf` is what decides such a detail lands on this step;
- * this is what puts it against the right entry once it is here, so that a banner
- * naming "entry 2" does not leave the visitor counting cards.
+ * §9's `entries[N]` names a LEAF, and the review step shows chain cards, so the lookup
+ * goes through `submissionLeafMap` rather than indexing `state.entries` directly. A
+ * banner naming "entry 2" must land on the card the visitor counts as entry 2.
  */
-function entryProblem(index) {
-  return (state.fieldErrors || {})[`entries[${index}]`] || ''
+function entryProblem(chainIndex) {
+  const errors = state.fieldErrors || {}
+  const hit = submissionLeafMap().find(item => item.chainIndex === chainIndex && errors[`entries[${item.index}]`])
+  return hit ? errors[`entries[${hit.index}]`] : ''
 }
 
 function entryProblemHtml(index) {
@@ -647,10 +1219,26 @@ function entryProblemHtml(index) {
   return problem ? `<p class="field-error entry-problem" role="alert">${escapeHtml(problem)}</p>` : ''
 }
 
+/**
+ * One saved chain's card.
+ *
+ * **One card per chain, not one per leaf**, and the Edit and Remove buttons decide it:
+ * the visitor built one chain and can only meaningfully edit or remove one chain.
+ * Removing a leaf is unticking a category on step 2, which is what Edit is for. So the
+ * card grows a leaf list instead.
+ */
 function entryCard(entry, index) {
   const sector = selected(state.taxonomy.sectors, entry.sector)
-  const food = selected(state.taxonomy.food_categories, entry.foodCategory)
-  return `<article class="saved-entry-card ${entryProblem(index) ? 'has-error' : ''}"><div><span class="eyebrow">${escapeHtml(t('Entry %(number)s', { number: index + 1 }))}</span><h3>${escapeHtml(sector?.name || entry.sector)}</h3><p>${measuredAs(entry)} · ${escapeHtml(food?.name || t('Food type not provided'))}</p>${entryProblemHtml(index)}</div><div class="card-actions"><button class="text-button" type="button" data-action="edit-entry" data-index="${index}">${escapeHtml(t('Edit'))}<span class="sr-only"> ${escapeHtml(t('entry %(number)s', { number: index + 1 }))}</span></button><button class="text-button danger" type="button" data-action="remove-entry" data-index="${index}">${escapeHtml(t('Remove'))}<span class="sr-only"> ${escapeHtml(t('entry %(number)s', { number: index + 1 }))}</span></button></div></article>`
+  const leaves = entryLeaves(entry)
+  const single = leaves.length === 1
+  const label = leaf => {
+    const figures = leafFigures(entry, leaf)
+    return `<li><span>${escapeHtml(leafName(leaf))}</span><span>${measuredAs(figures)}</span></li>`
+  }
+  const summary = single
+    ? `<p>${measuredAs(leafFigures(entry, leaves[0]))} &middot; ${escapeHtml(leafName(leaves[0]))}</p>`
+    : `<p>${escapeHtml(t('%(count)s food types', { count: leaves.length }))} &middot; ${escapeHtml(t('%(amount)s combined', { amount: `${formatNumber(chainKilograms(entry), 2)} kg` }))}</p><ul class="entry-card__leaves">${leaves.map(label).join('')}</ul>`
+  return `<article class="saved-entry-card ${entryProblem(index) ? 'has-error' : ''}"><div><span class="eyebrow">${escapeHtml(t('Entry %(number)s', { number: index + 1 }))}</span><h3>${escapeHtml(sector?.name || entry.sector)}</h3>${summary}${entryProblemHtml(index)}</div><div class="card-actions"><button class="text-button" type="button" data-action="edit-entry" data-index="${index}">${escapeHtml(t('Edit'))}<span class="sr-only"> ${escapeHtml(t('entry %(number)s', { number: index + 1 }))}</span></button><button class="text-button danger" type="button" data-action="remove-entry" data-index="${index}">${escapeHtml(t('Remove'))}<span class="sr-only"> ${escapeHtml(t('entry %(number)s', { number: index + 1 }))}</span></button></div></article>`
 }
 
 /**
@@ -675,33 +1263,57 @@ function entryCard(entry, index) {
  */
 const reviewEdit = step => `<button class="text-button" type="button" data-action="go-step" data-step="${step}" data-jump="review">${escapeHtml(t('Edit'))}</button>`
 
+/**
+ * "One entry, three food types" - said in the shape the numbers actually are.
+ *
+ * **The single sentence was ungrammatical in the commonest forked case.** One chain of
+ * three categories read "These 1 entries will be calculated as 3 food-type entries.",
+ * and one chain is exactly what a visitor who ticks three boxes and never presses *Add
+ * another supply-chain entry* has. `t()` has no plural machinery - `i18n.js`'s catalogue
+ * is a flat string map - so the two shapes are two keys, chosen here, which is also what
+ * gives a translator two separate sentences to get right rather than one to compromise
+ * on. `leaves` is at least two wherever this is shown at all (the caller only prints it
+ * when `leafTotal > chains`), so there is no third shape to write.
+ */
+const leafCountNote = (chains, leaves) => (chains === 1
+  ? t('This entry will be calculated as %(leaves)s food-type entries.', { leaves })
+  : t('These %(chains)s entries will be calculated as %(leaves)s food-type entries.', { chains, leaves }))
+
 function reviewStep() {
   const sector = selected(state.taxonomy.sectors, state.sector)
-  const food = selected(state.taxonomy.food_categories, state.foodCategory)
-  const total = totalOf(state)
-  const totalKg = massToKg(total.amount, total.unit)
+  const draft = draftChain()
+  const leaves = entryLeaves(draft)
+  const chains = state.entries.length + 1
+  const leafTotal = submissionLeafCount()
   // §7.6.2: the placeholder wording is conditional on `is_mock`, never unconditional. It was
   // hard-coded here, which is correct only while every factor set is mock and inverts the day
-  // a real one is published — a screen that tells a user their verified factors have not been
+  // a real one is published - a screen that tells a user their verified factors have not been
   // supplied. §6.1 puts `factor_set` on the taxonomy response, which is what this step has.
   const mock = state.taxonomy?.factor_set?.is_mock
   const estimateNotice = mock
     ? t('Demonstration only — verified calculation factors have not yet been supplied. Final results will depend on factors supplied and approved by Kai Commitment.')
     : t('Results are estimates, produced from the calculation factors supplied and approved by Kai Commitment.')
+  const foodNames = leaves.map(leafName).join(t(', '))
+  // The same rule step 2's checkboxes are disabled by, asked about the other door into a
+  // twenty-first leaf. Without it a visitor could press Add at the ceiling, walk four
+  // screens, and meet the ceiling as a 400 the form had every means to prevent.
+  const noRoomForAnother = addEntryRefused()
   return `<section class="content-section wide" aria-labelledby="review-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 5 }))}</p><h1 id="review-title">${escapeHtml(t('Review your information'))}</h1><p class="section-intro">${escapeHtml(t('Check this entry, or add another supply-chain entry before viewing the combined results.'))}</p>
     <div class="form-field time-frame-field"><label for="time-frame">${escapeHtml(t('What period do these figures cover?'))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('Optional — it only labels your figures, it never changes a result.'))}</p><select id="time-frame"><option value="" ${!state.timeFrame ? 'selected' : ''}>${escapeHtml(t('Not stated'))}</option><option value="one_week" ${state.timeFrame === 'one_week' ? 'selected' : ''}>${escapeHtml(t('One week'))}</option><option value="one_month" ${state.timeFrame === 'one_month' ? 'selected' : ''}>${escapeHtml(t('One month'))}</option><option value="one_quarter" ${state.timeFrame === 'one_quarter' ? 'selected' : ''}>${escapeHtml(t('One quarter'))}</option><option value="one_year" ${state.timeFrame === 'one_year' ? 'selected' : ''}>${escapeHtml(t('One year'))}</option></select></div>
     ${state.entries.length ? `<section class="saved-entries"><div class="section-heading-row"><h2>${escapeHtml(t('Added entries'))}</h2><span>${state.entries.length}</span></div>${state.entries.map(entryCard).join('')}</section>` : ''}
     <div class="section-heading-row current-entry-heading ${entryProblem(state.entries.length) ? 'has-error' : ''}"><h2>${escapeHtml(t('Current entry %(number)s', { number: state.entries.length + 1 }))}</h2><span>${escapeHtml(t('Ready to calculate'))}</span></div>${entryProblemHtml(state.entries.length)}
     <article class="review-block"><div class="section-heading-row"><h2>${escapeHtml(t('Supply-chain stage'))}</h2>${reviewEdit(0)}</div><p>${escapeHtml(sector?.name || state.sector)}</p></article>
-    <article class="review-block"><div class="section-heading-row"><h2>${escapeHtml(t('Food category'))}</h2>${reviewEdit(1)}</div><p>${escapeHtml(food?.name || t('Standard mix / not specified'))}</p></article>
-    <article class="review-block"><div class="section-heading-row"><h2>${escapeHtml(t('Waste amount'))}</h2>${reviewEdit(2)}</div><p><strong>${measuredAs(state)}</strong> · ${formatNumber(totalKg, 3)} kg</p></article>
-    <article class="review-block"><div class="section-heading-row"><h2>${escapeHtml(t('Waste destinations'))}</h2>${reviewEdit(3)}</div>${reviewLines(draftEntry())}</article>
-    <button class="button button-add add-entry-button" type="button" data-action="add-entry">+ ${escapeHtml(t('Add another supply-chain entry'))}</button>
+    <article class="review-block"><div class="section-heading-row"><h2>${escapeHtml(t('Food categories'))}</h2>${reviewEdit(1)}</div><p>${escapeHtml(foodNames)}</p></article>
+    <article class="review-block"><div class="section-heading-row"><h2>${escapeHtml(t('Waste amount'))}</h2>${reviewEdit(2)}</div>${reviewLeafBlocks(draft, 'amounts')}</article>
+    <article class="review-block"><div class="section-heading-row"><h2>${escapeHtml(t('Waste destinations'))}</h2>${reviewEdit(3)}</div>${reviewLeafBlocks(draft, 'destinations')}</article>
+    <button class="button button-add add-entry-button" type="button" data-action="add-entry" ${noRoomForAnother ? 'disabled' : ''}>+ ${escapeHtml(t('Add another supply-chain entry'))}</button>
+    ${noRoomForAnother ? `<p class="field-hint choice-ceiling" role="status">${escapeHtml(t('You can enter at most %(limit)s food types in one calculation. Untick one, or calculate what you have.', { limit: MAX_LEAVES }))}</p>` : ''}
+    ${leafTotal > chains ? `<p class="leaf-count-note">${escapeHtml(leafCountNote(chains, leafTotal))}</p>` : ''}
     <aside class="disclaimer compact" aria-label="${escapeHtml(t('Important information'))}"><span class="info-icon" aria-hidden="true">i</span><div><strong>${escapeHtml(t('Estimate notice'))}</strong><p>${escapeHtml(estimateNotice)}</p></div></aside>
     ${state.error ? `<p class="field-error api-error ${state.errorCode ? `error-${slug(state.errorCode)}` : ''}" role="alert">${escapeHtml(state.error)}</p>` : ''}${stepNav({
       step: 4,
       back: 3,
-      label: state.loading ? t('Calculating…') : Date.now() < state.rateLimitedUntil ? t('Try again shortly') : state.entries.length ? t('Calculate results for %(count)s entries', { count: state.entries.length + 1 }) : t('Calculate impact'),
+      label: state.loading ? t('Calculating…') : Date.now() < state.rateLimitedUntil ? t('Try again shortly') : state.entries.length ? t('Calculate results for %(count)s entries', { count: chains }) : t('Calculate impact'),
       disabled: state.loading || Date.now() < state.rateLimitedUntil || blocked(),
       action: 'calculate',
     })}</section>`
@@ -720,19 +1332,19 @@ function reviewStep() {
  * step's Continue-blocking without ALSO being mislabelled as a fault in
  * `amountId`, the one field they are never about.
  */
-function amountOnlyValidation() {
-  if (state.measureMode === 'container') {
+function amountOnlyValidation(figures, food) {
+  if (figures.measureMode === 'container') {
     // **The two-decimal rule applies to the count, which is what the visitor typed.** It
     // is an input rule about typing, not a property of the total: `toKg` returns three
     // decimals because that is what §6.2 accepts, and a total of "139.200" is not a
     // number anybody entered. §7.2 recorded this collision as the decision building this
     // input would require; this is the decision.
-    if (!state.unitCount || Number(state.unitCount) <= 0) return t('Number of containers must be greater than zero.')
+    if (!figures.unitCount || Number(figures.unitCount) <= 0) return t('Number of containers must be greater than zero.')
     // `1e5` is a value a number input hands over, it is not written as a decimal, and it
     // has no decimal places — so the two-decimal message was the wrong sentence for it.
     // Ask the two questions separately and each answer is true of what was typed.
-    if (!isPlainDecimal(state.unitCount)) return t('Write the number out in full, using digits only.')
-    if (!decimalPattern.test(state.unitCount)) return t('Enter no more than two decimal places.')
+    if (!isPlainDecimal(figures.unitCount)) return t('Write the number out in full, using digits only.')
+    if (!decimalPattern.test(figures.unitCount)) return t('Enter no more than two decimal places.')
     // A preset whose code the taxonomy no longer holds, or whose `kg_per_unit` will not
     // parse, leaves `containerKg` at '' — and a step that continued on that would carry a
     // zero total into step 4 and refuse every allocation with a message about the
@@ -742,22 +1354,26 @@ function amountOnlyValidation() {
     // number.** `countLimit` answers 0 when there is no usable conversion, so asking the
     // bound first would refuse a perfectly ordinary count with "Enter no more than 0
     // containers." — a sentence about the visitor's typing for a fault in the taxonomy.
-    if (!state.unitPreset || containerTotal(state) === '') return t('That container is no longer available. Choose another.')
-    if (Number(state.unitCount) > containerLimit()) return t('Enter no more than %(limit)s containers.', { limit: formatNumber(containerLimit(), 0) })
+    if (!figures.unitPreset || containerTotal(figures) === '') return t('That container is no longer available. Choose another.')
+    if (Number(figures.unitCount) > containerLimit(figures)) return t('Enter no more than %(limit)s containers.', { limit: formatNumber(containerLimit(figures), 0) })
     return ''
   }
-  if (!state.totalAmount || Number(state.totalAmount) <= 0) return t('Waste amount must be greater than zero.')
-  if (!isPlainDecimal(state.totalAmount)) return t('Write the number out in full, using digits only.')
-  if (!decimalPattern.test(state.totalAmount)) return t('Enter no more than two decimal places.')
+  // **The food is named only when there is more than one.** A chain with one leaf keeps
+  // the sentence it has always had; with three, "Waste amount must be greater than zero."
+  // is true of all three and says nothing about which.
+  if (!figures.totalAmount) return food ? t('Enter a waste amount for %(food)s.', { food }) : t('Waste amount must be greater than zero.')
+  if (Number(figures.totalAmount) <= 0) return food ? t('Waste amount for %(food)s must be greater than zero.', { food }) : t('Waste amount must be greater than zero.')
+  if (!isPlainDecimal(figures.totalAmount)) return t('Write the number out in full, using digits only.')
+  if (!decimalPattern.test(figures.totalAmount)) return t('Enter no more than two decimal places.')
   // **`null` is over the ceiling, not under it.** `massToKg` answers `null` when there
   // is no finite mass, and `null > MAX` is `false` — so a bare comparison lets the one
   // case the whole guard exists for straight through. It is reachable: 308 nines is the
   // longest run a number input keeps (309 is outside a double's range and the browser
   // blanks it), it is a plain decimal, it passes the two-decimal rule, and *as tonnes*
   // it is `Infinity` kilograms.
-  const kilograms = totalKilograms(state)
+  const kilograms = totalKilograms(figures)
   if (kilograms === null || kilograms > MAX_SCENARIO_KG) {
-    return t('Enter no more than %(limit)s %(unit)s.', { limit: formatNumber(limitIn(MAX_SCENARIO_KG, state.totalUnit), 0), unit: unitLabel(state.totalUnit) })
+    return t('Enter no more than %(limit)s %(unit)s.', { limit: formatNumber(limitIn(MAX_SCENARIO_KG, figures.totalUnit), 0), unit: unitLabel(figures.totalUnit) })
   }
   return ''
 }
@@ -814,10 +1430,10 @@ function moneyCents(value) {
  * to ask this exact question, independent of `state.error`'s stale history, to know
  * whether that is what is currently wrong.
  */
-function moneyContradictionValidation() {
-  if (state.totalValueNzd === '' || state.wastedValueNzd === '') return ''
-  const totalCents = moneyCents(state.totalValueNzd)
-  const wastedCents = moneyCents(state.wastedValueNzd)
+function moneyContradictionValidation(figures) {
+  if (figures.totalValueNzd === '' || figures.wastedValueNzd === '') return ''
+  const totalCents = moneyCents(figures.totalValueNzd)
+  const wastedCents = moneyCents(figures.wastedValueNzd)
   if (totalCents === null || wastedCents === null || wastedCents <= totalCents) return ''
   return t('Value of the waste exceeds value of production by NZ$%(excess)s.', { excess: ((wastedCents - totalCents) / 100).toFixed(2) })
 }
@@ -850,12 +1466,12 @@ function moneyContradictionValidation() {
  * on). So it is a defensive state, not dead copy, and this comment is that record —
  * not a contract change: `docs/interfaces.md` is unaffected and untouched.
  */
-function massContradictionValidation() {
-  if (state.totalInputKg === '') return ''
-  const producedKg = massToKg(state.totalInputKg, state.totalUnit)
-  const wasteKg = totalKilograms(state)
+function massContradictionValidation(figures) {
+  if (figures.totalInputKg === '') return ''
+  const producedKg = massToKg(figures.totalInputKg, figures.totalUnit)
+  const wasteKg = totalKilograms(figures)
   if (producedKg === null || wasteKg === null || !exceedsTotal(wasteKg, producedKg)) return ''
-  return t('Waste amount exceeds total amount produced by %(excess)s %(unit)s.', { excess: formatNumber(limitIn(wasteKg - producedKg, state.totalUnit), 2), unit: unitLabel(state.totalUnit) })
+  return t('Waste amount exceeds total amount produced by %(excess)s %(unit)s.', { excess: formatNumber(limitIn(wasteKg - producedKg, figures.totalUnit), 2), unit: unitLabel(figures.totalUnit) })
 }
 
 /**
@@ -874,45 +1490,77 @@ function massContradictionValidation() {
  * own pairs, and the step-3 block reads `state.current` — so asking about a step from
  * another step answers about the draft, which is the question.
  */
-function stepProblem(step) {
-  if (step === 0 && !state.sector) return t('Select where in the food supply chain the waste occurred.')
+function stepProblemAt(step) {
+  if (step === 0 && !state.sector) return { message: t('Select where in the food supply chain the waste occurred.') }
+  const leaves = draftLeaves()
+  const named = leaves.length > 1
   if (step === 2) {
-    const amountError = amountOnlyValidation()
-    if (amountError) return amountError
-    const moneyError = moneyContradictionValidation()
-    if (moneyError) return moneyError
-    const massError = massContradictionValidation()
-    if (massError) return massError
+    // **Today's three rules, N times.** The first problem wins, and it carries the leaf
+    // and the field it belongs to so that `amountStep` can highlight the right box
+    // without comparing prose - two leaves produce the byte-identical sentence.
+    for (const leaf of leaves) {
+      const figures = draftLeafFigures(leaf)
+      const key = leafKey(leaf)
+      const amountError = amountOnlyValidation(figures, named ? leafName(leaf) : null)
+      if (amountError) return { message: amountError, leaf: key, field: 'amount' }
+      const moneyError = moneyContradictionValidation(figures)
+      if (moneyError) return { message: moneyError, leaf: key, field: 'wastedValue' }
+      const massError = massContradictionValidation(figures)
+      if (massError) return { message: massError, leaf: key, field: 'amount' }
+    }
   }
   if (step === 3) {
-    const total = totalNumber(state)
-    const lines = state.current
-    if (!lines.some(line => Number(line.qtyInput) > 0)) return t('Enter an amount for at least one waste destination.')
-    if (lines.some(line => line.qtyInput !== '' && Number(line.qtyInput) < 0)) return t('Destination amounts must be zero or greater.')
-    if (lines.some(line => line.qtyInput && !isPlainDecimal(line.qtyInput))) return t('Write the number out in full, using digits only.')
-    if (lines.some(line => line.qtyInput && !decimalPattern.test(line.qtyInput))) return t('Enter destination amounts to no more than two decimal places.')
-    // §6.2's per-line bound, restated. Since v1.46 it is the same number as the step-3
-    // ceiling, so a visitor who puts all of a legal total into one destination is refused
-    // by neither — which is the whole point of the change and the case this guard used to
-    // get wrong. The check is kept as its own rule rather than dropped as redundant: the
-    // total is not sent, `MAX_LINE_KG` is what §6.2 bounds the row by, and a step-3 total
-    // entered in containers reaches step 4 through a different path.
-    //
-    // The finiteness check used to be folded into the negative rule two lines above,
-    // which answered "Destination amounts must be zero or greater" for a row far too
-    // large to be either. It is asked here, through the same `null`, where the true
-    // answer is that the row is over the limit and the message says which limit.
-    const overLine = lines.some(line => {
-      if (line.qtyInput === '') return false
-      const kilograms = lineKilograms(line.qtyInput, line.unit || state.totalUnit)
-      return kilograms === null || kilograms > MAX_LINE_KG
-    })
-    if (overLine) return t('Enter destination amounts of no more than %(limit)s %(unit)s.', { limit: formatNumber(limitIn(MAX_LINE_KG, state.totalUnit), 0), unit: unitLabel(state.totalUnit) })
-    const sum = allocatedAmount(lines)
-    if (exceedsTotal(sum, total)) return t('Allocated waste exceeds total waste by %(excess)s %(unit)s.', { excess: (sum - total).toFixed(2), unit: state.totalUnit === 'kilograms' ? 'kg' : t('tonnes') })
+    // **Per leaf: each leaf's allocation sums to no more than that leaf's OWN amount.**
+    // Today's rule, N times. Validating against the chain's combined total instead would
+    // let one leaf take another's mass and still pass, and the API would then refuse the
+    // submission for a mass-conservation failure the form had already been shown.
+    for (const leaf of leaves) {
+      const figures = draftLeafFigures(leaf)
+      const key = leafKey(leaf)
+      const unit = figures.totalUnit
+      const lines = figures.current || []
+      const food = named ? leafName(leaf) : null
+      const fail = message => ({ message, leaf: key, field: 'allocation' })
+      if (!lines.some(line => Number(line.qtyInput) > 0)) {
+        return fail(food
+          ? t('Enter an amount for at least one waste destination for %(food)s.', { food })
+          : t('Enter an amount for at least one waste destination.'))
+      }
+      if (lines.some(line => line.qtyInput !== '' && Number(line.qtyInput) < 0)) return fail(t('Destination amounts must be zero or greater.'))
+      if (lines.some(line => line.qtyInput && !isPlainDecimal(line.qtyInput))) return fail(t('Write the number out in full, using digits only.'))
+      if (lines.some(line => line.qtyInput && !decimalPattern.test(line.qtyInput))) return fail(t('Enter destination amounts to no more than two decimal places.'))
+      // §6.2's per-line bound, restated. Since v1.46 it is the same number as the step-3
+      // ceiling, so a visitor who puts all of a legal total into one destination is
+      // refused by neither. The finiteness check is asked through the same `null`, where
+      // the true answer is that the row is over the limit and the message says which.
+      const overLine = lines.some(line => {
+        if (line.qtyInput === '') return false
+        const kilograms = lineKilograms(line.qtyInput, line.unit || unit)
+        return kilograms === null || kilograms > MAX_LINE_KG
+      })
+      if (overLine) return fail(t('Enter destination amounts of no more than %(limit)s %(unit)s.', { limit: formatNumber(limitIn(MAX_LINE_KG, unit), 0), unit: unitLabel(unit) }))
+      const total = totalNumber(figures)
+      const sum = allocatedAmount(lines, unit)
+      if (exceedsTotal(sum, total)) {
+        const excess = (sum - total).toFixed(2)
+        const unitName = unit === 'kilograms' ? 'kg' : t('tonnes')
+        return fail(food
+          ? t('Allocated waste for %(food)s exceeds its amount by %(excess)s %(unit)s.', { food, excess, unit: unitName })
+          : t('Allocated waste exceeds total waste by %(excess)s %(unit)s.', { excess, unit: unitName }))
+      }
+    }
   }
-  return ''
+  return { message: '' }
 }
+
+/**
+ * What is wrong with the draft as far as one step's own rules are concerned, or `''`.
+ *
+ * **Parameterised on the step rather than reading `state.step`, so that one other caller
+ * can ask about a step the visitor is not standing on.** `draftIsComplete` asks all three
+ * at once, from step 1's duplicate notice as readily as from the review step.
+ */
+const stepProblem = step => stepProblemAt(step).message
 
 /** The same question about the screen the visitor is actually on. */
 const validateCurrentStep = () => stepProblem(state.step)
@@ -920,7 +1568,8 @@ const validateCurrentStep = () => stepProblem(state.step)
 /**
  * The steps that stand between a new chain and the review step, and so the whole of
  * what "complete" means for an entry. Step 2 (food category) is absent because it is
- * optional — `foodStep` is headed so and `entryCard` prints "Food type not provided".
+ * optional — `foodStep` is headed so, and a chain that names no food is the leaf
+ * `leafDisplayName` calls "Not broken down by type" wherever it is shown.
  */
 const GATED_STEPS = [0, 2, 3]
 
@@ -955,7 +1604,7 @@ const blocked = () => state.errorCode === 'BLOCKED'
 
 // `BLOCKED` is terminal, so a step change must not wipe the banner: that would leave the
 // user looking at a permanently disabled Calculate button with no text saying why.
-const clearedError = () => (blocked() ? {} : { error: null, errorCode: null })
+const clearedError = () => (blocked() ? {} : { error: null, errorAt: null, errorCode: null })
 
 function publicError(error) {
   switch (error.code) {
@@ -988,24 +1637,52 @@ const ENTRY_SCALAR_FIELD_STEP = {
   wasted_value_nzd: 2,
 }
 
-// The exact `entries[N].<key>` paths the map above answers to — always the *draft*
-// entry's, because a saved entry's fields sit on a read-only `entryCard` with no box to
-// highlight. Shared by `detailStep`, which routes a rejected visitor, and
+/**
+ * **The submission's leaves, in request order, each knowing which chain it came from.**
+ *
+ * §9's `entries[N]` paths are rooted at the request body, and the request body carries
+ * leaves - while the review step shows chain cards and the visitor counts chains. Every
+ * router below goes through this one map rather than doing arithmetic on chain indices,
+ * which is what `index <= state.entries.length` was and what made it wrong the moment a
+ * chain could contribute more than one entry.
+ *
+ * Built from the same `entryLeaves` rule the request body is built from, so the two
+ * cannot disagree about which index is which.
+ */
+function submissionLeafMap() {
+  const chains = [...state.entries, draftChain()]
+  const out = []
+  chains.forEach((chain, chainIndex) => {
+    for (const leaf of entryLeaves(chain)) out.push({ index: out.length, chainIndex, chain, leaf })
+  })
+  return out
+}
+
+/** The request indices the draft occupies - a range now, not a single number. */
+const draftLeafIndices = () => {
+  const base = savedLeafCount()
+  return draftLeaves().map((leaf, index) => base + index)
+}
+
+// The exact `entries[N].<key>` paths the scalar map above answers to - always the
+// *draft's*, because a saved chain's fields sit on a read-only `entryCard` with no box to
+// highlight. **One path per draft LEAF per key**, because the draft now occupies a range
+// of request indices. Shared by `detailStep`, which routes a rejected visitor, and
 // `validationMessage`, which must not also describe in the banner a field already
 // highlighted at its own input.
-const scalarFieldPaths = () => Object.keys(ENTRY_SCALAR_FIELD_STEP).map(key => `entries[${state.entries.length}].${key}`)
+const scalarFieldPaths = () => draftLeafIndices().flatMap(index => Object.keys(ENTRY_SCALAR_FIELD_STEP).map(key => `entries[${index}].${key}`))
 
 /**
  * The step that owns one API validation detail, or `undefined` when this form has no
- * field to point at — a saved entry, `alternative`, anything §9 might name that never
- * reaches an `<input>` on this page. `submitCalculation` uses this to send a rejected
- * visitor to the screen that can actually show them what was wrong, instead of always
- * landing on step 3 regardless of which field the API named.
+ * field to point at - a saved entry, `alternative`, anything §9 might name that never
+ * reaches an `<input>` on this page.
  */
 function detailStep(detail) {
   const field = detail.field || ''
-  const scalarKey = new RegExp(`^entries\\[${state.entries.length}\\]\\.(\\w+)$`).exec(field)?.[1]
-  if (scalarKey && ENTRY_SCALAR_FIELD_STEP[scalarKey] !== undefined) return ENTRY_SCALAR_FIELD_STEP[scalarKey]
+  if (scalarFieldPaths().includes(field)) {
+    const key = /\.(\w+)$/.exec(field)?.[1]
+    if (key && ENTRY_SCALAR_FIELD_STEP[key] !== undefined) return ENTRY_SCALAR_FIELD_STEP[key]
+  }
   // A detail naming a *saved* entry has no input to highlight, which is why this
   // function used to answer `undefined` for one and let `submitCalculation` fall
   // through to its step-3 default. That default put a visitor refused for a
@@ -1018,45 +1695,51 @@ function detailStep(detail) {
 }
 
 /**
- * The index of the entry a detail names *as a whole*, or `undefined`.
+ * The index of the **chain** a detail names as a whole, or `undefined`.
  *
- * §9's paths are rooted at the request body, where `entries[]` is
- * `[...state.entries, draftEntry()]` - so index `state.entries.length` is the
- * draft and every index below it is a saved entry.
+ * §9's `entries[N]` is a LEAF index; the cards on the review step are chains. This is
+ * the translation, and it is the whole reason `submissionLeafMap` exists: the old
+ * `index <= state.entries.length` was arithmetic on chain indices and silently named the
+ * wrong card the moment one chain carried two leaves.
  *
- * **Anchored at both ends, and that is the whole point.** `entries[1].qty_kg`
- * names a field *inside* an entry and belongs to whichever step renders that
- * field; a bare `entries[1]` names the entry itself, which has no input anywhere
- * on the form. Both the saved entries and the draft are on the review step - the
- * saved ones as cards, the draft as the "Current entry" blocks - so that is the
- * one step where a whole-entry problem can be shown against the thing it is
- * about. The draft is deliberately included: `duplicate_entry` flags the *later*
- * of the two colliding entries, and with one saved chain plus a draft that later
+ * **Anchored at both ends, and that is the point.** `entries[1].qty_kg` names a field
+ * *inside* an entry and belongs to whichever step renders that field; a bare `entries[1]`
+ * names the entry itself. The draft is deliberately included: `duplicate_entry` flags the
+ * *later* of the two colliding entries, and with one saved chain plus a draft that later
  * one IS the draft.
  */
 function entryIndexOf(detail) {
   const index = Number(/^entries\[(\d+)\]$/.exec(detail.field || '')?.[1])
-  return Number.isInteger(index) && index <= state.entries.length ? index : undefined
+  if (!Number.isInteger(index)) return undefined
+  return submissionLeafMap()[index]?.chainIndex
 }
 
 /**
- * The entry a duplicate repeats, as the visitor's own 1-based entry number.
+ * The entry a duplicate repeats, as the visitor's own 1-based **chain** number, plus the
+ * food that collides.
  *
  * Recomputed here rather than read out of the API's prose. §9's `message` for
- * `duplicate_entry` names the other entry as `entries[0]` inside an English
- * sentence, and parsing an index back out of that would tie this screen to that
- * wording. The front end holds every entry, so it can find the match itself, on
- * the same `(sector, food_category)` pair `api/schemas.py` keys on.
+ * `duplicate_entry` names the other entry as `entries[0]` inside an English sentence, and
+ * parsing an index back out of that would tie this screen to that wording. The front end
+ * holds every entry, so it can find the match itself, on the same key `api/schemas.py`
+ * keys on - one dimension deeper now that an entry is a leaf.
+ *
+ * **The API's key is a triple since v1.58** - `(sector, food_category, food_item)` - and
+ * this is a pair, which is correct here and will not stay correct. Nothing on this form
+ * can name a food yet: step 2.5 is a later landing, so every leaf this function sees
+ * carries a food of `null` and a pair and a triple agree on all of them. The day the form
+ * can name one, this key has to gain it or the screen will warn about a duplicate the API
+ * accepts - `dairy/cheese` beside `dairy/butter`, which is the pair step 2.5 exists to
+ * produce.
  */
-function duplicateOf(index) {
-  const all = [...state.entries, draftEntry()]
-  const entry = all[index]
-  if (!entry) return undefined
-  // NUL-joined rather than concatenated: a sector code ending in the next
-  // field's first characters could otherwise collide with a different pair.
-  const key = other => `${other.sector}\u0000${other.foodCategory || ''}`
-  const first = all.findIndex(other => key(other) === key(entry))
-  return first === -1 || first === index ? undefined : first + 1
+function duplicateOf(leafIndex) {
+  const map = submissionLeafMap()
+  const item = map[leafIndex]
+  if (!item) return undefined
+  const key = other => savedLeafKey(other.chain.sector, other.leaf)
+  const first = map.findIndex(other => key(other) === key(item))
+  if (first === -1 || first === leafIndex) return undefined
+  return { number: map[first].chainIndex + 1, food: leafName(item.leaf) }
 }
 
 /**
@@ -1091,7 +1774,13 @@ function describeDetail(detail) {
   const known = detail.issue === 'duplicate_entry' ? duplicateEntryMessage(entry) : undefined
   if (known) return known
   const message = detail.message || t('This value could not be accepted.')
-  return entry ? t('Entry %(number)s: %(message)s', { number: Number(entry[1]) + 1, message }) : message
+  if (!entry) return message
+  // **§9's N is a leaf; the visitor counts chains.** Naming the leaf number would name a
+  // card that does not exist. The food is named beside the chain number because with a
+  // forked chain the chain number alone does not say which of its rows was refused.
+  const item = submissionLeafMap()[Number(entry[1])]
+  if (!item) return message
+  return t('Entry %(number)s (%(food)s): %(message)s', { number: item.chainIndex + 1, food: leafName(item.leaf), message })
 }
 
 // Both wordings exist because `duplicateOf` can legitimately come back empty: the
@@ -1100,11 +1789,15 @@ function describeDetail(detail) {
 // number is worse than naming none.
 function duplicateEntryMessage(entry) {
   if (!entry) return undefined
-  const number = Number(entry[1]) + 1
-  const other = duplicateOf(Number(entry[1]))
+  const leafIndex = Number(entry[1])
+  const item = submissionLeafMap()[leafIndex]
+  if (!item) return undefined
+  const number = item.chainIndex + 1
+  const food = leafName(item.leaf)
+  const other = duplicateOf(leafIndex)
   return other === undefined
-    ? t('Entry %(number)s repeats a supply-chain stage and food category you have already entered. Combine the two, or change one of them.', { number })
-    : t('Entry %(number)s has the same supply-chain stage and food category as entry %(other)s. Combine the two, or change one of them.', { number, other })
+    ? t('Entry %(number)s repeats %(food)s at a supply-chain stage you have already entered. Combine the two, or change one of them.', { number, food })
+    : t('Entry %(number)s has %(food)s at the same supply-chain stage as entry %(other)s. Combine the two, or change one of them.', { number, food, other: other.number })
 }
 
 function fieldErrorMap(error) {
@@ -1132,19 +1825,25 @@ function fieldErrorMap(error) {
 
 async function submitCalculation() {
   if (Date.now() < state.rateLimitedUntil) return
-  setState({ loading: true, error: null, errorCode: null, fieldErrors: {} })
+  setState({ loading: true, error: null, errorAt: null, errorCode: null, fieldErrors: {} })
   try {
     // §6.2: the whole submission travels in one call. One request per entry would let
     // §5.3's token upsert overwrite every entry but the last, cost N× the rate limit,
     // and leave the earlier entries persisted when a later one fails.
-    const entries = [...state.entries, draftEntry()]
+    const chains = [...state.entries, draftEntry()]
+    // **`entryResultsFrom` pairs by INDEX, and the request carries LEAVES.** Hand it
+    // `chains` while the body was built from leaves and every figure on the results page,
+    // in the text export and in the PDF is attached to the wrong entry, with no error and
+    // no warning anywhere. The two `submissionLeaves` calls are on the same input and are
+    // pure, so they cannot disagree.
+    const leaves = submissionLeaves(chains)
     // `submissionPayload` is shared with `improvement.js`'s Compare Impact button, which
     // re-sends the whole submission under this same token. Two builders is how the four
     // round-two fields came to be silently dropped by the second call.
-    const response = await calculate(submissionPayload(state, entries))
+    const response = await calculate(submissionPayload(state, chains))
     const token = response.token || state.token
     if (token) sessionStorage.setItem('kaiCalculatorToken', token)
-    setState({ result: { ...response, entry_results: entryResultsFrom(entries, response) }, token, loading: false, step: 5, error: null, errorCode: null, fieldErrors: {}, returnTo: null })
+    setState({ result: { ...response, entry_results: entryResultsFrom(leaves, response) }, token, loading: false, step: 5, error: null, errorAt: null, errorCode: null, fieldErrors: {}, returnTo: null })
   } catch (error) {
     const rateLimitedUntil = error.code === 'RATE_LIMITED' ? Date.now() + 60000 : state.rateLimitedUntil
     if (error.code === 'UNKNOWN_CODE' && reloadTaxonomy) await reloadTaxonomy({ preserveError: true })
@@ -1163,7 +1862,7 @@ async function submitCalculation() {
     // moved, so the marker carries no snapshot and backing out asks nothing. `errorStep`
     // is the review step itself for every failure that does not name a field, and that
     // one clears the marker rather than writing a Back that returns to where it already is.
-    setState({ loading: false, error: publicError(error), errorCode: error.code || 'UNKNOWN_ERROR', fieldErrors: fieldErrorMap(error), rateLimitedUntil, step: errorStep, returnTo: errorStep >= 0 && errorStep < 4 ? { from: errorStep, step: 4 } : null })
+    setState({ loading: false, error: publicError(error), errorAt: null, errorCode: error.code || 'UNKNOWN_ERROR', fieldErrors: fieldErrorMap(error), rateLimitedUntil, step: errorStep, returnTo: errorStep >= 0 && errorStep < 4 ? { from: errorStep, step: 4 } : null })
     // Clearing the deadline without clearing the banner re-enabled Calculate underneath a
     // paragraph still telling the user to wait 60 seconds — the button and the copy saying
     // opposite things, with the copy the more believable of the two. The banner only goes if
@@ -1171,7 +1870,7 @@ async function submitCalculation() {
     // and that message is about something the wait does not fix.
     if (error.code === 'RATE_LIMITED') {
       setTimeout(() => setState(state.errorCode === 'RATE_LIMITED'
-        ? { rateLimitedUntil: 0, error: null, errorCode: null }
+        ? { rateLimitedUntil: 0, error: null, errorAt: null, errorCode: null }
         : { rateLimitedUntil: 0 }), 60000)
     }
   }
@@ -1191,29 +1890,73 @@ async function submitCalculation() {
  * which is where the mass field's rule already lives.
  */
 function updateContainerCount(control) {
-  state.unitCount = control.value
+  const key = leafOf(control)
+  patchLeaf(key, { unitCount: control.value })
   state.error = null
-  const total = document.getElementById('container-total')
-  if (total) total.textContent = containerTotalText()
+  state.errorAt = null
+  const total = document.getElementById(control.id.replace(/^unit-count/, 'container-total'))
+  if (total) total.textContent = containerTotalText(state.leafFigures[key] || EMPTY_LEAF)
+  updateCombinedTotal()
+}
+
+/**
+ * Step 3's combined figure, on keystroke.
+ *
+ * The same §7.2 exception `updateContainerCount` above takes, for the same reason: a
+ * re-render per keystroke destroys the focused input. It is a sum of figures already on
+ * screen and it never reaches the wire - the browser-only arithmetic `allocatedAmount`
+ * already performs - but it is the one number on this step that says the fork adds up,
+ * and a running total that only moved on Continue would be worse than none.
+ */
+function updateCombinedTotal() {
+  const node = document.querySelector('[data-combined-total]')
+  if (!node) return
+  const kilograms = draftLeaves().reduce((sum, leaf) => sum + (totalKilograms(draftLeafFigures(leaf)) || 0), 0)
+  const amount = state.totalUnit === 'tonnes' ? kgToTonnes(kilograms) : kilograms
+  node.textContent = `${formatNumber(amount, 2)} ${unitLabel(state.totalUnit)}`
+}
+
+/**
+ * One leaf's figures, patched in place.
+ *
+ * **In place, not through `setState`**, for the keystroke handlers only: `render()`
+ * replaces `main.innerHTML`, so a re-render per keystroke destroys the focused input -
+ * §7.2's documented exception, the same one `updateLine` and `improvement.js` take.
+ * Every `<select>` on this page still goes through `setState`, because a select has no
+ * mid-edit caret to lose.
+ */
+function patchLeaf(key, patch) {
+  const held = state.leafFigures[key] || EMPTY_LEAF
+  state.leafFigures = { ...state.leafFigures, [key]: { ...EMPTY_LEAF, ...held, ...patch } }
+}
+
+/** The same, as a `setState` patch rather than an in-place write. */
+const leafPatch = (key, patch) => {
+  const held = state.leafFigures[key] || EMPTY_LEAF
+  return { leafFigures: { ...state.leafFigures, [key]: { ...EMPTY_LEAF, ...held, ...patch } } }
 }
 
 function updateLine(control) {
   const lineId = control.dataset.lineId
-  state.current = state.current.map(line => line.id === lineId ? { ...line, qtyInput: control.value } : line)
+  const key = leafOf(control)
+  const figures = state.leafFigures[key] || EMPTY_LEAF
+  const lines = (figures.current || []).map(line => (line.id === lineId ? { ...line, qtyInput: control.value } : line))
+  patchLeaf(key, { current: lines })
   // The server named its failing lines by their position among the lines that were sent
   // (§9), and blanking or filling a row changes which lines would be sent at all. The
   // stored paths stop meaning what they meant, so they go rather than move to a
   // neighbouring row; the highlights they drew are cleared below with the rest.
   state.fieldErrors = {}
-  state.lastChangedDestination = state.current.find(line => line.id === lineId)?.destination || null
-  const total = totalNumber(state)
-  const sum = allocatedAmount(state.current)
-  const summary = document.getElementById('current-summary')
-  const hasNegative = state.current.some(line => line.qtyInput !== '' && Number(line.qtyInput) < 0)
+  state.lastChangedDestination = lines.find(line => line.id === lineId)?.destination || null
+  const unit = figures.totalUnit
+  const total = totalNumber(state.leafFigures[key])
+  const sum = allocatedAmount(lines, unit)
+  const summary = document.querySelector(`[data-summary-leaf="${CSS.escape(keyAttr(key))}"]`)
+  const hasNegative = lines.some(line => line.qtyInput !== '' && Number(line.qtyInput) < 0)
   summary?.classList.toggle('invalid', exceedsTotal(sum, total) || hasNegative)
   if (summary) {
-    summary.querySelector('[data-summary="allocated"]').textContent = `${sum.toFixed(2)} ${unitLabel(state.totalUnit)}`
-    summary.querySelector('[data-summary="remaining"]').textContent = `${remainingAmount(total, sum).toFixed(2)} ${unitLabel(state.totalUnit)}`
+    summary.querySelector('[data-summary="allocated"]').textContent = `${sum.toFixed(2)} ${unitLabel(unit)}`
+    summary.querySelector('[data-summary="remaining"]').textContent = `${remainingAmount(total, sum).toFixed(2)} ${unitLabel(unit)}`
   }
   const error = validateCurrentStep()
   document.getElementById('allocation-error').textContent = error
@@ -1245,7 +1988,28 @@ function updateLine(control) {
  * server's own paths and `lastChangedDestination` uses a destination code — so no
  * assertion may be written against their identity either.
  */
-const entryPatch = entry => ({ sector: entry.sector, foodCategory: entry.foodCategory, totalAmount: entry.totalAmount, totalUnit: entry.totalUnit, measureMode: entry.measureMode || 'mass', unitPreset: entry.unitPreset || null, unitCount: entry.unitCount || '', totalInputKg: entry.totalInputKg || '', totalValueNzd: entry.totalValueNzd || '', wastedValueNzd: entry.wastedValueNzd || '', current: entry.current.map(line => ({ ...line, id: randomId() })), error: null, fieldErrors: {}, lastChangedDestination: null })
+const entryPatch = entry => ({
+  sector: entry.sector,
+  foodCategories: [...(entry.foodCategories || [])],
+  foodUnspecified: Boolean(entry.foodUnspecified),
+  foodItems: Object.fromEntries(Object.entries(entry.foodItems || {}).map(([code, items]) => [code, [...items]])),
+  totalUnit: entry.totalUnit || 'kilograms',
+  // Pruned to the entry's own leaves on the way in as well as on the way out: a chain
+  // written before a category was unticked must not carry that category's figures back
+  // into the draft, where re-ticking it would silently restore them.
+  leafFigures: Object.fromEntries(entryLeaves(entry).map(leaf => {
+    const figures = leafFigures(entry, leaf)
+    // The line ids are re-minted, exactly as this did when it was only `loadEntry`.
+    // Nothing keys on a line id across a render - `fieldErrors` uses the server's own
+    // paths and `lastChangedDestination` uses a destination code - so no assertion may be
+    // written against their identity either.
+    return [leafKey(leaf), { ...figures, current: figures.current.map(line => ({ ...line, id: randomId() })) }]
+  })),
+  error: null,
+  errorAt: null,
+  fieldErrors: {},
+  lastChangedDestination: null,
+})
 
 function loadEntry(entry) {
   setState({ ...entryPatch(entry), step: 0 })
@@ -1261,7 +2025,7 @@ function loadEntry(entry) {
  * and the one that drifted would make the confirmation dialog either never fire or
  * always fire.
  */
-const EMPTY_DRAFT = { sector: null, foodCategory: null, totalAmount: '', totalUnit: 'kilograms', measureMode: 'mass', unitPreset: null, unitCount: '', totalInputKg: '', totalValueNzd: '', wastedValueNzd: '', current: [] }
+const EMPTY_DRAFT = { sector: null, foodCategories: [], foodUnspecified: false, foodItems: {}, totalUnit: 'kilograms', leafFigures: {} }
 
 /**
  * Everything about an entry that the visitor typed, and nothing else, as a comparable
@@ -1284,16 +2048,32 @@ const EMPTY_DRAFT = { sector: null, foodCategory: null, totalAmount: '', totalUn
  */
 const entryFingerprint = entry => [
   entry.sector || null,
-  entry.foodCategory || null,
-  entry.totalAmount || '',
-  entry.totalUnit || 'kilograms',
-  entry.measureMode || 'mass',
-  entry.unitPreset || null,
-  entry.unitCount || '',
-  entry.totalInputKg || '',
-  entry.totalValueNzd || '',
-  entry.wastedValueNzd || '',
-  (entry.current || []).map(line => [line.destination, line.qtyInput || '', line.unit || null]),
+  [...(entry.foodCategories || [])],
+  Boolean(entry.foodUnspecified),
+  // **Leaf keys in LEAF ORDER, never `Object.keys(leafFigures)`.** A category ticked,
+  // filled and unticked leaves a record behind unless something prunes it, and a
+  // fingerprint that read the map's own keys would see figures that are not on screen -
+  // which makes `backingOutDiscardsWork` fire on a Back that discards nothing, or not
+  // fire on one that discards everything, depending on which way the ghost falls.
+  entryLeaves(entry).map(leaf => {
+    const figures = leafFigures(entry, leaf)
+    return [
+      leafKey(leaf),
+      figures.totalAmount || '',
+      figures.totalUnit || 'kilograms',
+      figures.measureMode || 'mass',
+      figures.unitPreset || null,
+      figures.unitCount || '',
+      figures.totalInputKg || '',
+      figures.totalValueNzd || '',
+      figures.wastedValueNzd || '',
+      // Line `id`s are excluded because they are render bookkeeping, not input:
+      // `entryPatch` re-mints them on every load, so two drafts holding the identical
+      // figures routinely carry different ids and the comparison would report "changed"
+      // for every restored entry.
+      figures.current.map(line => [line.destination, line.qtyInput || '', line.unit || null]),
+    ]
+  }),
 ]
 
 /** Two entries holding the identical input, by the fingerprint above. */
@@ -1321,7 +2101,13 @@ const sameContent = (one, other) => JSON.stringify(entryFingerprint(one)) === JS
  */
 const withoutBlankLines = entry => ({
   ...entry,
-  current: (entry.current || []).filter(line => line.qtyInput !== '' || (line.unit || entry.totalUnit) !== entry.totalUnit),
+  leafFigures: Object.fromEntries(entryLeaves(entry).map(leaf => {
+    const figures = leafFigures(entry, leaf)
+    return [leafKey(leaf), {
+      ...figures,
+      current: figures.current.filter(line => line.qtyInput !== '' || (line.unit || figures.totalUnit) !== figures.totalUnit),
+    }]
+  })),
 })
 
 /**
@@ -1353,9 +2139,35 @@ const withoutBlankLines = entry => ({
  * pair the opened entry was about to hand straight back. The identical journey stopped
  * one screen short of step 4 asked nothing, which is the control that names the cause.
  */
+/**
+ * Figures held for a leaf that is not currently selected.
+ *
+ * Unticking a category parks its record rather than discarding it, so re-ticking
+ * brings the work back. Parked is not safe, though: `entryPatch` prunes to the
+ * loaded entry's own leaves, so loading an entry destroys every parked record.
+ * Anything that replaces the draft wholesale has to count these.
+ */
+const parkedFigures = () => {
+  const live = new Set(draftLeaves().map(leafKey))
+  return Object.entries(state.leafFigures || {})
+    .filter(([key]) => !live.has(key))
+    .map(([, figures]) => figures)
+}
+
 const loadingGivesBackTheDraft = entry => {
+  // Parked figures are destroyed by the load and restored by nothing, so their
+  // presence alone means the visitor has something to lose.
+  if (parkedFigures().some(leafHasFigures)) return false
   const draft = withoutBlankLines(draftEntry())
-  return sameContent(draft, EMPTY_DRAFT) || sameContent(draft, { ...EMPTY_DRAFT, sector: entry.sector, foodCategory: entry.foodCategory })
+  // The pair it named is a quadruple now: the opened entry's sector AND its whole food
+  // selection, because that selection is what the duplicate notice matched on.
+  return sameContent(draft, EMPTY_DRAFT) || sameContent(draft, {
+    ...EMPTY_DRAFT,
+    sector: entry.sector,
+    foodCategories: entry.foodCategories,
+    foodUnspecified: entry.foodUnspecified,
+    foodItems: entry.foodItems,
+  })
 }
 
 /** The whole calculator's entry content — the saved list and the draft — as one string. */
@@ -1388,7 +2200,7 @@ const currentSnapshot = () => contentSnapshot(state.entries, draftEntry())
 const movedSnapshot = (step, moved) => ({ from: 0, step, entries: [...state.entries], draft: draftEntry(), ...moved })
 
 function clearDraft() {
-  setState({ ...EMPTY_DRAFT, step: 0, error: null, fieldErrors: {}, expandedSectors: [], lastChangedDestination: null })
+  setState({ ...EMPTY_DRAFT, step: 0, error: null, errorAt: null, fieldErrors: {}, expandedSectors: [], lastChangedDestination: null })
 }
 
 export function render(main) {
@@ -1403,7 +2215,13 @@ export function render(main) {
     main.innerHTML = `<section class="content-section error-state"><h1>${escapeHtml(t('Calculator unavailable'))}</h1><p>${escapeHtml(state.error || t('The taxonomy could not be loaded.'))}</p>${blocked() ? '' : `<button class="button button-primary" type="button" data-action="retry">${escapeHtml(t('Try again'))}</button>`}</section>`
     return
   }
-  const screens = [sectorStep, foodStep, amountStep, destinationStep, reviewStep]
+  // Step 1 is two panels, not two steps -- see `itemStep`. `foodStage` picks
+  // which, and `itemStepOffered()` is re-asked on every render so a stage left
+  // at 'items' by an earlier draft cannot strand the visitor on a panel this
+  // taxonomy has nothing to put in.
+  const foodPanel = () =>
+    (state.foodStage === 'items' && itemStepOffered() ? itemStep : foodStep)()
+  const screens = [sectorStep, foodPanel, amountStep, destinationStep, reviewStep]
   main.innerHTML = state.step === -1 ? introduction() : state.step === 5 ? renderResults(state) : screens[state.step]()
 }
 
@@ -1550,7 +2368,11 @@ function goToStep(step, jumped = false) {
     setState({ ...(back.draft ? { ...entryPatch(back.draft), entries: back.entries } : {}), step, returnTo: null, ...clearedError() })
     return true
   }
-  setState({ step, returnTo: jumped ? { from: step, step: state.step } : markerAfterLeaving(), ...clearedError() })
+  // **Any arrival at a step opens step 2's FIRST panel.** A jump named "food type"
+  // means the category question; leaving `foodStage` at 'items' would answer a
+  // different one, and a jump to any other step must not leave the stage set for
+  // the next time step 2 is reached.
+  setState({ step, foodStage: 'categories', returnTo: jumped ? { from: step, step: state.step } : markerAfterLeaving(), ...clearedError() })
   return true
 }
 
@@ -1575,20 +2397,43 @@ export function bindCalculator(main, retryTaxonomy) {
     // Clearing the category takes any category-specific container with it, for the same
     // reason choosing a different one does: the preset is no longer on the list step 3
     // would offer, and a conversion nobody can see is a conversion nobody can check.
-    if (action === 'clear-food') setState({ foodCategory: null, ...presetPatch(null) })
+    // **It clears the selection and prunes the figures the selection carried.** A leaf
+    // that is no longer selected must not leave its amounts, its money figures or its
+    // destination rows behind: `entryFingerprint` would still read them, the back-out
+    // confirmation would fire on a Back that discards nothing, and re-ticking the
+    // category would silently restore figures the visitor had cleared.
+    // Keeps `leafFigures` for the same reason the untick does: re-ticking a
+    // category restores what was typed for it, and `draftEntry()` prunes at the
+    // boundary so nothing dead is ever sent.
+    if (action === 'clear-food') setState({ foodCategories: [], foodUnspecified: false, foodItems: {}, error: null, errorAt: null })
+    // Step 2.5's own clear. It leaves the CATEGORIES alone: they are step 2's
+    // answer, and clearing them from this panel would undo a question the visitor
+    // is no longer looking at.
+    if (action === 'clear-items') setState({ foodItems: {}, error: null, errorAt: null })
+    // Step 2.5's Back. A panel change, not a step change: `goToStep` is not called
+    // and no `returnTo` marker is touched, because the visitor has not left step 2.
+    if (action === 'back-to-categories') setState({ foodStage: 'categories', error: null, errorAt: null })
     if (action === 'continue') {
-      const error = validateCurrentStep()
-      // `errorCode` is cleared with it: `amountStep` tells a client-side message about
-      // `amountId` apart from a server VALIDATION_ERROR naming a different field by
+      const problem = stepProblemAt(state.step)
+      const error = problem.message
+      // `errorCode` is cleared with it: `amountStep` tells a client-side message about a
+      // leaf's own field apart from a server VALIDATION_ERROR naming a different field by
       // whether `errorCode` is still set from that response, and a leftover code from an
-      // earlier submit must not survive to mislabel this one.
-      if (error) setState({ error, errorCode: null })
+      // earlier submit must not survive to mislabel this one. `errorAt` says WHICH leaf
+      // and which field, because with N leaves the sentence alone no longer does.
+      if (error) setState({ error, errorAt: leafErrorAt(problem), errorCode: null })
       // Step 3 -> 4 builds the destination rows, and it hands the marker to
       // `markerAfterLeaving` exactly as the general branch below does: this is the one
       // forward move with a patch of its own, and leaving `returnTo` out of it meant a
       // *Waste amount / Edit* marker walked past its own step and aimed step 3's Back at
       // the review step — the same loop, through the one door this branch owns.
-      else if (state.step === 2) setState({ step: 3, error: null, returnTo: markerAfterLeaving(), current: state.current.length ? normaliseLines(state.current) : entryDestinations().map(destination => createLine(destination.code)) })
+      // **Step 2's Continue has two destinations.** With step 2.5 offered it opens
+      // the second panel and the step number does not move; without it, the step
+      // advances exactly as it did before the panel existed. `itemStepOffered()`
+      // is false in every deployment today, so this branch is inert by data.
+      else if (state.step === 1 && state.foodStage !== 'items' && itemStepOffered())
+        setState({ foodStage: 'items', error: null, errorAt: null })
+      else if (state.step === 2) setState({ step: 3, error: null, errorAt: null, returnTo: markerAfterLeaving(), ...destinationRowsPatch() })
       // **Arriving at the review step ends any excursion, and this line is load-bearing.**
       // A marker holds the entries and the draft as they were before the jump that wrote
       // it; once the visitor has reached review again they have built something that did
@@ -1600,9 +2445,12 @@ export function bindCalculator(main, retryTaxonomy) {
       // Every other Continue hands the marker to `markerAfterLeaving`, which keeps an
       // undo and discards a spent review-*Edit* excursion — see its own note for the
       // Back loop that keeping one built.
-      else setState({ step: state.step + 1, error: null, returnTo: state.step === 3 ? null : markerAfterLeaving() })
+      else setState({ step: state.step + 1, error: null, errorAt: null, returnTo: state.step === 3 ? null : markerAfterLeaving() })
     }
     if (action === 'add-entry') {
+      // The rule, not the rendering: a `disabled` attribute can be removed with a
+      // devtools inspector and the ceiling is the API's, not this button's.
+      if (addEntryRefused()) return
       // Before the push and before `clearDraft`, which between them destroy both halves
       // of what Back would need to put back. `clearDraft` names a fixed key list that does
       // not include `returnTo`, so the marker survives it.
@@ -1699,9 +2547,12 @@ export function bindCalculator(main, retryTaxonomy) {
     }
     if (action === 'explore-improvements') openImprovement(state)
     if (action === 'reset-improvement') resetImprovement(state)
-    if (action === 'expand-improvement-chart') setState({ improvementChartExpanded: true })
-    if (action === 'close-improvement-chart') setState({ improvementChartExpanded: false })
-    if (action === 'cancel-improvement') setState({ improvementOpen: false, improvementChartExpanded: false, improvementResult: null, improvementError: null })
+    // **Which leaf's donut.** The improvement panel forks, so there is one chart per
+    // food and the expanded one has to say which. `null` is closed; an index is open,
+    // and index 0 is a real answer, which is why the state is not a boolean.
+    if (action === 'expand-improvement-chart') setState({ improvementChartExpanded: Number(control.dataset.leaf || 0) })
+    if (action === 'close-improvement-chart') setState({ improvementChartExpanded: null })
+    if (action === 'cancel-improvement') setState({ improvementOpen: false, improvementChartExpanded: null, improvementResult: null, improvementError: null })
     // §9's code-to-copy map travels with the call. `improvement.js` cannot import it —
     // this module already imports that one — and without it the improvement panel showed
     // raw backend prose for the codes the main flow words carefully.
@@ -1715,8 +2566,9 @@ export function bindCalculator(main, retryTaxonomy) {
 
   main.addEventListener('change', event => {
     const target = event.target
-    if (target.name === 'sector') setState({ sector: target.value, error: null })
-    if (target.name === 'food-category') setState({ foodCategory: target.value, ...presetPatch(target.value) })
+    if (target.name === 'sector') setState({ sector: target.value, error: null, errorAt: null })
+    if (target.name === 'food-category') toggleFoodChoice(target)
+    if (target.name === 'food-item') toggleFoodItem(target)
     if (target.id === 'time-frame') setState({ timeFrame: target.value })
     // One control, both modes. `current: []` was already this handler's behaviour and the
     // reason is unchanged and now broader: the destination amounts were entered against a
@@ -1727,14 +2579,14 @@ export function bindCalculator(main, retryTaxonomy) {
     // then chose a wheelie bin would reach a step 4 whose rows say "tonnes" against a total
     // in kilograms — a thousandfold error on a screen that looks entirely normal, refused
     // by nothing, because both numbers are individually plausible.
-    if (target.id === 'total-unit') {
+    if (target.matches('[data-leaf-field="unit"]')) {
       const preset = target.value.startsWith(PRESET_OPTION) ? target.value.slice(PRESET_OPTION.length) : null
       setState({
-        measureMode: preset ? 'container' : 'mass',
-        unitPreset: preset,
-        totalUnit: preset ? 'kilograms' : target.value,
-        error: null,
-        current: [],
+        ...leafPatch(leafOf(target), {
+          measureMode: preset ? 'container' : 'mass',
+          unitPreset: preset,
+          totalUnit: preset ? 'kilograms' : target.value,
+          current: [],
         // **`#total-input` goes with them, and for the same reason.** It is a mass in
         // `totalUnit` too, so changing this control silently reinterpreted whatever was
         // in it: 50000 typed against kilograms left as `"50000000.000"` once tonnes was
@@ -1745,7 +2597,10 @@ export function bindCalculator(main, retryTaxonomy) {
         // figure nobody can see. It is cleared rather than converted because converting
         // it would be the front end doing arithmetic on the visitor's behalf, and because
         // the destination rows beside it are cleared, not converted, already.
-        totalInputKg: '',
+          totalInputKg: '',
+        }),
+        error: null,
+        errorAt: null,
       })
     }
     // Item ⑥: one row's own unit, changed without touching any other row's — the
@@ -1755,9 +2610,12 @@ export function bindCalculator(main, retryTaxonomy) {
     // on this page, rather than the keystroke-preserving patch `updateLine` uses for typing.
     if (target.matches('[data-line-field="unit"]')) {
       const lineId = target.dataset.lineId
+      const key = leafOf(target)
+      const held = state.leafFigures[key] || EMPTY_LEAF
       setState({
-        current: state.current.map(line => (line.id === lineId ? { ...line, unit: target.value } : line)),
+        ...leafPatch(key, { current: (held.current || []).map(line => (line.id === lineId ? { ...line, unit: target.value } : line)) }),
         error: null,
+        errorAt: null,
       })
     }
     // §6.2.2: fires only on the tick, never on the untick — the route only ever sets
@@ -1841,7 +2699,7 @@ export function bindCalculator(main, retryTaxonomy) {
     // throws on `type="number"` — so a single new digit is refused once the
     // field already shows two decimal digits, wherever it lands: the same
     // narrow trade the minus guard below documents, on the same missing signal.
-    const decimalCeiling = { 'total-value': 2, 'wasted-value': 2, 'total-input': 3 }[target.id]
+    const decimalCeiling = { totalValue: 2, wastedValue: 2, totalInput: 3 }[target.dataset.leafField]
     if (
       decimalCeiling !== undefined &&
       event.data?.length === 1 &&
@@ -1865,11 +2723,7 @@ export function bindCalculator(main, retryTaxonomy) {
     // sibling outside, so the descendant combinator takes the typed field and
     // leaves the slider alone. Written without the space it matches nothing.
     if (
-      target.id === 'total-waste' ||
-      target.id === 'unit-count' ||
-      target.id === 'total-input' ||
-      target.id === 'total-value' ||
-      target.id === 'wasted-value' ||
+      ['amount', 'count', 'totalInput', 'totalValue', 'wastedValue'].includes(target.dataset.leafField) ||
       target.matches('.percentage-input [data-improvement-code]')
     ) {
       event.preventDefault()
@@ -1884,9 +2738,13 @@ export function bindCalculator(main, retryTaxonomy) {
 
   main.addEventListener('input', event => {
     const target = event.target
-    if (target.id === 'total-waste') {
-      state.totalAmount = target.value
+    // **Keyed on `data-leaf-field`, never on an id.** There are N of each of these boxes
+    // now, one per leaf, and the id is only a label target.
+    if (target.dataset.leafField === 'amount' && !target.dataset.lineId) {
+      patchLeaf(leafOf(target), { totalAmount: target.value })
       state.error = null
+      state.errorAt = null
+      updateCombinedTotal()
     }
     // **The three round-two scalar fields now clear `state.error` on keystroke too,
     // the same way `#total-waste` already did above.** Before item ①'s two
@@ -1898,10 +2756,9 @@ export function bindCalculator(main, retryTaxonomy) {
     // contradiction message on screen after the visitor has already fixed one
     // side of it would be exactly the defect `#total-waste`'s own clear exists
     // to avoid, one field over.
-    if (target.id === 'total-input') { state.totalInputKg = target.value; state.error = null }
-    if (target.id === 'total-value') { state.totalValueNzd = target.value; state.error = null }
-    if (target.id === 'wasted-value') { state.wastedValueNzd = target.value; state.error = null }
-    if (target.id === 'unit-count') updateContainerCount(target)
+    const scalarKey = { totalInput: 'totalInputKg', totalValue: 'totalValueNzd', wastedValue: 'wastedValueNzd' }[target.dataset.leafField]
+    if (scalarKey) { patchLeaf(leafOf(target), { [scalarKey]: target.value }); state.error = null; state.errorAt = null }
+    if (target.dataset.leafField === 'count') updateContainerCount(target)
     if (target.matches('[data-line-field="amount"]')) {
       // `beforeinput` cannot always be the whole story. A lone "-" leaves
       // `.value === ''` — the browser will not call one character a number — so

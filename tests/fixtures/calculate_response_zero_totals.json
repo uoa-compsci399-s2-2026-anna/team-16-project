@@ -18,14 +18,16 @@
               "qty_kg": "1200.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "3468.0000000000"
+              "value": "3468.0000000000",
+              "upstream_basis": null
             },
             {
               "destination": "not_harvested",
               "qty_kg": "800.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "456.0000000000"
+              "value": "456.0000000000",
+              "upstream_basis": null
             }
           ]
         },
@@ -39,14 +41,16 @@
               "qty_kg": "1200.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "32.4000000000"
+              "value": "32.4000000000",
+              "upstream_basis": null
             },
             {
               "destination": "not_harvested",
               "qty_kg": "800.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "0.0000000000"
+              "value": "0.0000000000",
+              "upstream_basis": null
             }
           ]
         },
@@ -60,14 +64,16 @@
               "qty_kg": "1200.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "1224000.0000000000"
+              "value": "1224000.0000000000",
+              "upstream_basis": null
             },
             {
               "destination": "not_harvested",
               "qty_kg": "800.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "257600.0000000000"
+              "value": "257600.0000000000",
+              "upstream_basis": null
             }
           ]
         },
@@ -81,14 +87,16 @@
               "qty_kg": "1200.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "72.0000000000"
+              "value": "72.0000000000",
+              "upstream_basis": null
             },
             {
               "destination": "not_harvested",
               "qty_kg": "800.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "0.0000000000"
+              "value": "0.0000000000",
+              "upstream_basis": null
             }
           ]
         },
@@ -102,14 +110,16 @@
               "qty_kg": "1200.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "1200.0000000000"
+              "value": "1200.0000000000",
+              "upstream_basis": null
             },
             {
               "destination": "not_harvested",
               "qty_kg": "800.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "800.0000000000"
+              "value": "800.0000000000",
+              "upstream_basis": null
             }
           ]
         }
@@ -148,6 +158,7 @@
     {
       "sector": "processing",
       "food_category": "dairy",
+      "food_item": null,
       "current": {
         "total_kg": "1200.000",
         "metrics": {
@@ -161,7 +172,8 @@
                 "qty_kg": "1200.000",
                 "upstream": "1.9000000000",
                 "downstream": "0.9900000000",
-                "value": "3468.0000000000"
+                "value": "3468.0000000000",
+                "upstream_basis": "category_every_destination"
               }
             ]
           },
@@ -175,7 +187,8 @@
                 "qty_kg": "1200.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0270000000",
-                "value": "32.4000000000"
+                "value": "32.4000000000",
+                "upstream_basis": "absent"
               }
             ]
           },
@@ -189,7 +202,8 @@
                 "qty_kg": "1200.000",
                 "upstream": "1020.0000000000",
                 "downstream": "0.0000000000",
-                "value": "1224000.0000000000"
+                "value": "1224000.0000000000",
+                "upstream_basis": "category_every_destination"
               }
             ]
           },
@@ -203,7 +217,8 @@
                 "qty_kg": "1200.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0600000000",
-                "value": "72.0000000000"
+                "value": "72.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           },
@@ -217,7 +232,8 @@
                 "qty_kg": "1200.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "1200.0000000000"
+                "value": "1200.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           }
@@ -237,11 +253,13 @@
       },
       "alternative": null,
       "net_benefit": null,
-      "production_share_percent": null
+      "production_share_percent": null,
+      "item_basis": "not_applicable"
     },
     {
       "sector": "primary_production",
       "food_category": "vegetables",
+      "food_item": null,
       "current": {
         "total_kg": "800.000",
         "metrics": {
@@ -255,7 +273,8 @@
                 "qty_kg": "800.000",
                 "upstream": "0.4500000000",
                 "downstream": "0.1200000000",
-                "value": "456.0000000000"
+                "value": "456.0000000000",
+                "upstream_basis": "category_every_destination"
               }
             ]
           },
@@ -269,7 +288,8 @@
                 "qty_kg": "800.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "0.0000000000"
+                "value": "0.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           },
@@ -283,7 +303,8 @@
                 "qty_kg": "800.000",
                 "upstream": "322.0000000000",
                 "downstream": "0.0000000000",
-                "value": "257600.0000000000"
+                "value": "257600.0000000000",
+                "upstream_basis": "category_every_destination"
               }
             ]
           },
@@ -297,7 +318,8 @@
                 "qty_kg": "800.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "0.0000000000"
+                "value": "0.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           },
@@ -311,7 +333,8 @@
                 "qty_kg": "800.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "800.0000000000"
+                "value": "800.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           }
@@ -331,7 +354,8 @@
       },
       "alternative": null,
       "net_benefit": null,
-      "production_share_percent": null
+      "production_share_percent": null,
+      "item_basis": "not_applicable"
     }
   ],
   "factor_source": "published",

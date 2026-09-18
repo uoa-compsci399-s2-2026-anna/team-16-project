@@ -51,6 +51,57 @@ IDENTICAL_BY_DESIGN = {
     "nl": {"Code", "Sector"},
 }
 
+#: A string with no translatable words in it - everything outside its
+#: placeholders is punctuation or whitespace.
+#:
+#: **This is a different thing from `IDENTICAL_BY_DESIGN` above, and mixing the
+#: two would bury it.** That list is for COINCIDENCES: the French `Code`, the
+#: Dutch `Sector`, words that happen to spell the same in two languages and
+#: could stop doing so if either were reworded. These have no word in them at
+#: all. `%(sector)s — %(food)s` is two placeholders and an em dash; `", "` is a
+#: list separator; `%(food)s: %(message)s` is a label and its value. There is
+#: nothing in any of them for a translator to change, in any language, ever - so
+#: declaring them per language would be fifty-odd lines asserting a tautology,
+#: and the real coincidences would be lost among them.
+#:
+#: A language may still translate one: Chinese, Japanese and Arabic all give the
+#: list separator their own character, and that is why this exempts a string
+#: from the English-value check rather than forbidding a translation of it.
+#:
+#: The rule is narrow on purpose. Strip the placeholders; if a single letter
+#: survives, the string is translatable and gets no exemption, so rewording one
+#: of these to carry a word puts it straight back under the check.
+def _has_translatable_words(source: str) -> bool:
+    return any(character.isalpha() for character in PLACEHOLDER.sub("", source))
+
+#: Sentences that explain a table by naming the labels printed in it, each
+#: with the cell labels it names. `methodology.js` prints both scope columns
+#: of a factor table and then a sentence saying which scope wins; a reader
+#: looking for `All destinations` in that sentence has to find the same words
+#: the cell shows them.
+#:
+#: **This is a real failure, not a hypothetical one.** Seven of the twenty
+#: catalogues coined a second term for `All destinations` when the upstream
+#: sentence was translated for v1.58 -- Japanese explained a column headed
+#: 廃棄先 in terms of 行き先 -- which reads as two different scopes rather
+#: than one explained. The v1.31 sentence beside it had the property in all
+#: twenty, so nothing was catching the difference.
+SCOPE_SENTENCES = {
+    (
+        "A destination of All destinations, or a food of All foods in this "
+        "category, is a row that applies wherever no more specific row exists. "
+        "Where a row naming a destination and a row naming only a food could "
+        "both apply, the one naming a destination is used."
+    ): ("All destinations", "All foods in this category"),
+    (
+        "A sector of All sectors, or a food category of All food categories, is "
+        "a row that applies wherever no more specific row exists. Where a row "
+        "naming a sector and a row naming only a food category could both "
+        "apply, the one naming a sector is used. Negative values are retained "
+        "because they represent published offsets."
+    ): ("All sectors", "All food categories"),
+}
+
 LANGUAGES = i18n_keys.catalogue_languages()
 SOURCE = i18n_keys.source_strings()
 
@@ -229,6 +280,51 @@ def test_the_client_s_name_and_the_units_are_never_translated(language):
 
 
 @pytest.mark.parametrize("language", LANGUAGES)
+def test_a_sentence_explaining_a_cell_uses_that_cell_s_words(language):
+    """The scope sentences on the methodology page (§7) tell a reader which of
+    two optional scopes wins. That only works if the sentence names the scope
+    in the words the table cell actually prints -- `t("All destinations")` in
+    the cell and a synonym in the sentence describes a column the reader
+    cannot see, in a language nobody on this team reads.
+
+    English cannot fail this: the sentence is written from the labels. Every
+    other catalogue can, and seven did.
+    """
+    strings = i18n_keys.catalogue(language)["strings"]
+    for sentence, labels in SCOPE_SENTENCES.items():
+        if sentence not in strings:
+            continue
+        translated = strings[sentence]
+        for label in labels:
+            assert label in strings, (
+                f"{language}: {label!r} is a cell label the sentence explains "
+                f"and the catalogue has no entry for it"
+            )
+            assert strings[label] in translated, (
+                f"{language}: the sentence explains a cell reading "
+                f"{strings[label]!r} without using those words -- {translated!r}"
+            )
+
+
+def test_every_scope_sentence_and_its_labels_are_strings_the_page_asks_for():
+    """The guard above skips a sentence a catalogue does not carry, which is
+    how it stays quiet for a catalogue written before the sentence existed --
+    and also how it would stay quiet forever if the English were reworded and
+    `SCOPE_SENTENCES` were left behind. This is the half that notices.
+    """
+    for sentence, labels in SCOPE_SENTENCES.items():
+        assert sentence in SOURCE, (
+            "SCOPE_SENTENCES names a sentence the front end no longer asks "
+            f"for: {sentence!r}"
+        )
+        for label in labels:
+            assert label in SOURCE, (
+                f"SCOPE_SENTENCES names a cell label the front end no longer "
+                f"asks for: {label!r}"
+            )
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
 def test_no_entry_is_blank_or_still_english(language):
     """A key present with its English value is worse than a missing key.
 
@@ -241,10 +337,53 @@ def test_no_entry_is_blank_or_still_english(language):
     offenders = [
         source
         for source, translated in i18n_keys.catalogue(language)["strings"].items()
-        if not translated.strip() or (translated == source and source not in allowed)
+        if not translated.strip()
+        or (translated == source and source not in allowed and _has_translatable_words(source))
     ]
     assert not offenders, f"{language} entries are blank or still English: {offenders}"
 
+
+
+def test_the_wordless_exemption_does_not_cover_anything_with_a_word_in_it():
+    """The exemption above is structural, so it has to be shown to be narrow.
+
+    A rule that decided by eye which strings "have nothing to translate" would
+    grow to fit whatever was failing. This one strips placeholders and looks for
+    a letter, and these are the cases that must land on each side of it - the
+    three real wordless strings, and the shapes closest to them that are not.
+    """
+    wordless = ["%(sector)s — %(food)s", ", ", "%(food)s: %(message)s", "%(count)s"]
+    for source in wordless:
+        assert not _has_translatable_words(source), (
+            f"{source!r} has no word in it and should be exempt"
+        )
+    worded = [
+        "%(count)s selected",
+        "%(count)s food types",
+        "Code",
+        "Not broken down by type",
+        "%(sector)s and %(food)s",
+    ]
+    for source in worded:
+        assert _has_translatable_words(source), (
+            f"{source!r} carries a word a translator has to change, so the "
+            "exemption must not reach it"
+        )
+
+
+def test_every_wordless_string_the_front_end_asks_for_is_really_wordless():
+    """And that the exemption is not silently covering the whole catalogue.
+
+    If a refactor made `_has_translatable_words` return False too often, every
+    English value in every locale would pass unnoticed. This pins the actual
+    count against the source strings rather than trusting the predicate.
+    """
+    wordless = sorted(source for source in SOURCE if not _has_translatable_words(source))
+    assert wordless == ["%(food)s: %(message)s", "%(sector)s — %(food)s", ", "], (
+        f"the set of wordless source strings changed: {wordless}. Each one is "
+        "exempt from the English-value check, so a new member is a new blind "
+        "spot and has to be looked at rather than absorbed."
+    )
 
 @pytest.mark.parametrize("language", sorted(IDENTICAL_BY_DESIGN))
 def test_every_declared_coincidence_is_a_real_one(language):

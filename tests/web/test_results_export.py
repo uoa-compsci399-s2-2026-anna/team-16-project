@@ -130,6 +130,40 @@ def both_surfaces_for(tmp_path: Path, state: dict) -> dict:
     return json.loads(out.read_text(encoding="utf-8"))
 
 
+#: The results page itself, as markup. `renderResults` is what the browser
+#: calls; `buildResultsReport` below is its text export. Both are asserted
+#: because contract §7.3c requires the screen and the file to carry the same
+#: sentence, and a test of one of them proves nothing about the other.
+HARNESS_SCREEN = """
+globalThis.window = { location: { search: '' } }
+globalThis.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {} }
+
+import { readFileSync, writeFileSync } from 'node:fs'
+const { renderResults } = await import(process.argv[2])
+const state = JSON.parse(readFileSync(process.argv[3], 'utf8'))
+writeFileSync(process.argv[4], renderResults(state), 'utf8')
+"""
+
+
+def screen_for(tmp_path: Path, state: dict) -> str:
+    """`renderResults(state)`, the markup the results page is."""
+    harness = tmp_path / "harness_screen.mjs"
+    harness.write_text(HARNESS_SCREEN, encoding="utf-8")
+    state_file = tmp_path / "state_screen.json"
+    state_file.write_text(json.dumps(state), encoding="utf-8")
+    out = tmp_path / "screen.html"
+    completed = subprocess.run(
+        [shutil.which("node"), str(harness), RESULTS_JS.as_uri(),
+         str(state_file), str(out)],
+        capture_output=True, text=True, encoding="utf-8", timeout=60,
+    )
+    assert completed.returncode == 0, (
+        "node could not render the results page:\n"
+        f"{completed.stdout}\n{completed.stderr}"
+    )
+    return out.read_text(encoding="utf-8")
+
+
 def _fixture(name: str) -> dict:
     return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
 
@@ -270,6 +304,110 @@ def report_for(tmp_path: Path, state: dict) -> str:
 @pytest.fixture
 def report(tmp_path):
     return report_for(tmp_path, build_state())
+
+
+def build_state_with_item_basis(*bases: str) -> dict:
+    """`build_state`, with each entry given a food and a v1.59 `item_basis`.
+
+    The taxonomy fixture ships `"food_items": []` -- every deployment does,
+    because `admin/seed.py` seeds no food -- so a vocabulary is added here
+    rather than invented in the fixture, where it would put codes in front of
+    C and D that no database holds (contract v1.58's note on `taxonomy.json`).
+    """
+    state = build_state()
+    state["taxonomy"] = dict(
+        state["taxonomy"],
+        food_items=[
+            {"code": "cheese", "name": "Cheese", "food_category": "dairy",
+             "sort_order": 1},
+            {"code": "carrots", "name": "Carrots", "food_category": "vegetables",
+             "sort_order": 2},
+        ],
+    )
+    foods = ("cheese", "carrots")
+    for index, basis in enumerate(bases):
+        item = state["result"]["entry_results"][index]
+        item["response"] = dict(item["response"], item_basis=basis,
+                                food_item=foods[index])
+    return state
+
+
+def test_the_screen_and_the_file_carry_the_same_disclosure(tmp_path):
+    """Contract §7.3c: one sentence, three surfaces, one field.
+
+    The screen and the text export are built here from **one** state in two
+    calls, so a fix that reached only one of them shows up as a disagreement
+    rather than as two green tests that each checked their own surface and
+    never compared notes. (The third surface is the PDF; `tests/api/
+    test_pdf_render.py` pins its two constants against the keys the front end
+    renders, which is the same claim across a process boundary.)
+    """
+    state = build_state_with_item_basis("category")
+
+    screen = screen_for(tmp_path, state)
+    report = report_for(tmp_path, state)
+
+    sentence = "Cheese is priced at the Dairy average"
+    assert sentence in screen, "the results page does not disclose the fallback"
+    assert sentence in report, "the text export does not disclose the fallback"
+    assert "Food category average" in screen and "Food category average" in report
+
+
+def test_the_screen_keeps_the_disclosure_and_the_placeholder_banner_apart(tmp_path):
+    """They are two different caveats and the page shows both.
+
+    A real factor set can still price a food only at its category, and a
+    placeholder set can price a food individually -- so folding the disclosure
+    into the `is_mock` banner would tie a caveat about *coverage* to a flag
+    about *provenance*, and the day the client supplies real factors the
+    fallback sentence would disappear with the banner.
+    """
+    state = build_state_with_item_basis("category")
+    screen = screen_for(tmp_path, state)
+
+    assert "Placeholder data" in screen
+    assert "Cheese is priced at the Dairy average" in screen
+    assert screen.count("aside class=\"disclaimer\"") == 2
+
+
+def test_a_food_priced_at_its_category_is_disclosed_in_the_export(tmp_path):
+    """Contract v1.59. The export is the copy most likely to be forwarded to
+    somebody who was not in the room, so a figure that is not as specific as
+    the question it answers has to say so on the file as well as on screen."""
+    report = report_for(tmp_path, build_state_with_item_basis("category"))
+
+    assert "Food category average" in report
+    assert "Cheese is priced at the Dairy average" in report
+
+
+def test_the_export_names_every_food_that_fell_back_and_only_those(tmp_path):
+    """One line per food, and an entry that was priced at its own food does
+    not get one. Asserted together, because a test that only checked the
+    disclosed food would pass against a version that disclosed every entry."""
+    report = report_for(tmp_path, build_state_with_item_basis("category", "item"))
+
+    assert "Cheese is priced at the Dairy average" in report
+    assert "Carrots" not in report
+
+
+def test_a_mixed_entry_is_not_disclosed_in_the_export(tmp_path):
+    """`mixed` is the ordinary state, not an alarm: `prevention` factors are
+    stored as category-level rows (contract §2.2, the shape that closes O-7),
+    so every entry that moves mass to prevention has a category-priced line
+    however well the set prices its food. A caveat that fires on nearly every
+    submission is read as furniture."""
+    report = report_for(tmp_path, build_state_with_item_basis("mixed", "mixed"))
+
+    assert "Food category average" not in report
+    assert "is priced at the" not in report
+
+
+def test_an_entry_that_named_no_food_is_not_disclosed_in_the_export(report):
+    """`not_applicable`, which is every entry today -- the fixture carries
+    `"item_basis": "not_applicable"` on both entries. Nothing was asked, so
+    there is nothing to say, and a caveat here would be about a choice the
+    visitor never made."""
+    assert "Food category average" not in report
 
 
 # ------------------------------------------------------- the figures themselves
@@ -2750,6 +2888,73 @@ def test_the_page_the_text_export_and_the_pdf_tell_the_same_story_about_an_equiv
 #: alone: a physical `left`/`right` property reads correctly in one direction and
 #: overflows, or sits on the wrong side, in the other.
 EQUIVALENT_BASIS_WIDTHS = (320, 390, 700, 938, 1278)
+
+
+@pytest.mark.browser
+def test_the_equivalence_icons_share_one_baseline_where_the_cards_are_a_row(browser):
+    """Above the breakpoint the three cards stretch to the tallest, so a "?" laid
+    out after its own text sits at whatever height that text ended -- measured at
+    700px as 21, 165 and 93px from each card's bottom, three icons on three
+    different lines. They are pinned to the card's foot instead.
+
+    **This test exists because the change that did it had nothing to detect its
+    removal.** The assertion beside it checks the icon's INLINE placement and is
+    load-bearing -- flipping `text-align: end` to `start` fails eight of its ten
+    parametrisations -- but nothing looked at the vertical, so reverting the two
+    lines that do this left the suite green.
+
+    Asserted at 700px only: below 650px the grid is a single column, every card
+    sizes to its own content, and there is no misalignment to fix. Asserting a
+    shared baseline there would pin a coincidence.
+    """
+    #: Three equivalences whose **labels** differ in length, and the labels are
+    #: what matters: the `source_note` sits inside a collapsed `<details>`, so
+    #: varying it changes no card's height and the test passes whatever the
+    #: stylesheet does. Measured that the wrong way round first -- three
+    #: different notes, three identical heights, green under mutation.
+    response = _equivalence_response(source_note=_VEHICLE_SOURCE_NOTE)
+    template = response["totals"]["current"]["equivalences"][0]
+    response["totals"]["current"]["equivalences"] = [
+        dict(template, code="short", name="Short", label="One short line"),
+        dict(template, code="medium", name="Medium",
+             label="A label of a middling length that takes up about two lines here"),
+        dict(template, code="long", name="Long",
+             label="A deliberately long label that wraps onto several lines so that this "
+                   "card is taller than both of the others beside it in the same row"),
+    ]
+
+    context = browser.new_context(viewport={"width": 700, "height": 900}, locale="en-NZ")
+    try:
+        page = context.new_page()
+        page.route(
+            "**/api/v1/calculate*",
+            lambda route: route.fulfill(
+                status=200, content_type="application/json", body=json.dumps(response),
+            ),
+        )
+        try:
+            page.goto(CALCULATOR_URL, wait_until="networkidle", timeout=15000)
+        except Exception as error:  # pragma: no cover - environment guard
+            pytest.skip(f"the front end is not being served at {CALCULATOR_URL}: {error}")
+        page.wait_for_selector('[data-action="start"]', timeout=10000)
+        _submit_two_entries(page)
+        page.wait_for_selector(".equivalent-grid article")
+
+        gaps = page.evaluate(
+            """() => [...document.querySelectorAll('.equivalent-grid article')].map(card => {
+              const basis = card.querySelector('.equivalent-basis')
+              if (!basis) return null
+              return Math.round(card.getBoundingClientRect().bottom
+                                - basis.getBoundingClientRect().bottom)
+            })"""
+        )
+        assert len(gaps) >= 2 and None not in gaps, gaps
+        assert len(set(gaps)) == 1, (
+            "the equivalence explanations do not sit at the same height in their "
+            f"cards, so they are following their own text rather than the card: {gaps}"
+        )
+    finally:
+        context.close()
 
 
 @pytest.mark.browser

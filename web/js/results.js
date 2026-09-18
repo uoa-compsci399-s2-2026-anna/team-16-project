@@ -4,7 +4,7 @@ import { entryTotal, isPresetUnit, kgToTonnes, presetUnitCode, rowKgString } fro
 import { ComparisonResults, ImprovementScenario } from './improvement.js'
 import { contribute, exportPdf } from './api.js'
 import { exportPayload } from './submission.js'
-import { setState } from './state.js'
+import { leafDisplayName, setState } from './state.js'
 
 const DEMONSTRATION_NOTICE = 'Demonstration only — verified calculation factors have not yet been supplied.'
 
@@ -258,18 +258,85 @@ function moneyLines(totals) {
   return ['', t('The money'), ...lines]
 }
 
+/**
+ * A summary card's explanation: the `i`, and the panel it reveals.
+ *
+ * A pure hover tooltip -- the pointer entering the `i` reveals it and leaving hides it,
+ * with no click-to-latch state. The adjacent-sibling focus rule in CSS gives keyboard
+ * users the same panel when Tab puts a visible focus ring on the button.
+ *
+ * **`label` is a parameter and not a constant.** It was `How this comparison was worked
+ * out` on every card, which is the equivalences' own string (see `equivalences` below):
+ * a screen reader announced "how this comparison was worked out" for *Total food waste*
+ * and *Percentage waste*, neither of which is a comparison.
+ *
+ * `body` is assembled from `t()` output and interpolated taxonomy names, each escaped at
+ * the point it is built -- see the three builders below.
+ */
+function resultExplanation(body, id, label) {
+  const tooltipId = `result-explanation-${id}`
+  return `<div class="result-explanation"><button class="result-explanation__trigger" type="button" aria-label="${escapeHtml(label)}" aria-describedby="${escapeHtml(tooltipId)}">i</button><div class="result-explanation__body" id="${escapeHtml(tooltipId)}" role="tooltip">${body}</div></div>`
+}
+
+/**
+ * One metric's explanation, and **it does not restate the formula.**
+ *
+ * The first draft carried a per-code table -- `{co2e, ch4, water, cost}` -- each entry
+ * spelling out `waste (kg) × [production factor + destination factor]`. Two things are
+ * wrong with that and both are named by the contract:
+ *
+ * * §7.6 rule 5: *iterate over metrics; never hard-code their codes.* A metric a staff
+ *   member adds gets no explanation, or an untranslated fallback, and nothing says so.
+ * * **The expression lives in the `metric` row**, and staff edit it through the admin
+ *   panel. A formula copied into a call site is a second copy that goes stale silently:
+ *   the tooltip keeps asserting a calculation the engine has stopped performing, and no
+ *   test in the tree compares the two.
+ *
+ * What is said instead is the engine's own invariant, which the contract fixes and staff
+ * cannot edit away: *a formula computes one line, and the engine sums the lines.* That is
+ * true of every metric, including one added tomorrow. The published formulas and factors
+ * are on the methodology page, which is where a reader who wants the expression should
+ * be sent -- §6.3 publishes them there precisely so this page does not have to.
+ */
+function metricExplanation(metric, definition, code) {
+  const name = definition?.name || code
+  const unit = metricUnit(metric, definition)
+  return `<p>${escapeHtml(t('%(metric)s from the food you entered, in %(unit)s.', { metric: name, unit }))}</p>`
+    + `<p>${escapeHtml(t('Each amount you entered is multiplied by the factors published for its food type and its destination, and the results are added together. The published factors and formulas are on the methodology page.'))}</p>`
+}
+
+function massExplanation() {
+  return `<p>${escapeHtml(t('The total weight of the food waste you entered, added across every destination.'))}</p>`
+}
+
+/**
+ * The share's explanation, and the one card where the placeholder banner does not apply.
+ *
+ * §4.6: this figure is `current.total_kg ÷ total_input_kg` -- two masses the visitor
+ * typed, with no factor anywhere in the division. Every other number on this page is
+ * `qty_kg × a factor` and the factor set is mock (O-1). A reader who distrusts this one
+ * *because of* the banner is distrusting the number the banner was never about, so the
+ * card says so itself.
+ */
+function shareExplanation() {
+  return `<p>${escapeHtml(t('The waste you entered as a percentage of the food you said you handled.'))}</p>`
+    + `<p>${escapeHtml(t('This is a ratio of two figures you typed, so the placeholder factors do not affect it.'))}</p>`
+}
+
 function summaryCards(totals, taxonomy) {
   const metrics = totals.current?.metrics || {}
   const impactCards = Object.entries(metrics).filter(([code]) => code !== MASS_METRIC).map(([code, metric]) => {
     const definition = findByCode(taxonomy.metrics, code)
     const precision = Number(metric.display_precision ?? definition?.display_precision ?? 2)
     const total = number(metric.total)
-    return `<article class="result-card"><p class="result-label">${escapeHtml(definition?.name || code)}</p><p class="result-value${negativeClass(total)}">${formatNumber(total, precision)} ${escapeHtml(metricUnit(metric, definition))}</p></article>`
+    const name = definition?.name || code
+    const unit = metricUnit(metric, definition)
+    return `<article class="result-card"><p class="result-label">${escapeHtml(name)}</p><p class="result-value${negativeClass(total)}">${formatNumber(total, precision)} ${escapeHtml(unit)}</p>${resultExplanation(metricExplanation(metric, definition, code), code, t('How this figure was worked out'))}</article>`
   }).join('')
   const totalKg = number(totals.total_kg)
   const share = productionShareText(totals)
   const shareNote = share.note ? `<p class="result-note">${escapeHtml(share.note)}</p>` : ''
-  return `<article class="result-card primary-result"><p class="result-label">${escapeHtml(t('Total food waste'))}</p><p class="result-value">${formatNumber(totalKg, 2)} kg</p><p class="result-note">${formatNumber(kgToTonnes(totals.total_kg), 3)} ${escapeHtml(t('tonnes'))}</p></article>${impactCards}<article class="result-card"><p class="result-label">${escapeHtml(t('Percentage waste'))}</p><p class="result-value">${escapeHtml(share.value)}</p>${shareNote}</article>`
+  return `<article class="result-card primary-result"><p class="result-label">${escapeHtml(t('Total food waste'))}</p><p class="result-value">${formatNumber(totalKg, 2)} kg</p><p class="result-note">${formatNumber(kgToTonnes(totals.total_kg), 3)} ${escapeHtml(t('tonnes'))}</p>${resultExplanation(massExplanation(), 'mass', t('How this figure was worked out'))}</article>${impactCards}<article class="result-card"><p class="result-label">${escapeHtml(t('Percentage waste'))}</p><p class="result-value">${escapeHtml(share.value)}</p>${shareNote}${resultExplanation(shareExplanation(), 'production-share', t('How this figure was worked out'))}</article>`
 }
 
 // §3: `label` is `label_template` with the equivalence's own value already interpolated and
@@ -358,15 +425,26 @@ function destinationRows(scenario, taxonomy) {
   return [...rows.values()]
 }
 
-// The food leaf under a destination-first stage: the entry's own food category, or the
-// same "unspecified" wording `calculator.js`'s review step already uses for a standard-mix
-// entry — not a new string, so the destination tab does not invent a second way to say it.
-function stageFoodLabel(entry, response, taxonomy) {
-  const foodCode = response.food_category ?? entry.foodCategory
-  const foodDefinition = findByCode(taxonomy.food_categories, foodCode)
-  if (!foodCode || foodDefinition?.is_standard_mix) return t('Standard mix / not specified')
-  return foodDefinition?.name || foodCode
-}
+// The food leaf under a destination-first stage.
+//
+// **Two leaves could render byte-identical here, and that is a wrong-number defect.**
+// This returned `Standard mix / not specified` both for a NULL `food_category` and for
+// the `standard_mix` category. Step 2 offers those as two separate boxes - §5.4 requires
+// it, because "the visitor did not break their waste down by type" is not the same
+// answer as "the visitor chose the standard mix" - and a chain that ticks both is two
+// leaves with different masses and different numbers under one identical row label.
+//
+// `leafDisplayName` is now the only thing that names a leaf, on this page and on the
+// five other surfaces that show one, so the two can no longer collide and a leaf can no
+// longer be called one thing on step 3 and another on the results page.
+//
+// The response's own `food_category` wins over the entry's, as before: §6.2 echoes what
+// the engine resolved, and an entry paired with the wrong response is a defect this
+// label should show rather than hide.
+const stageFoodLabel = (entry, response, taxonomy) => leafDisplayName(
+  { foodCategory: response.food_category ?? entry.foodCategory, foodItem: entry.foodItem ?? null },
+  taxonomy,
+)
 
 // Destination first, then the entries that share it, then each entry's own food category —
 // the transpose the client asked for of the per-entry sections this replaced. The group
@@ -398,11 +476,25 @@ function destinationGroups(entryResults, totalsRows, taxonomy) {
 function breakdowns(entryResults, totals, taxonomy) {
   const stage = []
   const food = []
+  // **Which sectors appear more than once.** A chain that named three food categories is
+  // three entries in one sector, so the stage tab would print three rows labelled
+  // "Processing" differing only in their numbers — and the accumulator that used to merge
+  // colliding labels was removed deliberately (it summed engine-computed figures in the
+  // browser, §7.6.1). They must not be merged, so they have to be told apart: the food is
+  // added to the label exactly where the sector alone is ambiguous, and nowhere else, so
+  // a submission of one entry per sector reads as it always did.
+  const sectorCounts = new Map()
+  for (const { entry, response } of entryResults) {
+    const code = response.sector ?? entry.sector
+    sectorCounts.set(code, (sectorCounts.get(code) || 0) + 1)
+  }
   for (const { entry, response } of entryResults) {
     const scenario = response.current || {}
     const metrics = metricCells(scenario)
     const kilograms = number(scenario.total_kg)
-    stage.push({ label: sectorName(entry, response, taxonomy), kilograms, metrics })
+    const sector = sectorName(entry, response, taxonomy)
+    const shared = (sectorCounts.get(response.sector ?? entry.sector) || 0) > 1
+    stage.push({ label: shared ? t('%(sector)s — %(food)s', { sector, food: stageFoodLabel(entry, response, taxonomy) }) : sector, kilograms, metrics })
     const foodCode = response.food_category ?? entry.foodCategory
     const foodDefinition = findByCode(taxonomy.food_categories, foodCode)
     if (foodCode && !foodDefinition?.is_standard_mix) food.push({ label: foodDefinition?.name || foodCode, kilograms, metrics })
@@ -710,14 +802,16 @@ export function buildResultsReport(state) {
   })
   const entryLines = (state.result?.entry_results || []).flatMap(({ entry, response }, index) => {
     const sector = findByCode(state.taxonomy.sectors, entry.sector)
-    const food = findByCode(state.taxonomy.food_categories, entry.foodCategory)
     const destinations = entry.current.filter(line => typed(line.qtyInput) > 0).map(line => destinationLine(line, entry, state.taxonomy))
     const scenario = response?.current || {}
     const impact = metricLines(scenario, state.taxonomy, '  - ')
     const byDestination = destinationImpactLines(scenario, state.taxonomy)
     return [
       t('Entry %(number)s: %(sector)s', { number: index + 1, sector: sector?.name || entry.sector }),
-      `${t('Food type')}: ${food?.name || t('Not provided')}`,
+      // One leaf, one name (`leafDisplayName`). This read `Not provided` for a
+      // chain that named no food while every screen the reader had just left said
+      // `Not broken down by type`, and the file is the copy that gets forwarded.
+      `${t('Food type')}: ${leafDisplayName(entry, state.taxonomy)}`,
       // A container entry has no `totalAmount` — the visitor said "two 240 L wheelie
       // bins", not "139.20 kilograms" — so reading that field printed **0.00 kilograms**
       // into a report whose whole job is to be attached to an email and believed. The
@@ -737,6 +831,11 @@ export function buildResultsReport(state) {
   // data is the more damaging half of the same bug. The factor version replaces it as the
   // line that says which numbers these are, so a real export is not left saying nothing.
   const notice = state.result?.factor_set?.is_mock ? [t(DEMONSTRATION_NOTICE)] : []
+  // Contract v1.59, printed beside `notice` rather than inside each entry's
+  // block: one food appears once however many entries named it, which is the
+  // same list the screen shows, from the same function.
+  const averaged = categoryAverageLines(state, '')
+  const averagedBlock = averaged.length ? ['', t('Food category average'), ...averaged] : []
   // The export leaves the browser and is read by somebody who did not choose the
   // language it was written in, so a machine-translated interface has to say so on
   // the file as well as on the screen it came from.
@@ -765,6 +864,7 @@ export function buildResultsReport(state) {
     ...entryLines,
     `${t('Factor version')}: ${state.result?.factor_set?.version_label || t('Not supplied')}`,
     ...notice,
+    ...averagedBlock,
     `${t('Percentage waste')}: ${share.value}${share.note ? `. ${share.note}` : ''}`,
     ...translationNotice,
   ].join('\n')
@@ -1020,6 +1120,54 @@ export async function contributeCalculation(state, toPublicMessage = error => er
 }
 
 /**
+ * The foods whose figures came from their category's average, once each.
+ *
+ * **The engine decides this, not the browser.** `item_basis` is
+ * `EntryResult.item_basis` (contract v1.59), rolled up in `engine/calculate.py`
+ * from every breakdown row of both scenarios. Working it out here would mean
+ * the results page, this file's text export and `api/pdf_render.py` each
+ * reimplementing the same roll-up, in two languages, for one submission --
+ * and the rule is that the screen and both exports tell one story.
+ *
+ * Only `'category'` is disclosed. `'mixed'` is the ordinary state rather than
+ * an alarm: `prevention` factors are stored as category-level rows (contract
+ * §2.2, the shape that closes O-7), so every entry that moves mass to
+ * prevention has a category-priced line however well the set prices its food.
+ * A notice raised on `'mixed'` would fire on a row that is deliberately
+ * category-level, and a notice that fires on everything is read as furniture.
+ *
+ * @param {object} state
+ * @returns {Array<{food: string, category: string}>}
+ */
+function categoryAverageFoods(state) {
+  const seen = new Set()
+  const out = []
+  for (const { response } of state.result?.entry_results || []) {
+    // Both conditions, and neither implies the other: an entry that named no
+    // food is `not_applicable` and has nothing to disclose, and a response
+    // that predates v1.59 carries no `item_basis` at all.
+    if (response?.item_basis !== 'category' || !response?.food_item) continue
+    if (seen.has(response.food_item)) continue
+    seen.add(response.food_item)
+    const item = findByCode(state.taxonomy?.food_items || [], response.food_item)
+    const category = findByCode(state.taxonomy?.food_categories || [], item?.food_category ?? response.food_category)
+    out.push({
+      // The code is the fallback, never a blank: a taxonomy row can be
+      // retired after a submission named it (contract §5.2), and a notice
+      // that named nothing would be a caveat about an unnamed thing.
+      food: item?.name || response.food_item,
+      category: category?.name || response.food_category || t('its food category'),
+    })
+  }
+  return out
+}
+
+/** The same sentences, as the lines both exports print. */
+function categoryAverageLines(state, prefix) {
+  return categoryAverageFoods(state).map(({ food, category }) =>
+    `${prefix}${t('%(food)s is priced at the %(category)s average. The published factor set carries no factors for this food, so the figures here are its category\'s rather than its own.', { food, category })}`)
+}
+/**
  * The results page's section jump list, which lives in the page's **gutter**.
  *
  * The request behind it: at a wide viewport this page is still a ~960px column, so
@@ -1065,6 +1213,15 @@ export function renderResults(state) {
   const totals = result.totals || {}
   const mock = result.factor_set?.is_mock
   const warning = mock ? `<aside class="disclaimer" role="status"><span class="info-icon" aria-hidden="true">i</span><div><strong>${escapeHtml(t('Placeholder data'))}</strong><p>${escapeHtml(t(DEMONSTRATION_NOTICE))}</p></div></aside>` : ''
+  // Contract v1.59. The same shape as the placeholder banner above and for a
+  // related reason -- both say *this number is not what it looks like* -- but
+  // independent of it: a real factor set can still price a food only at its
+  // category, and a placeholder one can price a food individually. One line
+  // per food, so no plural form is needed in twenty catalogues.
+  const averaged = categoryAverageFoods(state)
+  const averagedNotice = averaged.length
+    ? `<aside class="disclaimer" role="status"><span class="info-icon" aria-hidden="true">i</span><div><strong>${escapeHtml(t('Food category average'))}</strong>${averaged.map(({ food, category }) => `<p>${escapeHtml(t('%(food)s is priced at the %(category)s average. The published factor set carries no factors for this food, so the figures here are its category\'s rather than its own.', { food, category }))}</p>`).join('')}</div></aside>`
+    : ''
   const version = result.factor_set?.version_label || t('Not supplied')
   // `stepNav` is the LAST child of this section and has to stay there: it is
   // `position: sticky; bottom: 0`, which pins only while its containing block
@@ -1076,9 +1233,13 @@ export function renderResults(state) {
   // header's home button already offers it.
   return `<section class="content-section wide results-page" aria-labelledby="results-title">${resultsFloatingNavigation(state)}<p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 6 }))}</p><h1 id="results-title">${escapeHtml(t('Your estimated impact'))}</h1><p class="section-intro">${escapeHtml(entryResults.length === 1
       ? t('Results returned by the calculation service for one supply-chain entry.')
-      : t('Results returned by the calculation service for %(count)s supply-chain entries.', { count: entryResults.length }))}</p>${resultsPeriod(state.timeFrame)}${warning}
+      // **`count` is entries, and an entry is a leaf.** A single forked chain is one
+      // supply-chain entry rendered as several, so the old wording — "for 3 supply-chain
+      // entries" — was a claim about the visitor's own submission that stopped being
+      // true. The noun is dropped rather than replaced with a second count nobody asked
+      // for; the review step is where the two numbers are reconciled.
+      : t('Results returned by the calculation service for %(count)s entries.', { count: entryResults.length }))}</p>${resultsPeriod(state.timeFrame)}${warning}${averagedNotice}
     <section class="results-section" id="impact-summary" aria-labelledby="summary-title"><div class="result-section-heading"><span class="section-number">01</span><div><h2 id="summary-title">${escapeHtml(t('Impact summary'))}</h2><p>${escapeHtml(t('A high-level view of the recorded food waste.'))}</p></div></div><div class="results-grid">${summaryCards(totals, state.taxonomy)}</div>${moneySummary(totals)}</section>
-    ${ImprovementScenario(state)}
     <section class="results-section" id="tangible-equivalents" aria-labelledby="equivalents-title"><div class="result-section-heading"><span class="section-number">02</span><div><h2 id="equivalents-title">${escapeHtml(t('Tangible equivalents'))}</h2><p>${escapeHtml(t('Plain-language comparisons appear when supplied by the calculation service.'))}</p></div></div>${equivalences(totals, mock)}</section>
     ${breakdownSection(state, entryResults)}
     <section class="methodology-compact" id="results-methodology" aria-labelledby="results-methodology-title"><h2 id="results-methodology-title">${escapeHtml(t('Methodology & Limitations'))}</h2><p>${escapeHtml(t('Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.'))}</p><p>${escapeHtml(t('Factor version'))}: ${escapeHtml(version)}.</p><details><summary>${escapeHtml(t('View methodology'))}</summary><div><p>${escapeHtml(t('Data sources and calculation factors are maintained and approved by Kai Commitment.'))}</p><p>${escapeHtml(t('Waste as a share of food handled is a ratio of the two masses you typed, not a factor-based figure, so the placeholder data above does not affect it.'))}</p></div></details></section>

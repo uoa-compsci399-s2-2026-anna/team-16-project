@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-09-17 (v1.54 draft)"
+date: "2026-09-18 (v1.60 draft)"
 ---
 
 # 0. How to Use This Document
@@ -25,11 +25,191 @@ This document defines **what every person's code receives and what it returns.**
 
 ## 0.1 Change Log
 
+### v1.60 — 2026-09-18 (the visitor can name a food, and one deployment will let them; affects C, D, E and B)
+
+> **The first landing in this order that a visitor can see.** Stages 3 through
+> 7 were each inert by construction and each said so. This one is not: a fresh
+> `docker compose up` now offers step 2.5, and a calculation that names a food
+> gets a different number from one that does not.
+
+Stage 8, the last of `.superpowers/sdd/2026-09-17-food-granularity/design.md`'s landing order.
+
+**No request or response shape changes.** `entries[].food_item` has been on the wire since v1.58 and `null` on every request since; what changes is that something can now set it. The additions are a front-end panel, a vocabulary and a switch on one factor set.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **Step 2.5 exists, as step 2's SECOND PANEL rather than a seventh step.** `spec.md` §3.3 says it refines step 2 rather than replacing it, and the panel is absent wherever `item_level_enabled` is false. A seventh step would have meant renumbering twenty hard-coded step references and would have made *step 3 of 7* untrue in every deployment that does not release the item level. `state.foodStage` picks the panel; the step number and the progress bar do not move | §7.3a, §7.2 |
+| 2 | **`submission.js` sends `entries[].food_item`.** It has carried `foodItem` on every leaf since the fork, for labelling, and withheld it at the payload boundary because `EntryPayload` had `extra="forbid"` and no such field. v1.58 gave it one; the withholding became the front end standing a revision behind the API | §7.3b, §6.2 |
+| 3 | **`stepNav` gains `backAction`** for a Back that moves within a step rather than between two, and omits `data-step` in that case — a step number there is read by `goToStep`, which resets the panel, so the button would do nothing visible | §7.3a |
+| 4 | **`admin/seed.py` seeds twenty `food_item` rows**, every one a row of the client's own table 1, parented by the mapping the nine category factors were already averaged from | §2.1, §10 |
+| 5 | **`docker/mock-factors.json` releases the item level** and carries twelve item-level `factor_upstream` rows for the six dairy foods, in `co2e` and `water` | §2.2, §10 |
+| 6 | **`seed_mock_factors.py` reads `item_level_enabled` and `upstream[].food_item`**, defaulting the switch to **false** — the answer for every factor file written before v1.58, and the safe default either way | §10 |
+
+> **The leaf rule was already built and had nothing writing it.** `state.foodItems` existed, `entryLeaves` already implemented §3.3's rule over it — each ticked food is a leaf, plus each chosen category with no food ticked — `leafKey` already carried the item and `leafDisplayName` already named one. Stage 8 adds the screen and the tick, not the model. That is what the fork's own note meant by *reserved for step 2.5*.
+>
+> **Twenty foods is a count, not an estimate.** The client's table 1 has twenty-six rows and six of them ARE the category they sit under: Fruit, Vegetable, Seafood, Nuts and seeds, Drinks/Beverages and General mixed food product. Offering *Fruit → Fruit* asks a visitor to refine an answer into itself, and would put a food on the screen whose own factor row could only ever equal its parent's. What remains is exactly the twenty rows that say something finer than their own category.
+>
+> **`eggs` is parented to `staples` and deliberately not to `dairy`, and the reason is a number.** The client's own table draws Eggs directly beneath the Dairy block, which makes `dairy` the obvious home and the wrong one: a parent category is the **fallback for every metric the client did not supply per food**, `ch4` among them, and `dairy`'s methane is ruminant. Filing a poultry product under ruminant methane returns a systematically high figure to a visitor who has just asked a more specific question. A dedicated `eggs` category is the right long-term answer; it is not taken here because it moves the taxonomy, `NZ_TO_REFED_FOOD_SHAPE`, the factor draft builder and every test asserting a category count, while **O-5 has not settled whether there are eight categories or nine**.
+>
+> **The item factors are the client's relativities on the mock set's level, and that is what keeps the fallback honest.** The client's nine category factors are the unweighted mean of their table-1 rows, so a food with no row of its own falls back to a figure it helped produce. The deployed set's dairy figure is golden `case_01`'s, not the client's mean — so each item value is the client's figure scaled by `mock_category ÷ client_mean`. The relative differences are the client's; the absolute level is the mock set's; and the mean of the six scaled rows returns to the category figure within 1.7e-11 and 3.3e-11, below `DECIMAL(20,10)`'s own scale. Using the client's figures raw would have made the category row and the item rows disagree about the same food — design §8.2 names that as the thing to avoid.
+>
+> **Only `co2e` and `water` get item rows.** They are the two metrics the client's table supplies that this system also carries; its third column is land, which is not a metric here. `ch4`, `cost` and `mass` are left absent per food and fall to the category row through §2.2's chain, which is a defined number — better than inventing a value whose only property would be that somebody typed it.
+>
+> **Six foods reach the screen out of twenty seeded, and that is §6.1 working.** The deployed mock set prices `dairy`, `vegetables` and `standard_mix`; only `dairy` has foods under it in the seed, and the parent-covered filter removes the fourteen under `staples`, `meat` and `bakery_grains`. A food offered under a heading step 2 does not have is a food the visitor cannot reach.
+>
+> **Measured in a real browser, on an isolated stack seeded from empty.** Twenty foods stored, six offered, the panel grouping them under the category's own name, two ticks forking into two named leaves, an untouched category staying one category-level leaf, Back returning to the categories with them still ticked, the position label unmoved across both panels, and the request carrying `food_item: cheese` and `food_item: milk`. 1000 kg of dairy at landfill reads 2890.0 kg CO2e unrefined, 4547.7 as cheese and 1407.9 as other dairy.
+>
+> **What this does not change.** Nothing about an existing deployment: `seed_mock_factors.py` never overwrites a factor set that exists, so a database seeded before this revision keeps a set with the switch off and the panel stays absent until someone clones, adds item rows and publishes through the panel. `api/pdf_render.py` still labels an entry by its food **category**, so a downloaded document prints *Dairy* where the screen said *Cheese* — carried forward from v1.58 and still open.
+
+### v1.59 — 2026-09-18 (the answer says which row priced it; affects A, B, C and D)
+
+> **`UpstreamBasis` has existed since v1.56 and nothing read it.** Its own
+> docstring names what it is for — *the fallback disclosure the interface will
+> render* — while `engine/calculate.py` called `bundle.upstream()`, took the
+> value and dropped the basis on the floor. A dimension is not disclosed by an
+> enum nobody calls.
+
+Stage 7 of `.superpowers/sdd/2026-09-17-food-granularity/design.md`'s landing order. v1.58 let a request name a food and priced the entry at it; **this is the revision that tells the visitor when it could not.** A food with no factor rows of its own is priced at its category's average — a defined, meaningful number, which is exactly why it is dangerous: nothing about the figure looks like a fallback, and the visitor asked a more specific question than the number answers.
+
+**What a caller that has not changed sees.** Every request shape is unchanged; no request field is added. Three keys are added to responses and every existing figure is byte-identical — replayed through the built app before and after and compared key by key.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`BreakdownRow` gains `upstream_basis`** — which of §2.2's four candidate rows produced this line's `upstream`, or `absent` where none did. Per line and per metric, because that is the granularity at which the answer varies: the destination outranks the item, so one entry's `prevention` line is category-priced while its `landfill` line is not. **Required, not defaulted**: every member is a claim about a figure that was produced, so there is no safe value to assume | §3, §4.2 |
+| 2 | **`null` on a totals-level row**, where `upstream` and `downstream` are already zero and for the same reason: a row summed across entries was priced by no single candidate, and naming one of them would describe neither | §3, §6.2 |
+| 3 | **`EntryResult` gains `item_basis`** — `item`, `mixed`, `category` or `not_applicable`, rolled up from every `BreakdownRow.upstream_basis` in **both** scenarios. Defaulted to `not_applicable`, which is the only honest value for a caller that predates the field: such a caller cannot have named a food | §3, §4.2 |
+| 4 | **Only `category` is disclosed.** `ItemBasis.is_disclosed` states it once, so three surfaces do not each decide. `mixed` is the ordinary state, not an alarm — see the callout below | §3, §7 |
+| 5 | **`POST /calculate` carries both on the wire** — `entries[].item_basis` and `by_destination[].upstream_basis`, present on every entry and every row | §6.2 |
+| 6 | **The results page, its plain-text export and the PDF all render the same sentence**, from the same field, worded from the same two catalogue keys. `tests/api/test_pdf_render.py` asserts the PDF's two constants are strings the front end also renders, so a reword on one side fails rather than producing two accounts of one submission | §7, §6.2.3 |
+| 7 | **The privacy promise names the food.** Both enumerating sentences on `home.html`, `index.html`, `methodology.html` and `stats.html` now read *the sector, food category, the specific food where you name one, and the quantities entered*. Worded so that it is true on both sides of landing step 8, and closing the note v1.58 left open in §2.3 | §7, §2.3 |
+| 8 | **The golden harness stops dropping fields.** `render()` claimed to drop nothing and had been dropping v1.58's `EntryResult.food_item_code` since it was added — invisibly, because the field is `None` in all thirteen cases and a key missing from both documents is missing from the comparison too. `test_render_drops_no_field` now checks the projection against `dataclasses.fields` | §10.1 |
+
+> **`mixed` is the ordinary state and must not raise the sentence.** O-7's prevention offset is stored as a **category-level, destination-specific** row (§2.2 candidate 2), and the destination outranks the item — so *every* entry that moves mass to `prevention` has at least one category-priced line, however well the published set prices its food. A disclosure raised on `mixed` would fire on nearly every submission that uses the calculator's headline feature, and a caveat that fires on everything is read as furniture. The member is still carried, because a surface that wants to be precise about one metric reads the rows.
+>
+> **The roll-up is the engine's, not each surface's.** Three places render this sentence — `web/js/results.js` on screen, the same module's text export, and `api/pdf_render.py` — in two languages, across a process boundary. Three roll-ups is one submission described three ways, and the difference would appear only for a visitor who read the page and then opened the file. `engine/calculate.py::_item_basis` computes it once, the golden suite pins it, and the surfaces branch.
+>
+> **The basis is read off the winning key, never off the arguments.** A lookup that named no item cannot be answered by an item row and a lookup that named no destination cannot be answered by a here-only row, so the member describes the row that actually priced the line — which is what keeps it truthful in the two degenerate cases where the four candidate keys coincide.
+>
+> **The thirteen `expected.json` files were not regenerated from the engine.** `tests/golden/test_golden.py` says it in as many words — *a runner with a `--regenerate` flag is a runner that certifies whatever the engine currently does* — so each basis was derived from that case's own `bundle.json` by a reader written against §2.2's prose, and the comparison is between two independent derivations. No pre-existing leaf moved in any of the thirteen; that was checked mechanically, in both directions.
+>
+> **A mutation test had been silently disarmed by this change and the suite caught it.** `test_case_03_fails_if_the_upstream_destination_dimension_is_removed` monkeypatches `FactorBundle.upstream`, and `calculate_scenario` now calls `upstream_with_basis` — so the patch landed on a method the engine had stopped calling and case_03 passed 456.000 straight through, green and evidence of nothing. It patches the method the engine calls. Written down because the next person to add a lookup method inherits the same trap.
+>
+> **Nothing visitor-facing moves yet.** `item_level_enabled` is `false` on every set that exists and `admin/seed.py` seeds no `food_item`, so no entry can carry a food through the form and `item_basis` is `not_applicable` on every response a visitor can produce. This is what makes landing step 8 possible to build; it is not step 8.
+
+### v1.58 — 2026-09-18 (the wire learns the food item; affects B, C, D and A, and E as the author of the vocabulary)
+
+> **This is the first landing of the food-granularity order in which a response
+> body changes.** Stages 3, 4 and 5 (v1.54 part one, v1.56, v1.57) were each
+> inert by construction and each recorded the contract-change process's third
+> step as a deliberate no-op. This one performs it: `docs/interfaces.md`, then
+> the team, then `tests/fixtures/*.json`.
+
+Stage 6 of `.superpowers/sdd/2026-09-17-food-granularity/design.md`'s landing order, and **the stage that connects the four before it to a visitor's answer.** The schema could hold a food (v1.54 part one), the engine could look one up (v1.56), staff could author one and the bundle could carry it (v1.57) — and no request could name one. A dimension wired everywhere except where an answer enters is a dimension that does nothing.
+
+**What a caller that has not changed sees.** Every request shape that was legal before this revision is still legal and still produces the same figures. Two things are added to responses and one existing answer changes:
+
+* `GET /taxonomy` gains `food_items[]` and `factor_set.item_level_enabled`;
+* every `entries[]` in a `POST /calculate` 200 gains `food_item`, `null` for every request that does not name one;
+* **the duplicate-entry rule becomes a triple**, which *accepts* a pair it used to refuse. Nothing that was accepted is now refused.
+
+Measured rather than asserted: every public request shape was replayed through the built app before and after and the bodies compared key by key. The only differences are the two added keys, the `duplicate_entry` `message` wording below, and the per-request `token` and `generated_at`.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`GET /taxonomy` carries `food_items[]`** — `{code, name, food_category, sort_order}`, ordered `sort_order` then `code`, filtered by §6.1's **parent-covered** rule and then again against the food categories that survived their own filter. `_covered_by` has computed this set since v1.57 with no reader; this is the reader. `TaxonomySnapshot` gains the field to carry it, **required rather than defaulted** so a constructor that forgot it cannot report an empty vocabulary as an answer | §6.1, §5.1 |
+| 2 | **`GET /taxonomy` carries `factor_set.item_level_enabled`** — the switch that releases step 2.5 on the front end. It reaches the browser and **still never reaches the engine**: not a `FactorBundle` field, not a `bundle.json` key, not an argument to `calculate`. `tests/test_item_level_inertness.py` is unchanged and still passes. Carried on `TaxonomySnapshot` as `factor_set_item_level_enabled`, required for the reason `factor_set_is_mock` beside it is | §6.1, §5.1 |
+| 3 | **`POST /calculate` accepts `entries[].food_item`** — optional, nullable, 1–64 characters. **Absent and `null` mean the same thing** and that thing is "the visitor named a category and no food", which is every request that existed before this revision | §6.2 |
+| 4 | **The 200 body echoes `entries[].food_item`** — present and null, never omitted, on the terms `alternative` and `net_benefit` already travel on. Echoed as sent and never resolved, exactly as `food_category` is | §6.2 |
+| 5 | **The duplicate rule is `(sector, food_category, food_item)`.** `dairy/cheese` beside `dairy/butter` is what a forked chain produces and was refused; it is now accepted. The NULLs collapse, matching `uq_submission_entry_generic`'s `COALESCE` key parts rather than `uq_submission_entry`'s declared columns — see the callout below | §6.2, §2.3 |
+| 6 | **A food may not arrive without its category**, `field` = `entries[i].food_item`, `issue` = `item_without_category`. It is the one state `ck_submission_entry_item_has_category` refuses at the schema | §6.2, §9 |
+| 7 | **The engine's two item refusals become §9 details with a field** — `unknown_food_item` and `food_item_category_mismatch`, both `VALIDATION_ERROR`, both naming `entries[i].food_item`. They were `UNKNOWN_CODE` with an empty `details`, which tells a front end that *something* in the request named a code that does not exist | §6.2, §9 |
+| 8 | **`submission_entry.food_item_id` is written.** Nothing wrote it before. An entry naming a food stores **both** columns — the food and its parent category — and never NULL in the category | §5.3, §2.3 |
+| 9 | **`EntryInput` and `EntryResult` gain `food_item_code`**, both defaulted to `None`, and `calculate_scenario` resolves the food once per entry and passes it into `bundle.upstream`'s fifth slot. Before this the engine passed a literal `None` there | §3, §4.2 |
+| 10 | **`POST /export/pdf` takes the same entries and runs the same two checks**, because the whole justification for that route is that its figures are the server's: a request accepted on one route and refused on the other means two documents of the same submission disagreeing | §6.2.3 |
+| 11 | **The methodology page publishes the food of every upstream row**, with `All foods in this category` for a row that names none, and its intro states which of its two scopes wins | §7, §6.3 |
+
+> **The duplicate rule had to be checked against the index that enforces it, not the constraint that does not.** `uq_submission_entry` is four columns (§2.3), but MySQL treats NULLs as distinct inside a UNIQUE key, so it is silent on exactly the rows that matter: a category with no food, twice. `uq_submission_entry_generic` — a functional index over `COALESCE(food_category_id, 0)` and `COALESCE(food_item_id, 0)` — is what actually closes both. A Python tuple carrying `None` collapses the same way, which is why the API's key is a plain triple.
+>
+> **`dairy` with no food, beside `dairy/cheese`, is accepted.** The index admits the pair, and the API must not refuse what the schema permits — that divergence, in the other direction, is what this revision exists to close. It is also right on its own terms: §5.4 gives a NULL food category its own bucket meaning *the visitor did not break their waste down by type*, so "300 kg of dairy I did not itemise" and "40 kg of cheese I did" are two answers about two masses, not one answer sent twice.
+>
+> **The `duplicate_entry` message changed and the `issue` slug did not.** "has the same sector and food category as entries[0]" is now "has the same sector, food category and food as entries[0]". `web/js/calculator.js` phrases `duplicate_entry` itself, in the visitor's own language, and falls through to `message` only for issues it does not know — so this reaches no visitor. A consumer that branches on `issue` sees nothing move.
+>
+> **An entry naming a food stores both columns, and the category is never NULL.** `food_category_id IS NULL` already means *did not break it down by type* and §5.4 forbids conflating that with a finer answer. Storing only the item would put the most specific answer the calculator takes into the bucket that means the visitor gave none — and it keeps §5.4's `by_food_category` working with no change at all, because an item rolls up into its parent by being stored beside it.
+>
+> **`item_level_enabled` is `false` on every set that exists, so nothing visitor-facing moves yet.** Step 2.5 is landing step 8; this revision is what makes it possible to build. The vocabulary is likewise empty in every deployment — `admin/seed.py` seeds no `food_item` — which is why `tests/fixtures/taxonomy.json` carries `"food_items": []` rather than an invented list. Design §9's first question to the client, *are the ~20 foods in table 1 the intended full list or a sample?*, is still open, and a fixture that answered it would put codes in front of C and D that no database holds.
+>
+> **A submission naming a since-retired food cannot be recomputed, and that is not new (§5.2).** `get_taxonomy_for_bundle` filters `active` on sectors, food categories, destinations and food items alike, so recomputing a stored submission that names any retired row already refused. v1.58 is simply the first revision under which a submission can name a *food*, and therefore the first under which somebody meets the property through this dimension and reads it as a defect this landing introduced. Making the food alone fall back to its category would be worse than the property: one dimension behaving unlike the other four is how the next reader gets it wrong.
+>
+> **The fixtures, and which ones deliberately did not move (§10).** Every `calculate_request*.json` and `calculate_response*.json` gains `"food_item": null` on every entry — present and null, so a consumer can tell "named no food" from "this file predates the dimension". `taxonomy.json` gains the empty `food_items` array and the switch. **`export_pdf_request.json` is untouched and carries no `food_item` key at all**, which is what proves an absent key is accepted — a claim no file that always sends it can make. **`factors.json` is untouched too**: its upstream rows name no food, §6.3 omits the key entirely on those rows, and that is precisely the case the methodology page's new column has to render as a scope rather than as a blank cell. `stats.json` is unchanged because §5.4's breakdowns are unchanged.
+>
+> **What this revision still does not do.** `api/pdf_render.py` labels an entry by its food *category*, so a downloaded document will print "Dairy" where the screen said "Cheese" once step 2.5 exists. `web/js/calculator.js`, `state.js` and `submission.js` do not offer or send a food. Both are landing step 8's, and both are listed in design §6.
+
+### v1.57 — 2026-09-18 (staff can author the item level, and the bundle carries it; affects B and E, and A as the consumer of §10.2)
+
+> **Why v1.57, and why it may not ship without v1.56.** "v1.54 part one" already
+> names the schema landing that merged first, and a revision identity naming two
+> different changes cannot be checked in either direction. v1.55 belongs to the
+> multi-select landing, v1.56 to the engine's item dimension — and this revision
+> **depends on v1.56 rather than merely following it.** The projection below emits
+> `upstream[].food_item`; an engine keyed on four slots ignores it, so an item row
+> and the category row it refines collide and one silently overwrites the other.
+> Measured on a running stack before this branch was rebased: authoring one
+> item-level factor and publishing changed the answer to a request that named no
+> food at all. This document's revisions are ordered, and these two are the first
+> pair where the order is load-bearing rather than tidy.
+
+
+Stage 5 of `.superpowers/sdd/2026-09-17-food-granularity/design.md`'s landing order. Part one put `food_item` in the schema; **nothing could write to it and nothing could read it out.** This revision gives staff the screens and gives the bundle the projection. **It is inert on the same terms as part one**: with no `food_item` row anywhere and `item_level_enabled` false on every set, `food_items` is an empty array, `food_item` is `null` on every upstream row, and every figure, response and screen is what it was.
+
+**§6 is still untouched. §6.3 is not, and an earlier draft of this entry said otherwise.** The request and response shapes do not learn the item — that is the API landing's — but `GET /factors` does, conditionally: `db/repository.get_factor_export` now carries `upstream[].food_item` on the rows that have one and omits the key entirely on the rows that do not. With no item rows in a set every byte of that response is what it always was, so `tests/fixtures/factors.json` is still unchanged and the contract-change process's third step is still a no-op here — but the shape is documented in §6.3 rather than deferred, because this is the landing that lets a staff member create the row that would otherwise make that page publish two identical-looking prices.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`bundle.json` gains `food_items` and `upstream[].food_item`**, produced by `db/repository.build_bundle_data`. `food_items` is the **optional** thirteenth key — every bundle written before v1.54 omits it, and the thirteen golden cases must go on loading | §10.2 |
+| 2 | **`food_item` — a seventh taxonomy screen**, `FoodItemAdmin`, both roles like the six around it. No delete; `active` is how a food leaves service | §8.1, §8.3 |
+| 3 | **`FactorUpstreamAdmin` offers `food_item`** on `column_list`, `column_details_list` and `form_columns`, as an optional select beside `food_category` | §8.1 |
+| 4 | **`item_level_enabled` is on the factor-set form**, with the soft guard of §2.2 refusing it on a set that prices no food individually, and the factor-set list showing "item-level factors for N of M foods" beside it | §2.2, §8.2 |
+| 5 | **A second publish-time guard, `refuse_item_rows_without_category_fallback`** — an item row whose `(sector, food_category, metric)` has no `(NULL item, NULL destination)` row of its own is refused | §5.2 |
+| 6 | **`_covered_by` computes item coverage** under the parent-covered rule: an item counts as priceable when its own rows exist **or** when its parent category is covered, because the lookup falls back to the category average. **It has no reader yet, and the row said otherwise.** `GET /taxonomy` filters sectors, food categories and destinations by coverage and carries no items at all; it learns them when §6.1 does, in a later landing. The key is computed now so that landing finds the rule already written and tested rather than inventing a second one | §6.1 |
+| 7 | **`/admin/try` learns the food item**, so the staff releasing step 2.5 can exercise it. The key is **omitted** from the request body when no food is chosen, because §6's entry model is `extra="forbid"` and does not know it until part three | §8.2 |
+| 8 | **`GET /factors` carries `upstream[].food_item` on the rows that have one.** Stripping it unconditionally was the first answer, deferred to the API landing because §6.3 is a public document the methodology page renders. What changed it is that *this* landing lets a staff member author an item row: from the first one, a stripped export publishes two rows identical in every key it prints and pricing differently. Emitted only where it has a value, so with no item rows the response and `tests/fixtures/factors.json` are byte-identical and nothing visitor-facing moves. `food_items` is still not carried — giving the item a public *name* is the API landing's | §6.3 |
+| 9 | **`publish_factor_set` refuses a set whose composed bundle does not `validate()`, and `load_factor_bundle` logs what it cannot refuse.** `validate()` never raises and had exactly one caller — the inline dry-run branch of `api/router.py` — so the one bundle nobody checked was the one every public request uses. A duplicate upstream row collapses to whichever came last and serves a wrong number with nothing in the logs. Refused at publish, where a staff member is present and the draft still editable; logged at load, because taking the calculator down for every visitor over a defect that still computes *a* number is the worse failure | §5.2 |
+
+> **The projection is the half that could produce a wrong number, and it would produce it silently.** A staff member authors an item factor, the row is written and audited, and a `build_bundle_data` that never mentions it hands the engine the category average — the line is priced at the average while the screen says the food was named. `food_items` being *optional* in `FactorBundle.from_json` is what makes the omission load cleanly instead of raising. `tests/db/test_food_item_projection.py` pins both halves so that dropping either fails on its own.
+>
+> **The parent-covered rule is not the rule the other four rows of §6.1's coverage table use, and the difference is the fallback.** A destination nothing prices is priced at zero, and offering it is the silent zero §5.1 exists to stop offering. An item nothing prices is offered its category's average — a defined, meaningful number, and the nine category factors *are* the averages of those same foods. Requiring an item to carry rows of its own would hide almost the whole vocabulary the day step 2.5 is released, to prevent something that cannot happen.
+>
+> **The second publish guard is the one stage 4 could not enforce.** §2.2's upstream chain has no silent-zero trap *as long as the data carries a category row to fall back to*, and that is a property of the data rather than of the chain — so it can only be checked where the data is. A `(sector, food_category, metric)` whose only upstream rows name a food answers for that food and sends every other food in the category, and the visitor who named no food at all, to `Decimal('0')`. That is O-7's shape exactly: right for one food while every other figure on the same page is right, arriving with no error and nothing in the log. The fallback has to be the `(NULL item, NULL destination)` row specifically — a category row that names a destination is candidate 2 and answers only there, which is what the `prevention` override is.
+>
+> **The flag guard runs after an import as well as at publish, and there it is checking something else.** `import_published_into` deletes the target draft's rows and re-copies the published set's by reflection. A flag that survives that with no item row under it means the copy lost the item dimension — a set claiming to price foods individually and pricing none.
+
+### v1.56 — 2026-09-18 (the engine learns the item dimension; affects A, and B only as advance notice)
+
+> **Why v1.56 and not "v1.54 stage 4".** "v1.54 part one" is already this
+> document's name for the schema landing that merged first, and a revision
+> identity naming two different changes cannot be checked in either direction.
+> v1.55 is taken by the multi-select landing, which is stage 2 of the same order
+> and was opened first; this is stage 4. Whichever of the two merges second
+> renumbers, which is one line.
+
+Stage 4 of the same landing order, and **inert by data** on the same terms as stage 3: no `food_item` row is seeded, so every bundle in the tree has an empty item vocabulary and every lookup in it falls to the category rows it has always used. Proven rather than asserted, and by a method a reader can repeat: extract the pre-change tree with `git archive`, run the thirteen golden cases and the three canonical `POST /calculate` requests through both trees, and compare the outputs rather than the pass counts. They are identical, and not one `expected.json` changed. The byte count and hash of one reviewer's scratch file are deliberately not quoted here: a number nobody else can reproduce reads as evidence without being any.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`FactorBundle.upstream()` gains a `food_item` parameter** — `upstream(sector, food_cat, food_item, destination, metric)` — with §2.2's four-step order documented on it. The key gains a slot in the same position, so `upstream_factors` is keyed on `(sector, food_category, food_item \| None, destination \| None, metric)` | §4.1 |
+| 2 | **`FactorBundle.upstream_with_basis()`** — the same chain, returning an `UpstreamBasis` enum beside the value. Groundwork for the fallback disclosure (landing step 7); nothing calls it yet | §4.1 |
+| 3 | **`FactorBundle.resolve_food_item()` and `has_food_item()`** — the engine refuses an item the bundle does not know, and an item whose parent is not the `food_category` it arrived with. `submission_entry` permits that pair at the database; this is what refuses it | §4.1 |
+| 4 | **§10.2 gains an optional `food_items` section and an optional `upstream[].food_item` key**, and `validate()` gains three checks | §4.1, §10.2 |
+
+> **`item_level_enabled` still never reaches the engine**, and stage 4 changes nothing about that: not a `FactorBundle` field, not a `bundle.json` key, not an argument to `calculate`. `tests/test_item_level_inertness.py` is unchanged and still passes.
+>
+> **§6 and `tests/fixtures/*.json` are untouched.** The wire does not learn the item until v1.54 part two, so the contract-change process's third step is again a no-op by intent.
+
 ### v1.54 part one — 2026-09-17 (the schema learns the food item level, and nothing else changes; affects B and E, and A, C and D only as advance notice)
 
 Stage 3 of `.superpowers/sdd/2026-09-17-food-granularity/design.md`'s landing order. The calculator will gain a step 2.5 that asks which *food* was wasted — "cheese", not "dairy" — and this revision builds everywhere that answer has to be able to live. **It is deliberately inert.** With no `food_item` rows and `item_level_enabled` false on every set, every figure, every response and every screen is what it was before: proven by the golden suite (43 cases, unchanged) and by `POST /api/v1/calculate` against the deployed stack returning a byte-identical 18,672-byte body across the migration, same SHA-256.
 
-**§6 is untouched.** The request and response shapes do not learn the item until v1.54 part two. So is `tests/fixtures/*.json`: nothing on the wire changes, and the contract-change process's third step is a no-op for this revision by intent rather than by omission.
+**§6 is untouched.** The request and response shapes do not learn the item until a later part of v1.54 (part two does not touch them either). So is `tests/fixtures/*.json`: nothing on the wire changes, and the contract-change process's third step is a no-op for this revision by intent rather than by omission.
 
 | # | Change | Section |
 | --- | --- | --- |
@@ -979,6 +1159,12 @@ Always UTC, ISO 8601 with a timezone designator: `2026-07-31T09:15:00Z`. The fro
 
 ## 2.1 Taxonomy
 
+> **`food_item` is seeded from v1.60, and every row is a row of the client's own table 1** (`data/upstream-factors-draft/rawtec_source_data.py`), parented by the same mapping the nine category factors were averaged from -- so the parentage is read off the data rather than invented, and a food with no factor row of its own falls back to a figure it helped produce.
+>
+> **Twenty rows, not the table's twenty-six.** Six of the client's rows ARE the category they sit under -- Fruit, Vegetable, Seafood, Nuts and seeds, Drinks/Beverages and General mixed food product -- and a food that only repeats its own category asks the visitor to refine an answer into itself. The seven rows with no New Zealand category go to `staples`, the pantry-staples grouping, on the client's own ruling that anything without a clean correspondence may take public data or an invented home.
+>
+> **`eggs` is under `staples` and deliberately not under `dairy`.** The client's table draws it beneath the Dairy block, which makes `dairy` the obvious home and the wrong one: a parent is the fallback for every metric the client did not supply per food, `ch4` among them, and `dairy`'s methane is ruminant. A dedicated `eggs` category is the right answer and waits on **O-5**, which has not settled whether there are eight categories or nine.
+
 ### `destination_group`
 
 | Column | Type | Constraints | Notes |
@@ -1177,7 +1363,7 @@ A named food *within* a category — "cheese", not "dairy". The vocabulary step 
 >
 > **It is on the set, and it is *not* how the two levels are separated.** One set holds item rows and category rows together — publishing set A versus set B must never be how step 2.5 is turned on, because the client cannot be asked to maintain two. The flag lives here so that it is versioned and audited like everything else in this table, and so that the factor-set screen can show staff what they are releasing beside it.
 >
-> **The guard is soft and is a later revision: at least one `factor_upstream` row in the set with `food_item_id IS NOT NULL`.** Full coverage is 19 items × 6 sectors × 5 metrics = 570 rows and is unreachable from any data that will exist. One item row is enough to be coherent, because every item without one falls back to its category's average — see §2.2's upstream lookup order. This is not the `destination_id` case O-7 closed: there the fallback was zero, here it is a defined number.
+> **The guard is soft, and it landed in part two: at least one `factor_upstream` row in the set with `food_item_id IS NOT NULL`.** Full coverage is 19 items × 6 sectors × 5 metrics = 570 rows and is unreachable from any data that will exist. One item row is enough to be coherent, because every item without one falls back to its category's average — see §2.2's upstream lookup order. This is not the `destination_id` case O-7 closed: there the fallback was zero, here it is a defined number.
 >
 > **Both `clone_factor_set` implementations must carry it**, `admin/factor_lifecycle.py`'s and `db/repository.py`'s. Each hand-writes its `FactorSet(...)` and names `is_mock`, `effective_from` and `notes` one column at a time. Miss it in either and the recommended clone → edit → publish workflow (§5.2) silently un-releases step 2.5 on the first real factor set: the calculator stops asking which food was wasted, with no error and nothing on the factor-set screen saying why.
 
@@ -1446,7 +1632,7 @@ Three tables, written together by one `POST /api/v1/calculate` (§5.3). They are
 
 ### `submission_entry`
 
-One `(sector, food_category)` pair within a submission. A food business has waste at more than one point in the supply chain, and each point draws a different upstream factor, so they cannot share one set of lines.
+One `(sector, food_category, food_item)` triple within a submission (v1.58; a pair before it, and `food_item` is `NULL` on every entry written under a client that predates it). A food business has waste at more than one point in the supply chain, and each point draws a different upstream factor, so they cannot share one set of lines.
 
 | Column | Type | Constraints | Notes |
 | --- | --- | --- | --- |
@@ -1472,7 +1658,7 @@ CHECK `ck_submission_entry_item_has_category`: `food_item_id IS NULL OR food_cat
 >
 > **What forking does to the statistics is open and is not settled by this revision.** §5.4 aggregates per entry, deliberately: "one submission with three entries is three observations". Once an entry is a *leaf* rather than a chain, one chain becomes N observations — `by_sector` shares become biased toward whoever ticked more boxes, `by_food_category` shares become biased by how many items a category has, and the suppression threshold weakens, because a bucket reaches 5 with fewer real submissions behind it. That last one is a privacy regression, not a cosmetic one, and it has to be answered before step 2.5 reaches the public.
 >
-> **§5.6's anonymity promise needs revisiting too.** A named food is materially more identifying than a category: "processing / cheese / 40 t" narrows the population of New Zealand businesses far more than "processing / dairy" does. `web/methodology.html` currently promises that "the sector, food category and quantities entered into the calculator are recorded anonymously"; that sentence becomes incomplete the day an item is stored.
+> **~~The anonymity promise needs revisiting too.~~ Closed in v1.59.** A named food is materially more identifying than a category: "processing / cheese / 40 t" narrows the population of New Zealand businesses far more than "processing / dairy" does. The promise lived in four pages' copy rather than in a numbered section of this document, which is part of why it went unnoticed: `home.html`, `index.html`, `methodology.html` and `stats.html` each enumerated *the sector, food category and quantities*. Both enumerating sentences now name the food, worded *where you name one* so that they are true before landing step 8 as well as after it.
 
 > **The three v1.48 columns are all nullable, and NULL is a claim about what the visitor said rather than about the food.** Zero would say this stage put nothing through, or that its food was worth nothing; NULL says nobody stated it. §4.5 depends on the distinction — every field of the money block is absent unless everything it derives from was present — so a repository or an adapter that defaults any of these to zero on the way in produces a figure the visitor never implied.
 >
@@ -1615,17 +1801,26 @@ class ScenarioLine:
 
 @dataclass(frozen=True)
 class EntryInput:
-    """One (sector, food_category) pair and both of its scenarios.
+    """One (sector, food_category, food_item) triple and both of its scenarios.
 
-    Sector and food category sit here rather than on each scenario because
-    §6.2 puts them on the entry: an entry's `current` and `alternative`
-    describe the same point in the supply chain, and a wire request cannot
-    express two different sectors for one entry. Putting them on the
-    scenario would make an unrepresentable state representable."""
+    Sector, food category and food sit here rather than on each scenario
+    because §6.2 puts them on the entry: an entry's `current` and
+    `alternative` describe the same point in the supply chain, and a wire
+    request cannot express two different sectors for one entry. Putting them
+    on the scenario would make an unrepresentable state representable."""
     sector_code: str
     food_category_code: str | None          # None -> use standard_mix
     current: tuple[ScenarioLine, ...]
     alternative: tuple[ScenarioLine, ...] | None
+    # v1.58. The named food *within* food_category_code -- "cheese", not
+    # "dairy" -- and the fifth slot of FactorBundle.upstream's key (§2.2).
+    # None is NOT resolved to a stand-in the way food_category_code=None is
+    # resolved to standard_mix: there is no standard food, and inventing one
+    # would put a number against a food nobody named. None means "the
+    # category", which is what every request written before v1.58 means.
+    # Defaulted, so a caller that predates the slot builds exactly the
+    # request it built before -- the dimension is inert by data, not a flag.
+    food_item_code: str | None = None
     # v1.48. All three optional, all three carried rather than computed with:
     # calculate() derives the money block from the two NZD figures (4.5) and
     # nothing in the engine reads total_input_kg at all. None is not zero --
@@ -1642,6 +1837,28 @@ class CalculationRequest:
 
 # ---------- Output ----------
 
+class UpstreamBasis(Enum):
+    """Which of §2.2's four candidate rows answered an upstream lookup.
+    v1.56; carried on the wire from v1.59."""
+    ITEM_AT_DESTINATION = "item_at_destination"
+    CATEGORY_AT_DESTINATION = "category_at_destination"   # outranks the one below
+    ITEM_EVERY_DESTINATION = "item_every_destination"
+    CATEGORY_EVERY_DESTINATION = "category_every_destination"
+    ABSENT = "absent"                                     # no row; Decimal('0')
+
+    @property
+    def is_item_level(self) -> bool: ...                  # the first and third
+
+class ItemBasis(Enum):
+    """One entry's rows rolled up. v1.59."""
+    ITEM = "item"                       # every lookup that could use the food did
+    MIXED = "mixed"                     # some did, some fell to the category
+    CATEGORY = "category"               # a food was named and NOT ONE figure is its
+    NOT_APPLICABLE = "not_applicable"   # no food was named
+
+    @property
+    def is_disclosed(self) -> bool: ...  # CATEGORY alone -- see the note below
+
 @dataclass(frozen=True)
 class BreakdownRow:
     destination_code: str
@@ -1649,6 +1866,12 @@ class BreakdownRow:
     upstream: Decimal               # per kg
     downstream: Decimal             # per kg, may be negative
     value: Decimal                  # this line's contribution to the metric total
+    # v1.59. Which of §2.2's four candidates produced `upstream`, or
+    # ABSENT where none did. None at the TOTALS level, where a row summed
+    # across entries was priced by no single row -- the same objection that
+    # leaves the two rates at zero there. Required, not defaulted: every
+    # member is a claim about a figure that was produced.
+    upstream_basis: UpstreamBasis | None
 
 @dataclass(frozen=True)
 class MetricResult:
@@ -1681,6 +1904,16 @@ class EntryResult:
     current: ScenarioResult
     alternative: ScenarioResult | None
     net_benefit: dict[str, Decimal] | None  # key = metric_code
+    # v1.58. Echoed as sent, exactly as food_category_code is: the engine
+    # resolves the code for the lookup and the result reports what the
+    # request carried, so §6.2's response pairs with the row on screen.
+    food_item_code: str | None = None
+    # v1.59. Whether this entry's figures were priced at the food it named,
+    # rolled up from every BreakdownRow.upstream_basis in BOTH scenarios.
+    # Defaulted, unlike the row's field above, because there is exactly one
+    # honest value for a caller that predates it: such a caller cannot have
+    # named a food.
+    item_basis: ItemBasis = ItemBasis.NOT_APPLICABLE
     # v1.50, §4.6. This entry's own current mass over its own total_input_kg,
     # 2 places. None whenever THIS entry supplied no production total --
     # permanent and independent of its neighbours, so an entry that answered
@@ -1761,6 +1994,10 @@ class CalculationResult:
 **Seven rules govern these types. Each is forced by §6.2 and none of them is A's to choose.**
 
 1. **`entries` preserves request order.** §6.2 states it, and `submission_entry.sort_order` (§2.3) exists to persist it. It is what lets C pair a result with the row the user typed.
+2b. **The fallback disclosure is the engine's to decide and the interface's to word (v1.59).** `UpstreamBasis` is a value and never a sentence: a human-readable string assembled in `engine/` would have to be assembled in English, which is neither where the copy lives nor where the twenty catalogues are. `ItemBasis` is the roll-up three surfaces branch on — the results page, its plain-text export and `§6.2.3`'s PDF — computed once so that one submission is not described three ways.
+
+    **Only `CATEGORY` asks for copy, and `is_disclosed` is where that is stated.** `MIXED` is the ordinary state: O-7's prevention offset is a category-level, destination-specific row, and the destination outranks the item, so every entry that moves mass to `prevention` has a category-priced line however well the set prices its food. A disclosure raised on `MIXED` fires on nearly every submission that uses the calculator's headline feature.
+
 2. **`by_destination` is populated per entry, and at the totals level it is populated per metric with the additive fields only (amended in v1.48).** This rule used to say the tuple was empty at the totals level, on the grounds that "a cross-entry destination breakdown has no single correct aggregation rule". **Half of that reasoning was right and is kept; half of it was wrong and is what changed.**
 
     - **`qty_kg` and `value` are additive, so they roll up.** A mass is a mass, and `value` is a summand of the metric total the engine already computes by summing (§4.3) — so the cross-entry partition is built from the same summation as the total, and it **cannot drift from it structurally**: there is no request that makes the rows partition a different quantity than the one `total` describes. That is a narrower claim than "the rows always add up to `total`" on the wire, and the narrower claim is the true one. `BreakdownRow.value` is quantised **per line**, to `METRIC_SCALE` (§1.2's ten places); `MetricResult.total` is `quantize(Σ unquantised line values)` — one rounding at the end, not one per line. When a formula's result does not terminate at ten places (`qty_kg * upstream / 3` is `case_09`'s shipped example of exactly this), each stored `value` differs from its true, unrounded figure by up to half of `METRIC_SCALE` — on the order of `5 × 10⁻¹¹`, a unit in the last place per line — and the rows can then sum to a figure a few `10⁻¹⁰`s away from `total`, at the entry level and, because the totals-level roll-up sums already-rounded entry figures without rounding again, at the totals level too. Every shipped formula today is multiplicative and terminates exactly at ten places, which is why nothing in the tree exhibits this yet — but `case_09` is proof staff can author a division, and a consumer charting a rolled-up breakdown against this guarantee should plan for it. It is a caveat worth carrying rather than a defect worth fixing: quantising every line to one fixed, wire-legible scale (§1.2) is what lets `by_destination` and `total` both be plain decimal strings at all, and the price is a gap of `5 × 10⁻¹¹` per affected line — invisible next to any `display_precision` a chart will ever round to.
@@ -1821,14 +2058,40 @@ class FactorBundle:
     is_mock: bool
     metrics: tuple[MetricSpec, ...]         # active only, sorted by sort_order
 
-    def upstream(self, sector: str, food_cat: str, destination: str,
-                 metric: str) -> Decimal:
-        """Exact match on destination first; then fall back to the generic row
-        (destination NULL); then Decimal('0'). The generic row is the normal
-        case — the destination-specific one exists so `prevention` can be a
-        real 100% offset (§2.2, open item O-7). Same three-step shape as
-        downstream() below, and (destination, None, metric)-style misses must
-        be *looked up*, not assumed absent."""
+    def upstream(self, sector: str, food_cat: str, food_item: str | None,
+                 destination: str | None, metric: str) -> Decimal:
+        """Four steps, in order (v1.54), then Decimal('0'):
+
+            1. (item, destination)   2. (NULL, destination)
+            3. (item, NULL)          4. (NULL, NULL)
+
+        Both middle dimensions are nullable on `factor_upstream` (§2.2), so
+        all four may exist at once and exactly one must win. Steps 2 and 3
+        name one dimension each: **the destination wins**, and §2.2 carries
+        the reason — item-first re-opens O-7, because the prevention offset is
+        a shape-2 row at zero. `food_item` is a positional argument in the
+        middle rather than an optional one at the end, so a caller left at the
+        pre-v1.54 signature raises TypeError instead of silently reading the
+        destination out of the item slot.
+
+        When `food_item` or `destination` is itself None the candidates
+        coincide, so the later steps must be **looked up**, not assumed absent
+        — the same caveat downstream() carries. An item with no row of its own
+        reaches step 4, the category average: a defined number, not zero."""
+
+    def upstream_with_basis(self, sector: str, food_cat: str,
+                            food_item: str | None, destination: str | None,
+                            metric: str) -> tuple[Decimal, UpstreamBasis]:
+        """v1.54. The same chain, returning which of the four rows answered.
+
+        `UpstreamBasis` is an enum — ITEM_AT_DESTINATION,
+        CATEGORY_AT_DESTINATION, ITEM_EVERY_DESTINATION,
+        CATEGORY_EVERY_DESTINATION, ABSENT — with an `is_item_level` property.
+        It backs the fallback disclosure ("this figure is the Fruit average,
+        not Feijoas"), so it is a **value a caller branches on**, never a
+        sentence: the copy is the front end's and is translated. The member is
+        read off the winning row, not off the arguments, so a lookup that
+        named no item is never reported as item-level."""
 
     def downstream(self, destination: str, sector: str | None,
                    food_cat: str | None, metric: str) -> Decimal:
@@ -1860,7 +2123,24 @@ class FactorBundle:
     def has_destination(self, code: str) -> bool: ...
     def has_sector(self, code: str) -> bool: ...
     def has_food_category(self, code: str) -> bool: ...
+    def has_food_item(self, code: str) -> bool: ...
     def standard_mix_code(self) -> str: ...
+
+    def resolve_food_item(self, food_item: str | None,
+                          food_cat: str) -> str | None:
+        """v1.54. None passes through; a code is checked against the bundle's
+        item vocabulary and against its parent category. Raises
+        UnknownCodeError for an item this bundle does not know, and for one
+        whose parent is not the food_category it arrived with.
+
+        **The engine is what refuses an incoherent pair.** `submission_entry`
+        carries two independent foreign keys and a CHECK that only refuses an
+        item without a category, so `(fruit, cheese)` is storable at the
+        database. The lookup would otherwise fall past candidates 1 and 3 and
+        price cheese as the fruit average — a wrong answer that looks right.
+
+        None is never resolved to a stand-in the way a null food_category is
+        resolved to `standard_mix` (§6.2): there is no standard food."""
 
     def is_prevention_destination(self, code: str) -> bool:
         """v1.48. Whether this destination carries the prevention role
@@ -1889,7 +2169,11 @@ class FactorBundle:
         raise — the API layer decides how to present the problems.
 
         Checks: every upstream row's sector / food_category / metric exists
-        in this bundle and its destination is null or exists; every
+        in this bundle, its destination is null or exists, and (v1.54) its
+        food_item is null or exists *and* belongs to that row's own
+        food_category — a row filed under the wrong parent is unreachable,
+        because a lookup only ever builds the key with the item's real
+        category; every `food_items` row's parent category exists; every
         downstream row's destination / metric exists
         and its sector and food_category are each null or exist; every
         destination.group exists; exactly one food_category has
@@ -1931,6 +2215,15 @@ def calculate(req: CalculationRequest, bundle: FactorBundle) -> CalculationResul
     """
 ```
 
+**The fallback disclosure is rolled up here and nowhere else (v1.59).** `calculate_scenario` calls `FactorBundle.upstream_with_basis` rather than `upstream`, keeps the member beside the value and puts it on each `BreakdownRow`; `_item_basis` then folds every row of **both** scenarios into the entry's `item_basis` (§3).
+
+- **Both scenarios**, because both sets of figures are on the results page and in both exports, and a claim that described only `current` would sit above an alternative it does not cover.
+- **Every metric**, because a set can price a food for `co2e` and not for `cost` — which is `MIXED`, and the surface that wants to know *which* metric reads the rows.
+- **An entry that named no food, or produced no rows, is `NOT_APPLICABLE`** — the first because there is nothing to disclose, the second because every other member would be a claim about a figure that does not exist.
+- **The totals-level rows carry `None`**, for the reason their two rate fields carry zero: a row summed across entries was priced by no single candidate.
+
+It is here rather than in each surface for the same reason `totals` is: three roll-ups, in two languages, across a process boundary, is one submission described three ways — and the golden suite can only pin the one that is in the engine.
+
 **`totals` is computed by the engine, not summed in the API adapter. This is a ruling, and it is not open.**
 
 Impact calculation happens server-side **in exactly one place**, and the engine is that place. An adapter in `api/` that adds per-entry `MetricResult.total` values together is a *second* calculation site — structurally the same defect as C's browser-side `aggregateResults`, differing only in which process the arithmetic runs in. It would put a headline figure in front of a user that no golden case can cover, because the golden suite (§10.1) exercises `calculate()` and nothing above it. Three consequences follow directly, and they are the reason this is worth a paragraph rather than a sentence:
@@ -1968,8 +2261,19 @@ def net_benefit(current: ScenarioResult,
 ```python
 def calculate_scenario(lines: tuple[ScenarioLine, ...], sector_code: str,
                        food_category_code: str | None, bundle: FactorBundle,
-                       gwp_horizon: int) -> ScenarioResult:
-    """Evaluate one scenario of one entry. Internal to the engine."""
+                       gwp_horizon: int, *,
+                       food_item_code: str | None = None) -> ScenarioResult:
+    """Evaluate one scenario of one entry. Internal to the engine.
+
+    v1.58's food is keyword-only and defaulted, the opposite of the item slot
+    in `bundle.upstream`, which is positional and required. Deliberately so:
+    `upstream()` is the lookup key and a caller left at the pre-v1.54
+    signature must raise rather than read the destination out of the item
+    slot -- whereas this function's fifth positional argument is already
+    `gwp_horizon`, and a food landing silently there would be worse than one
+    left out. Both scenarios of an entry are passed the same food, for the
+    reason the sector and the category are on the entry (§3).
+    """
 ```
 
 That signature is illustrative, not contractual. No caller outside `engine/` may depend on it; B calls `calculate()` and nothing else.
@@ -2208,12 +2512,25 @@ def get_taxonomy(session) -> TaxonomySnapshot:
 class TaxonomySnapshot:
     sectors: tuple[SectorSpec, ...]
     food_categories: tuple[FoodCategorySpec, ...]
+    # v1.58. Beside the categories it refines, so §6.1's JSON reads in the
+    # order the form is filled in. REQUIRED rather than defaulted, unlike
+    # DestinationSpec.is_prevention: a defaulted empty list would let a
+    # caller that forgot it return a snapshot in which nothing distinguishes
+    # "this deployment has no foods" from "this function was not updated".
+    food_items: tuple[FoodItemSpec, ...]
     destination_groups: tuple[DestinationGroupSpec, ...]
     destinations: tuple[DestinationSpec, ...]
     metrics: tuple[MetricSpec, ...]
     unit_presets: tuple[UnitPresetSpec, ...]
     factor_set_version: str
     factor_set_is_mock: bool
+    # v1.58. The one factor_set field that must reach the browser and must
+    # never reach the engine (§6.1): it decides whether the front end
+    # renders step 2.5, and it decides no figure. Required, not defaulted,
+    # for the reason the two above it are -- a snapshot reporting the switch
+    # off because nobody set it looks exactly like one reporting a set that
+    # has it off, and only one of those is an answer.
+    factor_set_item_level_enabled: bool
 ```
 
 ## 5.2 Factor Sets
@@ -2320,6 +2637,15 @@ def clone_factor_set(session, source_id: int, new_label: str, actor: str) -> int
 >
 > **This duplication is why v1.9's O-7 check is enforced twice and written
 > once.** The panel calls the `admin/` copy and nothing outside its own tests
+> **v1.57 adds a third publish-time refusal, and it is the only one that
+> composes the whole bundle**: a set that does not `validate()` is refused
+> rather than published. It runs last, after the row-level rules, so a staff
+> member gets "add a category factor for primary_production/dairy/co2e"
+> before they get "this does not compose". `load_factor_bundle` logs the
+> same problems rather than raising them: by then the set is published and a
+> visitor is waiting, and a maintenance page for everybody is the worse
+> answer to a defect that still computes a number.
+>
 > calls the repository's, so a guard placed only in `db/repository.py` would
 > leave the staff path — the only path a human takes — entirely unguarded,
 > while a guard placed only in `admin/` would vanish the day the two are
@@ -2327,6 +2653,23 @@ def clone_factor_set(session, source_id: int, new_label: str, actor: str) -> int
 > the `admin/` copy imports it, which is the legal direction; each raises its
 > own layer's exception type. When the implementations merge, one call site
 > goes and the query does not move.
+
+
+> **A retired taxonomy row cannot be recomposed, and that is every dimension's
+> behaviour rather than the food item's.** `get_taxonomy_for_bundle` filters
+> `active` on sectors, food categories, destinations **and** food items alike, so
+> a bundle never carries a row somebody has retired — and an entry naming one
+> raises `UnknownCodeError` rather than falling back. Recomputing a stored
+> submission that named a since-retired food therefore refuses, exactly as one
+> naming a since-retired sector or category already did.
+>
+> This is worth stating because v1.58 is the first revision under which a
+> submission can name a food, so it is the first under which anybody will meet
+> the property through that dimension and mistake it for a new defect. Making the
+> food item alone fall back would be worse than the property: one dimension
+> behaving unlike the other four is how the next reader gets it wrong. If this is
+> to change it should change for the taxonomy as a whole, and `active` should
+> stop meaning two things — "do not offer this" and "pretend this never existed".
 
 ## 5.3 Submissions
 
@@ -2351,7 +2694,19 @@ def upsert_submission(session, token: str | None, req: CalculationRequest,
                         entry's own total_input_kg, total_value_nzd and
                         wasted_value_nzd, read straight off req.entries[i],
                         which carries all three (§3). None stays None: a
-                        caller that left them unset writes NULL, not zero
+                        caller that left them unset writes NULL, not zero.
+                        (v1.58) food_item_id as well, written BESIDE its
+                        category and never instead of it: food_category_id
+                        IS NULL already means *did not break it down by
+                        type* (§5.4), so storing only the item would file
+                        the most specific answer the calculator takes in
+                        the bucket meaning none was given -- and storing
+                        both is what keeps by_food_category rolling an item
+                        up into its parent with no change to §5.4 at all.
+                        Read with getattr, for the reason the three money
+                        fields are defaulted on EntryInput: a request object
+                        that predates the slot means "named no food", which
+                        is what NULL here stores
       submission_line   one row per line, per scenario, per entry, keyed on
                         submission_entry_id
 
@@ -2467,6 +2822,8 @@ class PublicStats:
     by_food_category: tuple[StatsBucket, ...]
 ```
 
+> **There is no `by_food_item`, and v1.58 deliberately did not add one.** `submission_entry.food_item_id` is written from that revision (§5.3), so the breakdown is a query away — and it is the wrong query for this page twice over. **`by_food_category` already counts every entry that named a food**, because a food is stored *beside* its parent and never instead of it, so an entry naming `cheese` is in the `dairy` bucket and the aggregation needed no change at all. And a food is the narrowest thing this calculator collects: with the suppression threshold applied to a vocabulary of ~20 foods rather than 9 categories, most buckets merge into `other` and the ones that survive are the few businesses specific enough to be recognisable — which is the re-identification risk the threshold exists for, met head-on. If this is ever wanted, it is a client decision about the statistics page and not a repository change made because the column is there.
+
 > **`submission_line.scenario` must be filtered, and this is the single easiest way to make the public statistics false.** The column is `ENUM('current', 'alternative')` (§2.3) and both scenarios' lines sit in the same table. A `by_destination` query that groups over `submission_line` without a scenario predicate — which is what the instruction above reads like if you stop before the `WHERE` — counts every hypothetical line as real waste. **`prevention` then appears as a destination in the public chart**, and `prevention` is by construction the destination for waste that *did not happen*; every `total_kg` roughly doubles; and §6.4's "the cumulative total entered into this tool" becomes false on its face, on the page whose whole design problem is not overclaiming. The alternative scenario is a user's what-if. It is not an observation of anything and it does not belong in a statistic.
 >
 > **A NULL `food_category_id` is a bucket, not a gap.** `submission_entry.food_category_id` is nullable and §2.3 already says what NULL means: the user did not break their waste down by type. That is a real answer about a real submission, and it is likely to be a common one — the calculator is aimed at businesses that mostly do not weigh their waste by food type. It groups into an explicit **`unspecified`** bucket, carrying the same `count`, `share` and `total_kg` as any other, and it is **subject to the same suppression threshold** as any other. It is never silently dropped: `share` is computed within its own breakdown and the shares must sum to 1, so discarding a bucket does not remove a number from the page — it inflates every other share on it, in the direction of overclaiming. D renders it with one rule, like every other bucket; only the label is special ("Not broken down by type").
@@ -2571,6 +2928,7 @@ Called once on page load to build every dropdown and input row.
 | `sector` | it appears as `factor_upstream.sector_id`, **or** as a non-NULL `factor_downstream.sector_id` (v1.31) |
 | `food_category` | it appears as `factor_upstream.food_category_id`, **or** as a non-NULL `factor_downstream.food_category_id` |
 | `destination_group` | at least one covered destination belongs to it. An empty group is omitted; no `destinations[].group` may ever name a group the response omits |
+| `food_item` | it appears as a non-NULL `factor_upstream.food_item_id`, **or** its parent `food_category` is covered (v1.57). **This is not the rule the four rows above use, and the difference is the point.** A destination nothing prices is priced at `Decimal("0")`, so offering it is the silent zero this filter exists to stop offering; a food nothing prices individually is offered its category's average — a defined number, and §2.1's nine categories *are* the averages of those same foods. Requiring an item's own rows would hide almost the whole vocabulary the day step 2.5 is released, to prevent something that cannot happen. Carried since **v1.58**, and narrowed a second time against the food categories that survived their own filter — an item under a category the caller cannot choose is a food step 2.5 would offer under a heading step 2 does not have |
 | `unit_preset` | its `food_category` is null (applies to every category) or names a covered food category. **Ordered by `kg_per_unit`, smallest first (v1.33)** — this is the one taxonomy table with no `sort_order`, the list is a `<select>` a visitor scans for their own bin, and alphabetically by `code` the 1100 L front-loader sorted above the 660 L one. `code` breaks the tie. **The front end renders this order as given and sorts nothing** |
 | `metric` | **always** — metrics are the output vocabulary and nothing a user types is one |
 
@@ -2590,7 +2948,8 @@ Called once on page load to build every dropdown and input row.
 
 ```json
 {
-  "factor_set": { "version_label": "MOCK-v0 — PLACEHOLDER", "is_mock": true },
+  "factor_set": { "version_label": "MOCK-v0 — PLACEHOLDER", "is_mock": true,
+                  "item_level_enabled": false },
   "sectors": [
     { "code": "processing", "name": "Processing / Manufacturing",
       "description": "…", "sort_order": 2 }
@@ -2598,6 +2957,10 @@ Called once on page load to build every dropdown and input row.
   "food_categories": [
     { "code": "standard_mix", "name": "Standard mix (composition unknown)",
       "is_standard_mix": true, "sort_order": 0 }
+  ],
+  "food_items": [
+    { "code": "cheese", "name": "Cheese", "food_category": "dairy",
+      "sort_order": 20 }
   ],
   "destination_groups": [
     { "code": "disposal", "name": "Disposal", "is_waste": true, "sort_order": 3 }
@@ -2617,6 +2980,10 @@ Called once on page load to build every dropdown and input row.
 }
 ```
 
+> **`food_items[]` is empty in every deployment today, and the example above is a shape rather than a row that exists (v1.58).** `admin/seed.py` seeds no `food_item`, so the array is `[]` and `tests/fixtures/taxonomy.json` says so. A consumer must render an empty array as "this deployment does not break food down by type" and never as an error.
+>
+> **`factor_set.item_level_enabled` is what releases step 2.5, and it is the only thing that does (v1.58).** A non-empty `food_items[]` is *not* the same question: the vocabulary is global taxonomy and exists as soon as somebody types it in, whereas the flag says a published set actually prices foods individually (§2.2's soft guard). A front end that rendered the step whenever the vocabulary was non-empty would ask a more specific question than the numbers behind it can answer. **It never reaches the engine** — see §2.2 and `tests/test_item_level_inertness.py`.
+>
 > **`display_unit` is a presentation variant of `unit` at the same scale. It is never a different scale, and nothing anywhere converts between the two.** A typographic difference — `kg CO₂e` against `kg CO2e` — is what the column is for. It is not a unit conversion, and the example above is written with the two identical for that reason.
 >
 > **The rule is forced by §7.6.1 rather than chosen.** Every figure the front end prints comes from the API, and the only arithmetic it may perform is unit conversion on what the *user typed*, in `units.js`. So there is no layer that could divide a `kg CO2e` total by 1,000 on its way to a `t CO2e` label: the number would simply be relabelled, and every greenhouse-gas figure on the page would read a thousand times too small. §6.2 returns each metric total in `unit`, and a consumer that has both should prefer the `unit` travelling with the figure.
@@ -2675,6 +3042,9 @@ Called once on page load to build every dropdown and input row.
 | `entries` | array | Yes | At least one entry |
 | `entries[].sector` | string | Yes | Must exist in the taxonomy |
 | `entries[].food_category` | string \| null | No | Null is treated as `standard_mix` |
+| `entries[].item_basis` | string | — | **v1.59**, response only. Whether this entry's figures were priced at the food it named: `item`, `mixed`, `category` or `not_applicable`. Rolled up by the engine from every `by_destination[].upstream_basis` in **both** scenarios (§3, §4.2), never by a consumer. **Only `category` is a disclosure** — it means a food was named and not one figure came from it, and it is the case §7's *"this is the Dairy average, not Butter"* sentence exists for. `mixed` is ordinary: O-7's prevention offset is a category-level row, so any entry that moves mass to `prevention` has a category-priced line however well the set prices its food. `not_applicable` is every entry that named no food, which is every entry today |
+| `…by_destination[].upstream_basis` | string \| null | — | **v1.59**, response only. Which of §2.2's four candidate rows produced that line's `upstream`: `item_at_destination`, `category_at_destination`, `item_every_destination`, `category_every_destination`, or `absent` where no row answered and the rate is a documented zero. Per line and per metric, because the destination outranks the item and one entry's `prevention` line is therefore category-priced while its `landfill` line is not. **`null` on a totals-level row**, where `upstream` and `downstream` are already zero and for the same reason: a row summed across entries was priced by no single row |
+| `entries[].food_item` | string \| null | No | **v1.58**, response field from the same revision. The named food *within* `food_category` — "cheese", not "dairy". **Absent and `null` are the same thing**, and that thing is "named a category and no food", which is every request that existed before v1.58. Unlike `food_category`, null is **not** resolved to a stand-in: there is no standard food. Must name a food the published set's vocabulary carries, and must name the category that food belongs to; a request that names a food and no category at all is refused. Stored in `submission_entry.food_item_id` beside its category (§5.3), echoed on the response entry, and the fifth slot of §2.2's upstream lookup |
 | `entries[].total_input_kg` | decimal-string \| null | No | **v1.48**, response field since **v1.50**. What this stage put through in the period. `>= 0`, at most 3 decimal places, `<= 16` digits. *At most*, not exactly: `"50000"` and `"50000.000"` are the same figure and both are accepted, so trailing zeros are not required — `calculate_request.json` shows the padded spelling because it is one valid example, not the mandated one. Stored (§2.3); feeds `entries[].production_share_percent` and, when every entry supplies one, `totals.production_share_percent` — see §4.6 |
 | `entries[].total_value_nzd` | decimal-string \| null | No | **v1.48.** `>= 0`, at most 2 decimal places, `<= 14` digits. Feeds §4.5's money block and nothing else |
 | `entries[].wasted_value_nzd` | decimal-string \| null | No | **v1.48.** Same bounds. Feeds §4.5's money block and nothing else |
@@ -2713,7 +3083,10 @@ If **any** entry carries an `alternative`, the response carries `net_benefit` at
 | **Per entry carrying an `alternative`: `\|Σ alternative.qty_kg − Σ current.qty_kg\| <= 0.010`** | `VALIDATION_ERROR`, `field` = `entries[i].alternative` |
 | **No `destination.is_prevention` line in a `current` scenario** | `VALIDATION_ERROR`, `field` = `entries[i].current`, `issue` = `prevention_in_current` |
 | No duplicate `destination` within one entry's scenario | `VALIDATION_ERROR` |
-| No duplicate `(sector, food_category)` across entries | `VALIDATION_ERROR` |
+| **No duplicate `(sector, food_category, food_item)` across entries (v1.58)** | `VALIDATION_ERROR`, `field` = `entries[i]`, `issue` = `duplicate_entry` |
+| **A `food_item` with no `food_category`** | `VALIDATION_ERROR`, `field` = `entries[i].food_item`, `issue` = `item_without_category` |
+| **A `food_item` the published set's vocabulary does not carry** | `VALIDATION_ERROR`, `field` = `entries[i].food_item`, `issue` = `unknown_food_item` |
+| **A `food_item` whose parent is not the `food_category` it arrived with** | `VALIDATION_ERROR`, `field` = `entries[i].food_item`, `issue` = `food_item_category_mismatch` |
 | All codes exist | `UNKNOWN_CODE` |
 | `dry_run` present without `X-Dry-Run: true` | `VALIDATION_ERROR` |
 | `dry_run.factor_set_version` and `dry_run.bundle` both non-null | `VALIDATION_ERROR` |
@@ -2732,6 +3105,10 @@ If **any** entry carries an `alternative`, the response carries `net_benefit` at
 >
 > **The rule tested one literal until v1.22, and that is how it missed `refed_prevention`.** §10.3's fixture puts a second vocabulary's prevention row in the same global tables; it carries 156 upstream and 156 downstream rows, every one of them zero, and it was refused by nothing. The whole defect above therefore stayed live for it, on the deployment that has the ReFED set published and offers the row on the form. The rule now reads `destination.is_prevention` (§2.1) by way of `db.repository.prevention_destination_codes`, which is also why it is checked in `entry_rule_problems` rather than in Pydantic: the set of prevention codes is a database read, and a field validator has no session. `details[].field` is unchanged; `details[].issue` is now the stable slug `prevention_in_current` rather than Pydantic's generic `value_error`.
 
+> **The duplicate key became a triple in v1.58, and it *accepts* a pair it used to refuse.** Two entries naming `dairy/cheese` and `dairy/butter` are exactly what a forked chain produces, and `uq_submission_entry` has permitted them since v1.54 while this rule refused them. **Be careful about the NULLs.** MySQL treats NULLs as distinct inside a UNIQUE key, so `uq_submission_entry` is silent on a category with no food appearing twice; `uq_submission_entry_generic`, a functional index over `COALESCE(food_category_id, 0)` and `COALESCE(food_item_id, 0)`, is what enforces it, and this rule must agree with that index rather than with the constraint that does not. `dairy` with no food **beside** `dairy/cheese` is therefore **accepted**: the index admits it, and §5.4 gives a NULL food category its own bucket meaning *the visitor did not break their waste down by type*, so the two rows are two answers about two masses rather than one answer sent twice.
+>
+> **The three item refusals are `VALIDATION_ERROR` and not `UNKNOWN_CODE`, and that is about the field rather than about the status.** §4.4 maps the engine's `UnknownCodeError` to `UNKNOWN_CODE` with an empty `details`, which tells a consumer that *something* in the request named a code that does not exist. Step 2.5 is a control per entry, so the front end needs to know which one. The rule is not restated in `api/`: the route asks `FactorBundle.resolve_food_item` — the engine's own function — one step earlier than `calculate` would, and attaches the field to the refusal. The engine still refuses independently, so the two cannot drift into disagreeing about which pairs are legal.
+>
 > **`food_category: null` and `"standard_mix"` are the same thing to the engine and different things to the duplicate check.** Two entries with the same sector, one carrying `null` and one carrying `"standard_mix"`, are **both accepted** — the duplicate rule compares the values as sent. They then draw identical upstream factors, appear as two entries in the response, and count as two entries in §5.4's `by_sector`, so one supply-chain point is described twice. This is deliberate and it follows from §5.4, which keeps the two distinct on purpose: `unspecified` records that the user did not break their waste down, `standard_mix` records that they chose the mixed-composition figure, and collapsing them here would make the statistics unable to tell those apart. It is written down because it is the kind of asymmetry that reads as a bug — the field table two paragraphs up says "Null is treated as `standard_mix`", and that is true of the *factor lookup* and of nothing else. A front end should send one or the other consistently and never both for one sector.
 
 **Request headers**
@@ -2797,7 +3174,7 @@ Because every dry-run request carries its own data, concurrent staff dry runs ar
           "by_destination": [
             { "destination": "landfill", "qty_kg": "1200.000",
               "upstream": "0.0000000000", "downstream": "0.0000000000",
-              "value": "3468.0000000000" }
+              "value": "3468.0000000000", "upstream_basis": null }
           ]
         }
       },
@@ -2830,6 +3207,8 @@ Because every dry-run request carries its own data, concurrent staff dry runs ar
     {
       "sector": "processing",
       "food_category": "dairy",
+      "food_item": null,
+      "item_basis": "not_applicable",
       "current": {
         "total_kg": "1500.000",
         "metrics": {
@@ -2840,7 +3219,8 @@ Because every dry-run request carries its own data, concurrent staff dry runs ar
             "by_destination": [
               { "destination": "landfill", "qty_kg": "1200.000",
                 "upstream": "1.9000000000", "downstream": "0.9900000000",
-                "value": "3468.0000000000" }
+                "value": "3468.0000000000",
+                "upstream_basis": "category_every_destination" }
             ]
           }
         },
@@ -2977,7 +3357,7 @@ No other key is accepted. The body is `extra="forbid"`, as every request body in
 | --- | --- | --- | --- |
 | `gwp_horizon` | int | No | 20 or 100; defaults to 100. Same validator as §6.2's |
 | `time_frame` | string \| null | No | Same closed vocabulary as §6.2's (`one_week`, `one_month`, `one_quarter`, `one_year`, or absent) |
-| `entries` | array | Yes | Same shape, and the same §6.2 validation table, as `POST /calculate`'s `entries` — sector/food-category existence, mass conservation between scenarios, no `is_prevention` destination in `current`, no duplicate destination or `(sector, food_category)`, the same per-line, per-scenario and per-submission limits |
+| `entries` | array | Yes | Same shape, and the same §6.2 validation table, as `POST /calculate`'s `entries` — sector/food-category existence, mass conservation between scenarios, no `is_prevention` destination in `current`, no duplicate destination or `(sector, food_category, food_item)` — a **triple** since v1.58, so two entries naming the same category and different foods are accepted and the same food twice is not, the same per-line, per-scenario and per-submission limits |
 | `locale` | string | Yes | 2–35 characters. **Not checked against a closed vocabulary.** A tag with no catalogue resolves to English — the same rule `web/js/i18n.js` follows for the page (§7.7.2) — because a download is not the place to tell somebody their browser's language is unsupported |
 
 No `token`, no `dry_run`: both are refused by `extra="forbid"` if sent, rather than silently ignored.
@@ -2987,6 +3367,12 @@ No `token`, no `dry_run`: both are refused by `extra="forbid"` if sent, rather t
 `Content-Type: application/pdf`, `Content-Disposition: attachment; filename="kai-commitment-impact-calculator.pdf"`. One fixed filename regardless of what the request contains — the same reason `GET /factors?format=csv` (§6.3) answers a fixed archive name: nothing in a request body is safe to place in that header unescaped.
 
 **The document renders in the resolved locale, and one thing inside it never does.** The chrome — headings, unit labels, the mock-data warning banner, and the running header and footer on every page — is drawn from the same catalogues that serve the page, a byte-identical copy of `web/locales/*.json` under `api/assets/locales/` (a hash-comparison test holds the two in step). A Tamil-reading visitor therefore reads the document in Tamil. **The taxonomy names printed inside it — sector, food category and destination labels — are staff-typed database rows, supplied by `db/repository.get_taxonomy`, and are never translated in any locale: they are printed exactly as staff typed them.** Unlike the page, a missing catalogue key is not silently rendered in its English source here — `api/i18n.py`'s `Catalogue.gettext` raises rather than falling back, because a document read later by someone who cannot ask a follow-up is the one place a silently half-English render is worse than a failed request.
+
+**An unstated food type prints as `ABSENT`, and no longer as the standard mix (v1.55).** `food_category: null` on an entry and the standard-mix category's own `code` are two different *answers* as of the multi-select: step 2 offers them as two separate boxes, because §5.4 requires "I do not know, or my waste is not broken down by type" to be its own bucket rather than a category the visitor picked. `api/pdf_render.py` substituted the standard-mix row's own name for a NULL — right while a NULL could only *mean* the standard mix, and wrong the moment a submission could carry both, because it then printed two rows a reader could not tell apart carrying different figures. A NULL category now reaches `_look_up` like any other unstated field and prints `ABSENT` (an en dash, `–`), which is already what this document prints for a metric an entry did not carry. **The engine's own resolution is unchanged** — a NULL category is still priced as the standard mix (§4.1) — because what the document *prints* and what the engine *prices* are two questions, and this revision only answers the first.
+
+> **No new catalogue string is involved, and that is a constraint rather than a convenience.** The obvious rendering is a translated sentence such as "not broken down by type", which is what the screen shows. It cannot be used here: `Catalogue.gettext` raises rather than falling back to English (above), so a key added on this path would make the whole document fail to render in every language whose catalogue had not yet caught up — and a catalogue pass always lands after the code that needs it. `ABSENT` is a glyph, carries no language, and is already on four other paths in the same document.
+
+**The fallback disclosure travels with the document (v1.59).** When an entry's `item_basis` is `category` the PDF carries the same caveat the screen and the plain-text export carry, in the same words, from §7.3c's two catalogue keys — because this is the copy most likely to be read months later by somebody who was not in the room, and a figure that is not as specific as the question it answers has to say so on its face. It sits beside the placeholder warning and is independent of it: a real factor set can still price a food only at its category. `_CATEGORY_AVERAGE_FLAG` and `_CATEGORY_AVERAGE_BODY` are this module's own constants and `tests/api/test_pdf_render.py` asserts they are strings the front end also renders, so a reword on one surface fails rather than producing two accounts of one submission.
 
 **The placeholder-data warning is mandatory here on the same terms as everywhere else (§2.2).** `render_export_pdf` reads `result.is_mock` unconditionally — there is no parameter, keyword or locale that suppresses it — and the renderer re-reads its own rendered output and refuses to produce a document that is missing the banner, rather than shipping one silently without it.
 
@@ -3019,6 +3405,8 @@ Set in the brand's own type (Geologica Bold for the heading, Kumbh Sans Regular 
 **No `UNAUTHORIZED`.** `X-Dry-Run` and `X-Staff-Proof` are simply not read by this route (above), so there is no header combination on it that produces a 401 the way an unproven dry run does on §6.2.
 
 ## 6.3 `GET /api/v1/factors`
+
+> **`upstream[].food_item` is present only on the rows that have one (v1.57).** A row naming a food carries the key; a row applying to the whole category omits it entirely, rather than carrying `null`. That is not the usual shape for a nullable dimension here — `downstream[].sector` and `upstream[].destination` are mandatory-with-null — and it is deliberate: with no item rows in a set, every row of this response is byte-identical to what it has always been, and `tests/fixtures/factors.json` needs no edit. The alternative was stripping the key altogether, which publishes two rows identical in every key printed here and pricing differently, on a page whose purpose is disclosure. **`food_items` is still not carried**: giving a food a public name is §6.1's, and this is only about not printing two rows that claim to be the same row.
 
 Factors and formulas are published openly (Decision 7).
 
@@ -3230,6 +3618,8 @@ Mapping: `/taxonomy` → `taxonomy.json`, `/factors*` → `factors.json`, `/stat
 
 ## 7.2 `state.js` (written by C)
 
+> **`foodStage` (v1.60) is which panel of step 2 is showing** -- `'categories'` or `'items'` -- and it is a panel rather than a step number because §3.3 of `spec.md` makes step 2.5 a refinement of step 2 and because the panel is absent wherever `item_level_enabled` is off. Anything that lands on a step resets it to `'categories'`. `foodItems` (category code to item codes) was added by the fork with nothing writing it; step 2.5 is its writer, and `entryLeaves` has read it since the day it existed.
+
 ```js
 /** Single mutable state object with a subscriber set. */
 export const state;
@@ -3244,11 +3634,25 @@ export function subscribe(fn);
 export function resetCalculator();
 
 /**
- * The entry being typed, as a saved entry: every key the visitor filled in and
- * nothing derived — `sector`, `foodCategory`, `totalAmount`, `totalUnit`,
- * `measureMode`, `unitPreset`, `unitCount`, `totalInputKg`, `totalValueNzd`,
- * `wastedValueNzd`, and `current` copied row by row so a later edit of the draft
- * cannot reach into an entry already committed to `state.entries`.
+ * The **chain** being typed, as a saved chain: every key the visitor filled in and
+ * nothing derived — `sector`, `foodCategories`, `foodUnspecified`, `foodItems`,
+ * `totalUnit`, and `leafFigures`, a map from each leaf's own key to the nine figures
+ * that leaf carries (`totalAmount`, `totalUnit`, `measureMode`, `unitPreset`,
+ * `unitCount`, `totalInputKg`, `totalValueNzd`, `wastedValueNzd`, `current`), copied
+ * row by row so a later edit of the draft cannot reach into a chain already committed
+ * to `state.entries`.
+ *
+ * **It returns one chain, never an array of leaves.** `state.entries` holds what the
+ * visitor built and can Edit or Remove as a unit; the fan-out to `entries[]` happens at
+ * exactly one place on the way to the wire, `submissionLeaves` (§7.3b).
+ *
+ * **It prunes `leafFigures` to `entryLeaves()`.** A category ticked, filled and then
+ * unticked leaves a record behind — deliberately, so that re-ticking hands the work
+ * back (the note below). The prune is what stops that record crossing the boundary:
+ * unpruned it is fingerprinted, so the back-out confirmation fires on a Back that
+ * discards nothing, and it travels into a saved chain, where re-opening the entry would
+ * surface figures under a food the visitor had abandoned. Parked in the live draft,
+ * never in a committed one.
  *
  * **It lives here rather than in `calculator.js` because two modules build
  * submissions.** It was private to `calculator.js`, and `improvement.js` carried
@@ -3262,6 +3666,61 @@ export function resetCalculator();
 export function draftEntry();
 
 /**
+ * **The leaf rule, and the only definition of it.**
+ *
+ * > A chain's leaves are: every ticked food item; plus every selected category with no
+ * > item ticked; plus one category-less leaf when the chain names no category at all —
+ * > either because nothing is ticked, or because "I do not know" is. The leaves are the
+ * > chain's entries. Every element of the request body's `entries[]` is a leaf, and
+ * > nothing else is.
+ *
+ * It lives in `state.js` because four modules must agree about it — `calculator.js`
+ * (steps 2, 3, 4, the review step, the duplicate notice, the validation router),
+ * `submission.js` (the request body), `improvement.js` (`submissionEntries`,
+ * `improvedLines`, `currentAllocationPercentages`) and `results.js` (labelling a
+ * breakdown row) — and this is the only module all four can import without closing a
+ * cycle: it imports nothing at all.
+ *
+ * Order is the visitor's **ticking order**, not `sort_order`, so step 3's cards and
+ * step 4's columns appear in the order they were created and do not reshuffle when a
+ * category is added.
+ *
+ * @param {object} chain
+ * @returns {Array<{foodCategory: string|null, foodItem: string|null}>} in selection order
+ */
+export function entryLeaves(chain);
+
+/** One leaf's identity as a map key: `${foodCategory || ''}\u0000${foodItem || ''}`. */
+export const leafKey;
+
+/** One leaf's nine figures off a chain, defaulted and deep-copied. */
+export function leafFigures(chain, leaf);
+
+/**
+ * **A leaf's name, and the only place one is decided.**
+ *
+ * The item's name, or the category's, or — for a leaf that names no food — the words §5.4
+ * gives that answer, `Not broken down by type`. Six surfaces show a leaf by name (steps 3
+ * and 4, the review step, the saved-entry card, the results page and the text export), and
+ * while each decided for itself there were two defects at once: **one leaf had four
+ * names**, and **two different leaves could render byte-identical** — `results.js`
+ * returned `Standard mix / not specified` both for a NULL `food_category` and for the
+ * `standard_mix` category, which step 2 offers as two separate boxes because §5.4 requires
+ * them to be two separate answers. A visitor ticking both got two indistinguishable rows
+ * carrying different numbers.
+ *
+ * It takes the taxonomy rather than reading `state`, so `results.js` can name a leaf from
+ * a paired response's own `food_category`. It is in `state.js` for the reason
+ * `entryLeaves` is, and it is why this module imports `i18n.js` — the only import it has,
+ * and safe because `i18n.js` imports nothing at all.
+ *
+ * @param {{foodCategory: string|null, foodItem: string|null}} leaf
+ * @param {object} taxonomy  §6.1's response
+ * @returns {string}
+ */
+export function leafDisplayName(leaf, taxonomy);
+
+/**
  * Pairs the entries the user typed with the per-entry results §6.2 returns, which
  * preserve request order. Each paired `response` is one entry's `current` /
  * `alternative` / `net_benefit` plus the submission-level `factor_set`,
@@ -3272,7 +3731,14 @@ export function draftEntry();
  * cross-entry figures from `result.totals` (§7.6.1) and per-entry figures from
  * `result.entry_results` — never a sum over the latter.
  *
- * @param {Array<object>} entries   Draft entries, in the order they were sent
+ * **What it must be handed is LEAVES, never chains.** One chain now carries several
+ * `entries[]`, and this pairs purely by index — hand it the chain array while the
+ * request carried leaves and every figure on the results page, in the text export and
+ * in the PDF is attached to the wrong entry, with no error and no warning anywhere.
+ * `submitCalculation` builds the leaf array with the same `submissionLeaves` call the
+ * request body was built from, for exactly that reason.
+ *
+ * @param {Array<object>} entries   The submission's LEAVES, in the order they were sent
  * @param {object} response         The §6.2 response
  * @returns {Array<{entry: object, response: object}>}
  */
@@ -3285,11 +3751,61 @@ Keys, grouped. **This is C's shape and the contract has adopted it**; the previo
 | --- | --- |
 | Server data | `taxonomy`, `result` |
 | Session | `token` — initialised from `sessionStorage.kaiCalculatorToken` at module load |
-| Draft entry | `sector`, `foodCategory`, `gwpHorizon`, `measureMode` (`'mass'` \| `'container'`), `totalAmount` (raw string), `totalUnit` (`'kilograms'` \| `'tonnes'`), `unitPreset` (a `unit_preset` code, or null), `unitCount` (raw string), `current: [{id, destination, qtyInput}]` |
-| Multi-entry | `entries: []` — committed entries, same shape as the draft |
+| Draft chain | `sector`, `gwpHorizon`, `foodCategories: []` (category `code`s in ticking order), `foodUnspecified` (the explicit "I do not know" answer), `foodItems: {categoryCode: [itemCode]}` (reserved for step 2.5; nothing writes it yet), `totalUnit` (`'kilograms'` \| `'tonnes'` — narrowed to the unit the chain's *combined* figures are stated in, fixed at the 3 → 4 move and never re-derived) |
+| Per leaf | `leafFigures: {leafKey: leafRecord}`, where a leaf record is `measureMode` (`'mass'` \| `'container'`), `totalAmount` (raw string), `totalUnit`, `unitPreset` (a `unit_preset` code, or null), `unitCount` (raw string), `totalInputKg`, `totalValueNzd`, `wastedValueNzd` and `current: [{id, destination, qtyInput, unit}]` — the nine keys that were flat on this object before the fork, one set per leaf. A keyed map and not an array, so unticking the middle category cannot slide the third category's figures onto the second |
+| Multi-entry | `entries: []` — committed **chains**, same shape as the draft |
 | UI | `step` (−1 intro … 5 results), `returnTo` (`null` \| `{from, step, entries?, draft?, kind?, after?}` — v1.53), `expandedSectors`, `resultBreakdownTab` (`'stage'` \| `'destination'` \| `'food'`), `lastChangedDestination` |
-| Status | `loading`, `error`, `errorCode`, `fieldErrors: {fieldPath: message}`, `rateLimitedUntil` (epoch ms) |
-| Improvement | `improvementOpen`, `improvedAllocations: {destinationCode: percentString}`, `improvementMode` (`'percentage'` \| `'unit'`), `improvementRowUnits: {destinationCode: 'kilograms' \| 'tonnes' \| 'preset:<code>'}`, `improvementChartExpanded`, `improvementResult`, `improvementLoading`, `improvementError` |
+| Status | `loading`, `error`, `errorAt` (`null` \| `{leaf, field}` — which leaf and which field a client-side message belongs to; string identity cannot survive N leaves, because two leaves produce the byte-identical sentence), `errorCode`, `fieldErrors: {fieldPath: message}`, `rateLimitedUntil` (epoch ms) |
+| Improvement | `improvementOpen`, `improvedAllocations: [{destinationCode: percentString}]` — **one allocation per leaf, in submission order**, `improvementMode` (`'percentage'` \| `'unit'`), `improvementRowUnits: {destinationCode: 'kilograms' \| 'tonnes' \| 'preset:<code>'}` (a display choice, panel-wide), `improvementChartExpanded` (`null`, or the index of the leaf whose donut is expanded — **not a boolean**, because leaf 0 is a real answer), `improvementResult`, `improvementLoading`, `improvementError` |
+
+> **The fork (2026-09-17).** A supply-chain chain may name several food categories,
+> each with its own amount **and its own destination allocation**. The three per-entry
+> scalars fork with them: `engine/calculate.py:369` sums every entry's `total_input_kg`
+> as the production-share denominator, so copying one chain's figure onto every leaf
+> divides the share by N, and `:506` derives `value_per_kg` per entry, so it overstates
+> `saving_nzd` by roughly N; attaching them to leaf 0 alone makes `_across_entries`
+> report "incomplete" forever. The allocation forks rather than being divided pro-rata
+> because the request body already carries one `current[]` per entry — a shared split
+> would have to be *derived* into each leaf as `row_kg × leaf_kg ÷ chain_kg`, and
+> three-decimal `qty_kg` rounding can then leave the leaves' lines not summing to the
+> figure the visitor typed, which `improvement.js`'s per-entry mass-conservation check
+> compares. **The request and response shapes are unchanged**; `MAX_ENTRIES` is
+> unchanged at 20 and now counts leaves, which step 2 restates client-side — and so does
+> *Add another supply-chain entry*, from the same function, because the ceiling has two
+> doors and a rule with two statements of it is two rules.
+>
+> **The improvement panel forks with them** (owner decision 6). `improvedAllocations` is
+> one destination-to-percentage map per leaf, in submission order, and every one of that
+> module's three inputs — the seeded shares, `improvedLines`'s base mass and the
+> mass-conservation check — is taken per leaf. One submission-wide split applied to every
+> leaf's own mass made *Match the current allocation* stop being an identity the moment a
+> chain forked: 100 kg of dairy sent entirely to landfill and 200 kg of fruit sent entirely
+> to animal feed came back as one 33/67 pair applied to both, which describes neither and
+> matches neither Current column. The identity is an array and not a map keyed by the leaf's
+> name, because two chains may legitimately carry the same sector and the same food — the
+> duplicate notice warns about that and does not forbid it.
+>
+> **Unticking a category PARKS its figures rather than discarding them, and parked is not
+> safe.** This took two passes and the reasoning is the part worth keeping. The defect that
+> started it was a **migration**: 400 kg typed under one category reappeared under the next
+> one, because a record was reaching a *different* leaf. The first fix pruned
+> `state.leafFigures` on the untick — which stopped the migration and then destroyed work
+> instead: untick a category and the amount was gone, silently, and re-ticking the same
+> category did not bring it back. `leafFigures` is keyed by the leaf (`leafKey`), so a kept
+> record can only ever return to the food it was typed for; the two cases are distinct and
+> only one of them is a fault. So an untick keeps the record and a re-tick hands it back.
+>
+> **What "not safe" means, and the three readers that have to agree about it.**
+> `calculator.js`'s `entryPatch` (§7.3a) overwrites every key of the draft from the entry
+> being loaded, and that entry carries only its own leaves — so **loading a saved entry
+> destroys every parked record.** `loadingGivesBackTheDraft` therefore counts parked
+> records before deciding whether that door may open silently, and `hasData` reads
+> `leafFigures` **whole** — live
+> leaves and parked ones alike — because start-over destroys them too and the clear-all
+> control must not hide itself while there is work to clear. `draftEntry()` prunes at the
+> **request boundary** instead, so nothing parked is ever sent, fingerprinted, or committed
+> to `state.entries`. Parked figures live in exactly one place, the draft on screen, and the
+> visitor is never told a parked record is durable because it is not.
 
 > **Two of her decisions are better than what this section used to require, and are now the requirement.** A line is `{id, destination, qtyInput}`, not `{destination, qtyKg, …}`: the `id` is a stable identity that survives a full re-render, which matters because `render()` replaces `main.innerHTML` wholesale; and `qtyInput` holds the **raw string the user typed**, so no rounding happens until the value is converted for the API. The old `qtyKg` shape rounds on every keystroke, which is precisely the premature-decimal hazard §1.2 exists to avoid.
 
@@ -3648,6 +4164,25 @@ export function stepNav({step, back, backLabel = 'Back', label = 'Continue',
 
 ### `calculator.js` — the wizard
 
+> **Step 2 is two panels and one step (v1.60).** `state.foodStage` is `'categories'`
+> or `'items'`; `screens[1]` renders whichever `foodStage` names, and `itemStepOffered()`
+> is re-asked on every render so a stage left at `'items'` cannot strand a visitor on a
+> panel this taxonomy has nothing to put in. **Any arrival at any step resets it to
+> `'categories'`** — a jump named *Food type* means the category question, and a jump
+> elsewhere must not leave the stage set for the next time step 2 is reached.
+>
+> **Three conditions gate the second panel, and each is a different question:**
+> `factor_set.item_level_enabled` (the published set prices foods individually — a
+> non-empty vocabulary is **not** the same question, since the vocabulary is global
+> taxonomy and exists as soon as staff type it in); a non-empty `food_items[]` (a screen
+> of empty groups is worse than no screen); and at least one category chosen (step 2.5
+> refines step 2, so there must be something to refine).
+>
+> **The ceiling is `MAX_LEAVES`, asked per box through `entryLeaves`.** Ticking a food is
+> not always one more leaf: a category with no food is already one leaf, so the *first*
+> food under it replaces that leaf and the second adds. Counting ticks gets that wrong.
+
+
 ```js
 /** Writes the current screen into `main`. Handles the loading and
  *  taxonomy-failure screens; dispatches on state.step (−1 intro, 0-4 screens,
@@ -3691,17 +4226,38 @@ function goToStep(step, jumped = false);
  *  stepProblem. What `edit-entry` swaps on, rather than overwrites. v1.53. */
 const draftIsComplete = ();
 
+/** Every draft key a saved chain sets, as one patch - the one way the draft is
+ *  replaced wholesale, by `loadEntry` and by backing out of a jump. It PRUNES
+ *  `leafFigures` to `entryLeaves(entry)` on the way in as well as on the way
+ *  out, so a chain written before a category was unticked cannot carry that
+ *  category's figures back into the draft. Line ids are re-minted, so nothing
+ *  may key on their identity across a render. v1.55. */
+const entryPatch = entry;
+
+/** Figures held for a leaf that is not currently ticked - the parked records
+ *  (§7.2). `entryPatch` destroys them, so anything that replaces the draft
+ *  wholesale has to count them first. v1.55. */
+const parkedFigures = ();
+
+/** Whether there is anything for "Clear all data" to clear. Reads `leafFigures`
+ *  WHOLE - live leaves and parked ones alike (§7.2) - because start-over
+ *  destroys parked records too, and a control hidden while there is work to
+ *  clear is a control that cannot undo it. */
+const hasData = ();
+
 /** Whether opening `entry` hands the draft slot back everything it holds, so
  *  that overwriting it destroys nothing - an untouched draft, or one that is
- *  only the (sector, foodCategory) pair `entry` already carries. Not a second
+ *  only the (sector, food selection) `entry` already carries. Not a second
  *  definition of "complete": this asks whether there is anything to keep. It
- *  is what decides whether the third v1.53 string is shown. */
+ *  is what decides whether the third v1.53 string is shown. Since v1.55 a
+ *  parked record is something to keep, and the pair it matches on is the whole
+ *  food selection rather than one category. */
 const loadingGivesBackTheDraft = entry;
 ```
 
 `data-action` vocabulary handled by the click delegate: `start`, `go-step`, `toggle-sector`, `clear-food`, `continue`, `add-entry`, `edit-entry`, `remove-entry`, `calculate`, `start-over`, `download-results`, `download-pdf`, `breakdown-tab`, `explore-improvements`, `reset-improvement`, `cancel-improvement`, `compare-improvement`, `expand-improvement-chart`, `close-improvement-chart`, `retry`, `view-methodology`.
 
-Module-private and worth knowing: `stepProblem(step)` returns a display string or `''` for one step's own rules, parameterised on the step so a caller may ask about a step the visitor is not standing on, and `validateCurrentStep()` is `stepProblem(state.step)`; `buildLines(entry)` produces `[{destination, qty_kg}]` filtered to `qty_kg > 0`; `draftFieldPaths()` produces the §9 `field` path for each row of the draft entry, aligned with `state.current` and `null` for a row the request will not carry; `publicError(error)` maps a §9 code to user copy; `validationMessage(error)` and `describeDetail(detail)` build the 400 banner from the details that no row on screen can display; `fieldErrorMap(error)` turns `details[]` into `{fieldPath: message}`; `blocked()` and `clearedError()` implement §9.2's rule that `BLOCKED` is terminal; `submitCalculation()` issues the request.
+Module-private and worth knowing: `stepProblem(step)` returns a display string or `''` for one step's own rules, parameterised on the step so a caller may ask about a step the visitor is not standing on, and `validateCurrentStep()` is `stepProblem(state.step)`; `buildLines(entry)` produces `[{destination, qty_kg}]` filtered to `qty_kg > 0`; `draftLinePaths()` produces the §9 `field` path for each destination row of the draft, **keyed by the row's own line `id`** and rooted at that row's leaf's position in the submission, and `draftFieldPaths()` is its values; `publicError(error)` maps a §9 code to user copy; `validationMessage(error)` and `describeDetail(detail)` build the 400 banner from the details that no row on screen can display; `fieldErrorMap(error)` turns `details[]` into `{fieldPath: message}`; `blocked()` and `clearedError()` implement §9.2's rule that `BLOCKED` is terminal; `submitCalculation()` issues the request.
 
 > **The Back confirmation (v1.53), and the one test that decides whether it appears.** Backing out of a jump restores §7.2's snapshot, and the marker survives a forward walk — so a visitor may press *Add another supply-chain entry*, build a whole second chain across four screens, walk Back to step 1 and press Back there, at which point the restore would throw all four screens away. `goToStep` therefore calls `window.confirm` first, following `start-over`'s precedent, and declining returns without a `setState` at all: same step, same draft, same entries, marker still live.
 >
@@ -3726,7 +4282,7 @@ Module-private and worth knowing: `stepProblem(step)` returns a display string o
 >
 > **Read `destination.is_prevention` from §6.1, never the code.** `calculator.js`'s `entryDestinations` filtered `code !== 'prevention'` until v1.22 and therefore left every *other* prevention destination — §10.3's ReFED set brings its own, and the deployed stack offers it — on the current-waste list. The function is exported so `tests/web/test_entry_destinations.py` can run it under Node against a taxonomy it builds, the same seam `buildResultsReport` was pulled out for.
 >
-> **The three silent failures this module used to have are fixed, and the shape of them is worth keeping.** `fieldErrorMap` keyed on the raw `details[].field` string while the render loop looked up `current[<index>].qty_kg` — §9's format is `entries[0].current[1].qty_kg`, so it never bound; the index was the position in `state.current`, which includes blank rows, while `buildLines` filters them out before sending, so the request index and the render index differed whenever any destination was left empty, which is the normal case; and `fieldErrorMap` stored the **envelope's** `message` against every field, so even a correctly bound row would have read "Request validation failed" while the server's own per-field prose was discarded. All three are silent by construction: no error, no console warning, only the generic banner. `draftFieldPaths()` exists to make the first two impossible to reintroduce independently — it derives the path from the same filter `buildLines` applies and roots it at `entries[state.entries.length]`, because the draft entry travels last.
+> **The three silent failures this module used to have are fixed, and the shape of them is worth keeping.** `fieldErrorMap` keyed on the raw `details[].field` string while the render loop looked up `current[<index>].qty_kg` — §9's format is `entries[0].current[1].qty_kg`, so it never bound; the index was the position in `state.current`, which includes blank rows, while `buildLines` filters them out before sending, so the request index and the render index differed whenever any destination was left empty, which is the normal case; and `fieldErrorMap` stored the **envelope's** `message` against every field, so even a correctly bound row would have read "Request validation failed" while the server's own per-field prose was discarded. All three are silent by construction: no error, no console warning, only the generic banner. `draftLinePaths()` exists to make the first two impossible to reintroduce independently — it derives the path from the same filter `buildLines` applies, and roots each row at the request index of **the leaf that row belongs to**. **Since v1.55 the draft occupies a RANGE of request indices, not one**: a chain with three food categories is three `entries[]` elements, so `entries[state.entries.length]` — the old root, correct while a draft was one entry — would have bound every leaf's rows to the first of them. The base is `savedLeafCount()`, the leaves of every chain already committed, plus the leaf's own position in the draft. It is keyed by line `id` rather than returned as a parallel array because the cells are rendered leaf by leaf and a flat index across the matrix would have to be re-derived at every call site.
 >
 > **`api/errors.py::bracket_path` is the server half of that agreement** and `tests/api/test_api_entries.py` asserts the exact string, so both ends of the `field` format are pinned by a test in one tree.
 
@@ -3781,6 +4337,8 @@ export function downloadResults(state);
 export async function downloadPdf(state);
 ```
 
+> **"Per entry" on this screen means per LEAF, not per chain (v1.55).** A supply-chain chain that names three food categories is three `entries[]` elements and therefore three breakdown sections and three rows in the text report, each named by `leafDisplayName` (§7.2) rather than by a label this module decides. That is what closed two defects at once here: a leaf carried one name on step 3, another on step 4 and a third on the review step, and `Standard mix / not specified` was returned both for a NULL `food_category` and for the `standard_mix` category — two answers step 2 offers as two separate boxes, rendering byte-identically on a page whose rows carry different numbers. The pairing itself is `entryResultsFrom`'s (§7.2), which must be handed the leaves the request was built from; handed chains it pairs by index against a longer response and attaches every figure to the wrong entry, silently.
+>
 > **The export used to contain no results.** It printed the total mass, the entries, their destinations and quantities, the factor version and the placeholder warning, and not one output number — under a file name that says "results". `buildResultsReport` exists as a separate export because that is the half a test can assert on: `tests/web/test_results_export.py` runs this module under Node against the §10 fixtures and matches whole anchored lines, so a report that printed the label without the figure, or the figure without its unit, fails. A test that greps this file for a heading would have passed on the broken version.
 
 > **The client-side aggregation layer is gone.** This module summed engine-computed metric totals, equivalence values and destination rows across entries; the two largest numbers on the page were numbers the engine never produced. It now reads `totals` and `net_benefit` from §6.2, and the destination tab is rendered per entry per the ruling there. `aggregateResults` and `differenceData` no longer exist.
@@ -3794,7 +4352,15 @@ export async function downloadPdf(state);
 ### `improvement.js` — the alternative scenario
 
 ```js
-export function currentAllocationPercentages(state);  // {destinationCode: number}
+/** **One map per leaf, in submission order** — not one map for the submission.
+ *  A submission-wide split applied to every leaf's own mass stopped being an
+ *  identity the moment a chain forked: 100 kg of dairy sent entirely to landfill
+ *  and 200 kg of fruit sent entirely to animal feed came back as one 33/67 pair
+ *  applied to both, which describes neither and matches neither Current column.
+ *  An array and not a map keyed by the leaf's name, because two chains may
+ *  legitimately carry the same sector and the same food — position in `entries[]`
+ *  is the identity, and it is the position `entry_results[]` uses too. v1.55. */
+export function currentAllocationPercentages(state);  // [{destinationCode: number}]
 /** Opens the panel with every destination at 0, not the current share. The
  *  client asked for every slider to start at 0: a visitor modelling an
  *  improvement is choosing a new allocation, and seeding from the old one
@@ -3812,6 +4378,13 @@ export function resetImprovement(state);
  *  total and inline error, enables/disables Compare — all without setState. */
 export function updateImprovementInput(control, state);
 export function allocationTotal(allocations);
+/** '' when valid. **Every rule is per leaf since v1.55**: each leaf's own sliders
+ *  must total 100% of *its* mass and conserve *its* mass to §6.2's 0.010 kg, which
+ *  is what the server checks per entry — one submission-wide total of 100% says
+ *  nothing about whether any individual entry conserves its own mass, and it is the
+ *  entry the API refuses. The message names the food when there is more than one
+ *  leaf (`%(food)s: %(message)s`), because "allocations must total 100%" pointing at
+ *  no particular card is unactionable on a five-column panel. */
 export function improvementValidation(state);         // '' when valid
 /** @param {object} state
  *  @param {(e: Error & {code?: string}) => string} [toPublicMessage]
@@ -3840,7 +4413,9 @@ export function ComparisonResults(state);             // '' until a comparison e
 >
 > **`mass` is held out of the comparison lists** because §6.2 requires an entry's two scenarios to describe the same mass, so its `net_benefit` is zero by construction — "Mass: No change" on every comparison, in a list whose subject is what changed. Same exclusion as `results.js`, different reason.
 >
-> **The mass check is §6.2's own rule, applied in kilograms.** `improvementValidation` compared allocation percentages to within ±0.01 **percentage points**, which is a different rule at every tonnage: 0.01 points is 0.15 kg on a 1,500 kg entry, fifteen times §6.2's absolute 0.010 kg limit, so the panel enabled Compare on a submission the server then refused with a 400 — for the whole submission, after the user had left the screen with the numbers on it. It now sums the lines that will actually be sent. The seeded allocation was itself invalid under the corrected check (52.17 + 34.78 + 13.04 = 99.99%), so `currentAllocationPercentages` gives the rounding remainder to the largest share, and `improvedLines` anchors on the entry's **allocated** current mass rather than the total typed at step 3 — step 4 deliberately permits allocating less than the total, and anchoring on the typed total made every under-allocated entry send an alternative heavier than its current scenario.
+> **The panel forks with the chain (v1.55), and all three of its inputs are taken per leaf.** `submissionEntries(state)` returns the submission's **leaves** (§7.3b), and the seeded shares, `improvedLines`'s base mass and the mass-conservation check are each computed against one leaf's own current scenario. `state.improvedAllocations` is the matching array (§7.2). Two module-private functions carry the reconciliation: `leafShares` is one leaf's own current percentages, and `leafAllocations` reconciles whatever `improvedAllocations` holds to the leaves the submission actually has — so a panel opened on three leaves and re-rendered after one was removed cannot read a fourth leaf's allocation, and an allocation stored in the pre-fork shape (a bare object) is not mistaken for leaf zero's. `improvementChartExpanded` is `null`-or-an-index for the same reason: leaf 0 is a real answer, so a boolean cannot say which donut is open.
+>
+> > **The mass check is §6.2's own rule, applied in kilograms.** `improvementValidation` compared allocation percentages to within ±0.01 **percentage points**, which is a different rule at every tonnage: 0.01 points is 0.15 kg on a 1,500 kg entry, fifteen times §6.2's absolute 0.010 kg limit, so the panel enabled Compare on a submission the server then refused with a 400 — for the whole submission, after the user had left the screen with the numbers on it. It now sums the lines that will actually be sent. The seeded allocation was itself invalid under the corrected check (52.17 + 34.78 + 13.04 = 99.99%), so `currentAllocationPercentages` gives the rounding remainder to the largest share, and `improvedLines` anchors on the entry's **allocated** current mass rather than the total typed at step 3 — step 4 deliberately permits allocating less than the total, and anchoring on the typed total made every under-allocated entry send an alternative heavier than its current scenario.
 >
 > The alternative lines are built as `(totalKg × percentage / 100).toFixed(3)` **per line independently**, so Σ parts can differ from the entry total by up to 0.0005 × n. The dual-scenario design depends on the two scenarios conserving mass; this can break it by fractions of a gram. **Settled in v1.2, in C's favour:** §6.2's mass-conservation rule is derived from exactly this behaviour and its 0.010 kg tolerance is 20 lines × 0.0005 kg, so the drift this module produces is accepted rather than rejected — but only because §6.2 also caps a scenario at 20 lines per entry. The worst case sits on the boundary, and the comparison is `<=`. If that cap ever rises, this allocation must round to a running remainder instead.
 
@@ -3856,9 +4431,31 @@ No exports. Wires `subscribe(→ renderChrome + render)`, calls `bindCalculator`
 
 No exports. Uses top-level `await` to call `getFactors()`, then writes the factor-set metadata and the published-formula table into `#factor-content`, prefixed by the placeholder-data banner when `factor_set.is_mock`. Renders an escaped error block on failure. `formula.expression` is staff-authored content reaching a public page and is escaped inside `<code>`.
 
+> **The upstream table carries a `Food` column (v1.58)**, rendering `All foods in this category` where `upstream[].food_item` is absent — and absent is the shape §6.3 sends, not `null`, so the cell is written off a missing key rather than a null one. It is not optional for the reason the `Sector` column below is not: with a set that prices `cheese` apart from `dairy`, omitting it prints two rows identical in every visible column and differing only in the number, which is the figure published without its basis that §2.2's provenance columns exist to prevent. **And the intro sentence has to state the order**, because this table now shows *two* optional scopes — `All destinations` and `All foods in this category` — and §4.1 resolves a destination-only row ahead of a food-only one, which no reader can infer from the rows themselves.
+
 > **The downstream table carries a `Sector` column (v1.31)**, rendering `All sectors` where `downstream[].sector` is `null`, beside the `All food categories` the food column already renders. It is not optional: with a set that prices by sector, omitting it prints rows that are identical in every visible column and differ only in the number — the figure published without its basis that §2.2's provenance columns exist to prevent. The sentence above the table states §4.1's order as well, because the two columns each show a scope and neither can say which one gives way.
 
+## 7.3c The fallback disclosure (v1.59, written by C and D; mirrored by B in the PDF)
+
+**One sentence, three surfaces, one field.** The results page, its plain-text export and §6.2.3's PDF each render the same caveat when a visitor named a food the published set does not price: *"%(food)s is priced at the %(category)s average. The published factor set carries no factors for this food, so the figures here are its category's rather than its own."*
+
+The decision is `entries[].item_basis` and nothing else. **No surface may work it out from the rows** — a roll-up performed in `results.js`, again in its export and again in `api/pdf_render.py` is one submission described three ways, and the difference would surface only for a visitor who read the page and then opened the file. §3's `is_disclosed` is the branch: `category` alone.
+
+| Surface | Where it sits |
+| --- | --- |
+| Screen | An `aside.disclaimer`, beside the placeholder banner and **independent of it** — a real factor set can still price a food only at its category, and a placeholder one can price a food individually |
+| Text export | The same lines, beside the placeholder notice |
+| PDF | The same, from `api/pdf_render.py`'s `_CATEGORY_AVERAGE_FLAG` and `_CATEGORY_AVERAGE_BODY`, which `tests/api/test_pdf_render.py` asserts are strings the front end also renders. The two copies exist because the surfaces share no code; that test is what stops them becoming two sentences |
+
+**One line per food, deduplicated, and no plural form.** Two entries naming the same food are one caveat — the reader is being told a fact about the factor set, not about a row of their own table — and a sentence per food is why no catalogue needs a plural rule here.
+
+**The food is named from the taxonomy, never from the code alone.** §6.1's `food_items[]` supplies the display name and the parent category; a retired row falls back to the code rather than to a blank, because a caveat that names nothing is a caveat about an unnamed thing.
+
+**The privacy copy names the food too (v1.59).** Both enumerating sentences on `home.html`, `index.html`, `methodology.html` and `stats.html` read *the sector, food category, the specific food where you name one, and the quantities entered*. `submission_entry.food_item_id` has been written since v1.58, so the old enumeration was already incomplete; the clause is worded *where you name one* so that it is true before landing step 8 as well as after it. `tests/web/test_consent_copy.py`'s predicate is over the copy rather than over a list of sentences, so the reworded pair is still selected by it.
+
 ## 7.3b `submission.js` — the one builder of the calculate request (written by C)
+
+> **It sends `food_item` from v1.60.** `foodItem` has travelled on every leaf since the fork, so the review step, the results page and the duplicate notice could label one, and it stopped at the payload boundary because `EntryPayload` was `extra="forbid"` with no such field -- sending it was a 400. v1.58 gave the model that field, which turned the withholding into the front end standing one revision behind the API. `entry.foodItem || null`, for the reason `food_category` beside it uses one: §6.2 reads absent and null the same way, and only the explicit null is distinguishable from a client written before the field existed.
 
 **`POST /api/v1/calculate` has two callers, and this module is the only thing that builds
 what either of them sends.** The Calculate button on the review step is one; Compare Impact
@@ -3882,6 +4479,35 @@ only wrong *relative* to it. **A new field on the request goes here, once**, and
 that assembles its own entry object is the defect above returning.
 
 ```js
+/**
+ * **Every chain's leaves, in submission order — THE one place a chain becomes several
+ * entries.**
+ *
+ * A chain is what the visitor built and can Edit or Remove as a unit; a leaf is what
+ * the API receives. `state.entries` holds chains, `entries[]` on the wire holds leaves,
+ * and this is the only crossing between the two. All three request builders go through
+ * it — Calculate, Compare Impact and `submissionPayload` itself — so a caller that
+ * forgets cannot produce a wrong body.
+ *
+ * Each leaf comes back already shaped as the flat entry `entryPayload` consumes: the
+ * chain's `sector`, the leaf's own nine figures (including its own `current`
+ * allocation, because step 4 forks too), and its `foodCategory` / `foodItem`.
+ *
+ * **`foodItem` is carried and not sent.** `EntryPayload` is `extra="forbid"`, so an
+ * unknown key is a 400 rather than an ignored field; the item dimension reaches the
+ * request shape at a later stage. It travels on the leaf so `results.js`, the review
+ * step and the duplicate notice can label it.
+ *
+ * **A leaf is not a chain.** Fanning an already-flattened entry out a second time gives
+ * "one category-less leaf" with no `leafFigures`, so every entry becomes blank with
+ * `current: []` and the API answers 400 for a submission that was complete. That is a
+ * programming error and is thrown, not absorbed.
+ *
+ * @param {Array<object>} chains  every supply-chain CHAIN, in submission order
+ * @returns {Array<object>}  one flat entry per leaf, in request order
+ */
+export function submissionLeaves(chains);
+
 /**
  * The `current` scenario's lines. Each row converts with its own `unit` through
  * `rowKgString` (§7.3), falling back to the entry's `totalUnit` for a row saved
@@ -3919,14 +4545,23 @@ export function entryPayload(entry, presets, alternative);
  * inside the entries because it is one period for the whole submission, asked once
  * on the review step.
  *
+ * **Chains in, leaves out.** The fan-out happens here rather than at the three call
+ * sites, so `alternativeFor` is invoked with a LEAF — which is what `improvement.js`
+ * needs: `improvedLines` takes the leaf's own current mass as its base, and the server
+ * checks mass conservation per entry.
+ *
  * @param {object} state
- * @param {Array<object>} entries  every entry, in submission order — the order §6.2
- *                                 preserves in `entries[]` of the response
- * @param {(entry: object) => Array|null} [alternativeFor]  the improved scenario for
- *   an entry. The default is no alternative, which is what Calculate sends;
- *   `improvement.js` passes its allocation of the entry's own current mass.
+ * @param {Array<object>} chains  every supply-chain CHAIN, in submission order; this
+ *                                function forks them into the leaves §6.2 preserves
+ *                                the order of in `entries[]` of the response
+ * @param {(leaf: object, index: number) => Array|null} [alternativeFor]  the improved
+ *   scenario for a leaf, and that leaf's own position in the submission. The default is no
+ *   alternative, which is what Calculate sends; `improvement.js` passes its allocation of
+ *   the leaf's own current mass, and uses the **index** to select which of its per-leaf
+ *   allocations that is — a leaf's name is not an identity here, because two chains may
+ *   name the same sector and the same food, while its position in `entries[]` is.
  */
-export function submissionPayload(state, entries, alternativeFor);
+export function submissionPayload(state, chains, alternativeFor);
 
 /**
  * §6.2.3, v1.49. The `POST /api/v1/export/pdf` request body — `api/export.py`'s
@@ -3954,11 +4589,22 @@ export function exportPayload(state, locale);
 > `.toFixed()` on a mass anywhere else in `web/` is a defect on sight applies here like
 > anywhere else.
 
-> **`submissionEntries(state)` in `improvement.js` mixes its argument with the module
-> singleton**: it returns `[...state.entries, draftEntry()]`, and `draftEntry` reads
+> **`submissionEntries(state)` in `improvement.js` returns LEAVES, and mixes its argument
+> with the module singleton.** Since v1.55 its body is
+> `submissionLeaves([...state.entries, draftEntry()])` — so what comes back is the flat
+> `entries[]` the request carries, one element per food type, and not the chains the visitor
+> built. Every consumer in that module depends on it: the seeded percentages are taken over
+> the lines the payload actually carries, `improvedLines` takes each leaf's own current mass
+> as its base, and `improvementValidation` checks mass conservation per entry exactly as the
+> server does. Handed chains instead, the panel would seed its sliders from allocations that
+> are not in the request and compare an alternative against a current scenario the server
+> never saw.
+>
+> The mixing is the part that is merely recorded rather than fixed: `draftEntry` reads
 > `state.js`'s own object rather than the parameter. Equivalent today, because every caller
-> passes that same singleton. It is recorded because the parameter no longer fully determines
-> the result, and a future caller with a constructed state would get the singleton's draft.
+> passes that same singleton. It is written down because the parameter no longer fully
+> determines the result, and a future caller with a constructed state would get the
+> singleton's draft.
 
 ## 7.4 `charts.js` (written by D)
 
@@ -4028,6 +4674,8 @@ Owners: C and D on the calculator, E on the panel. Open item O-8.
 ### 7.7.1 The shape of a catalogue
 
 **The English source string is the key.** `t('Save')` looks up `"Save"`. There is no separate key namespace, a missing key renders its own English source, and one file is one language.
+
+**Which is why a key may be punctuation, and why a *description* of a string is never one.** `t(', ')` is the list separator that joins food names — "Dairy, Fruit and vegetables" — and it is a catalogue entry like any other, because the convention is not universal: Arabic sets `، `, and Chinese and Japanese often set `、` between nouns. It was written `t('List separator')`, which is a description of a string rather than the string, and since the English key **is** the English output that printed the literal words on screen: `DairyList separatorBakery and grainsList separatorFruit`. A key that cannot be rendered as-is in English is a key that has already failed in English.
 
 ```
 admin/locales/<lang>.json    read by Python, shipped as wheel package data
@@ -4374,7 +5022,7 @@ Built on `sqladmin`, mounted at `/admin`, authentication required.
 
 ## 8.1 Models Exposed for Direct CRUD
 
-**Taxonomy and factors — eleven, from v0.1:** `sector`, `food_category`, `destination`, `destination_group`, `metric`, `unit_preset`, `constant`, `formula`, `equivalence`, `factor_upstream`, `factor_downstream`
+**Taxonomy and factors — twelve:** eleven from v0.1 — `sector`, `food_category`, `destination`, `destination_group`, `metric`, `unit_preset`, `constant`, `formula`, `equivalence`, `factor_upstream`, `factor_downstream` — and `food_item` from v1.54 part two. `food_item` follows the taxonomy pattern exactly: no delete, `active` is how a row leaves service, and both roles, decided on the same grounds as `food_category` beside it (§8.3 reserves the administrator floor for account management, the blocklist and the audit trail — capabilities about who may use the system, not about what it says).
 
 **Comparison scenarios — two, added v0.10 (§2.2a):** `comparison_scenario`, `comparison_scenario_line`. Edited under their own "Comparison" category. Unlike the taxonomy tables these may be **deleted** through the panel: a scenario is a staff member's own saved test case and is referenced by nothing else in the schema.
 
@@ -4413,6 +5061,8 @@ Requirements: list views must offer search and filtering.
 
 > **The submissions screen shows both flags, separately, and must not merge them (v1.48).** A single "is this row actually public" column would be exactly the collapse §2.3's two-flag design exists to prevent: `excluded_from_public` is staff's own action and staff can reverse it; `is_public_contributed` is the visitor's, and staff cannot. Merging them would leave a staff member unable to tell "I withheld this" from "they never offered it", which are different situations calling for different responses — and would hide the second one entirely, since it is the one nobody in the building did. The screen carries a **column** ("Public consent") and a **filter** ("Offered only" / "Not offered only") beside the existing exclusion filter, so that narrowing "who has been excluded" and narrowing "who has opted in" stay two questions with two controls. Staff read the two independently here exactly as §5.4 predicates on them independently in the query.
 
+> **The dry-run form learns the food item (v1.57), and omits the key rather than sending `null` when nothing is chosen.** The people releasing step 2.5 are the people who need to see what it prices before they release it, and until now this form could only name a category. Omitting the key when no food is chosen keeps every existing dry run byte-identical on the wire, which is what lets the screen learn the dimension before §6.2 does.
+>
 > The dry-run view **must** send the dry-run header. Staff will run dozens of calculations while tuning a formula, and persisting them would directly pollute the public statistics. **From v1.48 that includes consent:** `POST /api/v1/contribute` (§6.2.2) reads the same header and writes nothing when it is set, so no staff scenario can be opted in.
 
 The comparison view is two dry-run calls per scenario — one with `factor_set_version` set to the published label, one to the draft — shown side by side, **not** differenced. Decision 6 puts every impact number server-side, in exactly one place; `POST /api/v1/calculate` computes `net_benefit` only for a current-versus-alternative comparison made *within one call*, and has no concept of a difference between two separate calls made at two different `factor_set_version`s. Subtracting the two response strings in the view or the template would put a number in front of staff that no server-side calculation ever produced, which is exactly what Decision 6 forbids — so the page renders both values, plainly labelled, and says in words that no difference is shown. Whether `POST /api/v1/calculate` should grow a two-version diff so this page can show one is open (raised in the E7 task report; not yet assigned an owner). The standard scenarios it runs are staff-editable rather than hard-coded; hard-coding them would reintroduce "change the code to change the configuration", which Decision 2 exists to prevent. They live in `comparison_scenario` / `comparison_scenario_line` (§2.2a), edited through their own CRUD screens like every other §8.1 table.
@@ -4436,6 +5086,8 @@ Because a dry-run request body is a `bundle` plus a scenario, the dry-run view c
 | Create, deactivate, re-role and delete accounts | ❌ | ✅ |
 | Reveal an unclaimed password | ❌ | ✅ |
 | Reset another account's MFA, issue a random password | ❌ | ✅ |
+
+**`food_item` is both roles too (v1.57)**, decided on the same ground and recorded here because this section is where a role decision lives. The administrator floor is reserved for capabilities about *who may use the system* — account management, the blocklist, the audit trail. A food is the same kind of row as the food category beside it: staff-typed vocabulary, `active` rather than delete, nothing identifying, every write already audited. The act that carries outward consequence is switching `item_level_enabled` on and publishing that set, which is itself both roles by the rule above — so a floor on the typing would leave the releasing open, which is the wrong way round.
 
 Publishing is available to both roles deliberately: `audit_log` records who published and rollback is one action, so accountability and recovery are already covered. Restricting it would stall routine work whenever the administrator is unavailable, in a team of three to five people.
 
@@ -4836,6 +5488,8 @@ On the field shape's three keys: `field` is §9's bracket path, `issue` is a sta
 >
 > **`HTTP_ERROR` is a name collision, deliberately left standing.** §7.1's `ApiError.code` already uses `HTTP_ERROR` for a *client-side* condition — a response the browser could not parse as JSON. The API now also emits it as the residual server code for a framework-level `HTTPException` that is neither 404 nor 405. The two are not the same event, and they are not distinguishable from `code` alone. They are left sharing a name because **the front end's response to both is identical** — a generic banner, no field targeting, no automatic retry — so the distinction would cost C a branch and buy nothing; `status` separates them if it is ever needed (`0` or an unparsed body on C's side, a real status and a well-formed envelope on the API's). Written down so that a reader who finds the same string in two sections does not conclude one of them is a mistake.
 >
+> **Two refusals moved off `UNKNOWN_CODE` in v1.58, and the `UNKNOWN_CODE` row above is why.** A `food_item` the published set's vocabulary does not carry, and a `food_item` whose parent is not the category it arrived with, were both raised by the engine as `UnknownCodeError` and reached the wire as `UNKNOWN_CODE` with `details: []` — telling a front end to *re-fetch the taxonomy and prompt a refresh* for a request whose taxonomy is perfectly current and whose one wrong field this envelope declines to name. They are now `VALIDATION_ERROR` carrying `field` = `entries[i].food_item` and the slugs §6.2 lists, so the offending control is the one highlighted. **The mismatch case is what makes this more than tidiness:** in `(vegetables, cheese)` both codes exist, so no re-fetch can ever resolve it, and pointing at the field is the only instruction a visitor could act on.
+>
 > **What is *not* here is also a rule:** the API does not invent codes beyond this table. §4.4's four engine exceptions map onto rows above; anything else the engine raises is an engine bug, not a documented condition, and lands on `INTERNAL_ERROR` deliberately — a code minted at the point of failure is a code no consumer could have branched on.
 
 ## 9.1 `FORMULA_ERROR` Has Two Presentations
@@ -4895,6 +5549,14 @@ and the session middleware outside would turn a raised `ApiProblem` into a
 
 # 10. Mock Data Convention
 
+> **The deployed mock set releases the item level from v1.60, and it is the only factor set in the repository that does.** `docker/mock-factors.json` carries `item_level_enabled: true` and twelve item-level `factor_upstream` rows -- the six dairy foods, in `co2e` and `water`. Those are the two metrics the client's table 1 supplies that this system also carries; `ch4`, `cost` and `mass` are deliberately absent per food and fall to the category row through §2.2's chain, which is a defined number rather than an invented one.
+>
+> **Each item value is the client's relativity on this set's level.** The client's category factors are the unweighted mean of their table-1 rows, so a food with no row of its own falls back to a figure it helped produce -- a property worth keeping. This set's dairy figure is golden `case_01`'s, not the client's mean, so each item value is the client's figure scaled by `set_category ÷ client_mean`: the relative differences stay the client's, the absolute level stays this set's, and the mean of the six scaled rows returns to the category figure below `DECIMAL(20,10)`'s own scale. Using the raw figures would have made the category row and the item rows disagree about the same food.
+>
+> **`seed_mock_factors.py` defaults `item_level_enabled` to false**, which is the answer for every factor file written before v1.58 and the safe default either way: a set that released step 2.5 because nobody said otherwise would ask a finer question than its factors answer. It also never overwrites a set that already exists, so an older database keeps the switch off and the panel stays absent.
+>
+> **The vocabulary is not part of a factor set.** `admin/seed.py`'s twenty `food_item` rows are global taxonomy (§2.1) and exist whatever set is published; §6.1's parent-covered filter is what decides which of them a given set lets the visitor see. Against this set that is six of the twenty.
+
 Located in `tests/fixtures/`. C and D consume these directly before the backend is ready.
 
 **These files are the executable form of the contract.** Backend contract tests assert that real responses match their shape, the fixtures are checked against each other and against the shipped seed data, and the front end develops against them directly. They must be updated whenever the contract changes (see §0).
@@ -4903,12 +5565,12 @@ Located in `tests/fixtures/`. C and D consume these directly before the backend 
 
 | File | Content |
 | --- | --- |
-| `taxonomy.json` | A complete `GET /taxonomy` response: six sectors, ten food categories including `standard_mix`, **fourteen destinations across the three `destination_group` rows `reuse`, `recycle_recovery` and `disposal`** — `prevention` is a destination in the `reuse` group, not a group of its own — the metrics, and the unit presets. **Its codes are `admin/seed.py`'s codes**, not prose invented for the fixture — `code` is the cross-layer identifier (§1.1), and a fixture that renames one produces a front end bound to a code the API will never send |
+| `taxonomy.json` | A complete `GET /taxonomy` response: six sectors, ten food categories including `standard_mix`, **an empty `food_items` array and `factor_set.item_level_enabled: false` (v1.58) — which is what every deployment returns, because `admin/seed.py` seeds no `food_item`**, **fourteen destinations across the three `destination_group` rows `reuse`, `recycle_recovery` and `disposal`** — `prevention` is a destination in the `reuse` group, not a group of its own — the metrics, and the unit presets. **Its codes are `admin/seed.py`'s codes**, not prose invented for the fixture — `code` is the cross-layer identifier (§1.1), and a fixture that renames one produces a front end bound to a code the API will never send |
 | `calculate_request.json` | A two-entry `POST /calculate` request (§6.2), mass-conserving per entry, and the request that produces `calculate_response.json`. **From v1.48 it carries all four context fields**: `time_frame` at the top level, both money figures on both entries, and `total_input_kg` on **one** entry only, so that the present and the absent shapes are both exercised. Its two entries are priced at $4.50/kg and $5.00/kg, which is what makes §4.5's per-entry rate visible in the response beside it — a blended rate answers 3,739.13 where the fixture says 4,000.00 |
 | `calculate_response.json` | The corresponding 200 body: `totals` plus two `entries`, dual scenario, with `by_destination` per entry **and, from v1.48, at the totals level too** — summed `qty_kg` and `value`, both rate fields at `"0.0000000000"` (§3 rule 2) — and a populated `totals.money` (§4.5) |
 | `calculate_response_single.json` | A 200 body with no alternative scenario: `alternative` and `net_benefit` null at both levels (§3 rule 4), and `"money": null`, which is v1.48's absent case on the wire |
 | `calculate_request_partial_coverage.json` / `calculate_response_partial_coverage.json` | **Added in the v1.50 review.** Neither of the two pairs above ever gave a money field `incomplete` or the share `complete` — `calculate_response.json` is `complete` in all four money fields and `incomplete` in the share, `calculate_response_single.json` is `not_supplied` throughout — so §4.5's rewrite, the state its own callout describes, was never exercised by a fixture. This pair's second entry supplies `total_input_kg` but no money figures, which makes the share `complete` (`"21.30"`) and all four money fields `incomplete` (`null`, with `data_state` naming the reason) at once. Not hand-typed: it is `engine.calculate.calculate`'s own output for that request, saved once, the same discipline the canonical pair was built with. `tests/api/test_fixture_consistency.py::test_every_data_state_value_is_exercised_somewhere_in_the_fixtures` fails without it |
-| `export_pdf_request.json` | **v1.49.** A `POST /export/pdf` request (§6.2.3): `calculate_request.json`'s two entries, with `token` and `dry_run` dropped — `ExportPayload` declares neither and `extra="forbid"` refuses both — and `locale: "ar"` added, so the one fixture exercising this route also exercises a right-to-left catalogue. `tests/api/test_export_pdf.py` posts it to the real route rather than reshaping `calculate_request.json` at test time, so a field this file gets wrong fails the same test a hand-built payload could quietly pass |
+| `export_pdf_request.json` | **v1.49.** **The one request fixture that carries no `food_item` key at all, and deliberately so (v1.58): it is what proves an absent key is accepted, which no file that always sends the key can prove.** A `POST /export/pdf` request (§6.2.3): `calculate_request.json`'s two entries, with `token` and `dry_run` dropped — `ExportPayload` declares neither and `extra="forbid"` refuses both — and `locale: "ar"` added, so the one fixture exercising this route also exercises a right-to-left catalogue. `tests/api/test_export_pdf.py` posts it to the real route rather than reshaping `calculate_request.json` at test time, so a field this file gets wrong fails the same test a hand-built payload could quietly pass |
 | `stats.json` | A `GET /stats` response with a suppressed `other` bucket in every breakdown, an `unspecified` food-category bucket, and shares that sum to exactly 1 |
 | `factors.json` | A `GET /factors` response: constants, five formulas, upstream and downstream rows including a **negative** downstream factor and a generic (`food_category: null`) row, and `source_note` / `data_quality` on every row. **`prevention` is at zero on both sides** — all three downstream rows, and since v1.8 an upstream row for every `(sector, food_category, metric)` that has a general one (open item O-7). `test_prevention_is_a_whole_offset_upstream_as_well_as_down` is what keeps the upstream half complete |
 | `errors/*.json` | **Seven files, one per §9 code that has a fixed body**: `validation_error`, `unknown_code`, `unauthorized`, `blocked`, `rate_limited`, `formula_error`, `no_published_factor_set`. `errors/blocked.json` is the only one whose `details` is `null` rather than `[]` (§9.2) |
@@ -4949,6 +5611,10 @@ tests/golden/
     expected.json   the expected full CalculationResult   <- §3, as JSON
 ```
 
+> **Every field of `EntryResult` and `BreakdownRow` reaches `expected.json`, and since v1.59 that is checked rather than trusted.** The harness's `render()` is hand-written and its docstring said it dropped nothing, while it had been dropping v1.58's `food_item_code` since the day that field existed — invisibly, because the value is `None` in all thirteen cases and a key absent from *both* documents is absent from the comparison too. The suite went on passing with the newest thing in the engine outside it. `test_render_drops_no_field` compares the projection against `dataclasses.fields`, so a field added to either type is pinned the day it exists.
+>
+> **And nothing regenerates these files.** v1.59 added a key to every breakdown row of all thirteen; each value was derived from that case's own `bundle.json` by a reader written against §2.2's prose, so the comparison stayed between two independent derivations rather than becoming the engine agreeing with itself.
+
 Every change to the engine must leave all golden cases passing. This suite is the only evidence that the calculator computes correctly, and it is what the team can present at handover. `tests/golden/test_golden.py` discovers `case_*/`, loads the three files, calls `calculate()` and compares.
 
 **The runner lives beside the cases** so that `pytest tests/golden` means what everyone will assume it means. It was `tests/test_golden.py` for one commit, and `pytest tests/golden` then collected zero tests and reported green — which put the guard against a renamed case directory inside a module the obvious command never loaded.
@@ -4985,9 +5651,19 @@ It is a **complete, self-contained snapshot** — the taxonomy as well as the fa
 > bundle.is_mock         <- factors.json  .factor_set.is_mock
 > sectors, food_categories, destination_groups, destinations, metrics
 >                        <- taxonomy.json (the same five keys)
+> food_items             <- taxonomy.json, when it has any (v1.57)
 > constants, formulas, upstream, downstream, equivalences
 >                        <- factors.json  (the same five keys)
 > ```
+>
+> **`food_items` is the sixth taxonomy key and the only optional one, and the
+> fixtures do not carry it.** `build_bundle_data` emits it from v1.57 onward, so
+> a bundle composed from the live database has it; `tests/fixtures/taxonomy.json`
+> does not, so a bundle composed the way this table describes has no item
+> vocabulary at all. That is not an omission to correct - it is what keeps the
+> thirteen golden cases inert while the item level lands in stages, and it is
+> why the composition above still reads "the same five keys" for everything the
+> fixtures actually hold.
 >
 > `tests/test_bundle.py::canonical_bundle_json` is that composition, and it is what `tests/golden/case_01_*/bundle.json` and `case_02_*/bundle.json` were built with — so the canonical numbers reach the golden suite without a thirteenth fixture being added and without either existing file having to change shape. **A fourteenth file holding a pre-composed bundle was rejected**: it would be a second copy of every factor row, and the copy that stops matching is the one nobody notices.
 
@@ -5017,6 +5693,11 @@ It is a **complete, self-contained snapshot** — the taxonomy as well as the fa
       "display_unit": "kg CO2e", "display_precision": 1, "sort_order": 1 }
   ],
 
+  "food_items": [
+    { "code": "cheese", "name": "Cheese", "food_category": "dairy",
+      "sort_order": 1 }
+  ],
+
   "constants": [
     { "code": "GWP_CH4_100", "value": "28.0000000000", "unit": "", "note": "" }
   ],
@@ -5027,7 +5708,9 @@ It is a **complete, self-contained snapshot** — the taxonomy as well as the fa
     { "sector": "processing", "food_category": "dairy", "destination": null,
       "metric": "co2e", "value_per_kg": "1.9000000000" },
     { "sector": "processing", "food_category": "dairy", "destination": "prevention",
-      "metric": "co2e", "value_per_kg": "0.0000000000" }
+      "metric": "co2e", "value_per_kg": "0.0000000000" },
+    { "sector": "processing", "food_category": "dairy", "food_item": "cheese",
+      "destination": null, "metric": "co2e", "value_per_kg": "2.7000000000" }
   ],
   "downstream": [
     { "destination": "landfill", "sector": null, "food_category": "dairy",
@@ -5066,7 +5749,11 @@ It is a **complete, self-contained snapshot** — the taxonomy as well as the fa
 
 `destinations[].is_prevention` (v1.48) is **optional and defaults to `false`**, on the same terms as `food_categories[].is_standard_mix`: a row that omits the key is not a prevention destination, so **no bundle written before v1.48 needs rewriting**. It backs `FactorBundle.is_prevention_destination()` (§4.1), whose only engine caller is §4.5's saving. `db/repository.build_bundle_data` — the one projection this shape and §6.3's export are both built from — now selects it; **§6.3's export is unaffected**, because it drops the taxonomy sections and `destinations` is one of them. A bundle whose prevention row omits the key still computes every metric correctly and gets the money saving wrong, which is why the key is named here rather than left to be inferred from the taxonomy.
 
-`upstream[].destination` may be `null` on exactly the same terms, meaning the row applies to every destination for that `(sector, food_category, metric)` — and here `null` is the *usual* value rather than the exception. The non-null rows are what make `prevention` a real 100% offset (§2.2, open item O-7): a `prevention` row at zero for every general row. `from_json()` must treat a missing `destination` key as a malformed row rather than as `null`, for the same reason §10.2 requires `null` to survive the round trip on the downstream side — a bundle whose generic rows have silently lost their key computes a plausible, wrong answer instead of raising.
+`food_items` (v1.54) is the item vocabulary, and it is the one **optional section**: every bundle written before v1.54 omits it — the thirteen golden cases, `build_bundle_data`'s output, and the `GET /factors` response a staff member pastes into the dry-run box — and all of them must still load. A bundle with no `food_items` knows no items, so every lookup in it falls to the category rows it has always used, which is what makes the engine's item dimension inert by data. The engine reads `code` and `food_category` from each row, and the parent is **required**, because it is both the fallback a food without its own factor row lands on and the thing `resolve_food_item()` checks a request against. `name` and `sort_order` travel with it unread, exactly as they do on `food_categories` and `destinations`: the bundle is `build_bundle_data`'s whole taxonomy, and the engine takes the columns it computes with.
+
+`upstream[].food_item` (v1.54) may be a code or `null`, meaning the row applies to every food in that category — the category average, and the normal row. Unlike every other nullable key in this shape it is **optional as well as nullable**: an absent key and `null` mean the same thing. That is a compatibility judgement rather than a change of principle. `downstream[].sector` and `upstream[].destination` are mandatory-with-null because they have been part of every bundle since the revision that added them, so a row missing one is a row that *lost* it; `food_item` is absent from every row of every bundle in the tree and those rows mean by their silence exactly what `null` means. Requiring it would refuse all thirteen golden cases. A value that is neither a string nor `null` is still a malformed row, and what the strict form would have caught — a producer that emits item rows and drops the key on some of them — is caught instead by `validate()`, which reports an upstream row naming an item this bundle does not know **and** one whose item belongs to a different category.
+
+`upstream[].destination` may be `null` on exactly the same terms as the downstream keys, meaning the row applies to every destination for that `(sector, food_category, food_item, metric)` — and here `null` is the *usual* value rather than the exception. The non-null rows are what make `prevention` a real 100% offset (§2.2, open item O-7): a `prevention` row at zero for every general row. `from_json()` must treat a missing `destination` key as a malformed row rather than as `null`, for the same reason §10.2 requires `null` to survive the round trip on the downstream side — a bundle whose generic rows have silently lost their key computes a plausible, wrong answer instead of raising.
 
 ## 10.3 The ReFED Comparison Fixture (owner: A)
 

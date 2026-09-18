@@ -975,7 +975,7 @@ function itemStep() {
   const atCeiling = state.foodCategories.some(
     category => itemsUnder(category).some(item => refused(category, item.code)))
   const group = category => {
-    const definition = findByCode(state.taxonomy.food_categories, category)
+    const definition = selected(state.taxonomy.food_categories, category)
     const items = itemsUnder(category)
     const heading = definition?.name || category
     //: A chosen category the vocabulary has no food for is shown saying so, not

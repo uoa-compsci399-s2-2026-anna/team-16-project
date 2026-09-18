@@ -42,7 +42,7 @@ This document defines **what every person's code receives and what it returns.**
 
 Stage 5 of `.superpowers/sdd/2026-09-17-food-granularity/design.md`'s landing order. Part one put `food_item` in the schema; **nothing could write to it and nothing could read it out.** This revision gives staff the screens and gives the bundle the projection. **It is inert on the same terms as part one**: with no `food_item` row anywhere and `item_level_enabled` false on every set, `food_items` is an empty array, `food_item` is `null` on every upstream row, and every figure, response and screen is what it was.
 
-**§6 is still untouched, and so is §6.3.** The request and response shapes do not learn the item, and the `GET /factors` export does not either: `db/repository.get_factor_export` strips `food_item` from the `upstream[]` rows it publishes, so `tests/fixtures/factors.json` is unchanged and the third step of the contract-change process is again a deliberate no-op. The cost is stated rather than hidden — from the first authored item row that export carries two rows that look identical and price differently, and `web/js/methodology.js` renders them. Publishing the item there belongs to the landing that gives the item a public name to print.
+**§6 is still untouched. §6.3 is not, and an earlier draft of this entry said otherwise.** The request and response shapes do not learn the item — that is the API landing's — but `GET /factors` does, conditionally: `db/repository.get_factor_export` now carries `upstream[].food_item` on the rows that have one and omits the key entirely on the rows that do not. With no item rows in a set every byte of that response is what it always was, so `tests/fixtures/factors.json` is still unchanged and the contract-change process's third step is still a no-op here — but the shape is documented in §6.3 rather than deferred, because this is the landing that lets a staff member create the row that would otherwise make that page publish two identical-looking prices.
 
 | # | Change | Section |
 | --- | --- | --- |
@@ -51,12 +51,14 @@ Stage 5 of `.superpowers/sdd/2026-09-17-food-granularity/design.md`'s landing or
 | 3 | **`FactorUpstreamAdmin` offers `food_item`** on `column_list`, `column_details_list` and `form_columns`, as an optional select beside `food_category` | §8.1 |
 | 4 | **`item_level_enabled` is on the factor-set form**, with the soft guard of §2.2 refusing it on a set that prices no food individually, and the factor-set list showing "item-level factors for N of M foods" beside it | §2.2, §8.2 |
 | 5 | **A second publish-time guard, `refuse_item_rows_without_category_fallback`** — an item row whose `(sector, food_category, metric)` has no `(NULL item, NULL destination)` row of its own is refused | §5.2 |
-| 6 | **`GET /taxonomy`'s coverage filter learns items** (`_covered_by`), under the parent-covered rule: an item is offered when its own rows exist **or** when its parent category is covered | §5.1 |
+| 6 | **`_covered_by` computes item coverage** under the parent-covered rule: an item counts as priceable when its own rows exist **or** when its parent category is covered, because the lookup falls back to the category average. **It has no reader yet, and the row said otherwise.** `GET /taxonomy` filters sectors, food categories and destinations by coverage and carries no items at all; it learns them when §6.1 does, in a later landing. The key is computed now so that landing finds the rule already written and tested rather than inventing a second one | §6.1 |
 | 7 | **`/admin/try` learns the food item**, so the staff releasing step 2.5 can exercise it. The key is **omitted** from the request body when no food is chosen, because §6's entry model is `extra="forbid"` and does not know it until part three | §8.2 |
+| 8 | **`GET /factors` carries `upstream[].food_item` on the rows that have one.** Stripping it unconditionally was the first answer, deferred to the API landing because §6.3 is a public document the methodology page renders. What changed it is that *this* landing lets a staff member author an item row: from the first one, a stripped export publishes two rows identical in every key it prints and pricing differently. Emitted only where it has a value, so with no item rows the response and `tests/fixtures/factors.json` are byte-identical and nothing visitor-facing moves. `food_items` is still not carried — giving the item a public *name* is the API landing's | §6.3 |
+| 9 | **`publish_factor_set` refuses a set whose composed bundle does not `validate()`, and `load_factor_bundle` logs what it cannot refuse.** `validate()` never raises and had exactly one caller — the inline dry-run branch of `api/router.py` — so the one bundle nobody checked was the one every public request uses. A duplicate upstream row collapses to whichever came last and serves a wrong number with nothing in the logs. Refused at publish, where a staff member is present and the draft still editable; logged at load, because taking the calculator down for every visitor over a defect that still computes *a* number is the worse failure | §5.2 |
 
 > **The projection is the half that could produce a wrong number, and it would produce it silently.** A staff member authors an item factor, the row is written and audited, and a `build_bundle_data` that never mentions it hands the engine the category average — the line is priced at the average while the screen says the food was named. `food_items` being *optional* in `FactorBundle.from_json` is what makes the omission load cleanly instead of raising. `tests/db/test_food_item_projection.py` pins both halves so that dropping either fails on its own.
 >
-> **The parent-covered rule is not §5.1's rule, and the difference is the fallback.** A destination nothing prices is priced at zero, and offering it is the silent zero §5.1 exists to stop offering. An item nothing prices is offered its category's average — a defined, meaningful number, and the nine category factors *are* the averages of those same foods. Requiring an item to carry rows of its own would hide almost the whole vocabulary the day step 2.5 is released, to prevent something that cannot happen.
+> **The parent-covered rule is not the rule the other four rows of §6.1's coverage table use, and the difference is the fallback.** A destination nothing prices is priced at zero, and offering it is the silent zero §5.1 exists to stop offering. An item nothing prices is offered its category's average — a defined, meaningful number, and the nine category factors *are* the averages of those same foods. Requiring an item to carry rows of its own would hide almost the whole vocabulary the day step 2.5 is released, to prevent something that cannot happen.
 >
 > **The second publish guard is the one stage 4 could not enforce.** §2.2's upstream chain has no silent-zero trap *as long as the data carries a category row to fall back to*, and that is a property of the data rather than of the chain — so it can only be checked where the data is. A `(sector, food_category, metric)` whose only upstream rows name a food answers for that food and sends every other food in the category, and the visitor who named no food at all, to `Decimal('0')`. That is O-7's shape exactly: right for one food while every other figure on the same page is right, arriving with no error and nothing in the log. The fallback has to be the `(NULL item, NULL destination)` row specifically — a category row that names a destination is candidate 2 and answers only there, which is what the `prevention` override is.
 >
@@ -2426,6 +2428,15 @@ def clone_factor_set(session, source_id: int, new_label: str, actor: str) -> int
 >
 > **This duplication is why v1.9's O-7 check is enforced twice and written
 > once.** The panel calls the `admin/` copy and nothing outside its own tests
+> **v1.57 adds a third publish-time refusal, and it is the only one that
+> composes the whole bundle**: a set that does not `validate()` is refused
+> rather than published. It runs last, after the row-level rules, so a staff
+> member gets "add a category factor for primary_production/dairy/co2e"
+> before they get "this does not compose". `load_factor_bundle` logs the
+> same problems rather than raising them: by then the set is published and a
+> visitor is waiting, and a maintenance page for everybody is the worse
+> answer to a defect that still computes a number.
+>
 > calls the repository's, so a guard placed only in `db/repository.py` would
 > leave the staff path — the only path a human takes — entirely unguarded,
 > while a guard placed only in `admin/` would vanish the day the two are
@@ -2677,6 +2688,7 @@ Called once on page load to build every dropdown and input row.
 | `sector` | it appears as `factor_upstream.sector_id`, **or** as a non-NULL `factor_downstream.sector_id` (v1.31) |
 | `food_category` | it appears as `factor_upstream.food_category_id`, **or** as a non-NULL `factor_downstream.food_category_id` |
 | `destination_group` | at least one covered destination belongs to it. An empty group is omitted; no `destinations[].group` may ever name a group the response omits |
+| `food_item` | it appears as a non-NULL `factor_upstream.food_item_id`, **or** its parent `food_category` is covered (v1.57). **This is not the rule the four rows above use, and the difference is the point.** A destination nothing prices is priced at `Decimal("0")`, so offering it is the silent zero this filter exists to stop offering; a food nothing prices individually is offered its category's average — a defined number, and §2.1's nine categories *are* the averages of those same foods. Requiring an item's own rows would hide almost the whole vocabulary the day step 2.5 is released, to prevent something that cannot happen. **Computed but not yet consumed:** `GET /taxonomy` carries no items until §6.1 learns them, so this key has no reader today |
 | `unit_preset` | its `food_category` is null (applies to every category) or names a covered food category. **Ordered by `kg_per_unit`, smallest first (v1.33)** — this is the one taxonomy table with no `sort_order`, the list is a `<select>` a visitor scans for their own bin, and alphabetically by `code` the 1100 L front-loader sorted above the 660 L one. `code` breaks the tie. **The front end renders this order as given and sorts nothing** |
 | `metric` | **always** — metrics are the output vocabulary and nothing a user types is one |
 
@@ -3125,6 +3137,8 @@ Set in the brand's own type (Geologica Bold for the heading, Kumbh Sans Regular 
 **No `UNAUTHORIZED`.** `X-Dry-Run` and `X-Staff-Proof` are simply not read by this route (above), so there is no header combination on it that produces a 401 the way an unproven dry run does on §6.2.
 
 ## 6.3 `GET /api/v1/factors`
+
+> **`upstream[].food_item` is present only on the rows that have one (v1.57).** A row naming a food carries the key; a row applying to the whole category omits it entirely, rather than carrying `null`. That is not the usual shape for a nullable dimension here — `downstream[].sector` and `upstream[].destination` are mandatory-with-null — and it is deliberate: with no item rows in a set, every row of this response is byte-identical to what it has always been, and `tests/fixtures/factors.json` needs no edit. The alternative was stripping the key altogether, which publishes two rows identical in every key printed here and pricing differently, on a page whose purpose is disclosure. **`food_items` is still not carried**: giving a food a public name is §6.1's, and this is only about not printing two rows that claim to be the same row.
 
 Factors and formulas are published openly (Decision 7).
 
@@ -4519,6 +4533,8 @@ Requirements: list views must offer search and filtering.
 
 > **The submissions screen shows both flags, separately, and must not merge them (v1.48).** A single "is this row actually public" column would be exactly the collapse §2.3's two-flag design exists to prevent: `excluded_from_public` is staff's own action and staff can reverse it; `is_public_contributed` is the visitor's, and staff cannot. Merging them would leave a staff member unable to tell "I withheld this" from "they never offered it", which are different situations calling for different responses — and would hide the second one entirely, since it is the one nobody in the building did. The screen carries a **column** ("Public consent") and a **filter** ("Offered only" / "Not offered only") beside the existing exclusion filter, so that narrowing "who has been excluded" and narrowing "who has opted in" stay two questions with two controls. Staff read the two independently here exactly as §5.4 predicates on them independently in the query.
 
+> **The dry-run form learns the food item (v1.57), and omits the key rather than sending `null` when nothing is chosen.** The people releasing step 2.5 are the people who need to see what it prices before they release it, and until now this form could only name a category. Omitting the key when no food is chosen keeps every existing dry run byte-identical on the wire, which is what lets the screen learn the dimension before §6.2 does.
+>
 > The dry-run view **must** send the dry-run header. Staff will run dozens of calculations while tuning a formula, and persisting them would directly pollute the public statistics. **From v1.48 that includes consent:** `POST /api/v1/contribute` (§6.2.2) reads the same header and writes nothing when it is set, so no staff scenario can be opted in.
 
 The comparison view is two dry-run calls per scenario — one with `factor_set_version` set to the published label, one to the draft — shown side by side, **not** differenced. Decision 6 puts every impact number server-side, in exactly one place; `POST /api/v1/calculate` computes `net_benefit` only for a current-versus-alternative comparison made *within one call*, and has no concept of a difference between two separate calls made at two different `factor_set_version`s. Subtracting the two response strings in the view or the template would put a number in front of staff that no server-side calculation ever produced, which is exactly what Decision 6 forbids — so the page renders both values, plainly labelled, and says in words that no difference is shown. Whether `POST /api/v1/calculate` should grow a two-version diff so this page can show one is open (raised in the E7 task report; not yet assigned an owner). The standard scenarios it runs are staff-editable rather than hard-coded; hard-coding them would reintroduce "change the code to change the configuration", which Decision 2 exists to prevent. They live in `comparison_scenario` / `comparison_scenario_line` (§2.2a), edited through their own CRUD screens like every other §8.1 table.
@@ -4542,6 +4558,8 @@ Because a dry-run request body is a `bundle` plus a scenario, the dry-run view c
 | Create, deactivate, re-role and delete accounts | ❌ | ✅ |
 | Reveal an unclaimed password | ❌ | ✅ |
 | Reset another account's MFA, issue a random password | ❌ | ✅ |
+
+**`food_item` is both roles too (v1.57)**, decided on the same ground and recorded here because this section is where a role decision lives. The administrator floor is reserved for capabilities about *who may use the system* — account management, the blocklist, the audit trail. A food is the same kind of row as the food category beside it: staff-typed vocabulary, `active` rather than delete, nothing identifying, every write already audited. The act that carries outward consequence is switching `item_level_enabled` on and publishing that set, which is itself both roles by the rule above — so a floor on the typing would leave the releasing open, which is the wrong way round.
 
 Publishing is available to both roles deliberately: `audit_log` records who published and rollback is one action, so accountability and recovery are already covered. Restricting it would stall routine work whenever the administrator is unavailable, in a team of three to five people.
 
@@ -5091,9 +5109,19 @@ It is a **complete, self-contained snapshot** — the taxonomy as well as the fa
 > bundle.is_mock         <- factors.json  .factor_set.is_mock
 > sectors, food_categories, destination_groups, destinations, metrics
 >                        <- taxonomy.json (the same five keys)
+> food_items             <- taxonomy.json, when it has any (v1.57)
 > constants, formulas, upstream, downstream, equivalences
 >                        <- factors.json  (the same five keys)
 > ```
+>
+> **`food_items` is the sixth taxonomy key and the only optional one, and the
+> fixtures do not carry it.** `build_bundle_data` emits it from v1.57 onward, so
+> a bundle composed from the live database has it; `tests/fixtures/taxonomy.json`
+> does not, so a bundle composed the way this table describes has no item
+> vocabulary at all. That is not an omission to correct - it is what keeps the
+> thirteen golden cases inert while the item level lands in stages, and it is
+> why the composition above still reads "the same five keys" for everything the
+> fixtures actually hold.
 >
 > `tests/test_bundle.py::canonical_bundle_json` is that composition, and it is what `tests/golden/case_01_*/bundle.json` and `case_02_*/bundle.json` were built with — so the canonical numbers reach the golden suite without a thirteenth fixture being added and without either existing file having to change shape. **A fourteenth file holding a pre-composed bundle was rejected**: it would be a second copy of every factor row, and the copy that stops matching is the one nobody notices.
 

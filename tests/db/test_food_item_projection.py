@@ -192,19 +192,30 @@ def test_the_bundle_still_loads_and_validates_with_no_items_at_all(seeded_sessio
     assert FactorBundle.from_json(data).validate() == []
 
 
-def test_the_public_factor_export_is_unchanged_by_the_item_dimension(seeded_session):
-    """§6.3's `GET /factors` shape, which `tests/fixtures/factors.json` pins.
+def test_the_public_factor_export_tells_an_item_row_from_its_category_row(seeded_session):
+    """§6.3's `GET /factors`, and a decision this test previously held the
+    opposite of.
 
-    The export is a **public document**, not a bundle: `tests/api/test_api.py`
-    compares its key set against the fixture exactly, and the methodology page
-    renders its `upstream[]` rows to visitors. Publishing the item dimension
-    there is contract v1.54 part two (the API landing); until then this
-    landing must leave the response byte-identical, item rows or not.
+    The export is a **public document**: `tests/api/test_api.py` compares its
+    key set against `tests/fixtures/factors.json`, and the methodology page
+    renders its `upstream[]` rows to visitors. So the first answer here was to
+    strip `food_item` and leave publishing the dimension to the API landing,
+    and this test asserted that.
 
-    Asserted with an item row present, because the interesting failure is a
-    projection that leaks the new key through `get_factor_export` — with no
-    item rows the two shapes are indistinguishable and this would pass for the
-    wrong reason.
+    **What changed the answer is that THIS landing is the one that lets a staff
+    member author an item-level row.** From the first such row, a stripped
+    export publishes two rows identical in every key it prints, pricing
+    differently — a transparency page actively misleading about the very
+    numbers it exists to disclose. A contract bump is the smaller harm.
+
+    So the key is emitted only where it has a value: with no item rows the
+    export is byte-identical to what the fixture pins, and the day one exists
+    the two rows are told apart. The same optional-when-present shape §10.2
+    gives `upstream[].food_item` in the bundle.
+
+    `food_items` is still NOT carried. The vocabulary is a section of its own
+    and giving the item a public *name* is the API landing's to do; this is
+    only about not printing two rows that claim to be the same row.
     """
     published = get_published_factor_set_id(seeded_session)
     cheese = _add_item(seeded_session, "cheese", "Cheese", "dairy")
@@ -212,8 +223,27 @@ def test_the_public_factor_export_is_unchanged_by_the_item_dimension(seeded_sess
 
     export = get_factor_export(seeded_session)
 
-    assert "food_items" not in export
-    assert all("food_item" not in row for row in export["upstream"])
+    assert "food_items" not in export, (
+        "the vocabulary is the API landing's to publish; this landing only stops "
+        "two rows claiming to be one"
+    )
+
+    carried = [row for row in export["upstream"] if "food_item" in row]
+    assert len(carried) == 1, (
+        f"exactly the authored item row should carry the key, got {len(carried)}: "
+        f"{carried}"
+    )
+    assert carried[0]["food_item"] == "cheese"
+    assert carried[0]["value_per_kg"] == "3.4000000000"
+
+    #: The other half, and the half that keeps this landing inert: every row
+    #: that is not an item row is shaped exactly as it was, so a fixture
+    #: comparison over a set with no item rows sees nothing new.
+    category_rows = [row for row in export["upstream"] if "food_item" not in row]
+    assert category_rows, "the seed's category rows should still be here"
+    assert all(set(row) == set(category_rows[0]) for row in category_rows), (
+        "a category row gained or lost a key"
+    )
 
 
 # --- coverage: `_covered_by`, and the parent-covered rule ------------------

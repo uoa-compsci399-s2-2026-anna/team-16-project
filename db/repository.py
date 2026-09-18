@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import copy
 import enum
 import threading
@@ -120,6 +121,13 @@ REDACTED_FIELDS = {
 #: one field is re-checked on every hit when nothing else in the bundle is.
 _bundle_cache: dict[int, tuple[bool, Any]] = {}
 _cache_lock = threading.RLock()
+
+
+#: `db/repository.py` had no logger until v1.57. It has one now for exactly one
+#: purpose - see `load_factor_bundle` - and not as a general facility: this
+#: module's other failures are refusals a caller handles, and a log line is what
+#: you write when there is no caller left to tell.
+_LOGGER = logging.getLogger(__name__)
 
 
 def _default_bundle_factory(data: dict[str, Any]) -> Any:
@@ -847,6 +855,34 @@ def load_factor_bundle(
         # what it returns is not this module's to reach into.
         invalidate_factor_bundle(factor_set_id)
     bundle = factory(build_bundle_data(session, factor_set_id))
+    #: **Reported here, never raised here.** `validate()` returns problems and
+    #: does not raise; `publish_factor_set` refuses a set that has any, which is
+    #: where a staff member can still do something about it. By the time a
+    #: bundle is being loaded the set is already published and a visitor is
+    #: waiting, and a data defect that still computes *a* number is not worth
+    #: answering with a maintenance page for everybody.
+    #:
+    #: But it was worth nothing at all before: the only caller of `validate()`
+    #: was the inline dry-run branch in `api/router.py`, so the one bundle
+    #: nobody checked was the one every public request uses. A duplicate
+    #: upstream row - two rows differing only in a column the key does not carry
+    #: - silently collapses to whichever came last, and served a wrong number
+    #: with nothing in the logs.
+    #: Asked of the object, not assumed of it. `bundle_factory` is an
+    #: injection point whose contract has always been "returns whatever the
+    #: engine's bundle is", and three tests hand it a plain dict to prove the
+    #: cache partitions by set without dragging the engine in. Requiring
+    #: `validate()` here would have been a new demand on that seam, made
+    #: silently, to serve a check that is about the real bundle.
+    validate = getattr(bundle, "validate", None)
+    problems = validate() if callable(validate) else []
+    if problems:
+        _LOGGER.error(
+            "Factor set %s composes into a bundle with %d problem(s); it is being "
+            "served anyway because a published set is what visitors are already "
+            "using. %s",
+            factor_set_id, len(problems), "; ".join(problems[:5]),
+        )
     # `build_bundle_data` has already loaded this row into the identity map,
     # so the status check costs no second round trip.
     factor_set = session.get(FactorSet, factor_set_id)
@@ -1210,6 +1246,47 @@ def refuse_item_rows_without_category_fallback(
     )
 
 
+def refuse_a_bundle_that_does_not_validate(
+    session: Session, factor_set_id: int, *, bundle_factory: BundleFactory | None = None
+) -> None:
+    """Refuse publishing a set whose composed bundle reports problems.
+
+    `FactorBundle.validate()` has existed since v1.4 and **never raises** - it
+    returns a list of human-readable problems and leaves the decision to its
+    caller. Until now the only caller was `api/router.py`, and only inside the
+    branch that handles an inline dry-run bundle a staff member pasted in. So
+    the one bundle nobody checked was the one every public request uses.
+
+    What that hides is specific rather than theoretical. `from_json` records
+    duplicate rows rather than raising on them, because a bundle is a re-keying
+    and the later row silently wins; two upstream rows differing only in a
+    column the key does not carry collapse into one, and the calculator serves
+    whichever survived. That is a wrong number with no error anywhere - the
+    shape of the three this project has already shipped.
+
+    **Publish is the right place and load is not.** Raising here refuses an
+    operation a staff member is performing, with the problems in front of them
+    and the draft still editable. Raising at load would take the calculator
+    down for every visitor over a data defect that still computes *a* number,
+    which is the worse failure - so `load_factor_bundle` logs instead.
+
+    Scoped to publish, never `rollback_to`, for the reason written above the
+    prevention guards: rollback is the "put it back to a state that worked"
+    operation, and refusing an emergency rollback over a completeness rule is
+    itself the emergency.
+    """
+    factory = bundle_factory or _default_bundle_factory
+    problems = factory(build_bundle_data(session, factor_set_id)).validate()
+    if not problems:
+        return
+    raise FactorSetStateError(
+        "This set does not compose into a usable bundle, so publishing it would "
+        "serve numbers the calculator cannot vouch for. "
+        + "; ".join(problems[:5])
+        + (f" (and {len(problems) - 5} more)" if len(problems) > 5 else "")
+    )
+
+
 def publish_factor_set(session: Session, factor_set_id: int, actor: str) -> None:
     """Contract §5.2, plus the O-7 completeness check of §2.2.
 
@@ -1234,6 +1311,11 @@ def publish_factor_set(session: Session, factor_set_id: int, actor: str) -> None
     #: emergency rollback over a completeness rule is the worse failure.
     refuse_item_level_without_item_rows(session, factor_set_id)
     refuse_item_rows_without_category_fallback(session, factor_set_id)
+    #: Last, because it is the only one that composes the whole bundle - the
+    #: cheap row-level rules should say the specific thing first, so a staff
+    #: member gets "add a category factor for primary_production/dairy/co2e"
+    #: rather than a generic "this does not compose".
+    refuse_a_bundle_that_does_not_validate(session, factor_set_id)
     _transition_factor_set(
         session,
         factor_set_id,
@@ -1754,23 +1836,39 @@ def get_factor_export(
         },
         "constants": data["constants"],
         "formulas": data["formulas"],
-        #: **`food_item` is stripped, and the `food_items` section is not
-        #: carried at all.** §6.3 is a *public* document — `tests/api/
-        #: test_api.py` compares its key set against `tests/fixtures/
-        #: factors.json` exactly, and `web/js/methodology.js` renders these
-        #: rows to visitors — so publishing the item dimension here is a
-        #: contract change, and it is contract v1.54 part two's (the API
-        #: landing), not this one's. This landing's whole claim is that it
-        #: changes no visitor-facing response.
+        #: **`food_item` is carried only on the rows that have one, and the
+        #: `food_items` section is still not carried at all.**
         #:
-        #: **The known cost, stated rather than hidden**: from the moment a
-        #: staff member authors the first item-level row, this export carries
-        #: two rows that look identical and price differently, because the only
-        #: thing telling them apart is the key being removed here. That is the
-        #: hole the design's §6 names against `methodology.js`, and it belongs
-        #: to the landing that gives the item a public name to print.
+        #: Stripping it unconditionally was the first answer here, deferred to
+        #: the API landing on the grounds that §6.3 is a *public* document -
+        #: `tests/api/test_api.py` compares its key set against
+        #: `tests/fixtures/factors.json` exactly, and `web/js/methodology.js`
+        #: renders these rows to visitors - so publishing a new dimension is a
+        #: contract change that belongs with the landing that gives the item a
+        #: public name to print.
+        #:
+        #: The cost of deferring it is what changed the answer. **This** landing
+        #: is the one that lets a staff member author an item-level row, so from
+        #: the first such row a stripped export publishes two rows that are
+        #: identical in every key it prints and price differently - a
+        #: transparency page actively misleading about the numbers it exists to
+        #: disclose. A contract bump is the smaller harm.
+        #:
+        #: Emitting the key only when it has a value is what lets both be true:
+        #: no item rows exist, so every byte of today's export and of
+        #: `tests/fixtures/factors.json` is unchanged and no visitor-facing
+        #: response moves, which is this landing's whole claim - and the day one
+        #: exists, the export tells the two rows apart without waiting for §6.1.
+        #: The same optional-when-present shape §10.2 gives `upstream[].food_item`
+        #: in the bundle, for the same reason.
+        #:
+        #: `methodology.js` still has no column for it. That is a real gap and it
+        #: belongs to the API landing; an export that carries the distinction and
+        #: a page that does not render it is recoverable, and a page rendering two
+        #: identical rows is not.
         "upstream": [
-            {key: value for key, value in row.items() if key != "food_item"}
+            {key: value for key, value in row.items()
+             if key != "food_item" or value is not None}
             for row in data["upstream"]
         ],
         "downstream": data["downstream"],

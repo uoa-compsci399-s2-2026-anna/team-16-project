@@ -88,12 +88,19 @@ export const stepName = index => t(STEPS[index] || '')
  *   an equal-weight choice of format, leaving only the back action here.
  * @returns {string}
  */
-export function stepNav({ step, back, backLabel = t('Back'), label = t('Continue'), disabled = false, action = 'continue' }) {
+export function stepNav({ step, back, backLabel = t('Back'), label = t('Continue'), disabled = false, action = 'continue', backAction = 'go-step' }) {
   const position = t('Step %(step)s of %(total)s', { step: step + 1, total: STEPS.length })
   const percent = Math.round(((step + 1) / STEPS.length) * 100)
   const backButton = back === null || back === undefined
     ? ''
-    : `<button class="button button-secondary" type="button" data-action="go-step" data-step="${back}">${escapeHtml(backLabel)}</button>`
+    //: `backAction` (v1.60) is for a Back that moves within a step rather than
+    //: between two. Step 2.5 is step 2's second panel, so its Back is a panel
+    //: change and carries no `data-step`: a step number there would be read by
+    //: `goToStep`, which resets the panel, and the button would do nothing
+    //: visible.
+    : backAction === 'go-step'
+      ? `<button class="button button-secondary" type="button" data-action="go-step" data-step="${back}">${escapeHtml(backLabel)}</button>`
+      : `<button class="button button-secondary" type="button" data-action="${backAction}">${escapeHtml(backLabel)}</button>`
   const primaryButton = action === null
     ? ''
     : `<button class="button button-primary" type="button" data-action="${action}" ${disabled ? 'disabled' : ''}>${escapeHtml(label)}</button>`

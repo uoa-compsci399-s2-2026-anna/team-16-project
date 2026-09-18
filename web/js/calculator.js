@@ -228,6 +228,56 @@ const draftTicking = (code, unspecified) => ({
 const tickRefused = (code, unspecified) => exceedsLeafCeiling(submissionWith(draftTicking(code, unspecified)))
 
 /**
+ * The draft's selection as it would stand after one of step 2.5's boxes was ticked.
+ *
+ * **Ticking a food is not always +1 leaf.** A category with no food ticked is already
+ * one leaf (`entryLeaves`), so the FIRST food under it replaces that leaf rather than
+ * adding to it; the second one adds. Asking the question through `entryLeaves` rather
+ * than counting ticks is what gets that right without restating the leaf rule here --
+ * the mistake step 2's own ceiling note warns about, one level down.
+ */
+const draftTickingItem = (category, item) => ({
+  foodCategories: [...state.foodCategories],
+  foodUnspecified: Boolean(state.foodUnspecified),
+  foodItems: {
+    ...(state.foodItems || {}),
+    [category]: [...((state.foodItems || {})[category] || []), item],
+  },
+})
+
+/** Whether ticking one of step 2.5's boxes would take the submission past the ceiling. */
+const itemTickRefused = (category, item) =>
+  exceedsLeafCeiling(submissionWith(draftTickingItem(category, item)))
+
+/**
+ * Whether step 2.5 is offered at all.
+ *
+ * Three conditions, and each is a different question:
+ *
+ * * **`factor_set.item_level_enabled`** -- the published set prices foods
+ *   individually (§6.1). A non-empty vocabulary is NOT the same question: the
+ *   vocabulary is global taxonomy and exists as soon as staff type it in, whereas
+ *   the flag says the numbers behind the finer question can answer it. Asking a
+ *   more specific question than the factors can answer is what the flag exists to
+ *   prevent.
+ * * **a non-empty vocabulary** -- there is something to offer. `admin/seed.py`
+ *   seeds no `food_item` in some deployments, and a screen of empty groups is
+ *   worse than no screen.
+ * * **at least one category chosen** -- step 2.5 refines step 2 (`spec.md` §3.3).
+ *   A visitor who skipped the categories, or answered "I do not know", has nothing
+ *   to refine, and the step is skipped rather than shown empty.
+ */
+function itemStepOffered() {
+  if (!state.taxonomy?.factor_set?.item_level_enabled) return false
+  if (!(state.taxonomy?.food_items || []).length) return false
+  return state.foodCategories.length > 0
+}
+
+/** The vocabulary under one category, in the taxonomy's own order. */
+const itemsUnder = category =>
+  sorted((state.taxonomy?.food_items || []).filter(item => item.food_category === category))
+
+/**
  * Whether *Add another supply-chain entry* would take the submission past the ceiling.
  *
  * The chain being built is committed and a fresh, empty draft takes its place - and an
@@ -665,7 +715,7 @@ function foodStep() {
   const atCeiling = [...categories.map(category => category.code), UNSPECIFIED_CHOICE].some(refused)
   const choice = (code, label, isSelected, sub, extra = '') =>
     `<label class="simple-choice ${isSelected ? 'selected' : ''} ${extra}"><input id="food-category-${slug(code)}" type="checkbox" name="food-category" value="${escapeHtml(code)}" ${isSelected ? 'checked' : ''} ${!isSelected && refused(code) ? 'disabled' : ''}><span><strong>${escapeHtml(label)}</strong>${sub ? `<small>${escapeHtml(sub)}</small>` : ''}</span>${isSelected ? `<span class="selected-label" aria-hidden="true">&#10003; ${escapeHtml(t('Selected'))}</span>` : ''}</label>`
-  return `<section class="content-section" aria-labelledby="food-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 2 }))} &middot; ${escapeHtml(t('Optional'))}</p><h1 id="food-title">${escapeHtml(t('What types of food waste are you measuring?'))}</h1><p class="section-intro">${escapeHtml(t('Choose every category that applies, or continue without choosing one.'))}</p><fieldset class="choice-fieldset"><legend class="sr-only">${escapeHtml(t('Food type'))}</legend><p class="choice-count" aria-live="polite">${escapeHtml(t('%(count)s selected', { count: chosen }))}</p><div class="simple-choice-list">${categories.map(category => choice(category.code, category.name, state.foodCategories.includes(category.code), category.is_standard_mix ? t('Recommended if you do not separate food waste by category') : '')).join('')}${choice(UNSPECIFIED_CHOICE, t('I do not know, or my waste is not broken down by type'), state.foodUnspecified, t('Recorded as its own answer. If your waste really is a mixture, choose the mixed category above instead.'), 'simple-choice--unspecified')}</div>${atCeiling ? `<p class="field-hint choice-ceiling" role="status">${escapeHtml(t('You can enter at most %(limit)s food types in one calculation. Untick one, or calculate what you have.', { limit: MAX_LEAVES }))}</p>` : ''}</fieldset>${chosen ? `<button type="button" class="text-button" data-action="clear-food">${escapeHtml(t('Clear all selections'))}</button>` : ''}${duplicateNotice()}${stepNav({ step: 1, back: backTarget(1) })}</section>`
+  return `<section class="content-section" aria-labelledby="food-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 2 }))} &middot; ${escapeHtml(t('Optional'))}</p><h1 id="food-title">${escapeHtml(t('What types of food waste are you measuring?'))}</h1><p class="section-intro">${escapeHtml(t('Choose every category that applies, or continue without choosing one.'))}</p><fieldset class="choice-fieldset"><legend class="sr-only">${escapeHtml(t('Food type'))}</legend><p class="choice-count" aria-live="polite">${escapeHtml(t('%(count)s selected', { count: chosen }))}</p><div class="simple-choice-list">${categories.map(category => choice(category.code, category.name, state.foodCategories.includes(category.code), category.is_standard_mix ? t('Recommended if you do not separate food waste by category') : '')).join('')}${choice(UNSPECIFIED_CHOICE, t('I do not know, or my waste is not broken down by type'), state.foodUnspecified, t('Counted as its own answer. If your waste really is a mixture, choose the mixed category above instead.'), 'simple-choice--unspecified')}</div>${atCeiling ? `<p class="field-hint choice-ceiling" role="status">${escapeHtml(t('You can enter at most %(limit)s food types in one calculation. Untick one, or calculate what you have.', { limit: MAX_LEAVES }))}</p>` : ''}</fieldset>${chosen ? `<button type="button" class="text-button" data-action="clear-food">${escapeHtml(t('Clear all selections'))}</button>` : ''}${duplicateNotice()}${stepNav({ step: 1, back: backTarget(1) })}</section>`
 }
 
 /**
@@ -866,6 +916,81 @@ function leafPanel(leaf, leaves, index) {
  * of figures already on screen and it never reaches the wire - the same category of
  * arithmetic `allocatedAmount` already performs.
  */
+/**
+ * **Step 2.5, and it is the second panel of step 2 rather than a seventh step.**
+ *
+ * `spec.md` §3.3: *step 2.5 refines step 2; it does not replace it.* One screen, one
+ * group per chosen category, in the order they were ticked -- no nested wizard and no
+ * repeat-per-category pass. A category with **no food ticked stays a category-level
+ * leaf**, which is the natural "I know it was fruit, but not which fruit" answer and
+ * is what `entryLeaves` already does with an empty list.
+ *
+ * **The step number does not advance.** It is the same question asked one level finer,
+ * so the eyebrow still says step 2 and the progress bar does not move; what changes is
+ * the panel. Making it a seventh step would have meant renumbering twenty hard-coded
+ * step references for a panel that is absent from most deployments, and would have made
+ * "step 3 of 7" a lie whenever the flag is off.
+ *
+ * **The ceiling is the same twenty leaves**, asked per box through `entryLeaves` --
+ * see `draftTickingItem` for why ticking a food is not always one more leaf.
+ */
+/**
+ * Step 2.5's tick.
+ *
+ * **Order within a category is ticking order**, for the reason `foodCategories` is:
+ * steps 3 and 4 iterate the leaves, and a list that reshuffled when a box was ticked
+ * would move a visitor's half-filled panel out from under them.
+ *
+ * **An untick drops the food and nothing else.** The category it sat under stays
+ * ticked -- that is step 2's answer -- and unticking the last food under a category
+ * returns it to a category-level leaf, which `entryLeaves` does on its own. The
+ * figures typed against the leaf are kept, exactly as `toggleFoodChoice` keeps them
+ * for a category: re-ticking restores what was typed, and `draftEntry()` prunes at
+ * the boundary so nothing dead is ever sent.
+ */
+function toggleFoodItem(target) {
+  const category = target.dataset.category
+  if (!category) return
+  // Re-checked rather than trusted, for the reason step 2's tick re-checks: a
+  // `disabled` attribute is a rendering, and this is the rule.
+  if (target.checked && itemTickRefused(category, target.value)) {
+    target.checked = false
+    return
+  }
+  const current = (state.foodItems || {})[category] || []
+  const next = target.checked
+    ? [...current.filter(code => code !== target.value), target.value]
+    : current.filter(code => code !== target.value)
+  setState({
+    foodItems: { ...(state.foodItems || {}), [category]: next },
+    error: null,
+    errorAt: null,
+  })
+}
+
+function itemStep() {
+  const chosen = Object.values(state.foodItems || {}).reduce((total, items) => total + items.length, 0)
+  const ticked = (category, item) => ((state.foodItems || {})[category] || []).includes(item)
+  const refused = (category, item) => !ticked(category, item) && itemTickRefused(category, item)
+  const atCeiling = state.foodCategories.some(
+    category => itemsUnder(category).some(item => refused(category, item.code)))
+  const group = category => {
+    const definition = findByCode(state.taxonomy.food_categories, category)
+    const items = itemsUnder(category)
+    const heading = definition?.name || category
+    //: A chosen category the vocabulary has no food for is shown saying so, not
+    //: hidden. Hiding it would make the group list disagree with step 2's ticks,
+    //: and a visitor who ticked five categories and sees four groups has to work
+    //: out which one went missing and why.
+    const body = items.length
+      ? `<div class="simple-choice-list">${items.map(item =>
+          `<label class="simple-choice ${ticked(category, item.code) ? 'selected' : ''}"><input id="food-item-${slug(category)}-${slug(item.code)}" type="checkbox" name="food-item" value="${escapeHtml(item.code)}" data-category="${escapeHtml(category)}" ${ticked(category, item.code) ? 'checked' : ''} ${refused(category, item.code) ? 'disabled' : ''}><span><strong>${escapeHtml(item.name)}</strong></span>${ticked(category, item.code) ? `<span class="selected-label" aria-hidden="true">&#10003; ${escapeHtml(t('Selected'))}</span>` : ''}</label>`).join('')}</div>`
+      : `<p class="field-hint">${escapeHtml(t('No specific foods are listed for this category. It is counted as %(category)s.', { category: heading }))}</p>`
+    return `<fieldset class="choice-fieldset item-group"><legend>${escapeHtml(heading)}</legend>${body}</fieldset>`
+  }
+  return `<section class="content-section" aria-labelledby="item-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 2 }))} &middot; ${escapeHtml(t('Optional'))}</p><h1 id="item-title">${escapeHtml(t('Do you know which foods these were?'))}</h1><p class="section-intro">${escapeHtml(t('Choose the specific foods you measured, or continue without choosing any. A category with no food chosen is counted as that category.'))}</p><p class="choice-count" aria-live="polite">${escapeHtml(t('%(count)s selected', { count: chosen }))}</p>${state.foodCategories.map(group).join('')}${atCeiling ? `<p class="field-hint choice-ceiling" role="status">${escapeHtml(t('You can enter at most %(limit)s food types in one calculation. Untick one, or calculate what you have.', { limit: MAX_LEAVES }))}</p>` : ''}${chosen ? `<button type="button" class="text-button" data-action="clear-items">${escapeHtml(t('Clear all selections'))}</button>` : ''}${stepNav({ step: 1, back: 1, backAction: 'back-to-categories' })}</section>`
+}
+
 function amountStep() {
   const leaves = draftLeaves()
   const single = leaves.length === 1
@@ -2090,7 +2215,13 @@ export function render(main) {
     main.innerHTML = `<section class="content-section error-state"><h1>${escapeHtml(t('Calculator unavailable'))}</h1><p>${escapeHtml(state.error || t('The taxonomy could not be loaded.'))}</p>${blocked() ? '' : `<button class="button button-primary" type="button" data-action="retry">${escapeHtml(t('Try again'))}</button>`}</section>`
     return
   }
-  const screens = [sectorStep, foodStep, amountStep, destinationStep, reviewStep]
+  // Step 1 is two panels, not two steps -- see `itemStep`. `foodStage` picks
+  // which, and `itemStepOffered()` is re-asked on every render so a stage left
+  // at 'items' by an earlier draft cannot strand the visitor on a panel this
+  // taxonomy has nothing to put in.
+  const foodPanel = () =>
+    (state.foodStage === 'items' && itemStepOffered() ? itemStep : foodStep)()
+  const screens = [sectorStep, foodPanel, amountStep, destinationStep, reviewStep]
   main.innerHTML = state.step === -1 ? introduction() : state.step === 5 ? renderResults(state) : screens[state.step]()
 }
 
@@ -2237,7 +2368,11 @@ function goToStep(step, jumped = false) {
     setState({ ...(back.draft ? { ...entryPatch(back.draft), entries: back.entries } : {}), step, returnTo: null, ...clearedError() })
     return true
   }
-  setState({ step, returnTo: jumped ? { from: step, step: state.step } : markerAfterLeaving(), ...clearedError() })
+  // **Any arrival at a step opens step 2's FIRST panel.** A jump named "food type"
+  // means the category question; leaving `foodStage` at 'items' would answer a
+  // different one, and a jump to any other step must not leave the stage set for
+  // the next time step 2 is reached.
+  setState({ step, foodStage: 'categories', returnTo: jumped ? { from: step, step: state.step } : markerAfterLeaving(), ...clearedError() })
   return true
 }
 
@@ -2271,6 +2406,13 @@ export function bindCalculator(main, retryTaxonomy) {
     // category restores what was typed for it, and `draftEntry()` prunes at the
     // boundary so nothing dead is ever sent.
     if (action === 'clear-food') setState({ foodCategories: [], foodUnspecified: false, foodItems: {}, error: null, errorAt: null })
+    // Step 2.5's own clear. It leaves the CATEGORIES alone: they are step 2's
+    // answer, and clearing them from this panel would undo a question the visitor
+    // is no longer looking at.
+    if (action === 'clear-items') setState({ foodItems: {}, error: null, errorAt: null })
+    // Step 2.5's Back. A panel change, not a step change: `goToStep` is not called
+    // and no `returnTo` marker is touched, because the visitor has not left step 2.
+    if (action === 'back-to-categories') setState({ foodStage: 'categories', error: null, errorAt: null })
     if (action === 'continue') {
       const problem = stepProblemAt(state.step)
       const error = problem.message
@@ -2285,6 +2427,12 @@ export function bindCalculator(main, retryTaxonomy) {
       // forward move with a patch of its own, and leaving `returnTo` out of it meant a
       // *Waste amount / Edit* marker walked past its own step and aimed step 3's Back at
       // the review step — the same loop, through the one door this branch owns.
+      // **Step 2's Continue has two destinations.** With step 2.5 offered it opens
+      // the second panel and the step number does not move; without it, the step
+      // advances exactly as it did before the panel existed. `itemStepOffered()`
+      // is false in every deployment today, so this branch is inert by data.
+      else if (state.step === 1 && state.foodStage !== 'items' && itemStepOffered())
+        setState({ foodStage: 'items', error: null, errorAt: null })
       else if (state.step === 2) setState({ step: 3, error: null, errorAt: null, returnTo: markerAfterLeaving(), ...destinationRowsPatch() })
       // **Arriving at the review step ends any excursion, and this line is load-bearing.**
       // A marker holds the entries and the draft as they were before the jump that wrote
@@ -2409,6 +2557,7 @@ export function bindCalculator(main, retryTaxonomy) {
     const target = event.target
     if (target.name === 'sector') setState({ sector: target.value, error: null, errorAt: null })
     if (target.name === 'food-category') toggleFoodChoice(target)
+    if (target.name === 'food-item') toggleFoodItem(target)
     if (target.id === 'time-frame') setState({ timeFrame: target.value })
     // One control, both modes. `current: []` was already this handler's behaviour and the
     // reason is unchanged and now broader: the destination amounts were entered against a

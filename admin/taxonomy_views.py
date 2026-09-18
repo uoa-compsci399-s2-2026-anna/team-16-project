@@ -1,4 +1,4 @@
-"""The six taxonomy screens. Contract §8.1.
+"""The seven taxonomy screens. Contract §8.1.
 
 Each inherits AuditedModelView, so every write is audited without any of
 them saying so. Two of them override validate_before_commit to hold an
@@ -32,7 +32,8 @@ from admin.audit import row_to_dict, write_audit
 from admin.auth import SESSION_KEY
 from admin.modelviews import described, AuditedModelView
 from admin.taxonomy_models import (
-    Destination, DestinationGroup, FoodCategory, Metric, Sector, UnitPreset,
+    Destination, DestinationGroup, FoodCategory, FoodItem, Metric, Sector,
+    UnitPreset,
 )
 from admin.taxonomy_rules import (
     TaxonomyInvariantError, check_prevention_destination,
@@ -47,8 +48,9 @@ _CATEGORY = "Taxonomy"
 #: somebody who has never seen this system - not a restatement of the label,
 #: which teaches a reader that the help text is not worth reading.
 #:
-#: These two are shared because they genuinely say the same thing on all six
-#: tables. Everything else below is written per field: `code` on `metric` and
+#: These two are shared because they genuinely say the same thing on all seven
+#: tables (`FoodItemAdmin` extends `_ACTIVE_HELP` with one more sentence rather
+#: than restating it, which is why its own key is a separate string). Everything else below is written per field: `code` on `metric` and
 #: `code` on `destination` are not the same field with a different name.
 _SORT_ORDER_HELP = (
     "Position in the list a visitor sees, lowest first. Rows sharing a "
@@ -65,7 +67,7 @@ _ACTIVE_HELP = (
 
 
 class _TaxonomyAdmin(AuditedModelView):
-    """Common base for the six taxonomy screens below: the bulk deactivate/
+    """Common base for the seven taxonomy screens below: the bulk deactivate/
     activate actions that make each screen's Actions button live.
 
     **The defect this class fixes.** sqladmin's own
@@ -76,7 +78,7 @@ class _TaxonomyAdmin(AuditedModelView):
         <button {% if not model_view.can_delete and not
         model_view._custom_actions_in_list %} disabled {% endif %}
 
-    Every one of the six views below sets `can_delete = False` deliberately
+    Every one of the seven views below sets `can_delete = False` deliberately
     - a destination named by a stored historical result must stay
     resolvable, so `active` is how a row leaves service, not delete - and,
     before this class existed, defined no custom action either. The button
@@ -469,6 +471,80 @@ class FoodCategoryAdmin(_TaxonomyAdmin, model=FoodCategory):
     def validate_before_commit(self, session) -> None:
         """Exactly one active category is the standard mix. Contract §2.1."""
         check_single_standard_mix(session)
+
+
+class FoodItemAdmin(_TaxonomyAdmin, model=FoodItem):
+    """Contract §2.1 (v1.54). The named foods *within* a category — "cheese",
+    not "dairy" — and the vocabulary step 2.5 of the calculator offers.
+
+    **Both roles, the same as the six screens around it, and decided on their
+    grounds rather than on the flag's.** §8.3 gives taxonomy CRUD to both roles
+    and reserves the administrator floor for three things: account management,
+    the blocklist and the audit trail — capabilities about *who may use the
+    system*, not about what it says. This table is the same kind of thing as
+    `food_category` next to it: rows a staff member types, `active` rather than
+    delete, nothing identifying, and every write already in `audit_log`. It
+    carries no more consequence than `FoodCategoryAdmin` does; if anything
+    less, because a food with no factor rows of its own is priced at its
+    category's average either way.
+
+    The act that *does* have outward consequence is switching
+    `item_level_enabled` on and publishing the set, and that sits on the
+    factor-set screen with its own guard. Putting a floor here instead would
+    gate the typing while leaving the releasing open, which is the wrong way
+    round — the same asymmetry `FactorSetAdmin._require_admin_for_import` was
+    careful to avoid arguing the other way.
+
+    **Nothing seeds this table.** Mapping the client's ~20 foods onto our
+    categories is a data-authoring task with client-facing consequences (seven
+    of their rows have no New Zealand category at all) and gets its own review.
+    An empty table is what keeps the item level inert, and this screen is how
+    it stops being empty.
+    """
+
+    name = "Food item"
+    name_plural = "Food items"
+    category = _CATEGORY
+    icon = "fa-solid fa-cheese"
+
+    can_delete = False
+
+    column_list = [
+        FoodItem.code, FoodItem.name, FoodItem.food_category,
+        FoodItem.sort_order, FoodItem.active,
+    ]
+    column_details_list = column_list
+    form_columns = [
+        FoodItem.food_category, FoodItem.code, FoodItem.name,
+        FoodItem.sort_order, FoodItem.active,
+    ]
+    form_args = {
+        "food_category": {"description": (
+            "Which category this food belongs to. Required, and it is not "
+            "only a grouping: a food with no factors of its own is priced at "
+            "this category's average, so the category you pick here is the "
+            "number this food gets until somebody writes it one."
+        )},
+        "code": {"description": (
+            "The short name the API and the front end use for this food — "
+            "'cheese', 'bread'. Lower case, no spaces. Factor rows point at "
+            "this row rather than at the text, so renaming it does not "
+            "detach the numbers filed under it."
+        )},
+        "name": {"description": (
+            "The wording a visitor picks from when they say which food was "
+            "wasted, once item-level detail is switched on for the published "
+            "factor set."
+        )},
+        "sort_order": {"description": _SORT_ORDER_HELP},
+        "active": {"description": (
+            _ACTIVE_HELP + " A retired food also stops counting towards the "
+            "item-level coverage shown on the factor-set screen."
+        )},
+    }
+    column_searchable_list = [FoodItem.code, FoodItem.name]
+    column_filters = [BooleanFilter(FoodItem.active)]
+    column_default_sort = ("sort_order", False)
 
 
 class MetricAdmin(_TaxonomyAdmin, model=Metric):

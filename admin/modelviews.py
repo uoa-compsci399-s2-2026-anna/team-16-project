@@ -1,7 +1,8 @@
 """sqladmin views that write an audit entry for every change. Contract §8.1.
 
-The eleven taxonomy and factor views of §8.1 inherit AuditedModelView in E-4
-and E-5, so the auditing lives here once rather than in each of them.
+The twelve taxonomy and factor views of §8.1 inherit AuditedModelView — eleven
+in E-4 and E-5, and `FoodItemAdmin` in v1.54 part two — so the auditing lives
+here once rather than in each of them.
 
 Atomicity. sqladmin's own ``Query._insert_sync``/``_update_sync``/
 ``_delete_sync`` (sqladmin/_queries.py) open a session via

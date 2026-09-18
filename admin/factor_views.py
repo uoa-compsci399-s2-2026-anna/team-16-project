@@ -24,7 +24,7 @@ import time
 
 from sqladmin import action, expose
 from sqladmin.filters import BooleanFilter, ForeignKeyFilter, OperationColumnFilter
-from sqlalchemy import select
+from sqlalchemy import func, select
 from starlette.exceptions import HTTPException
 from starlette.responses import RedirectResponse
 
@@ -46,6 +46,8 @@ from admin.models import AuditLog, StaffRole
 from admin.modelviews import AuditedModelView, described
 from admin.taxonomy_models import Sector
 from admin.taxonomy_rules import TaxonomyInvariantError, check_single_published_set
+from db.errors import FactorSetStateError
+from db.repository import item_level_coverage, refuse_item_level_without_item_rows
 
 _CATEGORY = "Factors"
 
@@ -216,6 +218,56 @@ def _refuse_delete_from_non_draft(view: AuditedModelView, model: type, pk: str) 
     _refuse_if_factor_set_not_draft(factor_set)
 
 
+def _refuse_deleting_the_last_item_row(view: AuditedModelView, pk: str) -> None:
+    """Refuse removing the only `food_item` row from a set that releases step 2.5.
+
+    `refuse_item_level_without_item_rows` is stated over the whole table in
+    `FactorSetAdmin.validate_before_commit`, for the reason written there. That
+    is right, and it has a consequence: a set left flagged with no item rows
+    refuses every later edit to *any* set until somebody unticks it. Reaching
+    that state is a one-click accident - delete the last item-level row - and
+    the person who does it gets no warning at the moment they do it, only a
+    refusal on an unrelated screen afterwards.
+
+    So the state is made unreachable rather than survivable. The guard belongs
+    on the delete path for the same reason `_refuse_delete_from_non_draft` does:
+    a deleted row leaves `session.identity_map` once its delete flushes, so
+    `validate_before_commit` has nothing left to inspect and there is no "after"
+    hook this could be.
+
+    Deliberately narrow: it refuses only the LAST item row of a FLAGGED set.
+    Deleting one of several is ordinary editing, and deleting the last one from
+    an unflagged set is how a draft stops pricing foods individually - which is
+    a thing staff are allowed to do.
+    """
+    with view.session_maker() as lookup:
+        row = lookup.get(FactorUpstream, int(pk))
+        if row is None or row.food_item_id is None:
+            return
+        factor_set = row.factor_set
+        if factor_set is None or not factor_set.item_level_enabled:
+            return
+        remaining = lookup.scalar(
+            select(func.count())
+            .select_from(FactorUpstream)
+            .where(
+                FactorUpstream.factor_set_id == factor_set.id,
+                FactorUpstream.food_item_id.is_not(None),
+                FactorUpstream.id != row.id,
+            )
+        )
+    if remaining:
+        return
+    raise TaxonomyInvariantError(
+        f"This is the only food-item factor in {factor_set.version_label!r}, and "
+        "that set is set to ask visitors which food was wasted. Deleting it would "
+        "leave the set asking a question it cannot price, and every later edit to "
+        "any factor set would be refused until somebody noticed. Untick "
+        "“Ask which food was wasted” on the factor set first, then delete "
+        "this row."
+    )
+
+
 class FactorUpstreamAdmin(AuditedModelView, model=FactorUpstream):
     """`destination` may be left empty, and almost always should be.
 
@@ -229,6 +281,25 @@ class FactorUpstreamAdmin(AuditedModelView, model=FactorUpstream):
 
     The same shape as `FactorDownstreamAdmin.food_category` below, and the form
     must present it the same way: an optional select, not a required one.
+
+    **`food_item` (v1.54) is the second such column, and for a related
+    reason.** Empty means "every food in this category" — the category average,
+    which is what every row in this table has always been. A row that names a
+    food is a refinement of that average, and it carries *both* columns:
+    `food_category` stays required beside it, so an item factor is always
+    reachable through the category it refines. Where both a category row and an
+    item row could apply, §2.2's order is (item, destination), then (category,
+    destination), then (item, blank), then (category, blank), then zero — **the
+    destination outranks the food**, which is what keeps the prevention zero
+    covering every food under its category without a row per food.
+
+    The difference from `destination` is worth stating, because the two look
+    alike on the form and are not: leaving `destination` empty is the normal
+    case and the one to reach for, while leaving `food_item` empty is not just
+    normal but *currently universal* — nothing in any deployment names a food
+    yet, and the screen that asks a visitor which food is released per factor
+    set by `item_level_enabled` on FactorSetAdmin, which refuses to switch on
+    until at least one row here names one.
     """
 
     name = "Upstream factor"
@@ -242,17 +313,24 @@ class FactorUpstreamAdmin(AuditedModelView, model=FactorUpstream):
     #: for. See admin/modelviews.py's `guidance_blocks`.
     guidance_blocks = ["brand/guidance/prevention_zero.html"]
 
+    #: **Three hand-written lists, and a column the model gains appears in none
+    #: of them until all three are edited.** That is what kept staff from being
+    #: able to author a single item-level factor after the schema landed: the
+    #: column existed, the form did not offer it, and nothing failed. `food_item`
+    #: sits next to `food_category` in each, because it refines it.
     column_list = [FactorUpstream.factor_set, FactorUpstream.sector,
-                   FactorUpstream.food_category, FactorUpstream.destination,
+                   FactorUpstream.food_category, FactorUpstream.food_item,
+                   FactorUpstream.destination,
                    FactorUpstream.metric,
                    FactorUpstream.value_per_kg, FactorUpstream.data_quality]
     column_details_list = [FactorUpstream.factor_set, FactorUpstream.sector,
-                           FactorUpstream.food_category,
+                           FactorUpstream.food_category, FactorUpstream.food_item,
                            FactorUpstream.destination, FactorUpstream.metric,
                            FactorUpstream.value_per_kg,
                            FactorUpstream.data_quality, FactorUpstream.source_note]
     form_columns = [FactorUpstream.factor_set, FactorUpstream.sector,
-                    FactorUpstream.food_category, FactorUpstream.destination,
+                    FactorUpstream.food_category, FactorUpstream.food_item,
+                    FactorUpstream.destination,
                     FactorUpstream.metric,
                     FactorUpstream.value_per_kg, FactorUpstream.data_quality,
                     FactorUpstream.source_note]
@@ -269,7 +347,21 @@ class FactorUpstreamAdmin(AuditedModelView, model=FactorUpstream):
         "food_category": {"description": (
             "Which kind of food this number is for. Required here: unlike a "
             "downstream factor, an upstream row always belongs to exactly "
-            "one category."
+            "one category — including a row that names a particular food "
+            "below, which carries both."
+        )},
+        "food_item": {"description": (
+            "Leave blank unless this number is for one particular food — "
+            "blank means it applies to every food in the category above, "
+            "which is the normal case and the only case any factor set "
+            "carries today. Fill it in to refine that average: 'cheese' "
+            "rather than 'dairy'. A food with no row of its own is priced at "
+            "its category's average, so you do not need a row per food. Where "
+            "a category row and a food row could both apply, the one naming "
+            "the destination wins first, then the one naming the food. The "
+            "calculator only asks a visitor which food once item-level "
+            "detail is switched on for the factor set, which needs at least "
+            "one row here to name one."
         )},
         # Trimmed to the field when brand/guidance/prevention_zero.html
         # arrived: what a general row left without its prevention
@@ -325,6 +417,7 @@ class FactorUpstreamAdmin(AuditedModelView, model=FactorUpstream):
         """A published or archived set's rows must not be removed either.
         Contract §2.2. See _refuse_delete_from_non_draft's own docstring."""
         _refuse_delete_from_non_draft(self, FactorUpstream, pk)
+        _refuse_deleting_the_last_item_row(self, pk)
         await super().delete_model(request, pk)
 
     def validate_before_commit(self, session) -> None:
@@ -962,9 +1055,11 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
     list_template = "brand/factor_set_list.html"
 
     column_list = [FactorSet.version_label, FactorSet.status, FactorSet.is_mock,
+                   FactorSet.item_level_enabled,
                    FactorSet.published_at, FactorSet.published_by]
     column_details_list = [FactorSet.version_label, FactorSet.status,
-                           FactorSet.is_mock, FactorSet.effective_from,
+                           FactorSet.is_mock, FactorSet.item_level_enabled,
+                           FactorSet.effective_from,
                            FactorSet.published_at, FactorSet.published_by,
                            FactorSet.notes]
     # published_at/published_by/status are absent deliberately: all three are
@@ -989,7 +1084,22 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
     # new set could be created unticked. It now always starts ticked, from
     # the column default (admin/factor_models.py), so "nothing is published
     # as real data by omission" is structural rather than a habit.
-    form_columns = [FactorSet.version_label,
+    #
+    # `item_level_enabled` (v1.54) **is** on the form, and the contrast with
+    # `is_mock` two paragraphs up is the decision rather than an inconsistency.
+    # `is_mock` is off the form because it is legal in every status and its one
+    # dangerous direction takes a warning off the public page the instant it is
+    # saved; nothing about a form can ask "did you mean that". This flag is
+    # different in both halves. It is a draft-only edit like every other field
+    # here — `validate_before_commit` below refuses any in-place change to a
+    # published or archived set — so the outward-facing act is *publishing*
+    # that draft, which is a separate, deliberate step with a confirmation of
+    # its own and with `refuse_item_level_without_item_rows` running inside it.
+    # And it cannot be carried off by accident in the dangerous direction: the
+    # dangerous direction is switching it *on*, and switching it on against a
+    # set that prices no food individually is refused right here, with the
+    # coverage figures in the message.
+    form_columns = [FactorSet.version_label, FactorSet.item_level_enabled,
                     FactorSet.effective_from, FactorSet.notes]
     form_args = {
         "version_label": {"description": (
@@ -998,6 +1108,19 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
             "the clone, publish, rollback and comparison screens show, and "
             "the name the audit trail records. Make it something you can "
             "still recognise in a year."
+        )},
+        "item_level_enabled": {"description": (
+            "Ticking this makes the calculator ask a visitor which food was "
+            "wasted, not only which category — 'cheese' rather than 'dairy' — "
+            "while this set is the published one. It changes no stored "
+            "figure: a calculation made before or after the tick recomputes "
+            "to the same numbers, because a food with no factors of its own "
+            "is priced at its category's average either way. What it changes "
+            "is how specific a question the calculator asks, and therefore "
+            "how precise its answer looks. The factor-set list shows how many "
+            "foods this set actually prices individually; read that before "
+            "ticking. It cannot be ticked on a set with no such factors at "
+            "all, and it is refused at publishing time as well as here."
         )},
         "effective_from": {"description": (
             "The date these numbers are meant to apply from, recorded for "
@@ -1051,6 +1174,30 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
         """
         check_single_published_set(session)
 
+        #: v1.54's soft guard, at the form. `publish_factor_set` runs the same
+        #: rule from `db/repository.py` at the transactional choke point and
+        #: that copy is the one that cannot be walked past; this one exists so
+        #: that a staff member finds out while they are looking at the tick
+        #: they just made, rather than days later when they try to publish.
+        #: Both call the same function — two statements of one rule drift, and
+        #: the copy that stops matching is the one nobody notices.
+        #:
+        #: **Stated over the table, like `check_single_published_set` directly
+        #: above, rather than over the row being edited.** `session.flush()` has
+        #: already run by the time `validate_before_commit` is called
+        #: (admin/modelviews.py), which is what makes the pending tick visible
+        #: to a query — and equally what empties `session.dirty`, so a version
+        #: of this that walked the changed objects looked right, ran on every
+        #: edit and refused nothing. It is also the shape that covers the
+        #: *create* form, where the row has no primary key until the flush.
+        for row_id in session.scalars(
+            select(FactorSet.id).where(FactorSet.item_level_enabled.is_(True))
+        ).all():
+            try:
+                refuse_item_level_without_item_rows(session, row_id)
+            except FactorSetStateError as exc:
+                raise TaxonomyInvariantError(str(exc)) from exc
+
         previous_status = _pending_previous_factor_set_status.get()
         if previous_status is not None and previous_status is not FactorSetStatus.draft:
             raise TaxonomyInvariantError(
@@ -1098,11 +1245,39 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
         failed load.
         """
         with self.session_maker() as session:
+            #: v1.54. Built for **every** set on this screen, not only the
+            #: published one, and built before the early return below, because
+            #: the set a staff member is deciding about is the draft they are
+            #: preparing rather than the one already live — and on a fresh
+            #: deployment there is no published set at all.
+            #:
+            #: "Item-level factors for 3 of 19 foods" is the whole point:
+            #: `item_level_enabled` is a boolean and the decision behind it is
+            #: not. Both figures are zero everywhere today, which is why the
+            #: template says nothing when the vocabulary is empty rather than
+            #: printing "0 of 0" beside every row.
+            item_coverage = [
+                {
+                    "version_label": row.version_label,
+                    "status": row.status.value,
+                    "enabled": row.item_level_enabled,
+                    "priced": priced,
+                    "total": total,
+                }
+                for row, (priced, total) in (
+                    (row, item_level_coverage(session, row.id))
+                    for row in session.scalars(
+                        select(FactorSet)
+                        .where(FactorSet.status != FactorSetStatus.archived)
+                        .order_by(FactorSet.id.desc())
+                    )
+                )
+            ]
             published = session.scalar(
                 select(FactorSet).where(FactorSet.status == FactorSetStatus.published)
             )
             if published is None:
-                return {"published_summary": None}
+                return {"published_summary": None, "item_coverage": item_coverage}
 
             last_modified = session.scalar(
                 select(AuditLog.at)
@@ -1114,6 +1289,7 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
                 .limit(1)
             )
             return {
+                "item_coverage": item_coverage,
                 "published_summary": {
                     "version_label": published.version_label,
                     "published_at": published.published_at,

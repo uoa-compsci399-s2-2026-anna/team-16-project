@@ -26,7 +26,52 @@
  * `units.js`'s, called rather than re-typed.
  */
 
+import { entryLeaves, EMPTY_LEAF, leafFigures, leafKey } from './state.js'
 import { exactKgString, rowKgString } from './units.js'
+
+/**
+ * **Every chain's leaves, in submission order — THE one place a chain becomes several
+ * entries.**
+ *
+ * A chain is what the visitor built and can Edit or Remove as a unit; a leaf is what the
+ * API receives. `state.entries` holds chains, `entries[]` on the wire holds leaves, and
+ * this function is the only crossing between the two. All three request builders go
+ * through it — `submitCalculation`'s Calculate, `improvement.js`'s Compare Impact, and
+ * `submissionPayload` itself — so a caller that forgets cannot produce a wrong body.
+ *
+ * Each leaf comes back already shaped as the flat entry `entryPayload` consumes: the
+ * chain's `sector`, the leaf's own nine figures (including its own `current` allocation,
+ * because step 4 forks too — `design.md` §10), and its `foodCategory` / `foodItem`.
+ *
+ * **`state.js` imports nothing, so this import cannot cycle.** It is the only module
+ * `calculator.js`, `improvement.js`, `results.js` and this one can all reach.
+ *
+ * @param {Array<object>} chains
+ * @returns {Array<object>} one flat entry per leaf, in request order
+ */
+export function submissionLeaves(chains) {
+  return (chains || []).flatMap(chain => {
+    // **A leaf is not a chain, and fanning one out again is silent data loss.** A leaf
+    // has no `foodCategories`, so `entryLeaves` answers "one category-less leaf" and the
+    // spread finds no `leafFigures` - every entry becomes a blank leaf with `current: []`
+    // and the API answers 400 for a submission that was complete. `compareImprovement`
+    // did exactly that for one build. It is a programming error, so it is thrown rather
+    // than absorbed.
+    if (chain && chain.leafKey !== undefined) throw new TypeError('submissionLeaves takes chains, not leaves')
+    return entryLeaves(chain).map(leaf => ({
+      sector: chain.sector,
+      ...(chain.leafFigures ? leafFigures(chain, leaf) : { ...EMPTY_LEAF }),
+      foodCategory: leaf.foodCategory,
+    // Labels the leaf on `results.js`, the review step and the duplicate notice --
+    // and **is sent**, since contract v1.58 gave `EntryPayload` a `food_item`.
+    // It was carried and deliberately withheld before that landing, because
+    // `EntryPayload` is a Pydantic model with `extra="forbid"` and an unknown key
+    // is a 400 rather than an ignored field.
+      foodItem: leaf.foodItem,
+      leafKey: leafKey(leaf),
+    }))
+  })
+}
 
 /**
  * The `current` scenario's lines, as §6.2 wants them.
@@ -86,6 +131,12 @@ export function entryPayload(entry, presets, alternative = null) {
   return {
     sector: entry.sector,
     food_category: entry.foodCategory || null,
+    // The named food within `food_category`, contract v1.58. `|| null` rather than
+    // the value as held, for the reason `food_category` beside it uses one: a leaf
+    // that names no food carries `null`, and §6.2 says absent and null mean the
+    // same thing -- so sending `null` explicitly is the shape that cannot be
+    // mistaken for a client that predates the field.
+    food_item: entry.foodItem || null,
     current: requestLines(entry, presets),
     alternative,
     total_input_kg: optionalKgString(entry.totalInputKg, entry.totalUnit),
@@ -101,17 +152,29 @@ export function entryPayload(entry, presets, alternative = null) {
  * period for the whole submission (§6.2) — asked once, on the review step.
  *
  * @param {object} state
- * @param {Array<object>} entries  every entry, in submission order
- * @param {(entry: object) => Array|null} [alternativeFor]  the improved scenario for an
- *   entry; the default is no alternative, which is what the main Calculate button sends.
+ * @param {Array<object>} chains  every supply-chain entry, in submission order. They
+ *   are CHAINS; this function forks them into leaves itself.
+ * @param {(leaf: object, index: number) => Array|null} [alternativeFor]  the improved
+ *   scenario for a leaf, and the leaf's own position in the submission; the default is
+ *   no alternative, which is what the main Calculate button sends. The **index** is what
+ *   `improvement.js` selects that leaf's own allocation with, now that the improvement
+ *   panel forks: a leaf's name is not an identity, because two chains may name the same
+ *   sector and the same food, while its position in `entries[]` is.
  */
-export function submissionPayload(state, entries, alternativeFor = () => null) {
+export function submissionPayload(state, chains, alternativeFor = () => null) {
   const presets = state.taxonomy?.unit_presets || []
+  // **Chains in, leaves out**, and the fan-out happens here rather than at the three
+  // call sites. `alternativeFor` is therefore invoked with a LEAF, which is what
+  // `improvement.js`'s `entry => improvedLines(entry, ...)` needs: `improvedLines` takes
+  // `sumQtyKg(requestLines(entry, presets))` as its base, and that base must be the
+  // leaf's own mass or the alternative will not conserve mass against the leaf's current
+  // scenario — which §6.2 rejects for the whole submission.
+  const leaves = submissionLeaves(chains)
   return {
     token: state.token || null,
     gwp_horizon: state.gwpHorizon,
     time_frame: state.timeFrame || null,
-    entries: entries.map(entry => entryPayload(entry, presets, alternativeFor(entry))),
+    entries: leaves.map((leaf, index) => entryPayload(leaf, presets, alternativeFor(leaf, index))),
   }
 }
 

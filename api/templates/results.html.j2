@@ -64,6 +64,21 @@
 </aside>
 {% endif %}
 
+{#- THE FALLBACK DISCLOSURE (contract v1.59). Beside the placeholder warning
+    and independent of it: a real factor set can still price a food only at
+    its category, and a placeholder one can price a food individually. The
+    list is `doc.category_averages`, already worded and already translated by
+    `_build_context` -- this template chooses where it sits, never whether a
+    figure fell back. -#}
+{% if doc.category_averages %}
+<aside class="mock-warning" role="note">
+  <strong class="mock-warning__flag">{{ doc.category_average_flag }}</strong>
+  {% for sentence in doc.category_averages %}
+  <p class="mock-warning__body">{{ sentence }}</p>
+  {% endfor %}
+</aside>
+{% endif %}
+
 {#- THE TITLE BLOCK (Task 5). What it is (the heading), who produced it, when
     it was generated, and the factor-set version it used - the client's own
     words were that the document "lacks brand character", and this is the

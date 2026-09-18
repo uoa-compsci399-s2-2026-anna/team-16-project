@@ -40,7 +40,7 @@ from sqlalchemy.orm import sessionmaker
 import admin.comparison_models  # noqa: F401  - registers the comparison tables
 import admin.factor_models  # noqa: F401  - registers the six factor tables
 import admin.models  # noqa: F401  - registers staff, staff_recovery_code, audit_log
-import admin.taxonomy_models  # noqa: F401  - registers the six taxonomy tables
+import admin.taxonomy_models  # noqa: F401  - registers the seven taxonomy tables
 import db.blocklist_models  # noqa: F401  - registers ip_block on Base.metadata
 import db.models  # noqa: F401  - registers the three submission tables
 from admin.app import create_app

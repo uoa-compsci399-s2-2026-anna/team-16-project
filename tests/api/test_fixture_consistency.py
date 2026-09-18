@@ -204,6 +204,28 @@ def test_taxonomy_is_internally_consistent(taxonomy):
             item["code"] for item in taxonomy["food_categories"]
         }
 
+    #: v1.58. The key is part of §6.1 whether or not any row is in it, and
+    #: `item_level_enabled` is what releases step 2.5 on the front end.
+    assert isinstance(taxonomy["food_items"], list)
+    assert taxonomy["factor_set"]["item_level_enabled"] is False, (
+        "the shipped mock set prices no food individually, so the switch that "
+        "releases step 2.5 must be off -- an interface asking a more specific "
+        "question than the numbers can answer is what design section 8 warns "
+        "about"
+    )
+    #: Empty today, and the fixture says so honestly rather than inventing a
+    #: vocabulary: `admin/seed.py` seeds no `food_item`, so this is what every
+    #: deployment returns. Design section 9 leaves "are the ~20 foods in the
+    #: client's table 1 the full list or a sample?" open, and a fixture that
+    #: answered it for them would put codes in front of C and D that no
+    #: database holds. The rule each row must satisfy is asserted anyway, so
+    #: the day the rows arrive they are checked rather than merely added.
+    for row in taxonomy["food_items"]:
+        assert set(row) == {"code", "name", "food_category", "sort_order"}, row
+        assert row["food_category"] in {
+            item["code"] for item in taxonomy["food_categories"]
+        }, f"{row['code']} is filed under a category this response omits"
+
 
 # ------------------------------------------------------------------ factors
 
@@ -311,6 +333,11 @@ def test_the_request_and_the_response_describe_the_same_calculation(
         # §3 rule 1: entries preserve request order.
         assert got["sector"] == sent["sector"], where
         assert got["food_category"] == sent["food_category"], where
+        #: v1.58. Echoed, never resolved -- a response that answered a named
+        #: food with its category would make the results page label a figure
+        #: "Dairy" where the visitor typed "Cheese", which is the one thing
+        #: this dimension exists to stop.
+        assert got["food_item"] == sent.get("food_item"), where
         for scenario in ("current", "alternative"):
             if sent[scenario] is None:
                 assert got[scenario] is None, f"{where}.{scenario}"
@@ -346,8 +373,18 @@ def test_every_entry_conserves_mass_between_its_scenarios(request_fixture):
             entry["alternative"]
         ), f"entries[{index}].alternative repeats a destination"
 
-    seen = {(e["sector"], e["food_category"]) for e in request_fixture["entries"]}
-    assert len(seen) == len(request_fixture["entries"]), "duplicate (sector, food_category)"
+    #: v1.58: a **triple**. `dairy/cheese` beside `dairy/butter` is a forked
+    #: chain and legal; the same food twice is not. `.get` rather than `[...]`
+    #: so that a fixture written before the dimension -- `export_pdf_request.
+    #: json` is deliberately still one -- reads as "named no food" rather than
+    #: raising, which is exactly what the API does with it.
+    seen = {
+        (e["sector"], e["food_category"], e.get("food_item"))
+        for e in request_fixture["entries"]
+    }
+    assert len(seen) == len(request_fixture["entries"]), (
+        "duplicate (sector, food_category, food_item)"
+    )
 
 
 def test_the_export_fixture_conserves_mass_and_names_no_calculate_only_field(
@@ -882,6 +919,17 @@ def test_the_codes_the_fixtures_calculate_with_are_shipped_codes():
             key = path.rsplit(".", 1)[-1].split("[")[0]
             if value is None or not isinstance(value, str):
                 continue
+            #: v1.58: `food_item` is **not** in this list, and that is the
+            #: one deliberate hole in it. `admin/seed.py` seeds no
+            #: `food_item` row at all -- mapping the client's ~20 foods onto
+            #: our categories is a data-authoring task with client-facing
+            #: consequences and seven of their rows have no New Zealand
+            #: category -- so there is no pool to check against, and adding an
+            #: empty one would forbid every food rather than validate it. The
+            #: fixtures name no food for exactly that reason (every
+            #: `food_item` in them is `null`, and the `is None` guard above
+            #: skips those), so nothing is currently unchecked. **Add
+            #: `food_item` to this list the moment the seed grows one.**
             if key in {"sector", "destination", "food_category"}:
                 pool = {
                     "sector": sectors,
@@ -906,9 +954,24 @@ def test_the_response_only_names_codes_the_taxonomy_defines(name, taxonomy):
         "factor_source"
     ].startswith("version:")
 
+    items = {row["code"]: row["food_category"] for row in taxonomy["food_items"]}
     for entry in fixture["entries"]:
         assert entry["sector"] in sectors
         assert entry["food_category"] is None or entry["food_category"] in foods
+        #: v1.58. `in entry` asserted separately from the value, for the reason
+        #: `upstream[].destination` is: `entry.get("food_item")` would pass on
+        #: a response that omits the key entirely, and an omitted key is what
+        #: makes "named no food" indistinguishable from "this body predates the
+        #: dimension".
+        assert "food_item" in entry, "the response omits entries[].food_item"
+        if entry["food_item"] is not None:
+            assert entry["food_item"] in items, (
+                f"{name}: {entry['food_item']!r} is not in the taxonomy"
+            )
+            assert items[entry["food_item"]] == entry["food_category"], (
+                f"{name}: {entry['food_item']!r} is filed under "
+                f"{items[entry['food_item']]!r}, not {entry['food_category']!r}"
+            )
         for scenario in ("current", "alternative"):
             if entry[scenario] is None:
                 continue

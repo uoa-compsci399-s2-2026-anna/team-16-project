@@ -113,6 +113,15 @@ def taxonomy(request: Request) -> ContractJSONResponse:
     data["factor_set"] = {
         "version_label": data.pop("factor_set_version"),
         "is_mock": data.pop("factor_set_is_mock"),
+        # v1.58. The switch that releases step 2.5, and the one field of
+        # `factor_set` the engine may never see (design §3,
+        # `tests/test_item_level_inertness.py`): it decides what the interface
+        # *asks*, not what any figure *is*, so flipping it in either direction
+        # must leave every stored result reproducible. The front end has no
+        # other way to learn it -- `food_items` being non-empty is not the
+        # same question, since the vocabulary exists long before any set
+        # prices a food individually.
+        "item_level_enabled": data.pop("factor_set_item_level_enabled"),
     }
     return ContractJSONResponse(data)
 
@@ -225,6 +234,23 @@ def calculate(payload: CalculatePayload, request: Request) -> ContractJSONRespon
                 factor_set_id,
                 bundle_factory=adapter.bundle_from_json,
             )
+        #: v1.58. The two refusals `FactorBundle.resolve_food_item` makes,
+        #: asked of the bundle that is about to price this request and
+        #: reported as §9 `VALIDATION_ERROR` details naming
+        #: `entries[i].food_item`. The engine refuses the same two pairs on
+        #: its own -- this is not a second rule, it is the same question asked
+        #: one step earlier so that the answer can carry a field. Without it a
+        #: visitor who picked a food gets `UNKNOWN_CODE` with an empty
+        #: `details`, and step 2.5's control cannot be highlighted.
+        #:
+        #: After the bundle is resolved, because the question is about *this*
+        #: factor set's vocabulary: a dry run against an inline bundle is
+        #: checked against that bundle and not against the published one.
+        item_problems = adapter.food_item_problems(payload, bundle)
+        if item_problems:
+            raise ApiProblem(
+                400, "VALIDATION_ERROR", "Request validation failed", item_problems
+            )
         engine_request = adapter.make_request(payload)
         result = adapter.calculate(engine_request, bundle)
     except ApiProblem:
@@ -322,6 +348,17 @@ def export_pdf(payload: ExportPayload, request: Request) -> Response:
             factor_set_id,
             bundle_factory=adapter.bundle_from_json,
         )
+        #: v1.58, and here for the reason `PricingOptions` exists: the whole
+        #: justification for this endpoint is that its figures are the
+        #: server's rather than the client's, so a request accepted on
+        #: `/calculate` and refused here -- or the reverse -- would mean two
+        #: documents of the same submission disagreeing, with nothing to say
+        #: which was right.
+        item_problems = adapter.food_item_problems(payload, bundle)
+        if item_problems:
+            raise ApiProblem(
+                400, "VALIDATION_ERROR", "Request validation failed", item_problems
+            )
         engine_request = adapter.make_request(payload)
         result = adapter.calculate(engine_request, bundle)
     except ApiProblem:

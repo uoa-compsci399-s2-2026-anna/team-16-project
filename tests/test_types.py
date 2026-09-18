@@ -17,6 +17,7 @@ from decimal import Decimal
 import pytest
 
 from engine.types import (
+    UpstreamBasis,
     DATA_COMPLETE,
     DATA_INCOMPLETE,
     DATA_NOT_SUPPLIED,
@@ -61,6 +62,8 @@ breakdown_row = BreakdownRow(
     upstream=Decimal("0.4500000000"),
     downstream=Decimal("0.1200000000"),
     value=Decimal("456.0000000000"),
+    #: v1.59. One entry's line, priced by one of §2.2's candidates.
+    upstream_basis=UpstreamBasis.CATEGORY_EVERY_DESTINATION,
 )
 metric_result = MetricResult(
     metric_code="co2e",
@@ -79,6 +82,8 @@ rolled_up_breakdown_row = BreakdownRow(
     upstream=Decimal("0.0000000000"),
     downstream=Decimal("0.0000000000"),
     value=Decimal("456.0000000000"),
+    #: v1.59, `None` for the same reason the rates above are zero.
+    upstream_basis=None,
 )
 rolled_up_metric = MetricResult(
     metric_code="co2e",
@@ -213,6 +218,7 @@ def test_a_breakdown_row_accepts_a_negative_downstream():
         Decimal("1.9000000000"),
         Decimal("-0.1500000000"),
         Decimal("525.0000000000"),
+        UpstreamBasis.CATEGORY_EVERY_DESTINATION,
     )
     assert row.downstream < 0
 

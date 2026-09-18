@@ -428,7 +428,13 @@ def _cleanup_e6_rows(admin_app) -> None:
                 "WHERE code LIKE 'e6\\_%' ESCAPE '\\\\')"
             ),
         }
-        for table in ("metric", "destination", "sector", "food_category"):
+        #: `food_item` before `food_category`: a food item carries a NOT NULL
+        #: foreign key to its category, so deleting the category first fails on
+        #: that key and leaves both rows behind for every later run. The order
+        #: of this tuple is the delete order, exactly as `destination_group`
+        #: below is last for the same reason.
+        for table in ("metric", "destination", "sector", "food_item",
+                      "food_category"):
             ids = db.execute(
                 text(f"SELECT id FROM {table} WHERE code LIKE 'e6\\_%' ESCAPE '\\\\'"
                      + _EXTRA_MATCH.get(table, ""))

@@ -14,6 +14,7 @@ from types import SimpleNamespace
 from api.engine_adapter import DefaultEngineAdapter
 from api.schemas import CalculatePayload, EntryPayload, ScenarioLinePayload
 from api.serialization import wire
+from engine.types import ItemBasis, UpstreamBasis
 
 
 def _breakdown(destination, qty, value):
@@ -23,6 +24,12 @@ def _breakdown(destination, qty, value):
         upstream=Decimal("1.9000000000"),
         downstream=Decimal("0.9900000000"),
         value=Decimal(value),
+        #: v1.59. An entry-level row was priced by exactly one of §2.2's
+        #: candidates, so a stand-in for one carries a member rather than
+        #: `None` -- `None` is the totals-level answer and belongs to
+        #: `_rolled_up_breakdown` below, which is the distinction this pair
+        #: of builders exists to keep visible.
+        upstream_basis=UpstreamBasis.CATEGORY_EVERY_DESTINATION,
     )
 
 
@@ -37,6 +44,9 @@ def _rolled_up_breakdown(destination, qty, value):
         upstream=Decimal("0.0000000000"),
         downstream=Decimal("0.0000000000"),
         value=Decimal(value),
+        #: v1.59, `None` for the same reason the two rates above are zero:
+        #: a sum across entries was priced by no single row.
+        upstream_basis=None,
     )
 
 
@@ -101,6 +111,18 @@ def _result_with_equivalence(**kwargs):
     entry = SimpleNamespace(
         sector_code="processing",
         food_category_code="dairy",
+        #: v1.58. Present on every stand-in for an `EntryResult`, because
+        #: `_entry()` reads it unguarded: a real result always carries it (the
+        #: dataclass field is defaulted, not optional), and a `getattr`
+        #: fallback in the mapping would hide an engine that stopped setting
+        #: it behind a `null` on the wire.
+        #: v1.59. Present for the reason `food_item_code` above is: `_entry()`
+        #: reads it unguarded, and a `getattr` fallback in the mapping would
+        #: hide an engine that stopped setting it behind a `not_applicable`
+        #: on the wire -- which is a claim about a visitor's answer, not an
+        #: absence of one.
+        item_basis=ItemBasis.NOT_APPLICABLE,
+        food_item_code=None,
         current=scenario,
         alternative=None,
         net_benefit=None,
@@ -167,6 +189,18 @@ def _result(*, with_alternative=True):
     entry = SimpleNamespace(
         sector_code="processing",
         food_category_code="dairy",
+        #: v1.58. Present on every stand-in for an `EntryResult`, because
+        #: `_entry()` reads it unguarded: a real result always carries it (the
+        #: dataclass field is defaulted, not optional), and a `getattr`
+        #: fallback in the mapping would hide an engine that stopped setting
+        #: it behind a `null` on the wire.
+        #: v1.59. Present for the reason `food_item_code` above is: `_entry()`
+        #: reads it unguarded, and a `getattr` fallback in the mapping would
+        #: hide an engine that stopped setting it behind a `not_applicable`
+        #: on the wire -- which is a claim about a visitor's answer, not an
+        #: absence of one.
+        item_basis=ItemBasis.NOT_APPLICABLE,
+        food_item_code=None,
         current=current,
         alternative=alternative,
         net_benefit=net_benefit,
@@ -197,6 +231,18 @@ def _result(*, with_alternative=True):
     second_entry = SimpleNamespace(
         sector_code="primary_production",
         food_category_code="vegetables",
+        #: v1.58. Present on every stand-in for an `EntryResult`, because
+        #: `_entry()` reads it unguarded: a real result always carries it (the
+        #: dataclass field is defaulted, not optional), and a `getattr`
+        #: fallback in the mapping would hide an engine that stopped setting
+        #: it behind a `null` on the wire.
+        #: v1.59. Present for the reason `food_item_code` above is: `_entry()`
+        #: reads it unguarded, and a `getattr` fallback in the mapping would
+        #: hide an engine that stopped setting it behind a `not_applicable`
+        #: on the wire -- which is a claim about a visitor's answer, not an
+        #: absence of one.
+        item_basis=ItemBasis.NOT_APPLICABLE,
+        food_item_code=None,
         current=second_current,
         alternative=second_alternative,
         net_benefit=second_net,
@@ -337,7 +383,12 @@ def test_the_hoist_is_the_only_arithmetic_free_reshaping():
 def test_by_destination_is_per_entry_and_rolled_up_at_the_totals_level():
     """§3 rule 2, as v1.48 amends it: `by_destination` is real at both
     levels now. Per entry it carries each line's own rate; at the totals
-    level the rates are zero and only `qty_kg`/`value` are meaningful."""
+    level the rates are zero and only `qty_kg`/`value` are meaningful.
+
+    v1.59 puts `upstream_basis` in the same position, and for the same
+    reason: one entry's line was priced by one of §2.2's candidate rows, and
+    a row summed across entries was priced by none of them, so it is `None`
+    there rather than a member naming one of the rows that contributed."""
     body = DefaultEngineAdapter().serialize_result(_result())
     assert body["entries"][0]["current"]["metrics"]["co2e"]["by_destination"] == [
         {
@@ -346,6 +397,9 @@ def test_by_destination_is_per_entry_and_rolled_up_at_the_totals_level():
             "upstream": Decimal("1.9000000000"),
             "downstream": Decimal("0.9900000000"),
             "value": Decimal("3468.0000000000"),
+            # v1.59. The member, not `None`: this row is one entry's line and
+            # it was priced by one candidate.
+            "upstream_basis": UpstreamBasis.CATEGORY_EVERY_DESTINATION,
         }
     ]
     assert body["totals"]["current"]["metrics"]["co2e"]["by_destination"] == [
@@ -355,6 +409,7 @@ def test_by_destination_is_per_entry_and_rolled_up_at_the_totals_level():
             "upstream": Decimal("0.0000000000"),
             "downstream": Decimal("0.0000000000"),
             "value": Decimal("3468.0000000000"),
+            "upstream_basis": None,
         },
         {
             "destination": "not_harvested",
@@ -362,6 +417,7 @@ def test_by_destination_is_per_entry_and_rolled_up_at_the_totals_level():
             "upstream": Decimal("0.0000000000"),
             "downstream": Decimal("0.0000000000"),
             "value": Decimal("456.0000000000"),
+            "upstream_basis": None,
         },
     ]
     assert body["totals"]["alternative"]["metrics"]["co2e"]["by_destination"] == [
@@ -371,6 +427,7 @@ def test_by_destination_is_per_entry_and_rolled_up_at_the_totals_level():
             "upstream": Decimal("0.0000000000"),
             "downstream": Decimal("0.0000000000"),
             "value": Decimal("1368.0000000000"),
+            "upstream_basis": None,
         },
         {
             "destination": "prevention",
@@ -378,6 +435,7 @@ def test_by_destination_is_per_entry_and_rolled_up_at_the_totals_level():
             "upstream": Decimal("0.0000000000"),
             "downstream": Decimal("0.0000000000"),
             "value": Decimal("360.0000000000"),
+            "upstream_basis": None,
         },
     ]
 

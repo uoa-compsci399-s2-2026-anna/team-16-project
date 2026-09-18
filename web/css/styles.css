@@ -901,7 +901,7 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 .results-period { margin: 14px 0 0; color: var(--muted); font-weight: 700; }
 
 .equivalent-grid { display: grid; gap: 14px; margin-top: 24px; }
-.equivalent-grid article { padding: 20px; border: 1px solid rgba(255, 215, 110, 0.72); border-radius: 13px; background: rgba(255, 215, 110, 0.2); }
+.equivalent-grid article { display: flex; flex-direction: column; padding: 20px; border: 1px solid rgba(255, 215, 110, 0.72); border-radius: 13px; background: rgba(255, 215, 110, 0.2); }
 .equivalent-grid article > span { width: 34px; height: 34px; margin-bottom: 14px; display: grid; place-items: center; border: 1px solid rgba(0, 50, 35, 0.55); border-radius: 50%; font-weight: 700; }
 .equivalent-grid h3 { margin-bottom: 7px; }
 .equivalent-grid p { margin: 0; color: var(--muted); font-size: 0.92rem; }
@@ -913,14 +913,14 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
    JavaScript, where a `title` attribute or a hover-only tooltip would be neither.
    No `title` attribute is used here and nothing depends on `:hover`.
 
-   Closed, the "?" sits at the row's own INLINE END via `text-align: end` -- a
-   logical property, so it sits on the right in English and the left in Arabic
-   without a direction-specific rule. Open, the body is a normal IN-FLOW block,
+   Closed, the "?" sits at the card's lower INLINE END via the flex column's
+   auto margin and `text-align: end` -- logical properties put it on the right in
+   English and the left in Arabic without a direction-specific rule. Open, the body is a normal IN-FLOW block,
    never absolutely positioned: an earlier version of this same affordance
    (the admin panel's help marker) was floated over the page and measured
    overflowing the viewport by about 27px at 320px wide. A block box can never be
    wider than its own containing block, so this cannot repeat that failure. */
-.equivalent-basis { display: block; margin-block-start: 8px; text-align: end; }
+.equivalent-basis { display: block; margin-block-start: auto; padding-block-start: 8px; text-align: end; }
 .equivalent-basis summary {
   display: inline-flex;
   align-items: center;

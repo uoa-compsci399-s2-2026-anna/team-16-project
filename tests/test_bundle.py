@@ -127,7 +127,7 @@ def test_equivalences():
 
 
 # --------------------------------------------------------------------------
-# from_json() and validate() -- contract SS4.1, SS10.2
+# from_json() and validate() -- contract §4.1, §10.2
 # --------------------------------------------------------------------------
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
@@ -138,17 +138,17 @@ def _fixture(name):
 
 
 def canonical_bundle_json():
-    """SS10.2's `bundle.json`, assembled from the two canonical fixtures.
+    """§10.2's `bundle.json`, assembled from the two canonical fixtures.
 
-    `tests/fixtures/factors.json` is a **SS6.3 `GET /factors` export**, not a
+    `tests/fixtures/factors.json` is a **§6.3 `GET /factors` export**, not a
     bundle: it wraps `version_label` and `is_mock` in a `factor_set` object
-    and carries no taxonomy at all. SS10.2's shape is the taxonomy *plus* the
+    and carries no taxonomy at all. §10.2's shape is the taxonomy *plus* the
     factors with those two hoisted to the top level -- which is exactly what
     `db/repository.build_bundle_data` emits, and `get_factor_export` is that
     dictionary with the taxonomy sections dropped.
 
     Composing them here rather than adding a thirteenth fixture keeps one
-    canonical set (SS10): these are the same numbers
+    canonical set (§10): these are the same numbers
     `tests/api/test_fixture_consistency.py` re-derives from the published
     formulas, so a golden case built on this in Task 7 is built on numbers
     that already have a test behind them.
@@ -186,7 +186,7 @@ def test_the_canonical_fixtures_load_and_validate_clean():
 
 
 def test_every_canonical_number_round_trips_at_full_scale():
-    """SS1.2: decimals travel as strings and are read with `Decimal()`. The
+    """§1.2: decimals travel as strings and are read with `Decimal()`. The
     trailing zeros matter -- `Decimal("0.4500000000")` and `Decimal("0.45")`
     compare equal, so the scale is asserted through `str()`."""
     loaded = FactorBundle.from_json(canonical_bundle_json())
@@ -196,14 +196,14 @@ def test_every_canonical_number_round_trips_at_full_scale():
     )
     assert str(loaded.constant("GWP_CH4_20")) == "84.0000000000"
     assert str(loaded.equivalences()[0].value_per_unit) == "4.1800000000"
-    # A negative downstream factor is an offset (SS2.2) and must survive.
+    # A negative downstream factor is an offset (§2.2) and must survive.
     assert loaded.downstream(
         "animal_feed", "processing", "dairy", "co2e"
     ) == Decimal("-0.1500000000")
 
 
 def test_the_canonical_generic_and_specific_downstream_rows_both_survive():
-    """`food_category: null` is a key, not an absent field (SS10.2)."""
+    """`food_category: null` is a key, not an absent field (§10.2)."""
     loaded = FactorBundle.from_json(canonical_bundle_json())
 
     assert loaded.downstream(
@@ -247,7 +247,7 @@ def test_the_canonical_prevention_upstream_rows_survive_as_a_whole_offset():
 
 
 def test_source_note_and_data_quality_are_accepted_and_ignored():
-    """SS10.2's accept-and-ignore rule. Every canonical factor row carries
+    """§10.2's accept-and-ignore rule. Every canonical factor row carries
     both, and `data_quality` is `null` on three of them."""
     data = canonical_bundle_json()
     assert any(row["data_quality"] is None for row in data["downstream"])
@@ -263,7 +263,7 @@ def test_source_note_and_data_quality_are_accepted_and_ignored():
 
 
 def test_metrics_and_equivalences_arrive_sorted_by_sort_order():
-    """SS4.1 promises both tuples are sorted; the engine iterates them as
+    """§4.1 promises both tuples are sorted; the engine iterates them as
     given and never re-sorts, so the promise is made here."""
     data = canonical_bundle_json()
     data["metrics"] = list(reversed(data["metrics"]))
@@ -282,7 +282,7 @@ def test_metrics_and_equivalences_arrive_sorted_by_sort_order():
 
 
 def test_from_json_accepts_the_json_text_and_never_opens_a_file():
-    """The engine is pure (SS4). A caller that has a file opens it."""
+    """The engine is pure (§4). A caller that has a file opens it."""
     text = json.dumps(canonical_bundle_json())
 
     assert FactorBundle.from_json(text).validate() == []
@@ -357,7 +357,7 @@ def test_every_missing_top_level_key_is_a_bundle_format_error(key):
 
 
 def test_a_get_factors_response_is_refused_with_a_message_naming_what_is_missing():
-    """SS10.2 calls a `GET /factors` body the natural thing to paste into the
+    """§10.2 calls a `GET /factors` body the natural thing to paste into the
     dry-run box, and it is not a bundle: it has the factors and none of the
     taxonomy. The refusal has to say so."""
     with pytest.raises(BundleFormatError) as raised:
@@ -369,7 +369,7 @@ def test_a_get_factors_response_is_refused_with_a_message_naming_what_is_missing
 
 
 def test_a_missing_upstream_destination_key_is_malformed_not_null():
-    """SS10.2, in as many words. `null` means "every destination"; a row that
+    """§10.2, in as many words. `null` means "every destination"; a row that
     lost the key would compute a plausible, wrong answer."""
     data = _minimal()
     del data["upstream"][0]["destination"]
@@ -396,7 +396,7 @@ def test_a_missing_downstream_nullable_key_is_malformed_not_null(key):
 
 
 def test_a_json_number_where_a_decimal_string_belongs_is_refused():
-    """SS1.2: `float` is never an intermediate. `json.loads` has already made
+    """§1.2: `float` is never an intermediate. `json.loads` has already made
     this a float by the time the loader sees it."""
     data = _minimal()
     data["upstream"][0]["value_per_kg"] = 1.9
@@ -421,7 +421,7 @@ def test_a_json_number_where_a_decimal_string_belongs_is_refused():
     lambda d: d["sectors"][0].__setitem__("code", ""),
 ])
 def test_malformed_rows_raise_bundle_format_error_rather_than_key_error(mutate):
-    """The dry-run view (SS6.2.1) shows this to a staff member. A bare
+    """The dry-run view (§6.2.1) shows this to a staff member. A bare
     `KeyError` there is a 500 with nothing they can act on."""
     data = _minimal()
     mutate(data)
@@ -532,7 +532,7 @@ def test_validate_reports_a_formula_and_an_equivalence_naming_an_absent_metric()
 
 
 def test_validate_reports_a_duplicate_factor_row():
-    """Not in SS4.1's list, and the same silent-wrong-number failure as a
+    """Not in §4.1's list, and the same silent-wrong-number failure as a
     dangling destination: the later row wins and nothing raises. Unreachable
     through the repository, which has a unique index for it; reachable in
     every hand-assembled bundle."""
@@ -550,7 +550,7 @@ def test_validate_reports_a_duplicate_factor_row():
 
 
 def test_validate_never_raises_on_a_bundle_that_is_wrong_in_every_way():
-    """SS4.1: it returns problems, and the API decides how to present them."""
+    """§4.1: it returns problems, and the API decides how to present them."""
     data = _minimal()
     data["upstream"][0].update(sector="x", food_category="y", destination="z", metric="m")
     data["downstream"][0].update(destination="p", sector="s2", food_category="q",
@@ -587,7 +587,7 @@ def test_validate_invents_no_problems_on_a_hand_built_bundle():
     assert not any("group" in problem for problem in problems)
 
 # ==========================================================================
-# The two-dimensional downstream lookup (contract v1.31, SS4.1)
+# The two-dimensional downstream lookup (contract v1.31, §4.1)
 # ==========================================================================
 #
 # `factor_downstream` has two nullable dimensions, so four rows may legally
@@ -600,7 +600,7 @@ def test_validate_invents_no_problems_on_a_hand_built_bundle():
 #     5. Decimal('0')
 #
 # Steps 2 and 3 both name one dimension, so specificity cannot separate them.
-# The sector wins; SS2.2 carries the reasoning.
+# The sector wins; §2.2 carries the reasoning.
 #
 # **Every cell is asserted on the value, not on the presence of a value.** A
 # wrong precedence here returns a plausible number rather than an error, so a
@@ -749,7 +749,7 @@ def test_a_different_food_category_falls_past_the_food_row_to_the_general_row():
 
 
 def test_asking_for_the_general_rows_directly_does_not_skip_them():
-    """SS4.1: when `sector` is None, step 1 *is* step 3 and step 2 *is* step 4,
+    """§4.1: when `sector` is None, step 1 *is* step 3 and step 2 *is* step 4,
     so the fallbacks have to be looked up rather than assumed absent. A lookup
     written as `if exact not in ...: return fallback` would return the wrong
     row here, or nothing."""
@@ -770,7 +770,7 @@ def test_an_unknown_sector_and_category_reach_the_row_that_names_neither():
 
 
 def test_the_downstream_sector_survives_from_json_in_both_states():
-    """SS10.2: `sector` is a key whose value may be null, and both the null and
+    """§10.2: `sector` is a key whose value may be null, and both the null and
     the named form must round-trip. A loader that dropped the field entirely
     would still pass every matrix test above, because those build the dict
     directly."""
@@ -836,7 +836,7 @@ def test_validate_reports_a_downstream_row_naming_a_sector_that_is_absent():
 
 
 # ==========================================================================
-# The two-dimensional upstream lookup (contract v1.54, SS2.2, SS4.1)
+# The two-dimensional upstream lookup (contract v1.54, §2.2, §4.1)
 # ==========================================================================
 #
 # `factor_upstream` has two nullable dimensions since v1.54, so four rows may
@@ -854,7 +854,7 @@ def test_validate_reports_a_downstream_row_naming_a_sector_that_is_absent():
 # offset is a shape-2 row at zero, and an item's shape-3 row placed above it
 # would price a prevented line at the item's ordinary factor.
 # `test_an_item_generic_row_does_not_outrank_the_prevention_zero` below is
-# that consequence stated as a test, in the same terms SS2.2 measured.
+# that consequence stated as a test, in the same terms §2.2 measured.
 #
 # **Every cell is asserted on the value, not on the presence of a value** --
 # the same discipline the downstream matrix above is written to, and for the
@@ -984,7 +984,7 @@ def test_the_destination_beats_the_item_when_only_one_of_each_exists():
 
 
 def test_an_item_generic_row_does_not_outrank_the_prevention_zero():
-    """**Why the destination wins, in the shape SS2.2 measured.**
+    """**Why the destination wins, in the shape §2.2 measured.**
 
     The prevention offset is a category-level, destination-specific row at
     zero -- candidate 2. Cheese has an ordinary generic factor -- candidate 3.
@@ -1053,7 +1053,7 @@ def test_a_different_destination_falls_past_the_here_row_to_the_generic_row():
 
 
 def test_asking_for_the_category_rows_directly_does_not_skip_them():
-    """SS4.1: when `food_item` is None, candidate 1 *is* candidate 2 and
+    """§4.1: when `food_item` is None, candidate 1 *is* candidate 2 and
     candidate 3 *is* candidate 4; when `destination` is None, candidate 1 *is*
     candidate 3. So the later steps must be looked up, not assumed absent."""
     bundle = _item_matrix_bundle(tuple(ALL_FOUR_UPSTREAM))
@@ -1224,7 +1224,7 @@ def test_resolving_a_known_item_returns_its_code():
 
 
 def test_an_unknown_item_is_refused_rather_than_falling_back():
-    """SS6. The chain falls back; the vocabulary does not. An item code this
+    """§6. The chain falls back; the vocabulary does not. An item code this
     bundle has never heard of is a caller defect, and letting it fall through
     to the category average would return a plausible number for a food that
     does not exist."""
@@ -1270,7 +1270,7 @@ def test_a_bundle_with_no_item_vocabulary_knows_no_items():
         bundle.resolve_food_item("cheese", "dairy")
 
 
-# ---------- the food_items section of bundle.json (SS10.2) ----------
+# ---------- the food_items section of bundle.json (§10.2) ----------
 
 
 def test_food_items_is_not_a_required_key():
@@ -1313,7 +1313,7 @@ def test_an_upstream_row_that_omits_food_item_is_the_category_row():
 
 
 def test_the_item_dimension_round_trips_through_from_json_in_both_states():
-    """SS10.2: `food_item` is a key whose value may be a code or null, and both
+    """§10.2: `food_item` is a key whose value may be a code or null, and both
     forms must survive the loader. A loader that dropped the field entirely
     would still pass every matrix test above, because those build the dict
     directly."""

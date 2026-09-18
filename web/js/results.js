@@ -4,7 +4,7 @@ import { entryTotal, isPresetUnit, kgToTonnes, presetUnitCode, rowKgString } fro
 import { ComparisonResults, ImprovementScenario } from './improvement.js'
 import { contribute, exportPdf } from './api.js'
 import { exportPayload } from './submission.js'
-import { setState } from './state.js'
+import { leafDisplayName, setState } from './state.js'
 
 const DEMONSTRATION_NOTICE = 'Demonstration only — verified calculation factors have not yet been supplied.'
 
@@ -358,15 +358,26 @@ function destinationRows(scenario, taxonomy) {
   return [...rows.values()]
 }
 
-// The food leaf under a destination-first stage: the entry's own food category, or the
-// same "unspecified" wording `calculator.js`'s review step already uses for a standard-mix
-// entry — not a new string, so the destination tab does not invent a second way to say it.
-function stageFoodLabel(entry, response, taxonomy) {
-  const foodCode = response.food_category ?? entry.foodCategory
-  const foodDefinition = findByCode(taxonomy.food_categories, foodCode)
-  if (!foodCode || foodDefinition?.is_standard_mix) return t('Standard mix / not specified')
-  return foodDefinition?.name || foodCode
-}
+// The food leaf under a destination-first stage.
+//
+// **Two leaves could render byte-identical here, and that is a wrong-number defect.**
+// This returned `Standard mix / not specified` both for a NULL `food_category` and for
+// the `standard_mix` category. Step 2 offers those as two separate boxes - §5.4 requires
+// it, because "the visitor did not break their waste down by type" is not the same
+// answer as "the visitor chose the standard mix" - and a chain that ticks both is two
+// leaves with different masses and different numbers under one identical row label.
+//
+// `leafDisplayName` is now the only thing that names a leaf, on this page and on the
+// five other surfaces that show one, so the two can no longer collide and a leaf can no
+// longer be called one thing on step 3 and another on the results page.
+//
+// The response's own `food_category` wins over the entry's, as before: §6.2 echoes what
+// the engine resolved, and an entry paired with the wrong response is a defect this
+// label should show rather than hide.
+const stageFoodLabel = (entry, response, taxonomy) => leafDisplayName(
+  { foodCategory: response.food_category ?? entry.foodCategory, foodItem: entry.foodItem ?? null },
+  taxonomy,
+)
 
 // Destination first, then the entries that share it, then each entry's own food category —
 // the transpose the client asked for of the per-entry sections this replaced. The group
@@ -398,11 +409,25 @@ function destinationGroups(entryResults, totalsRows, taxonomy) {
 function breakdowns(entryResults, totals, taxonomy) {
   const stage = []
   const food = []
+  // **Which sectors appear more than once.** A chain that named three food categories is
+  // three entries in one sector, so the stage tab would print three rows labelled
+  // "Processing" differing only in their numbers — and the accumulator that used to merge
+  // colliding labels was removed deliberately (it summed engine-computed figures in the
+  // browser, §7.6.1). They must not be merged, so they have to be told apart: the food is
+  // added to the label exactly where the sector alone is ambiguous, and nowhere else, so
+  // a submission of one entry per sector reads as it always did.
+  const sectorCounts = new Map()
+  for (const { entry, response } of entryResults) {
+    const code = response.sector ?? entry.sector
+    sectorCounts.set(code, (sectorCounts.get(code) || 0) + 1)
+  }
   for (const { entry, response } of entryResults) {
     const scenario = response.current || {}
     const metrics = metricCells(scenario)
     const kilograms = number(scenario.total_kg)
-    stage.push({ label: sectorName(entry, response, taxonomy), kilograms, metrics })
+    const sector = sectorName(entry, response, taxonomy)
+    const shared = (sectorCounts.get(response.sector ?? entry.sector) || 0) > 1
+    stage.push({ label: shared ? t('%(sector)s — %(food)s', { sector, food: stageFoodLabel(entry, response, taxonomy) }) : sector, kilograms, metrics })
     const foodCode = response.food_category ?? entry.foodCategory
     const foodDefinition = findByCode(taxonomy.food_categories, foodCode)
     if (foodCode && !foodDefinition?.is_standard_mix) food.push({ label: foodDefinition?.name || foodCode, kilograms, metrics })
@@ -710,14 +735,16 @@ export function buildResultsReport(state) {
   })
   const entryLines = (state.result?.entry_results || []).flatMap(({ entry, response }, index) => {
     const sector = findByCode(state.taxonomy.sectors, entry.sector)
-    const food = findByCode(state.taxonomy.food_categories, entry.foodCategory)
     const destinations = entry.current.filter(line => typed(line.qtyInput) > 0).map(line => destinationLine(line, entry, state.taxonomy))
     const scenario = response?.current || {}
     const impact = metricLines(scenario, state.taxonomy, '  - ')
     const byDestination = destinationImpactLines(scenario, state.taxonomy)
     return [
       t('Entry %(number)s: %(sector)s', { number: index + 1, sector: sector?.name || entry.sector }),
-      `${t('Food type')}: ${food?.name || t('Not provided')}`,
+      // One leaf, one name (`leafDisplayName`). This read `Not provided` for a
+      // chain that named no food while every screen the reader had just left said
+      // `Not broken down by type`, and the file is the copy that gets forwarded.
+      `${t('Food type')}: ${leafDisplayName(entry, state.taxonomy)}`,
       // A container entry has no `totalAmount` — the visitor said "two 240 L wheelie
       // bins", not "139.20 kilograms" — so reading that field printed **0.00 kilograms**
       // into a report whose whole job is to be attached to an email and believed. The
@@ -1105,7 +1132,12 @@ export function renderResults(state) {
   // header's home button already offers it.
   return `<section class="content-section wide results-page" aria-labelledby="results-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 6 }))}</p><h1 id="results-title">${escapeHtml(t('Your estimated impact'))}</h1><p class="section-intro">${escapeHtml(entryResults.length === 1
       ? t('Results returned by the calculation service for one supply-chain entry.')
-      : t('Results returned by the calculation service for %(count)s supply-chain entries.', { count: entryResults.length }))}</p>${resultsPeriod(state.timeFrame)}${warning}${averagedNotice}
+      // **`count` is entries, and an entry is a leaf.** A single forked chain is one
+      // supply-chain entry rendered as several, so the old wording — "for 3 supply-chain
+      // entries" — was a claim about the visitor's own submission that stopped being
+      // true. The noun is dropped rather than replaced with a second count nobody asked
+      // for; the review step is where the two numbers are reconciled.
+      : t('Results returned by the calculation service for %(count)s entries.', { count: entryResults.length }))}</p>${resultsPeriod(state.timeFrame)}${warning}${averagedNotice}
     <section class="results-section" aria-labelledby="summary-title"><div class="result-section-heading"><span class="section-number">01</span><div><h2 id="summary-title">${escapeHtml(t('Impact summary'))}</h2><p>${escapeHtml(t('A high-level view of the recorded food waste.'))}</p></div></div><div class="results-grid">${summaryCards(totals, state.taxonomy)}</div>${moneySummary(totals)}</section>
     <section class="results-section" aria-labelledby="equivalents-title"><div class="result-section-heading"><span class="section-number">02</span><div><h2 id="equivalents-title">${escapeHtml(t('Tangible equivalents'))}</h2><p>${escapeHtml(t('Plain-language comparisons appear when supplied by the calculation service.'))}</p></div></div>${equivalences(totals, mock)}</section>
     ${breakdownSection(state, entryResults)}

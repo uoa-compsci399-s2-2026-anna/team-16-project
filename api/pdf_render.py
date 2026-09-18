@@ -298,23 +298,26 @@ class _Taxonomy:
             row.code: (getattr(row, "display_unit", None) or row.unit)
             for row in (getattr(taxonomy, "metrics", ()) or ())
         }
-        # §6.2: `food_category is None` on an entry means "use the standard
-        # mix", and the engine resolves it that way - but it reports the code
-        # back as `None`, so a document that printed the field verbatim would
-        # tell a reader the food type was unknown when in fact it was the
-        # standard mix. The row is found by its FLAG rather than by the code
-        # `standard_mix`, for the reason `is_prevention` replaced
-        # `PREVENTION_CODE`: a second vocabulary's standard-mix row (§10.3's
-        # ReFED fixture) is a standard mix by every property that matters and
-        # is not called that.
-        self.standard_mix = next(
-            (
-                row.name
-                for row in (getattr(taxonomy, "food_categories", ()) or ())
-                if getattr(row, "is_standard_mix", False)
-            ),
-            None,
-        )
+        # **`food_category is None` is no longer the same answer as the standard
+        # mix, and this document may no longer print them as the same words.**
+        #
+        # It was: the engine resolves a NULL category to the standard mix, so
+        # printing the field verbatim would have told a reader the food type
+        # was unknown when in fact it was the standard mix, and this class
+        # substituted the standard-mix row's own name for `None`.
+        #
+        # The multi-select (contract v1.55) makes them two separate answers a
+        # visitor gives with two separate checkboxes - §5.4 requires it - and
+        # they are distinguishable on the wire: the standard mix sends its own
+        # `code`, and "I do not know, or my waste is not broken down by type"
+        # sends `null`. Substituting made the two print byte-identically, so a
+        # submission that ticked both produced two rows a reader could not tell
+        # apart carrying different figures. `ABSENT` is this document's existing
+        # convention for a field the submission did not state, and no new
+        # catalogue string is involved - which matters here, because
+        # `Catalogue.gettext` raises rather than falling back to English, so a
+        # new string on this path would refuse to render the document in every
+        # language that had not translated it yet.
 
     @staticmethod
     def _look_up(table: dict[str, str], code: str | None) -> str:
@@ -326,8 +329,6 @@ class _Taxonomy:
         return self._look_up(self.sectors, code)
 
     def food_category(self, code: str | None) -> str:
-        if code is None and self.standard_mix is not None:
-            return self.standard_mix
         return self._look_up(self.food_categories, code)
 
     def destination(self, code: str | None) -> str:

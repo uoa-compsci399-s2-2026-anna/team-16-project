@@ -2217,10 +2217,18 @@ _PAGE_TITLE = {
 #: control - reading that their calculation was already in the aggregate
 #: statistics and then being asked to opt in to exactly that. `tests/web/
 #: test_consent_copy.py` holds the rule; this constant is the rendered half.
+#: **Reworded again in v1.59**, to name the food item `submission_entry.
+#: food_item_id` has held since v1.58 (contract §7.3c). This constant is a
+#: hand-copy of a sentence that lives in four pages, and it drifted the moment
+#: the source moved -- caught only because the catalogue lookup below raises
+#: `KeyError` on a key no catalogue carries any more, which is the one thing
+#: standing between a retyped constant and a test that silently stops
+#: describing the page it is named for.
 _TRANSPARENCY = (
-    "This calculator stores the sector, food category and quantities entered. "
-    "They join the public statistics only if you choose to offer them, and "
-    "nothing that identifies you or your business is stored."
+    "This calculator stores the sector, food category, the specific food where "
+    "you name one, and the quantities entered. They join the public statistics "
+    "only if you choose to offer them, and nothing that identifies you or your "
+    "business is stored."
 )
 
 

@@ -24,7 +24,7 @@ import time
 
 from sqladmin import action, expose
 from sqladmin.filters import BooleanFilter, ForeignKeyFilter, OperationColumnFilter
-from sqlalchemy import select
+from sqlalchemy import func, select
 from starlette.exceptions import HTTPException
 from starlette.responses import RedirectResponse
 
@@ -218,6 +218,56 @@ def _refuse_delete_from_non_draft(view: AuditedModelView, model: type, pk: str) 
     _refuse_if_factor_set_not_draft(factor_set)
 
 
+def _refuse_deleting_the_last_item_row(view: AuditedModelView, pk: str) -> None:
+    """Refuse removing the only `food_item` row from a set that releases step 2.5.
+
+    `refuse_item_level_without_item_rows` is stated over the whole table in
+    `FactorSetAdmin.validate_before_commit`, for the reason written there. That
+    is right, and it has a consequence: a set left flagged with no item rows
+    refuses every later edit to *any* set until somebody unticks it. Reaching
+    that state is a one-click accident - delete the last item-level row - and
+    the person who does it gets no warning at the moment they do it, only a
+    refusal on an unrelated screen afterwards.
+
+    So the state is made unreachable rather than survivable. The guard belongs
+    on the delete path for the same reason `_refuse_delete_from_non_draft` does:
+    a deleted row leaves `session.identity_map` once its delete flushes, so
+    `validate_before_commit` has nothing left to inspect and there is no "after"
+    hook this could be.
+
+    Deliberately narrow: it refuses only the LAST item row of a FLAGGED set.
+    Deleting one of several is ordinary editing, and deleting the last one from
+    an unflagged set is how a draft stops pricing foods individually - which is
+    a thing staff are allowed to do.
+    """
+    with view.session_maker() as lookup:
+        row = lookup.get(FactorUpstream, int(pk))
+        if row is None or row.food_item_id is None:
+            return
+        factor_set = row.factor_set
+        if factor_set is None or not factor_set.item_level_enabled:
+            return
+        remaining = lookup.scalar(
+            select(func.count())
+            .select_from(FactorUpstream)
+            .where(
+                FactorUpstream.factor_set_id == factor_set.id,
+                FactorUpstream.food_item_id.is_not(None),
+                FactorUpstream.id != row.id,
+            )
+        )
+    if remaining:
+        return
+    raise TaxonomyInvariantError(
+        f"This is the only food-item factor in {factor_set.version_label!r}, and "
+        "that set is set to ask visitors which food was wasted. Deleting it would "
+        "leave the set asking a question it cannot price, and every later edit to "
+        "any factor set would be refused until somebody noticed. Untick "
+        "“Ask which food was wasted” on the factor set first, then delete "
+        "this row."
+    )
+
+
 class FactorUpstreamAdmin(AuditedModelView, model=FactorUpstream):
     """`destination` may be left empty, and almost always should be.
 
@@ -367,6 +417,7 @@ class FactorUpstreamAdmin(AuditedModelView, model=FactorUpstream):
         """A published or archived set's rows must not be removed either.
         Contract §2.2. See _refuse_delete_from_non_draft's own docstring."""
         _refuse_delete_from_non_draft(self, FactorUpstream, pk)
+        _refuse_deleting_the_last_item_row(self, pk)
         await super().delete_model(request, pk)
 
     def validate_before_commit(self, session) -> None:

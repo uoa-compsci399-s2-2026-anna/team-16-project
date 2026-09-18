@@ -913,9 +913,9 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
    JavaScript, where a `title` attribute or a hover-only tooltip would be neither.
    No `title` attribute is used here and nothing depends on `:hover`.
 
-   Closed, the "?" sits at the row's own INLINE END via `text-align: end` -- a
-   logical property, so it sits on the right in English and the left in Arabic
-   without a direction-specific rule. Open, the body is a normal IN-FLOW block,
+   Closed, the "?" sits at the card's lower INLINE END via the flex column's
+   auto margin and `text-align: end` -- logical properties put it on the right in
+   English and the left in Arabic without a direction-specific rule. Open, the body is a normal IN-FLOW block,
    never absolutely positioned: an earlier version of this same affordance
    (the admin panel's help marker) was floated over the page and measured
    overflowing the viewport by about 27px at 320px wide. A block box can never be
@@ -1507,6 +1507,20 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 
 @media (min-width: 650px) {
   .equivalent-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  /* PIN THE "?" TO THE CARD'S FOOT, AND ONLY WHERE THE CARDS ARE A ROW.
+     Three cards side by side stretch to the tallest, so with `margin-block-start: 8px`
+     the "?" sat directly under its own text -- at 700px that was 21 / 165 / 93px from
+     each card's bottom, three icons on three different lines. `auto` pushes it to the
+     foot instead: 21 / 21 / 21, and one shared baseline.
+
+     **Scoped to this breakpoint deliberately.** Below it `.equivalent-grid` is a single
+     column, every card sizes to its own content, and there is no misalignment to fix --
+     but `display: flex` stops `h3`'s 7px bottom margin collapsing with the 8px above the
+     icon, so applying it there added 7px to every card for no benefit: measured 193->200,
+     97->104, 145->152 at 320px. Three cards' worth of extra scrolling on a phone to
+     solve a problem phones do not have. */
+  .equivalent-grid article { display: flex; flex-direction: column; }
+  .equivalent-basis { margin-block-start: auto; padding-block-start: 1px; }
   .impact-comparison-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 

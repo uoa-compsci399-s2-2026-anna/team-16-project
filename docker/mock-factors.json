@@ -1,6 +1,7 @@
 {
   "version_label": "MOCK-v0 - PLACEHOLDER",
   "is_mock": true,
+  "item_level_enabled": true,
   "notes": "Placeholder factor set shipped with the container images so that a first `docker compose up` produces a calculator that answers. Every value in it is a placeholder - open item O-1, the client has not supplied real New Zealand emissions factors. is_mock is true, which is what makes the non-dismissible placeholder-data warning appear on every results view and export. Replace through the admin panel (clone, edit, publish) as soon as real data arrives; this file is never re-applied to a database that already holds a factor set.",
   "constants": [
     {
@@ -157,6 +158,126 @@
       "value_per_kg": "0.0000000000",
       "source_note": "O-7: prevented waste was never produced, so no upstream burden is attributable to it. Zero is a modelling decision, not missing data - it is what makes `prevention` a 100% offset (architecture.md 4.1) and keeps the two scenarios mass-conserving.",
       "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "food_item": "cheese",
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "3.5576709797",
+      "source_note": "PLACEHOLDER. The client's own table-1 relativities between the dairy foods, rescaled so their unweighted mean is this set's own dairy figure -- the same mean the client's nine category factors are built from. The RELATIVE differences are the client's; the absolute level is this mock set's, so the item rows and the category row they fall back to never disagree about the same food. Not a New Zealand measurement (open item O-1).",
+      "data_quality": "proxy-client-relativities"
+    },
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "food_item": "milk",
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "0.5303142329",
+      "source_note": "PLACEHOLDER. The client's own table-1 relativities between the dairy foods, rescaled so their unweighted mean is this set's own dairy figure -- the same mean the client's nine category factors are built from. The RELATIVE differences are the client's; the absolute level is this mock set's, so the item rows and the category row they fall back to never disagree about the same food. Not a New Zealand measurement (open item O-1).",
+      "data_quality": "proxy-client-relativities"
+    },
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "food_item": "cream",
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "1.7384473198",
+      "source_note": "PLACEHOLDER. The client's own table-1 relativities between the dairy foods, rescaled so their unweighted mean is this set's own dairy figure -- the same mean the client's nine category factors are built from. The RELATIVE differences are the client's; the absolute level is this mock set's, so the item rows and the category row they fall back to never disagree about the same food. Not a New Zealand measurement (open item O-1).",
+      "data_quality": "proxy-client-relativities"
+    },
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "food_item": "butter",
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "4.0001848429",
+      "source_note": "PLACEHOLDER. The client's own table-1 relativities between the dairy foods, rescaled so their unweighted mean is this set's own dairy figure -- the same mean the client's nine category factors are built from. The RELATIVE differences are the client's; the absolute level is this mock set's, so the item rows and the category row they fall back to never disagree about the same food. Not a New Zealand measurement (open item O-1).",
+      "data_quality": "proxy-client-relativities"
+    },
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "food_item": "yoghurt",
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "1.1554528651",
+      "source_note": "PLACEHOLDER. The client's own table-1 relativities between the dairy foods, rescaled so their unweighted mean is this set's own dairy figure -- the same mean the client's nine category factors are built from. The RELATIVE differences are the client's; the absolute level is this mock set's, so the item rows and the category row they fall back to never disagree about the same food. Not a New Zealand measurement (open item O-1).",
+      "data_quality": "proxy-client-relativities"
+    },
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "food_item": "other_dairy",
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "0.4179297597",
+      "source_note": "PLACEHOLDER. The client's own table-1 relativities between the dairy foods, rescaled so their unweighted mean is this set's own dairy figure -- the same mean the client's nine category factors are built from. The RELATIVE differences are the client's; the absolute level is this mock set's, so the item rows and the category row they fall back to never disagree about the same food. Not a New Zealand measurement (open item O-1).",
+      "data_quality": "proxy-client-relativities"
+    },
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "food_item": "cheese",
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "1453.0293583713",
+      "source_note": "PLACEHOLDER. The client's own table-1 relativities between the dairy foods, rescaled so their unweighted mean is this set's own dairy figure -- the same mean the client's nine category factors are built from. The RELATIVE differences are the client's; the absolute level is this mock set's, so the item rows and the category row they fall back to never disagree about the same food. Not a New Zealand measurement (open item O-1).",
+      "data_quality": "proxy-client-relativities"
+    },
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "food_item": "milk",
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "153.9412832575",
+      "source_note": "PLACEHOLDER. The client's own table-1 relativities between the dairy foods, rescaled so their unweighted mean is this set's own dairy figure -- the same mean the client's nine category factors are built from. The RELATIVE differences are the client's; the absolute level is this mock set's, so the item rows and the category row they fall back to never disagree about the same food. Not a New Zealand measurement (open item O-1).",
+      "data_quality": "proxy-client-relativities"
+    },
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "food_item": "cream",
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "1453.0293583713",
+      "source_note": "PLACEHOLDER. The client's own table-1 relativities between the dairy foods, rescaled so their unweighted mean is this set's own dairy figure -- the same mean the client's nine category factors are built from. The RELATIVE differences are the client's; the absolute level is this mock set's, so the item rows and the category row they fall back to never disagree about the same food. Not a New Zealand measurement (open item O-1).",
+      "data_quality": "proxy-client-relativities"
+    },
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "food_item": "butter",
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "1453.0293583713",
+      "source_note": "PLACEHOLDER. The client's own table-1 relativities between the dairy foods, rescaled so their unweighted mean is this set's own dairy figure -- the same mean the client's nine category factors are built from. The RELATIVE differences are the client's; the absolute level is this mock set's, so the item rows and the category row they fall back to never disagree about the same food. Not a New Zealand measurement (open item O-1).",
+      "data_quality": "proxy-client-relativities"
+    },
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "food_item": "yoghurt",
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "1453.0293583713",
+      "source_note": "PLACEHOLDER. The client's own table-1 relativities between the dairy foods, rescaled so their unweighted mean is this set's own dairy figure -- the same mean the client's nine category factors are built from. The RELATIVE differences are the client's; the absolute level is this mock set's, so the item rows and the category row they fall back to never disagree about the same food. Not a New Zealand measurement (open item O-1).",
+      "data_quality": "proxy-client-relativities"
+    },
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "food_item": "other_dairy",
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "153.9412832575",
+      "source_note": "PLACEHOLDER. The client's own table-1 relativities between the dairy foods, rescaled so their unweighted mean is this set's own dairy figure -- the same mean the client's nine category factors are built from. The RELATIVE differences are the client's; the absolute level is this mock set's, so the item rows and the category row they fall back to never disagree about the same food. Not a New Zealand measurement (open item O-1).",
+      "data_quality": "proxy-client-relativities"
     }
   ],
   "downstream": [

@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-09-18 (v1.59 draft)"
+date: "2026-09-18 (v1.60 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,42 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.60 — 2026-09-18 (the visitor can name a food, and one deployment will let them; affects C, D, E and B)
+
+> **The first landing in this order that a visitor can see.** Stages 3 through
+> 7 were each inert by construction and each said so. This one is not: a fresh
+> `docker compose up` now offers step 2.5, and a calculation that names a food
+> gets a different number from one that does not.
+
+Stage 8, the last of `.superpowers/sdd/2026-09-17-food-granularity/design.md`'s landing order.
+
+**No request or response shape changes.** `entries[].food_item` has been on the wire since v1.58 and `null` on every request since; what changes is that something can now set it. The additions are a front-end panel, a vocabulary and a switch on one factor set.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **Step 2.5 exists, as step 2's SECOND PANEL rather than a seventh step.** `spec.md` §3.3 says it refines step 2 rather than replacing it, and the panel is absent wherever `item_level_enabled` is false. A seventh step would have meant renumbering twenty hard-coded step references and would have made *step 3 of 7* untrue in every deployment that does not release the item level. `state.foodStage` picks the panel; the step number and the progress bar do not move | §7.3a, §7.2 |
+| 2 | **`submission.js` sends `entries[].food_item`.** It has carried `foodItem` on every leaf since the fork, for labelling, and withheld it at the payload boundary because `EntryPayload` had `extra="forbid"` and no such field. v1.58 gave it one; the withholding became the front end standing a revision behind the API | §7.3b, §6.2 |
+| 3 | **`stepNav` gains `backAction`** for a Back that moves within a step rather than between two, and omits `data-step` in that case — a step number there is read by `goToStep`, which resets the panel, so the button would do nothing visible | §7.3a |
+| 4 | **`admin/seed.py` seeds twenty `food_item` rows**, every one a row of the client's own table 1, parented by the mapping the nine category factors were already averaged from | §2.1, §10 |
+| 5 | **`docker/mock-factors.json` releases the item level** and carries twelve item-level `factor_upstream` rows for the six dairy foods, in `co2e` and `water` | §2.2, §10 |
+| 6 | **`seed_mock_factors.py` reads `item_level_enabled` and `upstream[].food_item`**, defaulting the switch to **false** — the answer for every factor file written before v1.58, and the safe default either way | §10 |
+
+> **The leaf rule was already built and had nothing writing it.** `state.foodItems` existed, `entryLeaves` already implemented §3.3's rule over it — each ticked food is a leaf, plus each chosen category with no food ticked — `leafKey` already carried the item and `leafDisplayName` already named one. Stage 8 adds the screen and the tick, not the model. That is what the fork's own note meant by *reserved for step 2.5*.
+>
+> **Twenty foods is a count, not an estimate.** The client's table 1 has twenty-six rows and six of them ARE the category they sit under: Fruit, Vegetable, Seafood, Nuts and seeds, Drinks/Beverages and General mixed food product. Offering *Fruit → Fruit* asks a visitor to refine an answer into itself, and would put a food on the screen whose own factor row could only ever equal its parent's. What remains is exactly the twenty rows that say something finer than their own category.
+>
+> **`eggs` is parented to `staples` and deliberately not to `dairy`, and the reason is a number.** The client's own table draws Eggs directly beneath the Dairy block, which makes `dairy` the obvious home and the wrong one: a parent category is the **fallback for every metric the client did not supply per food**, `ch4` among them, and `dairy`'s methane is ruminant. Filing a poultry product under ruminant methane returns a systematically high figure to a visitor who has just asked a more specific question. A dedicated `eggs` category is the right long-term answer; it is not taken here because it moves the taxonomy, `NZ_TO_REFED_FOOD_SHAPE`, the factor draft builder and every test asserting a category count, while **O-5 has not settled whether there are eight categories or nine**.
+>
+> **The item factors are the client's relativities on the mock set's level, and that is what keeps the fallback honest.** The client's nine category factors are the unweighted mean of their table-1 rows, so a food with no row of its own falls back to a figure it helped produce. The deployed set's dairy figure is golden `case_01`'s, not the client's mean — so each item value is the client's figure scaled by `mock_category ÷ client_mean`. The relative differences are the client's; the absolute level is the mock set's; and the mean of the six scaled rows returns to the category figure within 1.7e-11 and 3.3e-11, below `DECIMAL(20,10)`'s own scale. Using the client's figures raw would have made the category row and the item rows disagree about the same food — design §8.2 names that as the thing to avoid.
+>
+> **Only `co2e` and `water` get item rows.** They are the two metrics the client's table supplies that this system also carries; its third column is land, which is not a metric here. `ch4`, `cost` and `mass` are left absent per food and fall to the category row through §2.2's chain, which is a defined number — better than inventing a value whose only property would be that somebody typed it.
+>
+> **Six foods reach the screen out of twenty seeded, and that is §6.1 working.** The deployed mock set prices `dairy`, `vegetables` and `standard_mix`; only `dairy` has foods under it in the seed, and the parent-covered filter removes the fourteen under `staples`, `meat` and `bakery_grains`. A food offered under a heading step 2 does not have is a food the visitor cannot reach.
+>
+> **Measured in a real browser, on an isolated stack seeded from empty.** Twenty foods stored, six offered, the panel grouping them under the category's own name, two ticks forking into two named leaves, an untouched category staying one category-level leaf, Back returning to the categories with them still ticked, the position label unmoved across both panels, and the request carrying `food_item: cheese` and `food_item: milk`. 1000 kg of dairy at landfill reads 2890.0 kg CO2e unrefined, 4547.7 as cheese and 1407.9 as other dairy.
+>
+> **What this does not change.** Nothing about an existing deployment: `seed_mock_factors.py` never overwrites a factor set that exists, so a database seeded before this revision keeps a set with the switch off and the panel stays absent until someone clones, adds item rows and publishes through the panel. `api/pdf_render.py` still labels an entry by its food **category**, so a downloaded document prints *Dairy* where the screen said *Cheese* — carried forward from v1.58 and still open.
 
 ### v1.59 — 2026-09-18 (the answer says which row priced it; affects A, B, C and D)
 
@@ -1123,6 +1159,12 @@ Always UTC, ISO 8601 with a timezone designator: `2026-07-31T09:15:00Z`. The fro
 
 ## 2.1 Taxonomy
 
+> **`food_item` is seeded from v1.60, and every row is a row of the client's own table 1** (`data/upstream-factors-draft/rawtec_source_data.py`), parented by the same mapping the nine category factors were averaged from -- so the parentage is read off the data rather than invented, and a food with no factor row of its own falls back to a figure it helped produce.
+>
+> **Twenty rows, not the table's twenty-six.** Six of the client's rows ARE the category they sit under -- Fruit, Vegetable, Seafood, Nuts and seeds, Drinks/Beverages and General mixed food product -- and a food that only repeats its own category asks the visitor to refine an answer into itself. The seven rows with no New Zealand category go to `staples`, the pantry-staples grouping, on the client's own ruling that anything without a clean correspondence may take public data or an invented home.
+>
+> **`eggs` is under `staples` and deliberately not under `dairy`.** The client's table draws it beneath the Dairy block, which makes `dairy` the obvious home and the wrong one: a parent is the fallback for every metric the client did not supply per food, `ch4` among them, and `dairy`'s methane is ruminant. A dedicated `eggs` category is the right answer and waits on **O-5**, which has not settled whether there are eight categories or nine.
+
 ### `destination_group`
 
 | Column | Type | Constraints | Notes |
@@ -1796,7 +1838,7 @@ class CalculationRequest:
 # ---------- Output ----------
 
 class UpstreamBasis(Enum):
-    """Which of """ + S + """2.2's four candidate rows answered an upstream lookup.
+    """Which of §2.2's four candidate rows answered an upstream lookup.
     v1.56; carried on the wire from v1.59."""
     ITEM_AT_DESTINATION = "item_at_destination"
     CATEGORY_AT_DESTINATION = "category_at_destination"   # outranks the one below
@@ -3576,6 +3618,8 @@ Mapping: `/taxonomy` → `taxonomy.json`, `/factors*` → `factors.json`, `/stat
 
 ## 7.2 `state.js` (written by C)
 
+> **`foodStage` (v1.60) is which panel of step 2 is showing** -- `'categories'` or `'items'` -- and it is a panel rather than a step number because §3.3 of `spec.md` makes step 2.5 a refinement of step 2 and because the panel is absent wherever `item_level_enabled` is off. Anything that lands on a step resets it to `'categories'`. `foodItems` (category code to item codes) was added by the fork with nothing writing it; step 2.5 is its writer, and `entryLeaves` has read it since the day it existed.
+
 ```js
 /** Single mutable state object with a subscriber set. */
 export const state;
@@ -4120,6 +4164,25 @@ export function stepNav({step, back, backLabel = 'Back', label = 'Continue',
 
 ### `calculator.js` — the wizard
 
+> **Step 2 is two panels and one step (v1.60).** `state.foodStage` is `'categories'`
+> or `'items'`; `screens[1]` renders whichever `foodStage` names, and `itemStepOffered()`
+> is re-asked on every render so a stage left at `'items'` cannot strand a visitor on a
+> panel this taxonomy has nothing to put in. **Any arrival at any step resets it to
+> `'categories'`** — a jump named *Food type* means the category question, and a jump
+> elsewhere must not leave the stage set for the next time step 2 is reached.
+>
+> **Three conditions gate the second panel, and each is a different question:**
+> `factor_set.item_level_enabled` (the published set prices foods individually — a
+> non-empty vocabulary is **not** the same question, since the vocabulary is global
+> taxonomy and exists as soon as staff type it in); a non-empty `food_items[]` (a screen
+> of empty groups is worse than no screen); and at least one category chosen (step 2.5
+> refines step 2, so there must be something to refine).
+>
+> **The ceiling is `MAX_LEAVES`, asked per box through `entryLeaves`.** Ticking a food is
+> not always one more leaf: a category with no food is already one leaf, so the *first*
+> food under it replaces that leaf and the second adds. Counting ticks gets that wrong.
+
+
 ```js
 /** Writes the current screen into `main`. Handles the loading and
  *  taxonomy-failure screens; dispatches on state.step (−1 intro, 0-4 screens,
@@ -4391,6 +4454,8 @@ The decision is `entries[].item_basis` and nothing else. **No surface may work i
 **The privacy copy names the food too (v1.59).** Both enumerating sentences on `home.html`, `index.html`, `methodology.html` and `stats.html` read *the sector, food category, the specific food where you name one, and the quantities entered*. `submission_entry.food_item_id` has been written since v1.58, so the old enumeration was already incomplete; the clause is worded *where you name one* so that it is true before landing step 8 as well as after it. `tests/web/test_consent_copy.py`'s predicate is over the copy rather than over a list of sentences, so the reworded pair is still selected by it.
 
 ## 7.3b `submission.js` — the one builder of the calculate request (written by C)
+
+> **It sends `food_item` from v1.60.** `foodItem` has travelled on every leaf since the fork, so the review step, the results page and the duplicate notice could label one, and it stopped at the payload boundary because `EntryPayload` was `extra="forbid"` with no such field -- sending it was a 400. v1.58 gave the model that field, which turned the withholding into the front end standing one revision behind the API. `entry.foodItem || null`, for the reason `food_category` beside it uses one: §6.2 reads absent and null the same way, and only the explicit null is distinguishable from a client written before the field existed.
 
 **`POST /api/v1/calculate` has two callers, and this module is the only thing that builds
 what either of them sends.** The Calculate button on the review step is one; Compare Impact
@@ -5483,6 +5548,14 @@ and the session middleware outside would turn a raised `ApiProblem` into a
 ---
 
 # 10. Mock Data Convention
+
+> **The deployed mock set releases the item level from v1.60, and it is the only factor set in the repository that does.** `docker/mock-factors.json` carries `item_level_enabled: true` and twelve item-level `factor_upstream` rows -- the six dairy foods, in `co2e` and `water`. Those are the two metrics the client's table 1 supplies that this system also carries; `ch4`, `cost` and `mass` are deliberately absent per food and fall to the category row through §2.2's chain, which is a defined number rather than an invented one.
+>
+> **Each item value is the client's relativity on this set's level.** The client's category factors are the unweighted mean of their table-1 rows, so a food with no row of its own falls back to a figure it helped produce -- a property worth keeping. This set's dairy figure is golden `case_01`'s, not the client's mean, so each item value is the client's figure scaled by `set_category ÷ client_mean`: the relative differences stay the client's, the absolute level stays this set's, and the mean of the six scaled rows returns to the category figure below `DECIMAL(20,10)`'s own scale. Using the raw figures would have made the category row and the item rows disagree about the same food.
+>
+> **`seed_mock_factors.py` defaults `item_level_enabled` to false**, which is the answer for every factor file written before v1.58 and the safe default either way: a set that released step 2.5 because nobody said otherwise would ask a finer question than its factors answer. It also never overwrites a set that already exists, so an older database keeps the switch off and the panel stays absent.
+>
+> **The vocabulary is not part of a factor set.** `admin/seed.py`'s twenty `food_item` rows are global taxonomy (§2.1) and exist whatever set is published; §6.1's parent-covered filter is what decides which of them a given set lets the visitor see. Against this set that is six of the twenty.
 
 Located in `tests/fixtures/`. C and D consume these directly before the backend is ready.
 

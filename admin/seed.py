@@ -28,7 +28,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from admin.taxonomy_models import (
-    Destination, DestinationGroup, FoodCategory, Metric, Sector, UnitPreset,
+    Destination, DestinationGroup, FoodCategory, FoodItem, Metric, Sector,
+    UnitPreset,
 )
 from admin.taxonomy_rules import (
     check_prevention_destination, check_single_standard_mix,
@@ -86,6 +87,64 @@ FOOD_CATEGORIES = [
     ("staples", "Staples", False, 80),
     ("beverages", "Beverages (non-dairy)", False, 90),
 ]
+
+#: The food-item vocabulary (§2.1), and every row is a row of the client's own
+#: table 1 -- transcribed in `data/upstream-factors-draft/rawtec_source_data.py`
+#: and already mapped to these categories by `NZ_FOOD_CATEGORY_SOURCES`, which is
+#: what the nine category factors were averaged from. The parentage is therefore
+#: not invented here; it is read off the mapping the category figures already use.
+#:
+#: **Six of table 1's twenty-six rows are deliberately absent.** `Fruit`,
+#: `Vegetable`, `Seafood`, `Nuts and seeds`, `Drinks/Beverages` and `General mixed
+#: food product` ARE the categories they sit under -- offering "Fruit -> Fruit"
+#: asks the visitor to refine an answer into itself. What is left is exactly the
+#: twenty rows that say something finer than the category they belong to, which is
+#: what makes twenty the number rather than an estimate.
+#:
+#: **The seven rows the client's table gives no New Zealand home go to
+#: `staples`.** `docs/upstream-factors-draft.md` §3.2 defines `staples` as the
+#: pantry-staples grouping and fills it from ReFED's Dry Goods; Fats, Sauces/
+#: Spreads/Dips, Herbs/Spices, Snack foods, Sweeteners and Other food types are
+#: pantry goods and land there cleanly. The client's ruling, relayed 2026-09-18,
+#: is that anything with no clean correspondence may take public data or an
+#: invented home: *their figures are a reference, to be used creatively.*
+#:
+#: **`eggs` is the weakest of the seven, and it is NOT under `dairy`.** The
+#: client's own table draws Eggs directly beneath the Dairy block, which makes
+#: `dairy` the obvious home -- and the wrong one, because a parent category is
+#: the FALLBACK for the metrics the client did not supply at item level, and
+#: `dairy`'s methane is ruminant. Filing a poultry product under ruminant methane
+#: returns a systematically high number to a visitor who just asked a more
+#: specific question, which is the defect class this project keeps finding. Under
+#: `staples` the fallback comes from Dry Goods and carries no enteric methane.
+#: **The right long-term answer is a dedicated `eggs` category**; it is not taken
+#: here because it would move the taxonomy, `NZ_TO_REFED_FOOD_SHAPE`, the factor
+#: draft builder and every test asserting a category count, while open item O-5
+#: has not settled whether there are eight categories or nine.
+FOOD_ITEMS = [
+    # (code, name, food_category code, sort_order)
+    ("bread", "Bread", "bakery_grains", 10),
+    ("bakery", "Bakery", "bakery_grains", 20),
+    ("grains", "Grains", "bakery_grains", 30),
+    ("cheese", "Cheese", "dairy", 10),
+    ("milk", "Milk", "dairy", 20),
+    ("cream", "Cream", "dairy", 30),
+    ("butter", "Butter", "dairy", 40),
+    ("yoghurt", "Yoghurt", "dairy", 50),
+    ("other_dairy", "Other dairy", "dairy", 60),
+    ("red_meat", "Red meat", "meat", 10),
+    ("pork", "Pork", "meat", 20),
+    ("poultry", "Poultry", "meat", 30),
+    ("other_meat", "Other meat", "meat", 40),
+    ("eggs", "Eggs", "staples", 10),
+    ("fats", "Fats", "staples", 20),
+    ("sauces_spreads_dips", "Sauces, spreads and dips", "staples", 30),
+    ("herbs_spices", "Herbs and spices", "staples", 40),
+    ("snack_foods_desserts", "Snack foods and desserts", "staples", 50),
+    ("sweeteners", "Sweeteners", "staples", 60),
+    ("other_food_types", "Other food types", "staples", 70),
+]
+
 
 METRICS = [
     # (code, name, unit, display_unit, display_precision, sort_order)
@@ -226,7 +285,7 @@ def seed_taxonomy(session: Session) -> dict[str, int]:
     """
     created = {
         "destination_group": 0, "destination": 0, "sector": 0,
-        "food_category": 0, "metric": 0, "unit_preset": 0,
+        "food_category": 0, "food_item": 0, "metric": 0, "unit_preset": 0,
     }
 
     for code, name, is_waste, sort_order in DESTINATION_GROUPS:
@@ -255,6 +314,24 @@ def seed_taxonomy(session: Session) -> dict[str, int]:
         created["food_category"] += _ensure(
             session, FoodCategory, code,
             name=name, is_standard_mix=is_standard_mix, sort_order=sort_order,
+        )
+
+    #: After the categories, because every row names one as its parent. The
+    #: lookup is by code against what this same function has just ensured, so a
+    #: vocabulary row can never point at a category that does not exist.
+    categories = {
+        row.code: row.id
+        for row in session.scalars(select(FoodCategory)).all()
+    }
+    for code, name, category_code, sort_order in FOOD_ITEMS:
+        parent = categories.get(category_code)
+        assert parent is not None, (
+            f"food_item {code!r} names food_category {category_code!r}, which "
+            "this seed does not create"
+        )
+        created["food_item"] += _ensure(
+            session, FoodItem, code,
+            name=name, food_category_id=parent, sort_order=sort_order,
         )
 
     for code, name, unit, display_unit, precision, sort_order in METRICS:

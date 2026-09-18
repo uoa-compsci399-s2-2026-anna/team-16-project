@@ -27,6 +27,17 @@ export const state = {
   foodCategories: [],
   foodUnspecified: false,
   foodItems: {},
+  // Which panel of step 2 is showing: 'categories' or 'items' (step 2.5).
+  //
+  // A panel rather than a step number, because §3.3's step 2.5 *refines* step 2 --
+  // and because it is absent from most deployments. A seventh step would have to
+  // renumber twenty hard-coded references and would make "step 3 of 7" untrue
+  // whenever `item_level_enabled` is off, which is every deployment today.
+  //
+  // Reset to 'categories' by anything that lands on step 2 from outside, so a jump
+  // back to "food type" asks the category question -- which is the one that name
+  // refers to.
+  foodStage: 'categories',
   gwpHorizon: 100,
   // **Narrowed by the fork to "the unit the chain's combined figures are stated in".**
   // Every amount the visitor types now belongs to a leaf and is measured in that
@@ -450,6 +461,7 @@ export function resetCalculator() {
     sector: null,
     foodCategories: [],
     foodUnspecified: false,
+    foodStage: 'categories',
     foodItems: {},
     totalUnit: 'kilograms',
     leafFigures: {},

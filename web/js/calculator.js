@@ -1686,15 +1686,6 @@ export function bindCalculator(main, retryTaxonomy) {
     if (action === 'download-results') downloadResults(state)
     if (action === 'download-pdf') downloadPdf(state)
     if (action === 'breakdown-tab') setState({ resultBreakdownTab: control.dataset.tab })
-    if (action === 'toggle-results-nav') {
-      const navigation = control.closest('.results-floating-nav')
-      const isOpen = navigation?.dataset.open !== 'true'
-      if (navigation) {
-        navigation.dataset.open = String(isOpen)
-        control.setAttribute('aria-expanded', String(isOpen))
-        if (!isOpen) control.blur()
-      }
-    }
     if (action === 'explore-improvements') openImprovement(state)
     if (action === 'reset-improvement') resetImprovement(state)
     if (action === 'expand-improvement-chart') setState({ improvementChartExpanded: true })

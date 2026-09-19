@@ -335,6 +335,59 @@ def build_state_with_item_basis(*bases: str) -> dict:
     return state
 
 
+def test_the_results_sections_are_in_the_order_the_floating_nav_claims(tmp_path):
+    """**The nav is a list of jumps, so a wrong order is a wrong jump.**
+
+    It read summary / improvements / equivalents / breakdown while the
+    improvement panel was rendered below the downloads -- three sections further
+    down than its second slot claimed. Its one link that existed to save a
+    scroll was the one that jumped past everything else on the page.
+
+    Asserted against the rendered page rather than against the two source lists,
+    because reading both and comparing them would pass whenever they were
+    wrong in the same way, which is exactly how they came to disagree.
+    """
+    screen = screen_for(tmp_path, build_state())
+
+    markers = {
+        "#impact-summary": 'id="impact-summary"',
+        "#tangible-equivalents": 'id="tangible-equivalents"',
+        "#breakdown-section": 'id="breakdown-section"',
+        "#improvement-section": 'id="improvement-section"',
+    }
+    on_page = {}
+    for href, marker in markers.items():
+        at = screen.find(marker)
+        assert at != -1, f"{href} is not on the rendered results page at all"
+        on_page[href] = at
+
+    #: The nav's own hrefs, in the order it writes them.
+    import re as _re
+
+    nav = _re.search(r'class="results-floating-nav__links">(.*?)</ul>', screen, _re.S)
+    assert nav, "the floating nav rendered no link list"
+    claimed = _re.findall(r'href="(#[a-z-]+)"', nav.group(1))
+    assert len(claimed) == len(markers), f"the nav lists {claimed}, not the four sections"
+
+    actual = sorted(claimed, key=lambda href: on_page[href])
+    assert claimed == actual, (
+        f"the floating nav lists the sections as {claimed} but the page renders "
+        f"them as {actual}, so at least one link jumps somewhere the reader did "
+        f"not expect -- a nav in the wrong order is worse than no nav, because a "
+        f"reader who scrolls finds the sections in the order they are in"
+    )
+
+    #: The move this test was written for, stated as itself so a later reshuffle
+    #: that kept the two lists agreeing but put the panel back under the
+    #: downloads still fails here.
+    assert on_page["#improvement-section"] < screen.find('id="results-methodology"'), (
+        "the improvement panel renders below Methodology & Limitations again. It "
+        "was moved above both that and the download actions because a visitor "
+        "who has just read their result is being offered the next thing to do, "
+        "not a footnote"
+    )
+
+
 def test_the_results_page_renders_every_section_it_composes(tmp_path):
     """**The improvement panel has now vanished in a merge twice.**
 

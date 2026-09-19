@@ -417,6 +417,7 @@
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "您填写的记录会以匿名方式保存，只有在您选择提供时才会纳入公开统计。",
     "Your estimated impact": "您的预估影响",
     "Your latest figures are in this calculator's public statistics.": "您最新的数据已纳入本计算器的公开统计数据。",
+    "e.g. %(amount)s": "例：%(amount)s",
     "entry %(number)s": "记录 %(number)s",
     "increase": "增加",
     "its food category": "该食物类别",

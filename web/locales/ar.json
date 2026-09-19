@@ -414,6 +414,7 @@
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "تُسجَّل إدخالاتك بشكل مجهول، ولا تدخل الإحصاءات العامة إلا إذا اخترت تقديمها.",
     "Your estimated impact": "أثرك التقديري",
     "Your latest figures are in this calculator's public statistics.": "أحدث أرقامك موجودة في الإحصاءات العامة لهذه الحاسبة.",
+    "e.g. %(amount)s": "مثال: %(amount)s",
     "entry %(number)s": "الإدخال %(number)s",
     "increase": "زيادة",
     "its food category": "فئة طعامه",

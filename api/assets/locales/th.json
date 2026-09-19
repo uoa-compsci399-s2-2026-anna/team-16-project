@@ -413,6 +413,7 @@
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "รายการที่คุณกรอกจะถูกบันทึกแบบไม่ระบุตัวตน และจะรวมอยู่ในสถิติสาธารณะก็ต่อเมื่อคุณเลือกที่จะมอบให้เท่านั้น",
     "Your estimated impact": "ผลกระทบโดยประมาณของคุณ",
     "Your latest figures are in this calculator's public statistics.": "ตัวเลขล่าสุดของคุณอยู่ในสถิติสาธารณะของเครื่องคำนวณนี้",
+    "e.g. %(amount)s": "เช่น %(amount)s",
     "entry %(number)s": "รายการที่ %(number)s",
     "increase": "เพิ่มขึ้น",
     "its food category": "หมวดหมู่อาหารของมัน",

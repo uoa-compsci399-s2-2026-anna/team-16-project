@@ -420,6 +420,63 @@ def test_the_two_money_fields_do_not_repeat_one_hint(step_three):
         )
 
 
+def test_the_money_examples_are_a_format_the_field_accepts(step_three):
+    """**The example must be typable into the box it sits in.**
+
+    Both NZ$ inputs are `type="number"`, and a number input refuses a thousands
+    separator outright: type `50,000` into one and it holds nothing. PR #101
+    proposed the placeholders as `e.g. 50,000` and `e.g. 1,200`; the idea was
+    right and the digits were not. A placeholder demonstrating a format the
+    control rejects is worse than an empty one, because a visitor who copies it
+    watches the field stay empty and has nothing telling them why.
+
+    So this asserts the example is *present*, is *not* the same in both boxes,
+    and would *survive being typed* — which is the assertion that would have
+    caught #101's version, and which "a placeholder exists" would not.
+
+    Mutation: putting a comma back into either example fails naming it.
+    """
+    page = step_three(1278, 983, leaves=3)
+    measured = page.evaluate(
+        """() => [...document.querySelectorAll('.leaf-panel')].map(panel => ({
+          legend: panel.querySelector('legend')?.innerText.trim(),
+          money: [...panel.querySelectorAll('.zone:nth-of-type(2) input')].map(input => ({
+            id: input.id,
+            placeholder: input.getAttribute('placeholder') || '',
+            type: input.type,
+            //: The browser's own verdict, not a regex of ours: assigning the
+            //: example and reading it back is exactly what happens when a
+            //: visitor types it.
+            survivesTyping: (() => {
+              const probe = document.createElement('input')
+              probe.type = input.type
+              probe.value = (input.getAttribute('placeholder') || '').replace(/^[^0-9]*/, '')
+              return probe.value
+            })(),
+          })),
+        }))"""
+    )
+
+    for index, panel in enumerate(measured):
+        name = panel["legend"] or f"panel {index}"
+        assert len(panel["money"]) == 2, f"{name}: expected two NZ$ inputs, found {len(panel['money'])}"
+        for field in panel["money"]:
+            assert field["placeholder"], (
+                f"{name}: '{field['id']}' has no example value, so nothing on screen shows "
+                f"the shape of the number this box wants"
+            )
+            assert field["survivesTyping"], (
+                f"{name}: '{field['id']}' offers the example "
+                f"'{field['placeholder']}', which an `input[type={field['type']}]` refuses - "
+                f"typed in, it leaves the box empty. An example the control will not accept "
+                f"teaches the wrong format"
+            )
+        first, second = (field["placeholder"] for field in panel["money"])
+        assert first != second, (
+            f"{name}: both NZ$ boxes show the same example '{first}'. Two figures of the "
+            f"same order read as one of them being a copy of the other"
+        )
+
 # ------------------------------------------------------------------- the tooltip
 
 

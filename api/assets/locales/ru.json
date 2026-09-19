@@ -413,6 +413,7 @@
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "Ваши записи сохраняются анонимно и попадают в общедоступную статистику, только если вы решите их предоставить.",
     "Your estimated impact": "Ваше расчётное воздействие",
     "Your latest figures are in this calculator's public statistics.": "Ваши последние данные включены в открытую статистику этого калькулятора.",
+    "e.g. %(amount)s": "напр. %(amount)s",
     "entry %(number)s": "запись %(number)s",
     "increase": "увеличение",
     "its food category": "его категории продуктов",

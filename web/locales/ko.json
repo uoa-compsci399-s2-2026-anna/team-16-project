@@ -413,6 +413,7 @@
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "입력한 내용은 익명으로 기록되며, 제공하기를 선택한 경우에만 공개 통계에 포함됩니다.",
     "Your estimated impact": "추정된 영향",
     "Your latest figures are in this calculator's public statistics.": "귀하의 최신 수치가 이 계산기의 공개 통계에 반영되어 있습니다.",
+    "e.g. %(amount)s": "예: %(amount)s",
     "entry %(number)s": "항목 %(number)s",
     "increase": "증가",
     "its food category": "해당 식품 분류",

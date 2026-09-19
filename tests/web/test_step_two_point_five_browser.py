@@ -99,6 +99,20 @@ def _category_with_foods(taxonomy):
     pytest.skip("no offered food's category is itself offered")
 
 
+def _category_without_foods(taxonomy):
+    """A category the published set prices but that has NO food offered under it.
+
+    The seed gives a vocabulary to four of its ten categories, so this is the
+    common case rather than an edge one, and it is the state the test below is
+    about.
+    """
+    offered = {item["food_category"] for item in taxonomy["food_items"]}
+    for category in taxonomy["food_categories"]:
+        if category["code"] not in offered:
+            return category
+    pytest.skip("every offered category has foods, so there is no empty panel to refuse")
+
+
 def _to_food_step(page):
     page.click('[data-action="start"]')
     page.wait_for_selector('input[name="sector"]')
@@ -294,3 +308,113 @@ def test_the_named_food_reaches_the_request_and_changes_the_figure(page, release
     entries = json.loads(sent[-1])["entries"]
     assert [entry["food_item"] for entry in entries] == [food["code"] for food in foods], entries
     assert all(entry["food_category"] == category["code"] for entry in entries), entries
+
+
+def test_a_category_with_no_foods_does_not_open_a_panel_with_nothing_on_it(page, released):
+    """**Continue skips step 2.5 when it would have nothing to ask.**
+
+    `itemStepOffered` used to ask whether the DEPLOYMENT has a vocabulary --
+    `food_items.length > 0` -- and not whether any category the visitor ticked
+    is in it. The seed prices ten categories and gives foods to four, so ticking
+    any of the other six opened a panel headed *Do you know which foods these
+    were?* whose every group read "No specific foods are listed for this
+    category": a screen with nothing on it to tick and Continue the only way off
+    it. It is what a visitor ticking *Standard mix* -- the first box on step 2 --
+    met on every calculation.
+
+    `itemStep`'s own note, that an empty group is SHOWN rather than hidden so the
+    group list cannot disagree with step 2's ticks, is untouched by this and the
+    test below still pins it. That note is about one empty group beside full
+    ones; it was never an argument for a panel made entirely of them.
+    """
+    category = _category_without_foods(released)
+    _to_food_step(page)
+    _tick_category(page, category["code"])
+    _continue(page)
+
+    assert page.locator("#item-title").count() == 0, (
+        f"ticking {category['code']!r}, which has no food offered under it, opened "
+        f"the food panel -- every group on it can only say there is nothing to "
+        f"choose, so the one press of Continue has to go straight to the amount step"
+    )
+    page.wait_for_selector("#total-waste", timeout=5000)
+
+
+def test_an_empty_group_is_still_shown_beside_a_full_one(page, released):
+    """The half of the rule that must NOT change.
+
+    Ticking one category with foods and one without opens the panel -- the first
+    of them has something to ask -- and the second is rendered as a group saying
+    it has nothing listed, rather than dropped. Hiding it would leave a visitor
+    who ticked two categories looking at one group with no way to tell which of
+    their answers went missing or why.
+    """
+    full = _category_with_foods(released)
+    empty = _category_without_foods(released)
+    _to_food_step(page)
+    _tick_category(page, full["code"])
+    _tick_category(page, empty["code"])
+    _continue(page)
+    page.wait_for_selector('input[name="food-item"]', timeout=5000)
+
+    legends = page.evaluate(
+        "() => [...document.querySelectorAll('.item-group legend')].map(e => e.innerText.trim())"
+    )
+    assert sorted(legends) == sorted([full["name"], empty["name"]]), legends
+
+
+def test_a_second_chain_starts_on_the_categories_and_not_in_the_food_panel(page, released):
+    """**The panel must not open under a hand that is still ticking categories.**
+
+    `foodStage` says which of step 2's two panels is showing. `goToStep` clears it
+    on every arrival -- its own note says a jump named *food type* means the
+    category question -- but Continue is the other way to arrive at a step, and it
+    was not clearing it. So after *Add another entry*, `clearDraft` put the visitor
+    on step 1 with the stage still reading `'items'` from the chain they had just
+    finished, and the next Continue carried it into step 2.
+
+    Nothing looked wrong while they ticked categories the vocabulary has no food
+    for. The moment they ticked one it does, `itemStepOffered()` turned true, and
+    `foodPanel` swapped the category list for the food panel underneath them --
+    mid-tick, with no Continue pressed and no way to tell what had happened.
+
+    The tick below is on a category WITH foods and it is the whole point: a
+    category without them cannot turn `itemStepOffered()` true and so could never
+    have shown the bug.
+    """
+    full = _category_with_foods(released)
+
+    # One chain, all the way through the food panel, so `foodStage` is left at
+    # 'items' the way a real visitor leaves it.
+    _to_food_step(page)
+    _tick_category(page, full["code"])
+    _continue(page)
+    page.wait_for_selector('input[name="food-item"]', timeout=5000)
+    _continue(page)
+    page.wait_for_selector("#total-waste", timeout=5000)
+    page.fill("#total-waste", "500")
+    page.wait_for_timeout(80)
+    _continue(page)
+    page.wait_for_selector('[data-line-field="amount"]', timeout=5000)
+    first = page.locator('[data-line-field="amount"]').first
+    first.fill("500")
+    page.wait_for_timeout(80)
+    _continue(page)
+    page.wait_for_selector('[data-action="add-entry"]', timeout=5000)
+
+    page.click('[data-action="add-entry"]')
+    page.wait_for_selector("#stage-title", timeout=5000)
+    page.evaluate("document.querySelectorAll('input[name=sector]')[0].click()")
+    page.wait_for_timeout(80)
+    _continue(page)
+    page.wait_for_selector('input[name="food-category"]', timeout=5000)
+
+    _tick_category(page, full["code"])
+
+    assert page.locator("#item-title").count() == 0, (
+        f"ticking {full['code']!r} on the second chain opened the food panel with no "
+        f"Continue pressed -- the stage was left at 'items' by the first chain"
+    )
+    assert page.locator('input[name="food-category"]').count() > 0, (
+        "the category checkboxes are gone, so the screen moved on its own"
+    )

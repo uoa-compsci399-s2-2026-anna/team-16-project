@@ -30,6 +30,9 @@ import os
 
 import pytest
 
+from tests.web.steps import press_continue
+
+
 pytestmark = pytest.mark.browser
 
 playwright_api = pytest.importorskip(
@@ -65,7 +68,7 @@ def _to_food_step(page, sector=0):
     page.wait_for_selector('input[name="sector"]')
     page.evaluate(f"document.querySelectorAll('input[name=sector]')[{sector}].click()")
     page.wait_for_timeout(80)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('input[name="food-category"]')
 
 
@@ -123,7 +126,7 @@ def test_swapping_the_only_category_does_not_move_the_amount_onto_the_new_food(p
     """
     _to_food_step(page)
     _tick(page, STANDARD_MIX)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#total-waste")
     page.fill("#total-waste", "400")
     page.wait_for_timeout(100)
@@ -133,7 +136,7 @@ def test_swapping_the_only_category_does_not_move_the_amount_onto_the_new_food(p
     _tick(page, STANDARD_MIX)  # untick it
     fruit = _code_of(page, FRUIT)
     _tick(page, FRUIT)  # and name a different food
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#total-waste")
 
     found = _leaf_amounts(page)
@@ -163,11 +166,11 @@ def test_the_swapped_amount_does_not_reach_the_request_body(page):
     )
     _to_food_step(page)
     _tick(page, STANDARD_MIX)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#total-waste")
     page.fill("#total-waste", "400")
     page.wait_for_timeout(100)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-line-field="amount"]')
     first_row = page.evaluate(
         "() => document.querySelectorAll('[data-line-field=amount]')[0].id"
@@ -186,7 +189,7 @@ def test_the_swapped_amount_does_not_reach_the_request_body(page):
     _tick(page, FRUIT)
 
     # Type the new food's own figures and calculate.
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#total-waste")
     assert page.input_value("#total-waste") == "", (
         f"step 3 offered {page.input_value('#total-waste')!r} for a food that was "
@@ -194,12 +197,12 @@ def test_the_swapped_amount_does_not_reach_the_request_body(page):
     )
     page.fill("#total-waste", "50")
     page.wait_for_timeout(100)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-line-field="amount"]')
     row = page.evaluate("() => document.querySelectorAll('[data-line-field=amount]')[0].id")
     page.fill(f"#{row}", "50")
     page.wait_for_timeout(120)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-action="calculate"]')
     page.click('.step-nav [data-action="calculate"]')
     page.wait_for_selector(".results-page", timeout=25000)
@@ -226,7 +229,7 @@ def test_swapping_the_category_does_not_carry_a_unit_preset_with_it(page):
     """
     _to_food_step(page)
     _tick(page, STANDARD_MIX)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#total-unit")
     presets = page.evaluate(
         """() => [...document.querySelectorAll('#total-unit option')]
@@ -245,7 +248,7 @@ def test_swapping_the_category_does_not_carry_a_unit_preset_with_it(page):
     _tick(page, STANDARD_MIX)
     fruit = _code_of(page, FRUIT)
     _tick(page, FRUIT)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#total-unit")
 
     found = _leaf_amounts(page)
@@ -278,7 +281,7 @@ def test_a_leaf_whose_identity_is_unchanged_keeps_every_figure(page):
     """
     _to_food_step(page)
     _tick(page, STANDARD_MIX)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#total-waste")
     page.fill("#total-waste", "640")
     page.wait_for_timeout(100)
@@ -286,7 +289,7 @@ def test_a_leaf_whose_identity_is_unchanged_keeps_every_figure(page):
     page.wait_for_selector('input[name="food-category"]')
     fruit = _code_of(page, FRUIT)
     _tick(page, FRUIT)  # a second food, alongside the first
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-leaf-field="amount"]')
 
     found = _leaf_amounts(page)

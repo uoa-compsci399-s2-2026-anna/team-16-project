@@ -30,6 +30,9 @@ import os
 
 import pytest
 
+from tests.web.steps import press_continue
+
+
 pytestmark = pytest.mark.browser
 
 playwright_api = pytest.importorskip(
@@ -64,7 +67,7 @@ def _to_food_step(page, sector=0):
     page.wait_for_selector('input[name="sector"]')
     page.evaluate(f"document.querySelectorAll('input[name=sector]')[{sector}].click()")
     page.wait_for_timeout(80)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('input[name="food-category"]')
 
 
@@ -127,7 +130,7 @@ def test_i_do_not_know_is_a_peer_option_that_combines_with_a_category(page):
     )
     unspecified.click()
     page.wait_for_timeout(80)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-leaf-field="amount"]')
     legends = page.locator(".leaf-panel legend").all_inner_texts()
     assert len(legends) == 2, f"a category plus \"I do not know\" is two leaves, got {legends}"
@@ -163,7 +166,7 @@ def test_unticking_a_category_parks_its_figures_and_re_ticking_brings_them_back(
     """
     _to_food_step(page)
     _tick(page, 0, 1)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-leaf-field="amount"]')
     fields = _amount_fields(page)
     assert len(fields) == 2, fields
@@ -174,7 +177,7 @@ def test_unticking_a_category_parks_its_figures_and_re_ticking_brings_them_back(
     page.wait_for_selector('input[name="food-category"]')
     _tick(page, 1)  # untick
     _tick(page, 1)  # and back on
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-leaf-field="amount"]')
     values = page.evaluate(
         "() => [...document.querySelectorAll('[data-leaf-field=amount]')].map(e => [e.id, e.value])"
@@ -208,7 +211,7 @@ def test_clearing_the_only_selection_takes_its_figures_with_it(page):
     """
     _to_food_step(page)
     _tick(page, 0)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#total-waste")
     page.fill("#total-waste", "640")
     page.wait_for_timeout(80)
@@ -216,7 +219,7 @@ def test_clearing_the_only_selection_takes_its_figures_with_it(page):
     page.wait_for_selector('[data-action="clear-food"]')
     page.click('[data-action="clear-food"]')
     page.wait_for_timeout(150)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#total-waste")
     assert page.input_value("#total-waste") == "", (
         f"clearing the food selection carried the measurement taken under it onto "
@@ -241,24 +244,24 @@ def test_the_form_bounds_the_submissions_leaf_count_at_max_entries(page):
     assert offered >= 3, f"the taxonomy offers {offered} food choices; too few to test"
     _tick(page, *range(offered))
     first_leaves = offered
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-leaf-field="amount"]')
     for index, field in enumerate(_amount_fields(page)):
         page.fill(f"#{field}", str(100 + index))
         page.wait_for_timeout(35)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-line-field="amount"]')
     rows = _first_rows(page)
     for index, field in enumerate(rows):
         page.fill(f"#{field}", str(100 + index))
         page.wait_for_timeout(45)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-action="add-entry"]')
     page.click('[data-action="add-entry"]')
     _to_food_step_again = page.wait_for_selector("#stage-title")
     page.evaluate("document.querySelectorAll('input[name=sector]')[1].click()")
     page.wait_for_timeout(80)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('input[name="food-category"]')
 
     room = MAX_LEAVES - first_leaves
@@ -297,13 +300,13 @@ def test_an_allocation_is_measured_against_its_own_leafs_amount(page):
     """
     _to_food_step(page)
     _tick(page, 0, 1)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-leaf-field="amount"]')
     fields = _amount_fields(page)
     page.fill(f"#{fields[0]}", "100")
     page.fill(f"#{fields[1]}", "200")
     page.wait_for_timeout(80)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-line-field="amount"]')
     rows = _first_rows(page)
     # The second leaf is allocated in full first, so the only thing left to be wrong
@@ -339,12 +342,12 @@ def test_the_amount_error_lands_on_the_leaf_it_is_about(page):
     """
     _to_food_step(page)
     _tick(page, 0, 1)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-leaf-field="amount"]')
     fields = _amount_fields(page)
     page.fill(f"#{fields[0]}", "500")
     page.wait_for_timeout(80)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_timeout(250)
     marked = page.evaluate(
         """() => [...document.querySelectorAll('.leaf-panel')].map(panel => ({
@@ -384,13 +387,13 @@ def test_two_leaves_producing_the_identical_sentence_mark_only_the_one_at_fault(
     """
     _to_food_step(page)
     _tick(page, 0, 1)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-leaf-field="amount"]')
     fields = _amount_fields(page)
     for field in fields:
         page.fill(f"#{field}", "1e5")
         page.wait_for_timeout(60)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_timeout(250)
     marked = page.evaluate(
         """() => [...document.querySelectorAll('.leaf-panel')].map(panel => ({

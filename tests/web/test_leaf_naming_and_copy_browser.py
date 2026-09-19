@@ -30,6 +30,9 @@ import os
 
 import pytest
 
+from tests.web.steps import press_continue
+
+
 pytestmark = pytest.mark.browser
 
 playwright_api = pytest.importorskip(
@@ -63,7 +66,7 @@ def _sector(page, index):
     page.wait_for_selector('input[name="sector"]')
     page.evaluate(f"document.querySelectorAll('input[name=sector]')[{index}].click()")
     page.wait_for_timeout(70)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('input[name="food-category"]')
 
 
@@ -76,7 +79,7 @@ def _tick(page, *indices):
 
 def _fill_amounts_and_rows(page, amount="100"):
     """Step 3 then step 4, filling every leaf's amount and its first destination."""
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-leaf-field="amount"], #total-waste')
     fields = page.evaluate(
         "() => [...document.querySelectorAll('[data-leaf-field=amount]')].map(e => e.id)"
@@ -84,7 +87,7 @@ def _fill_amounts_and_rows(page, amount="100"):
     for field in fields:
         page.fill(f"#{field}", amount)
         page.wait_for_timeout(25)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-line-field="amount"]')
     rows = page.evaluate(
         """() => {
@@ -98,7 +101,7 @@ def _fill_amounts_and_rows(page, amount="100"):
     for field in rows:
         page.fill(f"#{field}", amount)
         page.wait_for_timeout(30)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-action="calculate"]')
 
 

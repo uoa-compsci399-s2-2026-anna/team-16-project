@@ -37,6 +37,9 @@ import urllib.request
 
 import pytest
 
+from tests.web.steps import press_continue
+
+
 playwright_api = pytest.importorskip(
     "playwright.sync_api",
     reason="playwright is required to drive Compare Impact against the real API",
@@ -128,16 +131,16 @@ def calculate(page, waste, *, wasted_value: str | None) -> dict:
     page.wait_for_selector('input[name="sector"]')
     page.evaluate("document.querySelector('input[name=sector]').click()")
     page.wait_for_timeout(80)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('input[name="food-category"]')
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#total-waste")
 
     page.fill("#total-waste", WASTE_KG)
     page.fill("#total-value", TOTAL_VALUE)
     if wasted_value is not None:
         page.fill("#wasted-value", wasted_value)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
 
     #: All of it to one non-prevention destination. Step 4 renders one fixed row per
     #: destination and the row carries the destination's own name in its
@@ -147,7 +150,7 @@ def calculate(page, waste, *, wasted_value: str | None) -> dict:
     page.wait_for_selector('[data-line-field="amount"]')
     page.fill(f'input[aria-label^="{waste["name"]} amount"]', WASTE_KG)
     page.wait_for_timeout(120)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-action="calculate"]')
     with page.expect_response(_is_calculation, timeout=20000) as answer:
         page.click('.step-nav [data-action="calculate"]')

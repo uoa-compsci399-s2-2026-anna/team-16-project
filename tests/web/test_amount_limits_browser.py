@@ -96,6 +96,8 @@ from decimal import Decimal
 
 import pytest
 
+from tests.web.steps import press_continue
+
 pytestmark = pytest.mark.browser
 
 pytest.importorskip(
@@ -236,9 +238,9 @@ def to_amount_step(page):
     page.wait_for_selector('input[name="sector"]')
     page.evaluate("document.querySelector('input[name=sector]').click()")
     page.wait_for_timeout(60)
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('input[name="food-category"]')
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#total-unit")
     return page
 
@@ -270,7 +272,7 @@ def continue_from_step_three(page):
     silently advanced anyway and a refusal that showed no message are different
     defects and both have to be visible here.
     """
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_timeout(200)
     error = page.query_selector("#amount-error")
     return {
@@ -295,7 +297,7 @@ def continue_from_step_four(page):
     error = page.eval_on_selector("#allocation-error", "el => el.textContent.trim()")
     disabled = page.eval_on_selector('[data-action="continue"]', "el => el.disabled")
     if not disabled:
-        page.click('[data-action="continue"]')
+        press_continue(page)
         page.wait_for_timeout(200)
     return {
         "error": error,
@@ -307,7 +309,7 @@ def continue_from_step_four(page):
 def to_destination_step(page, total="1000"):
     to_amount_step(page)
     type_into(page, "#total-waste", total)
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-line-field="amount"]')
     return page
 
@@ -584,7 +586,7 @@ def test_one_destination_may_not_exceed_the_per_line_ceiling(page_at, unit, tota
     page.select_option("#total-unit", unit)
     page.wait_for_selector("#total-waste")
     type_into(page, "#total-waste", total)
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-line-field="amount"]')
 
     type_into(page, '[data-line-field="amount"] >> nth=0', line)
@@ -725,7 +727,7 @@ def test_returning_to_step_four_does_not_re_enable_continue_on_a_refused_line(pa
     # the test failed, correctly - it needs a state step 4 actually refuses, and
     # the per-line ceiling is the rule it is meant to walk back onto.
     type_into(page, "#total-waste", "50000000")
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-line-field="amount"]')
     type_into(page, '[data-line-field="amount"] >> nth=0', "50000001")
     first = continue_from_step_four(page)
@@ -733,7 +735,7 @@ def test_returning_to_step_four_does_not_re_enable_continue_on_a_refused_line(pa
 
     page.click('[data-action="go-step"][data-step="2"]')
     page.wait_for_selector("#total-waste")
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-line-field="amount"]')
     redrawn = page.evaluate(
         """() => ({

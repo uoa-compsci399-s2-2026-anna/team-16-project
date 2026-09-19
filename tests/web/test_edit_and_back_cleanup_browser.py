@@ -61,6 +61,9 @@ import os
 
 import pytest
 
+from tests.web.steps import press_continue
+
+
 playwright_api = pytest.importorskip(
     "playwright.sync_api",
     reason="playwright is required to drive the wizard the way the owner drove it",
@@ -131,16 +134,16 @@ def _pick_sector(page, index: int) -> str:
 
 def _build_chain(page, amount: str):
     """Steps 1 to 5 with the sector already chosen, leaving the visitor on review."""
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('input[name="food-category"]')
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#total-waste")
     page.fill("#total-waste", amount)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-line-field="amount"]')
     page.fill('[data-line-field="amount"] >> nth=0', amount)
     page.wait_for_timeout(100)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-action="calculate"]')
 
 
@@ -148,7 +151,7 @@ def _walk_forward_to_review(page):
     """Continue four times from step 1, filling nothing that is already filled."""
     page.wait_for_selector("#stage-title")
     for selector in ("#food-title", "#total-waste", "#destination-title", '[data-action="calculate"]'):
-        page.click('.step-nav [data-action="continue"]')
+        press_continue(page)
         page.wait_for_selector(selector)
 
 
@@ -158,7 +161,7 @@ def _back(page):
 
 
 def _continue(page):
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_timeout(250)
 
 

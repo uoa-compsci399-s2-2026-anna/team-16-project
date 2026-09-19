@@ -31,6 +31,9 @@ from decimal import Decimal
 
 import pytest
 
+from tests.web.steps import press_continue
+
+
 pytestmark = pytest.mark.browser
 
 playwright_api = pytest.importorskip(
@@ -66,14 +69,14 @@ def _forked_chain(page):
     page.wait_for_selector('input[name="sector"]')
     page.evaluate("document.querySelectorAll('input[name=sector]')[0].click()")
     page.wait_for_timeout(80)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('input[name="food-category"]')
     boxes = page.locator('input[name="food-category"]')
     boxes.nth(0).click()
     page.wait_for_timeout(60)
     boxes.nth(1).click()
     page.wait_for_timeout(60)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-leaf-field="amount"]')
     fields = page.evaluate(
         "() => [...document.querySelectorAll('[data-leaf-field=amount]')].map(e => e.id)"
@@ -82,7 +85,7 @@ def _forked_chain(page):
     for field, amount in zip(fields, AMOUNTS):
         page.fill(f"#{field}", amount)
         page.wait_for_timeout(50)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-line-field="amount"]')
     # Leaf one's FIRST destination and leaf two's SECOND: the split differs by leaf,
     # which is the whole thing a per-leaf allocation can say and a shared one cannot.
@@ -99,7 +102,7 @@ def _forked_chain(page):
     for field, amount in zip(rows, AMOUNTS):
         page.fill(f"#{field}", amount)
         page.wait_for_timeout(80)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-action="calculate"]')
     page.click('.step-nav [data-action="calculate"]')
     page.wait_for_selector(".results-page", timeout=25000)

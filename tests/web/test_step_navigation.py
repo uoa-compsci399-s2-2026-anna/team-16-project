@@ -45,6 +45,9 @@ from pathlib import Path
 
 import pytest
 
+from tests.web.steps import press_continue
+
+
 from api.schemas import CalculatePayload
 
 playwright_api = pytest.importorskip(
@@ -91,7 +94,6 @@ PAST_FOLD = """
   return Math.round(el.getBoundingClientRect().bottom - window.innerHeight);
 }
 """
-
 
 
 @pytest.fixture
@@ -212,7 +214,14 @@ def page_at_locale(browser):
 
 def walk(page):
     """Drive the wizard as a visitor would, yielding the step index *on arrival*
-    at each screen — intro, 0..4, then results (5).
+    at each screen — intro, 0..4, then results (5), plus `1.5` for step 2.5.
+
+    **`1.5` is a screen, not a `state.step` value.** Step 2.5 is step 2's second
+    panel and the step number does not move for it (`docs/interfaces.md` §7.3a), so
+    there is no index of its own to yield; 1.5 says where the screen sits in the
+    sequence, between `state.step` 1 and 2, and keeps this generator's output in
+    the order the visitor meets it. It is yielded only where the panel is actually
+    reachable.
 
     **The intro screen is back and is walked again.** It is step -1: a hero with its
     own "Start calculator" button, which every visitor meets because nginx serves
@@ -233,19 +242,54 @@ def walk(page):
     yield 0
     page.evaluate("document.querySelector('input[name=sector]').click()")
     page.wait_for_timeout(60)
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('input[name="food-category"]')
     yield 1
-    page.click('[data-action="continue"]')
+    #: **Step 2.5 as an excursion, taken at its tallest and leaving no trace.**
+    #:
+    #: The panel only exists once a chosen category has foods, so reaching it means
+    #: ticking, and ticking changes what step 3 renders -- a named leaf instead of
+    #: the category-less one. Twenty-odd tests below measure step 3's layout through
+    #: `advance_to(page, 2)`, and none of them are about a named leaf. So the walk
+    #: goes in, is measured, and comes back out through the panel's own Back and the
+    #: form's own *Clear all selections*: what it hands to `yield 2` is exactly the
+    #: screen it handed before this excursion existed.
+    #:
+    #: **Every category, not one.** The panel's height is the number of groups on it,
+    #: and one group is not the screen worth measuring -- a visitor who ticks ten
+    #: categories gets ten groups and twenty checkboxes, which is the tallest this
+    #: screen gets on the seeded vocabulary and the one that can put Continue past
+    #: the fold. `__unspecified__` is left alone: it is a control value, never a
+    #: category (`UNSPECIFIED_CHOICE` in `calculator.js`), and it adds no group.
+    codes = page.evaluate(
+        "() => [...document.querySelectorAll('input[name=food-category]')]"
+        ".map(e => e.value).filter(v => v !== '__unspecified__')"
+    )
+    for code in codes:
+        page.click(f'input[name="food-category"][value="{code}"]')
+        page.wait_for_timeout(35)
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_timeout(150)
+    #: Absent wherever the published set does not release the item level, where the
+    #: panel is correctly unreachable and there is nothing to measure. Asked of the
+    #: DOM rather than of the taxonomy for `tests/web/steps.py`'s reason.
+    if page.locator("#item-title").count():
+        yield 1.5
+        page.click('.step-nav [data-action="back-to-categories"]')
+        page.wait_for_selector('input[name="food-category"]')
+        page.click('[data-action="clear-food"]')
+        page.wait_for_timeout(120)
+        page.click('.step-nav [data-action="continue"]')
+        page.wait_for_timeout(150)
     page.wait_for_selector("#total-waste")
     yield 2
     page.fill("#total-waste", "1000")
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-line-field="amount"]')
     yield 3
     page.fill('[data-line-field="amount"] >> nth=0', "1000")
     page.wait_for_timeout(60)
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-action="calculate"]')
     yield 4
     page.click('[data-action="calculate"]')
@@ -280,11 +324,26 @@ PRIMARY = {
     -1: '[data-action="start"]',
     0: '.step-nav [data-action="continue"]',
     1: '.step-nav [data-action="continue"]',
+    #: Step 2.5. The panel is the one screen whose height is set by how much the
+    #: visitor ticked rather than by the layout, which is why `walk` measures it
+    #: with every category chosen.
+    1.5: '.step-nav [data-action="continue"]',
     2: '.step-nav [data-action="continue"]',
     3: '.step-nav [data-action="continue"]',
     4: '.step-nav [data-action="calculate"]',
     5: '.step-nav [data-action="go-step"]',
 }
+
+
+#: The back action for each screen, which is not the same selector everywhere.
+#: Step 2.5's Back moves WITHIN step 2 rather than between two steps, so
+#: `stepNav` renders it as `back-to-categories` with no `data-step` — a step
+#: number there would be read by `goToStep`, which resets the panel, and the
+#: button would do nothing visible (`web/js/view.js`). Measured here because the
+#: bar is the same bar and a panel tall enough to push Continue past the fold
+#: takes Back with it.
+BACK = {1.5: '.step-nav [data-action="back-to-categories"]'}
+BACK_DEFAULT = '.step-nav [data-action="go-step"]'
 
 
 @pytest.mark.parametrize("width,height,dpr", VIEWPORTS)
@@ -302,6 +361,42 @@ def test_the_primary_action_of_every_step_is_reachable_without_scrolling(page_at
         elif past > 0:
             failures.append(f"step {step}: primary action is {past}px past the fold")
     assert not failures, "; ".join(failures)
+
+
+def test_the_walk_actually_reaches_the_food_panel(page_at):
+    """**The two sweeps above are conditional on a screen existing, so this says
+    it does.**
+
+    `walk` yields 1.5 only when the panel is on screen, which is right -- a
+    deployment whose set does not release the item level has no such screen and
+    nothing to measure. But it means both viewport sweeps stay green on a stack
+    where the panel never opens at all, whether that is a correct absence or a
+    landing that regressed, and green would be the same either way.
+
+    This asserts the screen was reached, on a stack that releases it, and reports
+    the two conditions apart so the skip cannot hide the regression.
+    """
+    page = page_at(1278, 983, 1.25)
+    reached = [step for step in walk(page)]
+    if 1.5 not in reached:
+        released = page.evaluate(
+            "() => fetch('/api/v1/taxonomy').then(r => r.json())"
+            ".then(t => Boolean(t.factor_set && t.factor_set.item_level_enabled))"
+        )
+        if not released:
+            pytest.skip(
+                "the published factor set has item_level_enabled false, so step 2.5 "
+                "is correctly absent; seed a fresh database to measure it"
+            )
+        raise AssertionError(
+            "the set releases the item level but `walk` never reached step 2.5 -- "
+            f"it visited {reached}, so both viewport sweeps above measured six "
+            "screens and said nothing about the panel"
+        )
+    #: The panel is worth measuring because of what is ON it, and a panel that
+    #: opened with no groups would satisfy the yield above while measuring a
+    #: screen no visitor sees.
+    assert reached.index(1.5) == reached.index(1) + 1, reached
 
 
 @pytest.mark.parametrize("width,height,dpr", VIEWPORTS)
@@ -325,7 +420,7 @@ def test_the_back_action_of_every_step_is_reachable_without_scrolling(page_at, w
                 "step one has no Back button; it should return to the introduction"
             )
         page.wait_for_timeout(100)
-        past = page.evaluate(PAST_FOLD, '.step-nav [data-action="go-step"]')
+        past = page.evaluate(PAST_FOLD, BACK.get(step, BACK_DEFAULT))
         if past is None:
             failures.append(f"step {step} has no Back action in the bar")
         elif past > 0:
@@ -580,16 +675,16 @@ def test_the_longest_primary_label_does_not_overflow_the_narrowest_viewport(page
     page.wait_for_selector('input[name="sector"]')
     page.evaluate("document.querySelector('input[name=sector]').click()")
     page.wait_for_timeout(60)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('input[name="food-category"]')
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#total-waste")
     page.fill("#total-waste", "500")
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-line-field="amount"]')
     page.fill('[data-line-field="amount"] >> nth=0', "500")
     page.wait_for_timeout(60)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-action="calculate"]')
     page.wait_for_timeout(120)
     measured = page.evaluate(
@@ -1111,7 +1206,7 @@ def test_step_three_container_feedback_does_not_overlap_its_error(page_at):
     page.select_option("#total-unit", preset)
     page.wait_for_selector("#unit-count")
     page.fill("#unit-count", "0")
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#amount-error")
 
     error_box = page.locator("#amount-error").bounding_box()
@@ -1194,7 +1289,7 @@ def test_the_production_total_is_optional_and_continue_still_works(page_at):
 
     page.fill("#total-waste", "1200")
     #: #total-input deliberately left empty
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector(".destination-row", timeout=5000)
 
     assert page.locator(".destination-row").count() > 0, (
@@ -1216,7 +1311,7 @@ def test_a_wasted_value_greater_than_the_total_value_is_refused_at_entry(page_at
     page.fill("#total-waste", "1000")
     page.fill("#total-value", "46.00")
     page.fill("#wasted-value", "47.00")
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_timeout(80)
 
     assert page.locator("#amount-title").count() == 1, (
@@ -1246,7 +1341,7 @@ def test_a_wasted_value_greater_than_the_total_value_is_refused_at_entry(page_at
     #: The affirmative half: pulling the wasted figure back under the total
     #: lets the visitor continue, exactly as editable as it always was.
     page.fill("#wasted-value", "45.00")
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector(".destination-row", timeout=5000)
     assert page.locator(".destination-row").count() > 0, (
         "a wasted value under the total was still refused"
@@ -1264,7 +1359,7 @@ def test_a_waste_amount_greater_than_the_production_total_is_refused_at_entry(pa
 
     page.fill("#total-waste", "1500")
     page.fill("#total-input", "1000")
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_timeout(80)
 
     assert page.locator("#amount-title").count() == 1, (
@@ -1288,7 +1383,7 @@ def test_a_waste_amount_greater_than_the_production_total_is_refused_at_entry(pa
 
     #: The affirmative half.
     page.fill("#total-input", "2000")
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector(".destination-row", timeout=5000)
     assert page.locator(".destination-row").count() > 0, (
         "a waste amount under the production total was still refused"
@@ -1321,7 +1416,7 @@ def test_a_blank_money_field_is_exempt_from_the_contradiction_check(page_at, tot
         page.fill("#total-value", total_value)
     if wasted_value:
         page.fill("#wasted-value", wasted_value)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector(".destination-row", timeout=5000)
 
     assert page.locator(".destination-row").count() > 0, (
@@ -1363,7 +1458,7 @@ def test_the_money_contradiction_is_decided_at_the_exact_cent_not_by_float_dust(
     page.fill("#total-waste", "1000")
     page.fill("#total-value", total_value)
     page.fill("#wasted-value", wasted_value)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_timeout(80)
 
     advanced = page.locator(".destination-row").count() > 0
@@ -1391,26 +1486,26 @@ def test_the_money_contradiction_is_checked_per_entry_not_across_the_whole_submi
     page.fill("#total-waste", "1000")
     page.fill("#total-value", "1000")
     page.fill("#wasted-value", "10")
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-line-field="amount"]')
     page.fill('[data-line-field="amount"] >> nth=0', "1000")
     page.wait_for_timeout(60)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-action="add-entry"]')
 
     page.click('[data-action="add-entry"]')
     page.wait_for_selector('input[name="sector"]')
     page.evaluate("document.querySelector('input[name=sector]').click()")
     page.wait_for_timeout(60)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('input[name="food-category"]')
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#total-waste")
 
     page.fill("#total-waste", "500")
     page.fill("#total-value", "5")
     page.fill("#wasted-value", "500")
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_timeout(80)
 
     assert page.locator(".destination-row").count() == 0, (
@@ -2465,7 +2560,7 @@ def test_a_step_heading_does_not_overflow_in_translation(page_at_locale, width, 
     page.wait_for_selector('input[name="sector"]')
     page.evaluate("document.querySelector('input[name=sector]').click()")
     page.wait_for_timeout(60)
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('input[name="food-category"]')
 
     measured = page.evaluate(

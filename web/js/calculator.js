@@ -269,8 +269,17 @@ const itemTickRefused = (category, item) =>
  */
 function itemStepOffered() {
   if (!state.taxonomy?.factor_set?.item_level_enabled) return false
-  if (!(state.taxonomy?.food_items || []).length) return false
-  return state.foodCategories.length > 0
+  // **At least one CHOSEN category must have foods, not just the vocabulary.**
+  // Asking `food_items.length > 0` was asking whether the deployment has a
+  // vocabulary at all, and the seed gives one to four of its ten categories --
+  // so ticking any of the other six opened a panel headed *Do you know which
+  // foods these were?* whose every group read "No specific foods are listed for
+  // this category", with nothing on it to tick and Continue the only way out.
+  //
+  // `itemStep`'s own note is about an empty group BESIDE full ones, and that
+  // still holds: hiding it would leave the group list disagreeing with step 2's
+  // ticks. It was never an argument for a screen made entirely of them.
+  return state.foodCategories.some(category => itemsUnder(category).length > 0)
 }
 
 /** The vocabulary under one category, in the taxonomy's own order. */
@@ -2433,7 +2442,7 @@ export function bindCalculator(main, retryTaxonomy) {
       // is false in every deployment today, so this branch is inert by data.
       else if (state.step === 1 && state.foodStage !== 'items' && itemStepOffered())
         setState({ foodStage: 'items', error: null, errorAt: null })
-      else if (state.step === 2) setState({ step: 3, error: null, errorAt: null, returnTo: markerAfterLeaving(), ...destinationRowsPatch() })
+      else if (state.step === 2) setState({ step: 3, foodStage: 'categories', error: null, errorAt: null, returnTo: markerAfterLeaving(), ...destinationRowsPatch() })
       // **Arriving at the review step ends any excursion, and this line is load-bearing.**
       // A marker holds the entries and the draft as they were before the jump that wrote
       // it; once the visitor has reached review again they have built something that did
@@ -2445,7 +2454,22 @@ export function bindCalculator(main, retryTaxonomy) {
       // Every other Continue hands the marker to `markerAfterLeaving`, which keeps an
       // undo and discards a spent review-*Edit* excursion — see its own note for the
       // Back loop that keeping one built.
-      else setState({ step: state.step + 1, error: null, errorAt: null, returnTo: state.step === 3 ? null : markerAfterLeaving() })
+      // **`foodStage` is cleared on the way out, for `goToStep`'s reason and by the
+      // same rule.** It says which of step 2's two panels is showing and nothing
+      // about the draft, so it must not outlive the step it belongs to. Continue is
+      // the OTHER way to arrive at a step, and it was not resetting it: after
+      // *Add another entry*, `clearDraft` puts the visitor on step 0 with the stage
+      // still reading 'items' from the chain they just finished, and the next
+      // Continue landed them on step 2 with it intact. Nothing was visibly wrong
+      // until they ticked a category the vocabulary has foods for -- at that moment
+      // `itemStepOffered()` turned true, and `foodPanel` swapped the category list
+      // for the food panel underneath their hand, mid-tick, with no Continue pressed.
+      // `test_the_form_bounds_the_submissions_leaf_count_at_max_entries` is what met
+      // it: the fifth tick moved the screen and its sixth checkbox never appeared.
+      //
+      // Every other route into step 2 already reset it here or in `goToStep`, and
+      // all of them -- add, edit, Start -- reach step 2 through this branch.
+      else setState({ step: state.step + 1, foodStage: 'categories', error: null, errorAt: null, returnTo: state.step === 3 ? null : markerAfterLeaving() })
     }
     if (action === 'add-entry') {
       // The rule, not the rendering: a `disabled` attribute can be removed with a

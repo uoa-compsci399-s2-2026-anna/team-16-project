@@ -782,15 +782,45 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 .stats-page .stats-breakdowns > p,
 .stats-page .stats-breakdown-note { color: var(--muted); }
 .stats-page .stats-breakdown { min-width: 0; margin-top: 28px; padding: 22px; border: 1px solid var(--border); border-radius: 16px; background: #fff; box-shadow: var(--shadow); }
-.stats-page .stats-chart-region { position: relative; min-width: 0; min-height: 320px; margin: 22px 0; }
-.stats-page .stats-chart-region canvas { max-width: 100%; }
+.stats-page .stats-breakdown-note { max-width: 70ch; margin: 8px 0 16px; }
+.stats-page .stats-chart-controls { display: grid; gap: 8px; max-width: 300px; }
+.stats-page .stats-chart-controls label { font-weight: 700; }
+.stats-page .stats-chart-controls select { width: 100%; min-width: 0; min-height: 44px; }
+.stats-page .stats-chart-region {
+  position: relative;
+  width: 100%;
+  max-width: 760px;
+  height: clamp(26rem, 125vw, 31rem);
+  min-width: 0;
+  margin: 22px auto 30px;
+}
+.stats-page .stats-chart-region canvas { display: block; max-width: 100%; }
 .stats-page .stats-breakdown-list { margin: 0; padding: 0; display: grid; gap: 8px; list-style: none; }
 .stats-page .stats-breakdown-list li { padding: 14px 0; display: grid; gap: 6px; border-top: 1px solid var(--border); }
 .stats-page .stats-breakdown-list li > span { display: grid; gap: 3px; color: var(--muted); font-size: 0.92rem; }
 
 @media (min-width: 720px) {
+  .stats-page .stats-chart-region { height: clamp(30rem, 60vw, 34rem); }
   .stats-page .stats-breakdown-list li { grid-template-columns: minmax(180px, 1fr) minmax(320px, 2fr); gap: 24px; }
   .stats-page .stats-breakdown-list li > span { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+}
+
+@media (min-width: 960px) {
+  .stats-page .stats-breakdown:has(.stats-chart-region) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(250px, 290px);
+    grid-template-rows: auto auto 1fr auto;
+    column-gap: 28px;
+  }
+  .stats-page .stats-breakdown:has(.stats-chart-region) > h3 { grid-column: 1 / -1; }
+  .stats-page .stats-breakdown-note { grid-column: 2; grid-row: 2; align-self: end; }
+  .stats-page .stats-chart-controls { grid-column: 2; grid-row: 3; align-self: start; }
+  .stats-page .stats-chart-region { grid-column: 1; grid-row: 2 / 4; margin: 0 0 24px; }
+  .stats-page .stats-list-region { grid-column: 1 / -1; }
+}
+
+@media (max-width: 480px) {
+  .stats-page .stats-breakdown { padding: 18px; }
 }
 
 /* Home page: isolated from calculator components so the public shell can be unified later. */

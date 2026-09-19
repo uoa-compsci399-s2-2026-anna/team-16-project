@@ -1,29 +1,33 @@
 import { ApiError, getStats } from './api.js'
-import { renderBar, renderDonut } from './charts.js'
+import { renderPie, renderBar, renderLine } from './charts.js'
 
 const chartInstances = new Map()
+const chartSelections = new Map()
 let latestRequestGeneration = 0
+
+const CHART_TYPES = [
+  { value: 'pie', label: 'Pie chart', render: renderPie },
+  { value: 'bar', label: 'Bar chart', render: renderBar },
+  { value: 'line', label: 'Line graph', render: renderLine },
+]
 
 const BREAKDOWNS = [
   {
     key: 'by_destination',
     title: 'Destinations entered',
-    description: 'Share of destination entries across calculations run in this tool.',
-    chart: 'donut',
+    description: 'Share of destination entries across calculations run in this tool by a self-selected sample. Each value is a share of destination entries, not of calculations.',
     countLabel: 'destination entries',
   },
   {
     key: 'by_sector',
     title: 'Sectors selected',
-    description: 'Share of supply-chain points by the sector selected in this tool.',
-    chart: 'bar',
+    description: 'Share of supply-chain points by sector in calculations run in this tool by a self-selected sample. Each value is a share of supply-chain points.',
     countLabel: 'supply-chain points',
   },
   {
     key: 'by_food_category',
     title: 'Food categories selected',
-    description: 'Share of supply-chain points by the food category entered in this tool.',
-    chart: 'bar',
+    description: 'Share of supply-chain points by food category in calculations run in this tool by a self-selected sample. Each value is a share of supply-chain points.',
     countLabel: 'supply-chain points',
   },
 ]
@@ -129,16 +133,23 @@ function renderEquivalentList(rows, definition) {
   return region
 }
 
-function createChart(key, canvas, rows, definition) {
+function chartDescription(definition, type) {
+  const lineNote = type === 'line'
+    ? " The horizontal axis follows the service's category order; this is not a time trend."
+    : ''
+  return definition.description + lineNote
+}
+
+function createChart(key, canvas, rows, definition, type) {
   destroyChart(key)
   const options = {
     title: `${definition.title} (share)`,
     labelKey: 'label',
     valueKey: 'share',
+    valueFormat: 'percent',
   }
-  const chart = definition.chart === 'donut'
-    ? renderDonut(canvas, rows, options)
-    : renderBar(canvas, rows, { ...options, allowNegative: false })
+  const chartType = CHART_TYPES.find((candidate) => candidate.value === type) || CHART_TYPES[0]
+  const chart = chartType.render(canvas, rows, options)
   chartInstances.set(key, chart)
 }
 
@@ -147,9 +158,16 @@ function renderBreakdown(stats, definition) {
     className: 'stats-breakdown',
     attributes: { 'aria-labelledby': `${definition.key}-heading` },
   })
+  const selectedType = chartSelections.get(definition.key) || 'pie'
+  const descriptionId = `${definition.key}-chart-description`
+  const description = element('p', {
+    className: 'stats-breakdown-note',
+    text: chartDescription(definition, selectedType),
+    attributes: { id: descriptionId, 'aria-live': 'polite' },
+  })
   section.append(
     element('h3', { text: definition.title, attributes: { id: `${definition.key}-heading` } }),
-    element('p', { className: 'stats-breakdown-note', text: definition.description }),
+    description,
   )
 
   const rows = Array.isArray(stats[definition.key]) ? stats[definition.key] : []
@@ -163,16 +181,43 @@ function renderBreakdown(stats, definition) {
     return section
   }
 
+  const control = element('div', { className: 'stats-chart-controls' })
+  const selectId = `${definition.key}-chart-type`
+  const label = element('label', {
+    text: `${definition.title} chart type`,
+    attributes: { for: selectId },
+  })
+  const select = element('select', {
+    attributes: { id: selectId, 'aria-describedby': descriptionId },
+  })
+  for (const type of CHART_TYPES) {
+    select.append(element('option', { text: type.label, attributes: { value: type.value } }))
+  }
+  select.value = selectedType
+  control.append(label, select)
+
   const chartRegion = element('div', { className: 'stats-chart-region' })
   const canvas = element('canvas', {
     attributes: {
       role: 'img',
-      'aria-label': `${definition.title}, charted using the API-provided share for every published bucket. The full values follow in a text list.`,
+      'aria-label': `${definition.title}, ${selectedType} chart using the API-provided share for every published bucket. The full values follow in a text list.`,
+      'aria-describedby': descriptionId,
     },
   })
+  select.addEventListener('change', () => {
+    const type = CHART_TYPES.find((candidate) => candidate.value === select.value)
+    if (!type) {
+      select.value = chartSelections.get(definition.key) || 'pie'
+      return
+    }
+    chartSelections.set(definition.key, type.value)
+    description.textContent = chartDescription(definition, type.value)
+    canvas.setAttribute('aria-label', `${definition.title}, ${type.value} chart using the API-provided share for every published bucket. The full values follow in a text list.`)
+    createChart(definition.key, canvas, rows, definition, type.value)
+  })
   chartRegion.append(canvas)
-  section.append(chartRegion, renderEquivalentList(rows, definition))
-  createChart(definition.key, canvas, rows, definition)
+  section.append(control, chartRegion, renderEquivalentList(rows, definition))
+  createChart(definition.key, canvas, rows, definition, selectedType)
   return section
 }
 

@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-12 (v1.17 draft)"
+date: "2026-09-17 (v1.19 draft)"
 ---
 
 # 0. How to Use This Document
@@ -26,6 +26,22 @@ This document defines **what every person's code receives and what it returns.**
 ## 0.1 Change Log
 
 > **On version numbers.** Two lines of this document ran in parallel from 2026-08-07 to 2026-08-09: v0.10–v0.13 on `admin_panel`, and v1.0–v1.1 on `docs/contract-v1.0`. They were merged as v1.2. Entries below appear in the order they were merged, not in numeric order, and both sequences are real — a reference to "v0.13 §8.3" and one to "v1.1 §2.2" both resolve here.
+
+### v1.19 — 2026-09-17 (raised by the repository owner, affects D only)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **Each non-empty Statistics breakdown has its own labelled native chart-type selector and a nearby explanation.** Pie is the default; bar and line are available independently for destination, sector and food-category shares. The explanation says what that breakdown counts. The line chart connects category labels in published order; it is not a time trend. The canvas references its explanation through `aria-describedby`, and the full text-value list remains available through every switch. Empty or errored breakdowns have no selector or canvas | §7.4 |
+| 2 | **Switching changes presentation only.** Every type plots the API's `share` strings in their published order without deriving a ratio from `count` or `total_kg`. Bar and line axes and tooltips display percentages, though the underlying Chart.js data stay 0–1 shares. A change destroys and replaces only that breakdown's Chart.js instance; it does not request `/stats` again, rebuild a neighbouring chart or alter the text-value list. Independent selections survive another render on the same page | §6.4, §7.4 |
+| 3 | **`charts.js` adds `renderLine` to its exact public exports.** `renderBar` still preserves signed generic inputs; Statistics opts into percentage formatting explicitly, so the existing signed-data contract is unchanged. The REST wire shape and canonical fixture remain unchanged, making §0's fixture step a no-op; the team must still be notified before merge | §0, §7.4, §10 |
+
+### v1.18 — 2026-09-05 (raised by the repository owner, affects D only)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **The statistics page uses three pie charts.** Destination, sector and food-category breakdowns all chart the API's published `share` strings directly; the browser neither derives shares from `count`/`total_kg` nor changes the wire shape. The tooltip presents that same share as a percentage. `other` and `unspecified` remain ordinary published buckets and are never filtered or visually demoted | §6.4, §7.4 |
+| 2 | **`charts.js` renames `renderDonut` to `renderPie`; its exact public exports are now `renderPie` and `renderBar`.** The pie wrapper emits Chart.js type `pie`, honours `prefers-reduced-motion`, and assigns colours deterministically. Its thirteen-colour seed is collision-resolved within a chart so the first thirteen distinct buckets are visually distinct; thirteen is a seed size, not a permanent bucket ceiling or a promise that colours never repeat above it. `renderBar` stays because signed chart data still needs a representation that preserves negative values | §1.1, §7.4, §7.6 |
+| 3 | **No API, wire or fixture contract changes.** `GET /stats` and `tests/fixtures/stats.json` retain their existing shape and values. The fixture-update step in §0's change process is therefore deliberately a no-op; D must still notify the whole team before merging because the JavaScript module export changed | §0, §6.4, §7.1, §10 |
 
 ### v1.17 — 2026-08-12 (from merging `main` back into this line, affects nobody's code)
 
@@ -410,7 +426,7 @@ Adds the dry-run capability the admin panel needs, and closes two holes in v0.1.
 | Business code (`code` column) | snake_case, lowercase, globally stable | `anaerobic_digestion` |
 | JSON field | snake_case | `qty_kg` |
 | Python function or variable | snake_case | `load_factor_bundle` |
-| JavaScript function or variable | camelCase | `renderDonut` |
+| JavaScript function or variable | camelCase | `renderPie` |
 | Constant code | UPPER_SNAKE | `GWP_CH4_100` |
 
 **The `code` column is the cross-layer identifier.** API requests and responses use `code`, never the database `id`. The front end must never learn an auto-increment primary key.
@@ -1920,7 +1936,7 @@ Exceeding a limit returns `429` with `RATE_LIMITED`. Counters live in memory or 
 
 ES modules, no build step. Located in `web/js/`. `web/README.md` is the operational companion to this section — how to run the front end, and how to run it against the fixtures with no backend — and this document is the authority where the two disagree.
 
-**Eleven modules, nine of them C's and built.** Until v1.2 this section named five and described two of those inaccurately — six real modules were absent, including `view.js`, which holds the escaping and formatting primitives D and E would otherwise each reimplement. The signatures below are transcribed from the branch, not proposed for it. Where C's code and the old contract disagreed on shape, **the contract has changed to match her code** and says so at the point of change; where a contract requirement is genuinely unmet, it is marked **Not built** and stays a requirement.
+**Thirteen modules, all built.** Until v1.2 this section named five and described two of those inaccurately — six real modules were absent, including `view.js`, which holds the escaping and formatting primitives D and E would otherwise each reimplement. D subsequently added `charts.js`, `news.js`, `home.js` and `stats.js`, and extended the existing `methodology.js`; §7.4 and §7.5 now describe shipped modules rather than future specifications. Where code and the contract disagree, the contract-change process in §0 applies; an undocumented implementation is not a second contract.
 
 ## 7.1 `api.js` (written by C, shared with D and E)
 
@@ -1948,7 +1964,12 @@ export async function getTaxonomy();
  */
 export async function calculate(payload, opts = {});
 
-/** GET /api/v1/stats   @returns {Promise<PublicStats>} @throws {ApiError} */
+/**
+ * GET /api/v1/stats
+ * @returns {Promise<PublicStats>} The §6.4 wire object unchanged. In particular,
+ *          every published `share` remains the API string D charts directly.
+ * @throws {ApiError}
+ */
 export async function getStats();
 
 /** GET /api/v1/factors[?version=…]   @returns {Promise<Factors>} */
@@ -2227,20 +2248,70 @@ No exports. Uses top-level `await` to call `getFactors()`, then writes the facto
 /**
  * @param {HTMLCanvasElement} el
  * @param {Array<{code,label,count,share}>} buckets
- * @param {{title?: string}} [opts]
+ * @param {{title?: string, labelKey?: string, valueKey?: string}} [opts]
  * @returns {Chart}  Chart.js instance; the caller is responsible for destroy()
  */
-export function renderDonut(el, buckets, opts);
+export function renderPie(el, buckets, opts);
 
 /**
  * @param {HTMLCanvasElement} el
  * @param {Array<{label, value, unit}>} rows
- * @param {{allowNegative?: boolean}} [opts]  Downstream factors may be
- *        negative, so the bar chart must render negative values
+ * @param {{allowNegative?: boolean, valueFormat?: 'percent',
+ *          labelKey?: string, valueKey?: string}} [opts]
+ *        By default the bar chart preserves signed values. Statistics passes
+ *        valueFormat: 'percent' for percentage display of raw shares.
  * @returns {Chart}
  */
 export function renderBar(el, rows, opts);
+
+/**
+ * @param {HTMLCanvasElement} el
+ * @param {Array<{code,label,share}>} rows
+ * @param {{title?: string, valueFormat?: 'percent',
+ *          labelKey?: string, valueKey?: string}} [opts]
+ * @returns {Chart}
+ */
+export function renderLine(el, rows, opts);
 ```
+
+The module's **exact public exports** are `renderPie`, `renderBar` and
+`renderLine`. The Statistics page renders its three published breakdowns as
+Chart.js type `pie` by default. Each non-empty section has its own labelled
+native `<select>` with `pie`, `bar` and `line` options, plus a nearby brief
+explanation of what its entries count. The chart canvas references that
+explanation with `aria-describedby`; the equivalent text-value list remains
+present for all chart types. An empty or errored section has neither selector
+nor canvas. The line chart connects categories in the API's published order;
+the page explicitly says that this is **not a time trend**.
+
+All three renderers receive the API's published `share` strings through
+`valueKey: 'share'` and preserve bucket order and every bucket, including
+`other` and `unspecified`. They convert the strings to Chart.js numeric values
+without deriving a new share from `count` or `total_kg`. Pie tooltips present
+that value as a percentage. Statistics passes `valueFormat: 'percent'` to bar
+and line: axis ticks and tooltips present percentages while stored Chart.js
+data remain 0–1 shares. The generic `renderBar` default is unchanged: its
+signed values remain signed numbers, including negative inputs, with no
+percentage formatting unless explicitly requested. `renderLine` honours
+`prefers-reduced-motion` like the other renderers.
+
+Changing one selector destroys and replaces only that section's Chart.js
+instance using the already-loaded rows; it neither refetches `/stats`,
+recreates another chart, nor changes the equivalent text-value list.
+Each selector keeps its choice independently across another Statistics render
+on the same page. Initial selection is pie. Reloading the page may reset it.
+
+Colour assignment is deterministic from a bucket's stable `code` (falling back
+to its label when no code is available). Collisions are resolved within the
+thirteen-colour seed so the first thirteen distinct buckets in one chart receive
+distinct colours. This is not a permanent maximum: a future response may contain
+more buckets, and the renderer must continue to draw them even if the seed then
+repeats. `other` and `unspecified` follow exactly the same path as every other
+bucket. If `prefers-reduced-motion: reduce` matches, chart animation is disabled.
+
+`renderBar` remains the signed-data renderer and must not clip or take the
+absolute value of a negative input. Statistics calls it only when a visitor
+selects bar and opts into percentage display for non-negative shares.
 
 ## 7.5 `news.js` (written by D)
 
@@ -2258,7 +2329,11 @@ export async function fetchNews(limit);
 
 Source: `https://kaicommitment.org.nz/wp-json/wp/v2/posts?per_page={limit}&_embed`
 
-> **§7.4 and §7.5 are specifications, not descriptions.** Neither module exists yet, and Chart.js appears nowhere in the tree — C's bars are CSS-width `<span>` elements. They remain D's deliverables.
+> **§7.4 and §7.5 describe shipped modules.** `charts.js` loads the self-hosted
+> Chart.js runtime, `news.js` normalises the client's WordPress response, and D's
+> `home.js` and `stats.js` consume them. `methodology.js` is also extended for D's
+> documentation page. No D module calls `fetch` directly; §7.1 remains the sole
+> network boundary.
 
 ## 7.6 Front-End Hard Constraints
 

@@ -5,15 +5,16 @@ JavaScript test runner.  These tests therefore check the stable, reviewable
 boundary: page relationships, accessible HTML, local runtime assets, module
 exports/data flow, safe rendering invariants, fixture ownership and nginx CSP.
 
-They intentionally do *not* prescribe DOM ids, ``data-*`` hooks, CSS classes,
-or a number of canvases/tables.  Chart drawing, focus movement and responsive
-layout remain browser-acceptance work rather than being faked here.
+They intentionally do *not* prescribe DOM ids, ``data-*`` hooks or CSS classes.
+The Statistics selector and Chart.js boundary are exercised with a minimal DOM;
+pixel drawing, focus movement and responsive layout remain browser acceptance.
 """
 
 from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 from html.parser import HTMLParser
 from pathlib import Path
@@ -221,6 +222,344 @@ def _exported_function(source: str, name: str) -> str:
     raise AssertionError(f"Exported function {name} has an unclosed body")
 
 
+def _node_pie_probe(path: Path) -> dict[str, object] | None:
+    """Observe the real ESM namespace and Chart config without a browser dependency."""
+
+    node = shutil.which("node")
+    if node is None:
+        return None
+    vendor = WEB / "vendor" / "chart.umd.min.js"
+    rows = [
+        {"code": f"bucket_{index}", "label": f"Bucket {index}", "share": str(index / 100)}
+        for index in range(1, 14)
+    ]
+    rows.extend([
+        {"code": "other", "label": "Other", "share": "0.14"},
+        {"code": "unspecified", "label": "Unspecified", "share": "0.15"},
+    ])
+    fallback_rows = [
+        {"label": "label-19032", "share": "0.01"},
+        {"label": "label-43502", "share": "0.02"},
+        *(
+            {"label": f"fallback-{index}", "share": str(index / 100)}
+            for index in range(3, 14)
+        ),
+    ]
+    script = (
+        f"await import({json.dumps(vendor.as_uri())});"
+        "globalThis.Chart = class {"
+        "constructor(_el, config) { this.config = config; this.data = config.data;"
+        "this.options = config.options; } destroy() {} };"
+        "globalThis.window = globalThis;"
+        "globalThis.matchMedia = () => ({matches: true});"
+        f"const module = await import({json.dumps(path.as_uri())});"
+        "const output = {exports: Object.keys(module).sort()};"
+        "if (typeof module.renderPie !== 'function') {"
+        "process.stdout.write(JSON.stringify(output));"
+        "} else {"
+        f"const rows = {json.dumps(rows)};"
+        f"const fallbackRows = {json.dumps(fallback_rows)};"
+        "const canvas = {}; canvas.getContext = () => ({canvas});"
+        "const make = values => module.renderPie(canvas, values, {"
+        "title: 'Probe', labelKey: 'label', valueKey: 'share'});"
+        "const first = make(rows);"
+        "const second = make([...rows].reverse());"
+        "const sameCodeA = make([{code: 'stable_code', label: 'Before', share: '1'}]);"
+        "const sameCodeB = make([{code: 'stable_code', label: 'After', share: '1'}]);"
+        "const fallbackFirst = make(fallbackRows);"
+        "const fallbackSecond = make([...fallbackRows].reverse());"
+        "const colours = first.data.datasets[0].backgroundColor;"
+        "const reverseColours = second.data.datasets[0].backgroundColor;"
+        "const byLabel = Object.fromEntries(first.data.labels.map((label, i) => [label, colours[i]]));"
+        "const reversedByLabel = Object.fromEntries(second.data.labels.map((label, i) => [label, reverseColours[i]]));"
+        "const fallbackColours = fallbackFirst.data.datasets[0].backgroundColor;"
+        "const reversedFallbackColours = fallbackSecond.data.datasets[0].backgroundColor;"
+        "const fallbackByLabel = Object.fromEntries(fallbackFirst.data.labels.map("
+        "(label, i) => [label, fallbackColours[i]]));"
+        "const reversedFallbackByLabel = Object.fromEntries(fallbackSecond.data.labels.map("
+        "(label, i) => [label, reversedFallbackColours[i]]));"
+        "const tooltip = first.options.plugins.tooltip.callbacks.label({"
+        "label: 'Probe', raw: 0.125, parsed: 0.125});"
+        "const signed = module.renderBar(canvas, [{label: 'Negative', value: -4}], {});"
+        "Object.assign(output, {"
+        "type: first.config.type, labels: first.data.labels, data: first.data.datasets[0].data,"
+        "firstThirteenUnique: new Set(colours.slice(0, 13)).size,"
+        "deterministic: rows.every(row => byLabel[row.label] === reversedByLabel[row.label]),"
+        "sameCodeStable: sameCodeA.data.datasets[0].backgroundColor[0] === "
+        "sameCodeB.data.datasets[0].backgroundColor[0],"
+        "fallbackThirteenUnique: new Set(fallbackColours).size,"
+        "knownFallbackCollisionResolved: fallbackByLabel['label-19032'] !== "
+        "fallbackByLabel['label-43502'],"
+        "fallbackDeterministic: fallbackRows.every(row => "
+        "fallbackByLabel[row.label] === reversedFallbackByLabel[row.label]),"
+        "animation: first.options.animation, tooltip,"
+        "signedData: signed.data.datasets[0].data});"
+        "process.stdout.write(JSON.stringify(output));"
+        "}"
+    )
+    result = subprocess.run(
+        [node, "--input-type=module", "--eval", script],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout)
+
+
+def _node_stats_probe(path: Path) -> dict[str, object] | None:
+    """Exercise statistics charts and native selectors in a minimal in-memory DOM."""
+
+    node = shutil.which("node")
+    if node is None:
+        return None
+    vendor = WEB / "vendor" / "chart.umd.min.js"
+    payload = {
+        "generated_at": "2026-09-05T00:00:00Z",
+        "total_calculations": 42,
+        "suppression_threshold": 5,
+        "by_destination": [
+            {"code": "other", "label": "Other", "count": 7, "share": "0.20", "total_kg": "2.0"},
+            {"code": "landfill", "label": "Landfill", "count": 12, "share": "0.55", "total_kg": "5.0"},
+            {"code": "compost", "label": "Compost", "count": 6, "share": "0.25", "total_kg": "1.0"},
+        ],
+        "by_sector": [
+            {"code": "retail", "label": "Retail", "count": 8, "share": "0.30", "total_kg": "3.0"},
+            {"code": "processing", "label": "Processing", "count": 10, "share": "0.35", "total_kg": "4.0"},
+            {"code": "other", "label": "Other", "count": 9, "share": "0.35", "total_kg": "2.0"},
+        ],
+        "by_food_category": [
+            {"code": "unspecified", "label": "Unspecified", "count": 9, "share": "0.40", "total_kg": "4.0"},
+            {"code": "bakery", "label": "Bakery", "count": 7, "share": "0.25", "total_kg": "2.0"},
+            {"code": "produce", "label": "Produce", "count": 10, "share": "0.35", "total_kg": "3.0"},
+        ],
+    }
+    script = (
+        f"await import({json.dumps(vendor.as_uri())});\n"
+        + r"""
+const instances = [];
+const fetches = [];
+globalThis.Chart = class {
+  constructor(_el, config) {
+    this.config = config;
+    this.data = config.data;
+    this.options = config.options;
+    this.destroyed = false;
+    instances.push(this);
+  }
+  destroy() { this.destroyed = true; }
+};
+globalThis.window = globalThis;
+globalThis.location = {search: ''};
+globalThis.matchMedia = () => ({matches: false});
+globalThis.addEventListener = () => {};
+globalThis.fetch = (...args) => { fetches.push(args); throw new Error('Unexpected fetch'); };
+class Node {
+  constructor(tag = '') {
+    this.tagName = tag.toLowerCase();
+    this.children = [];
+    this.attributes = {};
+    this.textContent = '';
+    this.className = '';
+    this.listeners = {};
+    this._value = undefined;
+    this.parentNode = null;
+  }
+  append(...children) {
+    for (const child of children) {
+      if (child instanceof Node) child.parentNode = this;
+      this.children.push(child);
+    }
+  }
+  appendChild(child) { this.append(child); return child; }
+  replaceChildren(...children) { this.children = []; this.append(...children); }
+  setAttribute(name, value) { this.attributes[name] = String(value); }
+  getAttribute(name) {
+    if (name === 'id' && this.id) return this.id;
+    if (name === 'for' && this.htmlFor) return this.htmlFor;
+    return this.attributes[name] ?? null;
+  }
+  addEventListener(name, callback) { (this.listeners[name] ||= []).push(callback); }
+  dispatchEvent(event) {
+    if (!event.target) event.target = this;
+    event.currentTarget = this;
+    if (!event.stopPropagation) event.stopPropagation = () => { event._stopped = true; };
+    if (!event.preventDefault) event.preventDefault = () => { event.defaultPrevented = true; };
+    for (const callback of this.listeners[event.type] || []) callback(event);
+    if (typeof this['on' + event.type] === 'function') this['on' + event.type](event);
+    if (event.bubbles !== false && !event._stopped) this.parentNode?.dispatchEvent(event);
+    return true;
+  }
+  closest(selector) {
+    let node = this;
+    while (node) {
+      if (node.tagName === selector.toLowerCase()) return node;
+      node = node.parentNode;
+    }
+    return null;
+  }
+  querySelectorAll(selector) { return descendants(this, selector.toLowerCase()); }
+  querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
+  get value() {
+    if (this._value !== undefined) return this._value;
+    if (this.tagName === 'select') return descendants(this, 'option')[0]?.value || '';
+    return this.attributes.value || '';
+  }
+  set value(value) { this._value = String(value); }
+}
+function descendants(root, tag) {
+  const found = [];
+  for (const child of root.children || []) {
+    if (child instanceof Node) {
+      if (!tag || child.tagName === tag) found.push(child);
+      found.push(...descendants(child, tag));
+    }
+  }
+  return found;
+}
+function textTree(root) {
+  if (typeof root === 'string') return root;
+  return String(root.textContent || '') + (root.children || []).map(textTree).join('');
+}
+globalThis.document = new Node('document');
+document.createElement = tag => new Node(tag);
+document.createDocumentFragment = () => new Node('fragment');
+document.querySelector = () => null;
+"""
+        + f"const statsModule = await import({json.dumps(path.as_uri())});\n"
+        + f"const payload = {json.dumps(payload)};\n"
+        + r"""
+const summary = new Node('section');
+const breakdowns = new Node('div');
+summary.parentNode = document;
+breakdowns.parentNode = document;
+const targets = {summary, breakdowns};
+statsModule.renderStats(payload, targets);
+function sections() { return descendants(breakdowns, 'section'); }
+function controls() { return sections().map(section => descendants(section, 'select')[0] || null); }
+function lists() {
+  return sections().map(section => {
+    const equivalent = descendants(section).find(node =>
+      ['ul', 'ol', 'dl', 'table'].includes(node.tagName));
+    return equivalent ? textTree(equivalent) : null;
+  });
+}
+function accessibleName(control, section) {
+  if (!control) return '';
+  const direct = control.getAttribute('aria-label');
+  if (direct) return direct;
+  const referenced = control.getAttribute('aria-labelledby');
+  if (referenced) {
+    const names = referenced.split(/\s+/).map(id =>
+      descendants(section).find(node => node.getAttribute('id') === id))
+      .filter(Boolean).map(textTree).join(' ');
+    if (names.trim()) return names;
+  }
+  const id = control.getAttribute('id');
+  if (id) {
+    const label = descendants(section, 'label').find(node => node.getAttribute('for') === id);
+    if (label) return textTree(label);
+  }
+  let ancestor = control.parentNode;
+  while (ancestor && ancestor !== section) {
+    if (ancestor.tagName === 'label') return textTree(ancestor);
+    ancestor = ancestor.parentNode;
+  }
+  return '';
+}
+function descriptions() {
+  return sections().map(section => {
+    const canvas = descendants(section, 'canvas')[0];
+    const id = canvas?.getAttribute('aria-describedby');
+    const described = descendants(section).find(node => node.getAttribute('id') === id);
+    return {id: id || null, text: described ? textTree(described) : ''};
+  });
+}
+const original = [...instances];
+const initialControls = controls();
+const output = {
+  count: original.length,
+  types: original.map(chart => chart.config.type),
+  data: original.map(chart => chart.data.datasets[0].data),
+  labels: original.map(chart => chart.data.labels),
+  options: initialControls.map(control => control ? descendants(control, 'option').map(option => option.value) : []),
+  defaults: initialControls.map(control => control?.value || null),
+  names: initialControls.map((control, index) => accessibleName(control, sections()[index])),
+  lists: lists(),
+  descriptions: descriptions(),
+};
+if (initialControls.every(Boolean)) {
+  const beforeLists = lists();
+  initialControls[0].value = 'bar';
+  initialControls[0].dispatchEvent({type: 'change', target: initialControls[0]});
+  const bar = instances.at(-1);
+  const afterBar = {
+    types: instances.map(chart => chart.config.type),
+    destroyed: original.map(chart => chart.destroyed),
+    data: bar.data.datasets[0].data,
+    labels: bar.data.labels,
+    axis: Object.values(bar.options.scales || {}).map(scale => scale.ticks?.callback?.(0.25)).filter(Boolean),
+    tooltip: bar.options.plugins?.tooltip?.callbacks?.label?.({label: 'Other', raw: 0.25, parsed: {y: 0.25}}),
+    listsUnchanged: JSON.stringify(beforeLists) === JSON.stringify(lists()),
+    selections: controls().map(control => control.value),
+  };
+  initialControls[1].value = 'line';
+  initialControls[1].dispatchEvent({type: 'change', target: initialControls[1]});
+  const line = instances.at(-1);
+  output.switched = {
+    bar: afterBar,
+    line: {
+      types: instances.map(chart => chart.config.type),
+      destroyed: original.map(chart => chart.destroyed),
+      previousBarDestroyed: bar.destroyed,
+      data: line.data.datasets[0].data,
+      labels: line.data.labels,
+      axis: Object.values(line.options.scales || {}).map(scale => scale.ticks?.callback?.(0.25)).filter(Boolean),
+      tooltip: line.options.plugins?.tooltip?.callbacks?.label?.({label: 'Retail', raw: 0.25, parsed: {y: 0.25}}),
+      listsUnchanged: JSON.stringify(beforeLists) === JSON.stringify(lists()),
+      selections: controls().map(control => control.value),
+      fetches: fetches.length,
+      explanation: descendants(sections()[1], 'p').map(textTree).join(' '),
+    },
+  };
+  statsModule.renderStats(payload, targets);
+  output.rerenderSelections = controls().map(control => control.value);
+  statsModule.renderStats({...payload, by_sector: []}, targets);
+  const emptySections = sections();
+  output.emptySector = {
+    controls: descendants(emptySections[1], 'select').length,
+    canvases: descendants(emptySections[1], 'canvas').length,
+    otherControls: [0, 2].map(index => descendants(emptySections[index], 'select').length),
+  };
+  statsModule.renderStatsError(new Error('Unavailable'), targets);
+  output.error = {controls: descendants(breakdowns, 'select').length,
+    canvases: descendants(breakdowns, 'canvas').length};
+  let resolveOld;
+  const oldPayload = new Promise(resolve => { resolveOld = resolve; });
+  const oldLoad = statsModule.loadStats({...targets, getStats: () => oldPayload});
+  const newLoad = statsModule.loadStats({...targets, getStats: async () => payload});
+  await newLoad;
+  const chartCount = instances.length;
+  resolveOld({...payload, total_calculations: 999});
+  const oldResult = await oldLoad;
+  output.stale = {oldResult, chartCountUnchanged: instances.length === chartCount,
+    oldTextAbsent: !textTree(summary).includes('999')};
+}
+process.stdout.write(JSON.stringify(output));
+"""
+    )
+    result = subprocess.run(
+        [node, "--input-type=module", "--eval", script],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout)
+
+
 def _resolve_local(owner: Path, reference: str, *, allow_image_data: bool = False) -> Path | None:
     parsed = urlsplit(reference)
     if parsed.scheme == "data":
@@ -392,9 +731,32 @@ def test_charts_module_has_exact_public_exports_and_vendored_chartjs():
     path = WEB / "js" / "charts.js"
     assert path.is_file()
     source = _read(path)
-    exported = set(re.findall(r"export\s+function\s+([A-Za-z_$][\w$]*)\s*\(", source))
-    assert exported == {"renderDonut", "renderBar"}
     assert re.search(r"\bnew\s+Chart\s*\(", source)
+
+    probe = _node_pie_probe(path)
+    if probe is None:
+        # Portable fallback only. With Node, the namespace and behaviour above
+        # are authoritative and permit export lists, aliases and shared helpers.
+        assert re.search(r"\bexport\b[\s\S]*\brenderPie\b", source)
+        assert re.search(r"\bexport\b[\s\S]*\brenderBar\b", source)
+        assert re.search(r"\bexport\b[\s\S]*\brenderLine\b", source)
+        assert not re.search(r"\bexport\b[^;\n]*\brenderDonut\b", source)
+        assert "prefers-reduced-motion" in source and "tooltip" in source
+        assert "Math.random" not in _js_code_without_comments_or_strings(source)
+    else:
+        assert set(probe["exports"]) == {"renderPie", "renderBar", "renderLine"}
+        assert probe["type"] == "pie"
+        assert probe["firstThirteenUnique"] == 13
+        assert probe["deterministic"] is True
+        assert probe["sameCodeStable"] is True
+        assert probe["fallbackThirteenUnique"] == 13
+        assert probe["knownFallbackCollisionResolved"] is True
+        assert probe["fallbackDeterministic"] is True
+        assert probe["animation"] is False
+        assert probe["labels"][-2:] == ["Other", "Unspecified"]
+        assert probe["data"][-2:] == [0.14, 0.15]
+        assert "12.5%" in str(probe["tooltip"])
+        assert probe["signedData"] == [-4]
 
     chart_sources = []
     for candidate in WEB.rglob("*.js"):
@@ -418,7 +780,7 @@ def test_charts_module_has_exact_public_exports_and_vendored_chartjs():
 
 
 def test_statistics_source_consumes_the_stats_contract_without_nz_generalisation():
-    """Independent empty states, negative axes and destroy timing stay in browser QA."""
+    """The three share charts preserve data and switch independently."""
 
     html = _read(PAGES["statistics"])
     source = _read(WEB / "js" / "stats.js")
@@ -439,7 +801,86 @@ def test_statistics_source_consumes_the_stats_contract_without_nz_generalisation
     # `other` and `unspecified` are ordinary API buckets, not client-side filters.
     assert not re.search(r"\.filter\s*\([^)]*(?:other|unspecified)", source)
 
-    assert "renderDonut" in source and "renderBar" in source and "./charts.js" in source
+    probe = _node_stats_probe(WEB / "js" / "stats.js")
+    if probe is None:
+        # Portable fallback: bind the required data key to the chart creation
+        # path without prescribing named imports, aliases or helper layout.
+        assert "renderPie" in source
+        assert re.search(r"valueKey\s*:\s*['\"]share['\"]", source)
+        assert "renderLine" in source and "renderBar" in source
+    else:
+        assert probe["count"] == 3
+        assert probe["types"] == ["pie", "pie", "pie"]
+        expected_labels = [
+            ["Other", "Landfill", "Compost"],
+            ["Retail", "Processing", "Other"],
+            ["Unspecified", "Bakery", "Produce"],
+        ]
+        expected_data = [[0.2, 0.55, 0.25], [0.3, 0.35, 0.35], [0.4, 0.25, 0.35]]
+        assert probe["data"] == expected_data
+        assert probe["labels"] == expected_labels
+        assert probe["options"] == [["pie", "bar", "line"]] * 3
+        assert probe["defaults"] == ["pie", "pie", "pie"]
+        assert len(probe["names"]) == 3 and all(name.strip() for name in probe["names"])
+        for list_text, labels, shares in zip(probe["lists"], expected_labels, expected_data):
+            assert isinstance(list_text, str) and list_text.strip(), "Each chart needs an equivalent data list"
+            positions = [list_text.find(label) for label in labels]
+            assert positions == sorted(positions) and all(position >= 0 for position in positions)
+            for share in shares:
+                percent = int(round(share * 100))
+                assert re.search(rf"{percent}(?:\.0)?\s*%", list_text), (
+                    f"The data list omits the published {percent}% share"
+                )
+        assert all(description["id"] and description["text"] for description in probe["descriptions"])
+        assert "destination" in probe["descriptions"][0]["text"].lower()
+        assert "sector" in probe["descriptions"][1]["text"].lower()
+        assert "food categor" in probe["descriptions"][2]["text"].lower()
+        switched = probe["switched"]
+        assert switched["bar"]["types"] == ["pie", "pie", "pie", "bar"]
+        assert switched["bar"]["destroyed"] == [True, False, False]
+        assert switched["bar"]["data"] == expected_data[0]
+        assert switched["bar"]["labels"] == expected_labels[0]
+        assert any("25" in str(value) and "%" in str(value) for value in switched["bar"]["axis"])
+        assert "25" in str(switched["bar"]["tooltip"])
+        assert "%" in str(switched["bar"]["tooltip"])
+        assert switched["bar"]["listsUnchanged"] is True
+        assert switched["bar"]["selections"] == ["bar", "pie", "pie"]
+        assert switched["line"]["types"] == ["pie", "pie", "pie", "bar", "line"]
+        assert switched["line"]["destroyed"] == [True, True, False]
+        assert switched["line"]["previousBarDestroyed"] is False
+        assert switched["line"]["data"] == expected_data[1]
+        assert switched["line"]["labels"] == expected_labels[1]
+        assert any("25" in str(value) and "%" in str(value) for value in switched["line"]["axis"])
+        assert "25" in str(switched["line"]["tooltip"])
+        assert "%" in str(switched["line"]["tooltip"])
+        assert switched["line"]["listsUnchanged"] is True
+        assert switched["line"]["selections"] == ["bar", "line", "pie"]
+        assert re.search(r"not (?:a )?time (?:trend|series)", switched["line"]["explanation"], re.I)
+        assert switched["line"]["fetches"] == 0
+        assert probe["rerenderSelections"] == ["bar", "line", "pie"]
+        assert probe["emptySector"] == {"controls": 0, "canvases": 0, "otherControls": [1, 1]}
+        assert probe["error"] == {"controls": 0, "canvases": 0}
+        assert probe["stale"] == {
+            "oldResult": None, "chartCountUnchanged": True, "oldTextAbsent": True,
+        }
+
+
+def test_documented_statistics_visual_contract_matches_the_public_modules():
+    interfaces = _read(ROOT / "docs" / "interfaces.md")
+    architecture = _read(ROOT / "docs" / "architecture.md")
+
+    assert 'date: "2026-09-17 (v1.19 draft)"' in interfaces
+    assert "### v1.19" in interfaces
+    assert "exact public exports" in interfaces.lower()
+    assert "`renderPie`, `renderBar` and" in interfaces
+    assert "`renderLine`" in interfaces
+    assert "valueFormat: 'percent'" in interfaces
+    assert "API's published `share` strings" in interfaces
+    assert "prefers-reduced-motion" in interfaces
+    assert "first thirteen distinct buckets" in interfaces
+    assert "wire or fixture contract changes" in interfaces
+    assert "notify the whole team before merging" in interfaces
+    assert "Three independent destination, sector and food-category share charts" in architecture
 
 
 def test_statistics_fixture_exercises_the_public_semantics():

@@ -236,7 +236,7 @@ Audit logging and rollback are not optional. Staff are expected to update the al
 | --- | --- | --- |
 | Home | News cards plus a calculator entry point | **Pulls the client's WordPress `/wp-json/wp/v2/posts`**; no second news system is built |
 | Calculator | Dual-scenario form, unit conversion, results and equivalences | `GET /taxonomy` and `POST /calculate` |
-| Statistics | Donut chart (destination shares) and bar chart | `GET /stats` |
+| Statistics | Three independent destination, sector and food-category share charts; each defaults to pie and offers bar or line with an explanatory note and equivalent text values | `GET /stats` |
 | Documentation | Methodology notes, published factor tables, background reading | Static content plus `GET /factors` |
 
 Pulling home-page news from the WordPress REST API is deliberate. The client's main site already has a News section; a second one would require staff to post twice, and in practice would stop being updated within months. The client's `wp-json` endpoint is already open.

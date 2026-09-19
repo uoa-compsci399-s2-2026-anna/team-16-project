@@ -26,7 +26,7 @@ web/
   js/api.js                 The only module that calls fetch()
   js/news.js                WordPress post normalisation
   js/home.js                Home/news page entry point
-  js/charts.js              Chart.js adapters for bar and doughnut charts
+  js/charts.js              Chart.js adapters for pie, bar and line charts
   js/stats.js               Statistics page entry point
   js/methodology.js         Documentation page entry point
   js/main.js                Calculator entry point
@@ -86,6 +86,16 @@ Mock calculator error states can be exercised with `mockError`, for example
 - Apart from conversion of user-entered mass in `units.js`, impact values come from the API.
 - Taxonomy, metrics and equivalences are data-driven rather than hard-coded in views.
 - Negative impact values retain their sign in text and charts.
+- Statistics renders destination, sector and food-category shares. Each breakdown has its
+  own pie, bar or line selector, with pie as the default. Switching the chart changes only
+  the presentation of the API's raw `share` values; tooltips format them as percentages.
+- The line chart's horizontal axis follows category order from the service; it does not
+  represent time or a trend. Each chart has a short explanation of what its share measures.
+- Every statistics chart is followed by a complete text list of its buckets, counts, shares
+  and cumulative quantities; the canvas is not the only representation of the data.
+- Chart colours are deterministic for stable bucket codes (or labels when no code is
+  supplied), and the palette continues to generate colours when additional buckets arrive.
+- Chart animation is disabled when `prefers-reduced-motion: reduce` matches.
 - A mock factor set produces a persistent, conditional warning in every results view.
 - The returned anonymous session token is stored in `sessionStorage` and reused.
 - Layouts are checked at 320px, 375px, the 481–849px tablet band and desktop widths.

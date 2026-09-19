@@ -241,3 +241,39 @@ use — and Task 6's disclaimer sentence, already present in `zh-Hant.json`
 for the page, had never previously been cut into this face at all. `jp`
 and `kr` each gained the handful of characters their own translations of
 the eight strings above actually use.
+
+## Re-cut, 2026-09-19 (step 3's zones and term tooltips, v1.61)
+
+Step 3 was re-laid as two tinted zones and its four field names became
+tooltip terms, which added eighteen keys to every catalogue and removed six
+(`docs/interfaces.md` v1.61). Twelve of the new strings are prose rather than
+labels — two zone sub-lines, eight tooltip sentences and two money hints — so
+the four CJK catalogues gained more new characters at once than any previous
+task: `test_no_character_in_any_catalogue_would_print_as_a_box` named
+**twenty-three** code points across `ja`, `ko`, `zh` and `zh-Hant`, among them
+廢 and 弃 ("discard"), 報/报 ("report"), 補/补 ("supplement") and 錢/钱
+("money") — all four ideas new to this screen's copy, and none of them in the
+faces as cut on 2026-09-11.
+
+Re-cut the same way as every entry above: `recut_cjk_subsets.py`, run inside
+the `api` container with `fonts-noto-cjk` (1:20240730+repack1-1, the same
+package version the table at the top of this file names) installed fresh.
+
+| Face | Characters before | Characters after | Bytes before | Bytes after |
+| --- | --- | --- | --- | --- |
+| `NotoSansCJKjp-Regular.woff2` | 634 | 646 | 229,496 | 232,416 |
+| `NotoSansCJKkr-Regular.woff2` | 556 | 558 | 80,220 | 80,568 |
+| `NotoSansCJKsc-Regular.woff2` | 694 | 705 | 201,112 | 204,096 |
+| `NotoSansCJKtc-Regular.woff2` | 690 | 705 | 262,040 | 267,240 |
+
+**Three characters present in the old faces are absent from the new ones, and
+none of them is a loss.** `jp` drops 般, `sc` and `tc` drop 特 (and `sc`
+「」 and 规, `tc` 般), and `kr` drops ‘ and ’. Every one of them was checked
+against the catalogue it would have to come from, at `HEAD` as well as in the
+working tree: **not one appears in any string of its own catalogue in either**.
+They are residue from a cut taken before some earlier catalogue edit removed
+the string that needed them, carried forward because a re-cut only ever
+happens when something is *missing*. This entry is the first to say so; the
+2026-09-11 table's "Lost: 0" column was true of that re-cut and is recorded
+here in its own terms instead, because "lost" and "no longer required" are
+different facts and only the first is a defect.

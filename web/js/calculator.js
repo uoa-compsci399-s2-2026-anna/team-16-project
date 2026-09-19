@@ -789,6 +789,51 @@ function containerTotalText(figures) {
 }
 
 /**
+ * A step-3 field name that carries its own explanation.
+ *
+ * **The trigger is the term itself, not an `i` beside it** — the client's own call. An
+ * icon is a second thing to notice on a label that already carries a `(required)` or
+ * `(optional)` tag; the dotted underline is carried by the words the explanation is
+ * about, and `text-decoration: underline dotted` is the whole affordance. Without it
+ * nobody hovers, so the rule is not decoration and must not be dropped as such.
+ *
+ * **It opens three ways, and the third is the one that needed code.** `:hover` and
+ * `:focus-within` cover the pointer and the keyboard — `:focus-within` rather than
+ * `:focus-visible`, which is keyboard-only and would have left a phone with nothing at
+ * all. The span sits inside `<label for=…>`, so a tap activates the label, focus jumps
+ * to the input, the span blurs and the panel shuts before it has been seen: the
+ * delegated `click` listener in `bindCalculator` calls `preventDefault()` for a click
+ * inside a `.term`, and that is the entire fix. No open/closed flag on `state` —
+ * `render()` replaces `main.innerHTML` on every `setState`, so a flag there would
+ * rebuild the whole step to show a tooltip.
+ *
+ * **The panel opens DOWNWARD, and its containing block is the LABEL, not the term.**
+ * #96's `i` sits at the foot of a results card so its panel goes up; a term here is a
+ * label at the *top* of a field, and upward put the panel outside the card and over the
+ * page heading. Anchoring the inline axis to the label rather than to the span is the
+ * same lesson `.result-explanation__body` records one screen over: a panel sized from a
+ * short inline trigger has no relation to the room available, and at 320px a fixed
+ * 250px minimum is wider than the zone it sits in. A block box spanning the label spans
+ * the zone's own content width, so it cannot leave the screen at any viewport, in either
+ * direction, by construction.
+ *
+ * `aria-describedby` points at the panel and the panel is `role="tooltip"`; the ids come
+ * from `fieldId()`, so five leaves produce five distinct ones rather than five copies of
+ * the same id.
+ *
+ * @param {string} text The term, already plain text — the field's name and nothing else.
+ *   The unit and the `(NZ$)` marker stay outside it: they annotate the field, they are
+ *   not what the explanation is about.
+ * @param {string} tipId Per-leaf id, from `fieldId()`.
+ * @param {string[]} paragraphs At most two, each a short sentence or two.
+ * @returns {string} HTML.
+ */
+function term(text, tipId, paragraphs) {
+  const body = paragraphs.map(line => `<p>${escapeHtml(line)}</p>`).join('')
+  return `<span class="term" tabindex="0" aria-describedby="${tipId}">${escapeHtml(text)}<span class="tip" id="${tipId}" role="tooltip">${body}</span></span>`
+}
+
+/**
  * Step 3.
  *
  * **The containers are options on the unit `<select>`, not a second mode with its own
@@ -817,27 +862,46 @@ function containerTotalText(figures) {
  * describes at every width, and it is the field's own last child so nothing separates
  * "2" from "about 139.200 kg".
  *
- * **Two vertical groups at `min-width: 650px`, not a grid of five equal cells.**
- * `.mass-fields` wraps the waste amount, the unit, and the production total — the
- * three quantities the unit itself governs, in the order a visitor answers them —
- * and `.money-fields` wraps the two optional NZ$ figures, which may be left
- * entirely empty. Both are single items in `.amount-grid`'s two-column row and
- * both lay their own children out in ordinary block flow, so the group that is
- * shorter (`.money-fields`, always) is never stretched or padded to match the
- * other — see `styles.css`'s own comment on `align-items: start` there. Below
- * `min-width: 650px` neither wrapper does anything: `.amount-grid` has no column
- * template, so every field just stacks in source order, which is already the
- * correct single-column reading order (amount, unit, total, then the two money
- * fields).
+ * **Two tinted zones, symmetric, each with its own heading — and both always
+ * visible.** The first holds the quantities the unit measures (the unit itself,
+ * then the waste amount and the production total); the second holds the two
+ * optional NZ$ figures. The split is *"what this unit measures"* against
+ * *"supporting figures"*, not *"required"* against *"optional"*: the production
+ * total is optional and still belongs with the waste amount, because one unit
+ * control governs both, and a required/optional split would put the unit in one
+ * zone and one of the two figures it applies to in the other.
  *
- * **The unit sits between the two quantities it governs, and is visibly
- * narrower than either.** That placement is the point: it is not a third
- * quantity beside the amount and the total, it is what the other two are
- * measured in. `.unit-field select` is half-width for the same reason; the
- * closed control may still truncate a long container label to do it (staff
- * types `unit_preset.label`, and there is no ceiling on how long it can be),
- * so the select's `title` carries the option currently selected in full, for
- * hover and assistive technology.
+ * Client feedback, restated: the two columns had no visual separator, so reading
+ * across drifted out of one column into the next and the reader only noticed when
+ * a sentence failed to line up; reading down, nothing said where a column ended.
+ * `gap: 0 20px` between two ~445px columns makes that drift inevitable. Each zone
+ * now carries its own tint and border — `--zone` / `--zone-line` in `styles.css`,
+ * one step lighter than `--mint`, which is the combined-total strip on this same
+ * screen and would otherwise compete with them.
+ *
+ * **Nothing on this step is collapsed, and the leaf card's second column is no
+ * longer dead.** The multi-leaf `<details class="leaf-extras">` disclosure is gone.
+ * Its stated reason was §7.6.3's rule that advancing must never require scrolling,
+ * which three full panels could not hold — written when the step bar was not
+ * sticky. The bar is `position: sticky` now: with stickiness intact every step's
+ * primary action is above the fold at all three viewports, and removing stickiness
+ * fails every one of them. Content height no longer decides whether Continue is
+ * reachable, so the only cost of showing everything is page length. The disclosure
+ * also took the money pair *outside* the card's own grid, while the grid itself
+ * carried `.amount-grid--leaf` — a class with no rule anywhere, so it inherited
+ * `.amount-grid`'s two-column template with one child and left 445px of a 960px
+ * card empty. Both zones now occupy that row.
+ *
+ * **The unit sits ABOVE the two quantities it governs, and is visibly narrower
+ * than either.** It is not a third quantity beside the amount and the total, it is
+ * what both of them are measured in, so it leads the column they are in and
+ * `.unit-field select` is half-width to say so. Step 4's `.amount-with-unit` sets a
+ * unit beside its amount and is right to: there the unit governs one number. Here
+ * it governs two, and a compound control could only ever sit beside one of them.
+ * The closed control may still truncate a long container label (staff type
+ * `unit_preset.label`, and there is no ceiling on how long it can be), so the
+ * select's `title` carries the option currently selected in full, for hover and
+ * assistive technology.
  */
 function leafPanel(leaf, leaves, index) {
   const figures = draftLeafFigures(leaf)
@@ -882,18 +946,63 @@ function leafPanel(leaf, leaves, index) {
   const errorId = fieldId('amount-error', leaf, leaves)
   const presets = containerPresets(leaf.foodCategory)
   const data = field => `data-leaf-field="${field}" data-leaf="${keyAttr(key)}"`
-  const mass = `<div class="mass-fields"><div class="form-field ${amountFieldError ? 'has-error' : ''}"><label for="${amountId}">${escapeHtml(amountLabel)} <span class="required">${escapeHtml(t('(required)'))}</span></label><p class="field-hint">${escapeHtml(amountHint)}</p><input id="${amountId}" ${data(container ? 'count' : 'amount')} type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(amountValue)}" ${amountFieldError ? `aria-invalid="true" aria-describedby="${errorId}"` : ''}>${amountFieldError ? `<p class="field-error" id="${errorId}" role="alert">${escapeHtml(amountFieldError)}</p>` : ''}${container ? `<p class="container-total" id="${totalId}" aria-live="polite">${escapeHtml(containerTotalText(figures))}</p>` : ''}</div><div class="form-field unit-field"><label for="${unitId}">${escapeHtml(t('Unit'))} <span class="required">${escapeHtml(t('(required)'))}</span></label><p class="field-hint">${escapeHtml(t('Choose a weight, or the container you fill.'))}</p><select id="${unitId}" ${data('unit')} title="${escapeHtml(rowUnitLabel(unitSelectValue(figures)))}">${unitOptionsHtml(unitSelectValue(figures), presets)}</select></div><div class="form-field ${totalInputError ? 'has-error' : ''}"><label for="${inputId}">${escapeHtml(t('Total amount produced (%(unit)s)', { unit: unitLabel(figures.totalUnit) }))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('So results can show waste as a share of production.'))}</p><input id="${inputId}" ${data('totalInput')} type="number" inputmode="decimal" min="0" step="0.001" value="${escapeHtml(figures.totalInputKg)}" ${totalInputError ? `aria-invalid="true" aria-describedby="${inputId}-error"` : ''}>${totalInputError ? `<p class="field-error" id="${inputId}-error" role="alert">${escapeHtml(totalInputError)}</p>` : ''}</div></div>`
-  const money = `<div class="money-fields"><div class="form-field ${totalValueError ? 'has-error' : ''}"><label for="${valueId}">${escapeHtml(t('Value of production (NZ$)'))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('For statistics only — it never enters the emissions calculation.'))}</p><input id="${valueId}" ${data('totalValue')} type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(figures.totalValueNzd)}" ${totalValueError ? `aria-invalid="true" aria-describedby="${valueId}-error"` : ''}>${totalValueError ? `<p class="field-error" id="${valueId}-error" role="alert">${escapeHtml(totalValueError)}</p>` : ''}</div><div class="form-field ${wastedValueError ? 'has-error' : ''}"><label for="${wastedId}">${escapeHtml(t('Value of the waste (NZ$)'))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('For statistics only — it never enters the emissions calculation.'))}</p><input id="${wastedId}" ${data('wastedValue')} type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(figures.wastedValueNzd)}" ${wastedValueError ? `aria-invalid="true" aria-describedby="${wastedId}-error"` : ''}>${wastedValueError ? `<p class="field-error" id="${wastedId}-error" role="alert">${escapeHtml(wastedValueError)}</p>` : ''}</div></div>`
-  // **One leaf is today's screen, byte for byte.** No card, no legend, no disclosure -
-  // the fork costs the commonest journey nothing, and every measurement
-  // `tests/web/test_step_navigation.py` takes of this step still measures the same thing.
-  if (single) return `<div class="form-panel amount-grid">${mass}${money}</div>`
-  // **The three optional scalars go behind a per-leaf disclosure**, because §7.6.3's rule
-  // is that advancing must never require scrolling and three full panels cannot hold it.
-  // Open when this leaf already carries any of the three, so an entry re-opened by
-  // `edit-entry` never hides a figure the visitor typed.
-  const open = figures.totalInputKg || figures.totalValueNzd || figures.wastedValueNzd
-  return `<fieldset class="form-panel leaf-panel" data-leaf-panel="${keyAttr(key)}"><legend>${escapeHtml(leafName(leaf))}</legend><div class="amount-grid amount-grid--leaf">${mass}</div><details class="leaf-extras" ${open ? 'open' : ''}><summary>${escapeHtml(t('Add production and value figures'))}</summary><p class="field-hint">${escapeHtml(t('Optional — they never enter the emissions calculation.'))}</p>${money}</details></fieldset>`
+  //: The four term tooltips. Each is at most two short paragraphs, and each says
+  //: something the visible `.field-hint` does not — a hint that a tooltip repeats is a
+  //: hint the visitor has been made to hover for twice.
+  //:
+  //: **Nothing here may say the money figures become a cost.** Open item O-2 is exactly
+  //: that question and it is the client's to answer: what these two do today is join the
+  //: anonymous statistics, and the copy says that and stops. The sentence is shared by
+  //: both money terms because it is the same fact about both — one key, said twice.
+  const statisticsOnly = t('It joins the anonymous statistics only. No figure on the results page is calculated from it.')
+  const amountTip = container
+    ? [t('Count the containers you filled with waste over the period you are reporting, not the food inside them.'),
+       t('The calculator turns the count into a weight using the container chosen above.')]
+    : [t('Only the food that left your process as waste over the period you are reporting — not everything you handled.'),
+       t('Every emissions figure on the results page is built from this number.')]
+  const amountTipId = fieldId('term-tip-amount', leaf, leaves)
+  const inputTipId = fieldId('term-tip-total-input', leaf, leaves)
+  const valueTipId = fieldId('term-tip-total-value', leaf, leaves)
+  const wastedTipId = fieldId('term-tip-wasted-value', leaf, leaves)
+  //: Five fields, in the order a visitor answers them. **`h2`, not `h3`**: the step's
+  //: own title is the `h1` in `amountStep`, the leaf card's name is a `<legend>` and a
+  //: legend is not a heading, so `h3` here would skip a level. These name a group and
+  //: belong in the outline, which is why they are headings and not styled paragraphs.
+  //:
+  //: **The two NZ$ fields carry a hint each again, and the two are different sentences.**
+  //: They used to carry the same sentence, twice, verbatim - "For statistics only - it
+  //: never enters the emissions calculation." That fact is about both fields, so the zone
+  //: says it once now, over both; what was missing afterwards was anything saying *what
+  //: to put in the box*, which is different for each of the two and is the one thing a
+  //: visitor stalls on. Every other field on this step carries a hint, and decision 6 of
+  //: the zoning plan is that nothing essential lives behind a hover, so a bare label here
+  //: would have put "which price?" behind the tooltip and nowhere else.
+  const amountField = `<div class="form-field ${amountFieldError ? 'has-error' : ''}"><label for="${amountId}">${term(amountLabel, amountTipId, amountTip)} <span class="required">${escapeHtml(t('(required)'))}</span></label><p class="field-hint">${escapeHtml(amountHint)}</p><input id="${amountId}" ${data(container ? 'count' : 'amount')} type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(amountValue)}" ${amountFieldError ? `aria-invalid="true" aria-describedby="${errorId}"` : ''}>${amountFieldError ? `<p class="field-error" id="${errorId}" role="alert">${escapeHtml(amountFieldError)}</p>` : ''}${container ? `<p class="container-total" id="${totalId}" aria-live="polite">${escapeHtml(containerTotalText(figures))}</p>` : ''}</div>`
+  const unitField = `<div class="form-field unit-field"><label for="${unitId}">${escapeHtml(t('Unit'))} <span class="required">${escapeHtml(t('(required)'))}</span></label><p class="field-hint">${escapeHtml(t('Choose a weight, or the container you fill.'))}</p><select id="${unitId}" ${data('unit')} title="${escapeHtml(rowUnitLabel(unitSelectValue(figures)))}">${unitOptionsHtml(unitSelectValue(figures), presets)}</select></div>`
+  const totalInputField = `<div class="form-field ${totalInputError ? 'has-error' : ''}"><label for="${inputId}">${term(t('Total amount produced'), inputTipId, [t('Everything that went through this stage over the same period, waste included.'), t('It lets the results show the waste as a share of production. Leaving it empty changes no emissions figure.')])} (${escapeHtml(unitLabel(figures.totalUnit))}) <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('So results can show waste as a share of production.'))}</p><input id="${inputId}" ${data('totalInput')} type="number" inputmode="decimal" min="0" step="0.001" value="${escapeHtml(figures.totalInputKg)}" ${totalInputError ? `aria-invalid="true" aria-describedby="${inputId}-error"` : ''}>${totalInputError ? `<p class="field-error" id="${inputId}-error" role="alert">${escapeHtml(totalInputError)}</p>` : ''}</div>`
+  //: **An example value, and it carries NO thousands separator.** Both boxes are
+  //: `type="number"`, which refuses `50,000` outright — a placeholder showing one would
+  //: demonstrate a format the field rejects, which is worse than showing nothing. PR #101
+  //: proposed exactly that; the idea is its, the digits are not.
+  //:
+  //: One key with the number interpolated rather than two spelled-out keys: "e.g." is a
+  //: Latin abbreviation and needs translating (`z. B.`, `p. ex.`, `例：`), the number does
+  //: not — every catalogue already carries Latin digits, Arabic and Urdu included.
+  const example = amount => `placeholder="${escapeHtml(t('e.g. %(amount)s', { amount }))}"`
+  const totalValueField = `<div class="form-field ${totalValueError ? 'has-error' : ''}"><label for="${valueId}">${term(t('Value of production'), valueTipId, [t('What everything you produced was worth. Any consistent basis will do, as long as both money figures use the same one.'), statisticsOnly])} (NZ$) <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('The price you would normally value it at.'))}</p><input id="${valueId}" ${data('totalValue')} type="number" inputmode="decimal" min="0" step="0.01" ${example('50000')} value="${escapeHtml(figures.totalValueNzd)}" ${totalValueError ? `aria-invalid="true" aria-describedby="${valueId}-error"` : ''}>${totalValueError ? `<p class="field-error" id="${valueId}-error" role="alert">${escapeHtml(totalValueError)}</p>` : ''}</div>`
+  const wastedValueField = `<div class="form-field ${wastedValueError ? 'has-error' : ''}"><label for="${wastedId}">${term(t('Value of the waste'), wastedTipId, [t('What the wasted food was worth, on the same basis as the figure above. It cannot be more than the value of production.'), statisticsOnly])} (NZ$) <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('Valued the same way as production above.'))}</p><input id="${wastedId}" ${data('wastedValue')} type="number" inputmode="decimal" min="0" step="0.01" ${example('1200')} value="${escapeHtml(figures.wastedValueNzd)}" ${wastedValueError ? `aria-invalid="true" aria-describedby="${wastedId}-error"` : ''}>${wastedValueError ? `<p class="field-error" id="${wastedId}-error" role="alert">${escapeHtml(wastedValueError)}</p>` : ''}</div>`
+  const zones = `<section class="zone"><h2>${escapeHtml(t('How much was wasted'))}</h2><p class="zone-sub">${escapeHtml(t('Needed for the calculation.'))}</p>${unitField}${amountField}${totalInputField}</section><section class="zone"><h2>${escapeHtml(t('Supporting figures'))}</h2><p class="zone-sub">${escapeHtml(t('Optional. They never enter the emissions calculation.'))}</p>${totalValueField}${wastedValueField}</section>`
+  //: **`.amount-grid` carries no declarations of its own any more** - `.zones` is what
+  //: lays this step out and both branches share it - but the class stays on the
+  //: single-leaf panel because three browser tests address it directly, as the one
+  //: element wrapping every step-3 field: `test_step_navigation.py` removes it and
+  //: requires the document to collapse to the viewport, selects `.amount-grid
+  //: .form-field`, and `test_leaf_figure_migration_browser.py` reads its `innerText`.
+  if (single) return `<div class="form-panel amount-grid zones">${zones}</div>`
+  //: A card per leaf, and `.leaf-panel` stays a `<fieldset>` with a `<legend>` child -
+  //: `test_leaf_multiselect_browser.py` dereferences `panel.querySelector('legend')`
+  //: unconditionally and throws on anything else.
+  return `<fieldset class="form-panel leaf-panel" data-leaf-panel="${keyAttr(key)}"><legend>${escapeHtml(leafName(leaf))}</legend><div class="zones">${zones}</div></fieldset>`
 }
 
 /**
@@ -914,10 +1023,13 @@ function leafPanel(leaf, leaves, index) {
  * per-leaf cards and each card is exactly today's panel - every existing rule, the 650px
  * two-column split and the block-flow stacking below it all apply unchanged, per card.
  *
- * **Two vertical groups at `min-width: 650px`, not a grid of five equal cells.**
- * `.mass-fields` wraps the waste amount, the unit, and the production total - the three
- * quantities the unit itself governs, in the order a visitor answers them - and
- * `.money-fields` wraps the two optional NZ$ figures, which may be left entirely empty.
+ * **Two tinted zones at `min-width: 650px`, not a grid of five equal cells.** The first
+ * holds the unit and the two quantities it measures - the waste amount and the production
+ * total, in the order a visitor answers them - and the second holds the two optional NZ$
+ * figures, which may be left entirely empty. Below the breakpoint the zones stack and
+ * every field inside them is ordinary block flow, which is already the correct
+ * single-column reading order. See `leafPanel`'s own docstring for why the split is not
+ * required-against-optional.
  *
  * **The combined total is under the stack, and it is browser-only arithmetic.** Step 4
  * allocates against each leaf's own amount, but the visitor is about to be shown a matrix
@@ -2388,6 +2500,18 @@ function goToStep(step, jumped = false) {
 export function bindCalculator(main, retryTaxonomy) {
   reloadTaxonomy = retryTaxonomy
   main.addEventListener('click', event => {
+    // **The one line step 3's term tooltips need, and it has to be here rather than in
+    // `leafPanel`.** A `.term` sits inside `<label for=…>`; the label's default action on
+    // click is to forward the activation to its control, so on a phone the tap focuses the
+    // input, the span blurs, `:focus-within` stops matching and the panel closes in the
+    // same frame it opened - the tooltip is unreachable by touch, and `:hover` is no
+    // answer because a touch device has no hover. Refusing the label's default leaves the
+    // focus the pointer already put on the span, and the panel stays up until the next tap
+    // elsewhere. Nothing is recorded on `state`: `render()` replaces `main.innerHTML` on
+    // every `setState`, so a flag there would rebuild the step to show a tooltip.
+    // It runs before the `[data-action]` guard below, which returns early for exactly the
+    // clicks this needs to see - a label is not an action.
+    if (event.target.closest('.term')) event.preventDefault()
     const control = event.target.closest('[data-action]')
     if (!control) return
     const action = control.dataset.action

@@ -985,21 +985,24 @@ def test_step_three_asks_what_the_stage_put_through(page_at):
 def test_step_three_forms_two_aligned_groups_above_the_breakpoint(page_at):
     """Two vertical groups, not a three-column row and not five equal cells.
 
-    ``.mass-fields`` (waste amount, unit, production total) and
-    ``.money-fields`` (the two optional NZ$ figures) are each a single item in
-    ``.amount-grid``'s two-column row at ``min-width: 650px``. Every field in
-    the first group shares one inline-start edge; the money pair shares a
-    second, greater one — a distinct column, not a third field dropped into
-    the same row. This replaces
+    The two are ``.zone`` sections now — "what this unit measures" (the unit,
+    the waste amount, the production total) and "supporting figures" (the two
+    optional NZ$ ones) — each a single item in ``.zones``'s two-column row at
+    ``min-width: 650px``. They were ``.mass-fields`` and ``.money-fields``, bare
+    wrappers with no tint and no heading, until the zoning change of
+    2026-09-19; the grouping this test measures is the same grouping, and the
+    assertions are untouched. Every field in the first group shares one
+    inline-start edge; the second shares a second, greater one — a distinct
+    column, not a third field dropped into the same row. This replaces
     ``test_step_three_controls_share_a_baseline_when_copy_wraps``, which
     pinned the old three-column row's shared *baseline* — a property that
     stopped being true the moment the production total moved under the unit
     instead of beside it.
 
-    Mutation: restoring ``.amount-grid { grid-template-columns: 1fr 1fr 1fr }``
-    (the old three-column template, with no ``.mass-fields``/``.money-fields``
-    grouping) puts ``#total-input`` in its own column, equal to neither the
-    amount field's edge nor the money pair's, and this test fails.
+    Mutation: restoring ``.zones { grid-template-columns: 1fr 1fr 1fr }`` with
+    the fields unzoned (the old three-column template) puts ``#total-input`` in
+    its own column, equal to neither the amount field's edge nor the money
+    pair's, and this test fails.
     """
     page = advance_to(page_at(1278, 983, 1.25), 2)
 
@@ -1026,40 +1029,75 @@ def test_step_three_forms_two_aligned_groups_above_the_breakpoint(page_at):
 
 
 def test_step_three_the_two_groups_first_labels_share_a_baseline(page_at):
-    """The two groups' own outer boxes align exactly (top-aligned by
-    ``align-items: start``), but that alone does not put their *first
-    labels* on one line — each group's own margin rhythm does, and the two
-    used to disagree. ``.money-fields .form-field`` was ``margin: 16px 0``,
-    tighter than ``.form-field``'s own ``25px 0``, from when the money pair
-    sat in its own row *below* the primary one and the tighter margin read
-    as "these two lean on each other". Now the two groups are side-by-side
-    columns, not stacked, and the 9px the two margins disagreed by (25 - 16)
-    showed up as exactly that: the mass group's first label starting 9px
-    lower than the money group's — a misalignment that reads as a bug, not
-    a deliberate difference in weight.
+    """The two zones' outer boxes start on one line — they are grid items in a
+    single row, so their tops are the row's top whether they stretch to a shared
+    height or not. **That alone does not put their *first labels* on one line**,
+    which is what this measures: a zone could align perfectly and still open at a
+    different height inside its own box. Each zone's own opening rhythm is what
+    does it. Both open with an ``h2`` and
+    a ``.zone-sub`` of the same size and margins, and then with a
+    ``.form-field`` carrying ``.form-field``'s one declared ``25px 0``, so the
+    first label of each starts at the same height. The two used to disagree:
+    ``.money-fields .form-field`` was ``margin: 16px 0`` against ``25px 0``, from
+    when the money pair sat in its own row *below* the primary one, and the 9px
+    showed up as one group's first label starting 9px lower than the other's —
+    a misalignment that reads as a bug, not a deliberate difference in weight.
 
-    This does not require every control to line up: the two groups are
-    independent vertical flows, and their hints may wrap differently further
-    down (see ``test_step_three_unit_control_is_narrower_than_its_neighbours``
-    and the comment in ``styles.css`` above ``.mass-fields``/``.money-fields``).
-    Only the shared starting point is pinned here.
+    **Rewritten with the zoning change of 2026-09-19, keeping its subject.** It
+    used to name ``label[for="total-waste"]`` and ``label[for="total-value"]``
+    directly. The unit control has moved *above* the waste amount — it governs
+    two quantities on this step, so it leads the column they are in — which
+    makes ``label[for="total-unit"]`` the first zone's first label, and a test
+    still naming ``total-waste`` would have compared a second label with a
+    first and pinned nothing. It asks each zone for its own first label now,
+    which is what it was always trying to say and what survives the next
+    reordering within a zone.
 
-    Mutation: reverting ``.money-fields .form-field`` to ``margin: 16px 0``
-    pulls the money group's first label 9px above the mass group's, and this
-    test fails.
+    This does not require every control to line up: the zones are independent
+    vertical flows with three fields and two, and their hints may wrap
+    differently further down (see
+    ``test_step_three_unit_control_is_narrower_than_its_neighbours`` and the
+    comment in ``styles.css`` beside the 650px rule). Only the shared starting
+    point is pinned here.
+
+    Mutation: any rhythm that differs between the two zones' openings — giving
+    ``.zone > h2`` or ``.zone > .zone-sub`` a different size or margin in one of
+    them, or restoring a tighter ``margin`` on the second zone's fields — moves
+    one first label off the other's line, and this test fails naming both
+    heights.
     """
     page = advance_to(page_at(1278, 983, 1.25), 2)
-    mass_top = round(page.locator('label[for="total-waste"]').bounding_box()["y"])
-    money_top = round(page.locator('label[for="total-value"]').bounding_box()["y"])
-    assert abs(mass_top - money_top) <= 1, (
-        f"the two groups' first labels do not share a baseline: mass={mass_top} money={money_top}"
+    tops = page.evaluate(
+        """() => [...document.querySelectorAll('.amount-grid .zone')].map(zone => {
+             const label = zone.querySelector('label');
+             return {
+               heading: zone.querySelector('h2')?.textContent?.trim() || null,
+               label: label?.textContent?.trim() || null,
+               top: label ? Math.round(label.getBoundingClientRect().y) : null,
+             };
+           })"""
+    )
+    assert len(tops) == 2, f"step 3 does not render two zones: {tops}"
+    assert all(zone["top"] is not None for zone in tops), (
+        f"a zone carries no label at all: {tops}"
+    )
+    assert abs(tops[0]["top"] - tops[1]["top"]) <= 1, (
+        f"the two zones' first labels do not share a baseline: {tops}"
     )
 
 
 def test_step_three_unit_control_is_narrower_than_its_neighbours(page_at):
-    """The unit sits between the two quantities it governs, and is visibly
-    narrower than either — the placement that says "this is the unit of the
-    fields above and below it", not a third quantity beside them.
+    """The unit leads the two quantities it governs, and is visibly narrower
+    than either — the placement that says "this is the unit of the two fields
+    below it", not a third quantity beside them. (It sat *between* them until
+    the zoning change of 2026-09-19 moved it to the head of its own zone; the
+    assertions are unchanged, because what they pin is the width, and the width
+    is what carries the meaning either way.)
+
+    It is deliberately not step 4's ``.amount-with-unit`` compound control.
+    There the unit governs one number and can sit beside it; here it governs
+    two — the waste amount and the production total — and a control beside one
+    of them would read as belonging to that one.
 
     Mutation: dropping ``.unit-field select { inline-size: 50% }`` back to the
     site-wide ``input, select { width: 100% }`` makes the unit control as wide
@@ -1123,32 +1161,39 @@ def test_step_three_unit_select_title_carries_the_full_selected_label(page_at):
 
 
 def test_step_three_is_a_single_column_below_the_breakpoint(page_at):
-    """Below ``min-width: 650px`` neither group does anything: source order is
-    already waste amount, unit, total produced, then the two money fields —
-    the correct single-column reading order — so every field shares one
-    inline-start edge, mass and money fields alike.
+    """Below ``min-width: 650px`` the two zones stack and every field in both
+    shares one inline-start edge — unit, waste amount, total produced, then the
+    two NZ$ figures, which is the correct single-column reading order.
 
-    **Also pins the vertical rhythm between fields, not only their shared
-    edge.** ``.form-field``'s own declared margin is ``25px 0`` and always
-    was; what changed is whether adjoining margins collapse. Under the old
-    three-column template each ``.form-field`` was a grid item
-    (``grid-row: span 5``), and adjoining margins never collapse between
-    grid items, so two 25px margins summed to a 50px gap. They are ordinary
-    block siblings now, so adjoining margins collapse to one 25px gap — the
-    same rhythm the rest of the page already uses, not a new or smaller one.
-    Pinned here rather than left as an unremarked side effect, so a future
-    change that puts these fields back onto a grid (and silently doubles the
-    gap again) is caught.
+    **Rewritten with the zoning change of 2026-09-19, keeping its subject.** It
+    used to count ``.amount-grid .form-field`` flat and require *every* adjacent
+    gap to be 25px, the mass→money join included. That join was 25px only by
+    *margin collapse* between two ordinary block siblings, and a zone is a
+    padded, bordered box: padding blocks a margin from escaping it, so the join
+    across the two zones cannot collapse any more and is now ``.zones``'s own
+    declared ``gap`` instead. Both numbers are pinned here, separately, because
+    they are now two different mechanisms:
 
-    Mutation: forcing ``.amount-grid``'s ``grid-template-columns`` on at this
-    width splits the money fields onto a second, greater edge, and the first
-    assertion below fails. Forcing ``.amount-grid { display: grid }``
-    unconditionally (rather than only above the breakpoint) restores
-    ``.mass-fields``/``.money-fields`` as grid items even in the single
-    column, which traps the collapse inside each of them and reproduces
-    the exact defect this test was written against: gaps of
-    ``[25, 25, 50, 25]`` - every join 25px except the one between the two
-    groups, silently doubled - and the second assertion fails.
+    * **within a zone, 25px** — ``.form-field``'s own declared ``25px 0``,
+      adjoining margins collapsing to one gap exactly as before. This is the
+      original assertion, kept, and it is still the one that catches a future
+      change that puts these fields back onto a grid and silently doubles the
+      gap to 50.
+    * **between the zones, 14px** — a stated value on ``.zones``, not an
+      accident of collapse.
+
+    **Do not "fix" a doubled gap here by removing the zone's padding.** The
+    padding is what makes the zone a visible zone, which is the whole point of
+    the change; the separate assertion below is what says so.
+
+    Mutation A: giving ``.zones`` its ``grid-template-columns`` at this width
+    splits the second zone's fields onto a second, greater edge, and the first
+    assertion fails. Mutation B: ``.zone { display: grid }`` makes each zone's
+    fields grid items, where adjoining margins never collapse, and the
+    within-zone gaps read 50 instead of 25 — the exact defect this test was
+    originally written against, now reproduced one level in. Mutation C: any
+    other value for ``.zones``'s ``gap`` fails the third assertion naming both
+    numbers.
     """
     page = advance_to(page_at(390, 700, 3.0), 2)
 
@@ -1160,12 +1205,34 @@ def test_step_three_is_a_single_column_below_the_breakpoint(page_at):
         f"step 3 fields do not share one inline-start edge below the breakpoint: {edges}"
     )
 
-    boxes = page.locator(".amount-grid .form-field").evaluate_all(
-        "els => els.map(el => { const r = el.getBoundingClientRect(); return {top: r.top, bottom: r.bottom}; })"
+    measured = page.evaluate(
+        """() => {
+          const zones = [...document.querySelectorAll('.amount-grid .zone')];
+          const box = el => el.getBoundingClientRect();
+          return {
+            count: zones.length,
+            gaps: zones.map(zone => {
+              const fields = [...zone.querySelectorAll('.form-field')].map(box);
+              return fields.slice(1).map((f, i) => Math.round(f.top - fields[i].bottom));
+            }),
+            between: zones.length === 2
+              ? Math.round(box(zones[1]).top - box(zones[0]).bottom)
+              : null,
+          };
+        }"""
     )
-    gaps = [round(boxes[i + 1]["top"] - boxes[i]["bottom"]) for i in range(len(boxes) - 1)]
-    assert all(abs(gap - 25) <= 1 for gap in gaps), (
-        f"adjacent fields do not collapse to a single 25px margin below the breakpoint: {gaps}"
+
+    assert measured["count"] == 2, (
+        f"step 3 does not render two zones below the breakpoint: {measured}"
+    )
+    flattened = [gap for zone in measured["gaps"] for gap in zone]
+    assert flattened and all(abs(gap - 25) <= 1 for gap in flattened), (
+        f"adjacent fields inside a zone do not collapse to a single 25px margin "
+        f"below the breakpoint: {measured['gaps']}"
+    )
+    assert abs(measured["between"] - 14) <= 1, (
+        f"the two zones are {measured['between']}px apart rather than the 14px "
+        f"`.zones` declares: {measured}"
     )
 
 

@@ -54,6 +54,14 @@
   --green: var(--kai-pea);
   --green-dark: var(--kai-kale);
   --mint: #dff8ed;
+  /* Step 3's zone fill and its hairline. **One step lighter than `--mint`, and
+     that is the whole reason it is a second pair of values rather than `--mint`
+     reused.** The combined-total strip is `--mint` and it sits on the same
+     screen, directly under the leaf cards; two tinted blocks of the same colour,
+     one of them a running total and the other a form group, read as the same
+     kind of thing and compete for the same attention. */
+  --zone: #f2faf6;
+  --zone-line: #dceee5;
   --cream: #fffaf0;
   --orange: var(--kai-orange);
   --blueberry: var(--kai-blueberry);
@@ -667,64 +675,133 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 .simple-choice > span:nth-of-type(1) { display: grid; gap: 4px; }
 .simple-choice small { color: var(--muted); line-height: 1.45; }
 
-.amount-grid { gap: 0 20px; }
-/* Two vertical groups, not a grid of equal cells - `.mass-fields` holds the
-   three fields the unit governs (waste amount, unit, total produced) and
-   `.money-fields` the two that may be left empty (see `amountStep()`'s own
-   docstring for why the money pair is one grid item rather than two). Below
-   `min-width: 650px` `.amount-grid` has no column template at all, so both
-   groups and their own children just stack in source order like every other
-   `.form-field`; the side-by-side split only happens alongside
-   `.amount-grid`'s own two-column rule, below.
+/* ------------------------------------------------------------------ step 3's two zones
 
-   No `min-inline-size: 0` here (the usual companion to a `minmax(0, 1fr)`
-   track, to stop a child's own min-content size from forcing the track
-   wider than the fraction asks for): every field inside either group sizes
-   itself as a percentage of its container - `input, select { width: 100% }`
-   site-wide, `.unit-field select`'s own `50%` below - never to its content's
-   min-content width, so there is nothing here for a track to blow out on.
-   Checked at 650/660/700/938/1278px in German, including the longest seeded
-   container label, with `min-inline-size` forced back to `auto`: no change
-   in `documentElement.scrollWidth` at any of them. If a future field in
-   either group ever sizes to its own content instead, this is where that
-   guard would need to come back.
+   **Two tinted zones, symmetric, each with its own heading, and nothing collapsed.**
+   The client's feedback was that the two columns of step 3 had no visual separator:
+   reading across drifted out of one column into the next and the reader only noticed
+   when a sentence failed to line up, and reading down, nothing said where a column
+   ended. `gap: 0 20px` between two ~445px columns is what made that inevitable. The
+   fill and the hairline are `--zone` / `--zone-line`, deliberately NOT `--mint` - see
+   the note beside those two in `:root`.
 
-   Every field's own children - label, hint, control, then an error and/or
-   the container total - are ordinary block flow at every width, not only
-   above the breakpoint: label, hint, control, error and container-total
-   simply stack in source order, one under the next, inside whichever group
-   the field sits in. That is also what keeps a field error and the
-   container total from ever landing on top of each other (pick a container
-   preset, then type `0` or an over-limit count, to render both at once):
-   nothing here is a shared track a later child can run out of and get
-   clamped into, so there is nothing left to fall short.
+   **Both branches of `leafPanel` use this one layout**, the single leaf and the leaf
+   card alike. The single-leaf panel carries `amount-grid` as well, and that class now
+   has no declarations anywhere in this file: it is the hook three browser tests use to
+   address "the one element wrapping every step-3 field" (removing it and requiring the
+   document to collapse to the viewport, selecting `.amount-grid .form-field`, and
+   reading its `innerText`). Styling it a second time here would mean two rules for one
+   box, and the second would silently win.
 
-   **Below the breakpoint, adjacent `.form-field`s collapse their margins to
-   one 25px gap, not two 25px margins summed to 50px.** They were grid items
-   under the old three-column template (`grid-row: span 5`), and adjoining
-   margins never collapse between grid items; now they are ordinary block
-   siblings, where adjoining margins do collapse by default. `25px` is still
-   `.form-field`'s own declared rhythm - nothing here doubles it back up -
-   and the halved gap is the correct, intentional result: the card's
-   internal spacing is now consistent with every other single-margin gap on
-   the page, not a wider special case left over from a layout that no longer
-   exists. `test_step_three_is_a_single_column_below_the_breakpoint` pins
-   the 25px gap directly, so a future change that stops the collapse (moving
-   these back onto a grid, for instance) is caught rather than shipped as an
-   unremarked spacing change.
+   **The zones stack below `min-width: 650px`** and the two-column template is in the
+   650px media rule, with the rest of this step's breakpoint. The stacked order is
+   already the correct single-column reading order: unit, waste amount, production
+   total, then the two NZ$ figures.
 
-   **`.amount-grid` is only `display: grid` above the breakpoint, in the
-   media rule below, for the same reason.** A grid item's contents are their
-   own formatting context, so if `.amount-grid` were unconditionally grid,
-   `.mass-fields` and `.money-fields` would still be grid items below the
-   breakpoint too (one column, but still grid items), and the collapse
-   above would stop dead at the boundary between them: `.mass-fields`'s
-   last field's bottom margin cannot escape `.mass-fields`'s own box to
-   reach `.money-fields`'s first field at all, so that one join would keep
-   its full 50px while every other join in the column read 25px - the
-   single-column list quietly carrying one doubled gap in the middle of it.
-   Plain block below the breakpoint lets the collapse run the whole column
-   through, including that join. */
+   **The 25px rhythm now lives inside a zone, and the gap between the zones is this
+   rule's own `gap`.** Adjacent `.form-field`s are ordinary block siblings inside a
+   zone, so their adjoining 25px margins collapse to one 25px gap, exactly as they did
+   when they were siblings in `.amount-grid` - `.form-field`'s own declared rhythm,
+   neither doubled nor halved here. What changed is the join between the last field of
+   one zone and the first of the next: that pair used to collapse too, and a padded,
+   bordered zone box blocks a margin from escaping it, so the two zones are separated by
+   this `gap` instead. That is a stated 14px, not an accident of collapse, and
+   `test_step_three_is_a_single_column_below_the_breakpoint` pins both numbers.
+   **Do not answer a doubled gap here by removing the zone's padding** - the padding is
+   what makes the zone a zone.
+
+   No `min-inline-size: 0` on the tracks (the usual companion to `minmax(0, 1fr)`, to
+   stop a child's own min-content size forcing the track wider than the fraction asks
+   for): every field inside a zone sizes itself as a percentage of its container -
+   `input, select { width: 100% }` site-wide, `.unit-field select`'s own `50%` - never
+   to its content's min-content width, so there is nothing here for a track to blow out
+   on. If a future field in either zone ever sizes to its own content instead, this is
+   where that guard would need to come back. */
+.zones { display: grid; gap: 14px; }
+.zone {
+  padding: 16px;
+  border: 1px solid var(--zone-line);
+  border-radius: 14px;
+  background: var(--zone);
+}
+/* `h2` because the step's title is the page's `h1` and there is no heading between them
+   - see `leafPanel`. The site-wide `h2` is `clamp(1.3rem, 3vw, 1.65rem)`, which is a
+   section title; these name a group inside a panel, so they are sized to the labels they
+   sit over rather than to the page heading. */
+.zone > h2 { margin: 0 0 2px; font-size: 1rem; letter-spacing: normal; }
+.zone > .zone-sub { margin: 0 0 12px; color: var(--muted); font-size: 0.86rem; }
+/* The first field's own 25px top margin collapses against `.zone-sub`'s 12px to 25px,
+   which is the rhythm; the last field's bottom margin would instead ADD to the zone's
+   own bottom padding, because padding blocks the collapse, and leave 41px of tint under
+   the last control against 16px over the first heading. */
+.zone > .form-field:last-child { margin-block-end: 0; }
+
+/* STEP 3'S TERM TOOLTIPS. The trigger is the field NAME, not an `i` beside it, and the
+   dotted underline is the whole affordance — the client's own call, and the reason the
+   `text-decoration` here is not decoration in the droppable sense: remove it and the
+   explanations exist but nobody learns they do. `cursor: help` says the same thing to a
+   pointer that is already on the word.
+
+   **Three ways in, and the set of selectors is the point.** `:hover` for a pointer,
+   `:focus-within` for a keyboard *and* for a tap. Not `:focus-visible`: a browser withholds
+   it from a pointer-driven focus, so the phone — the viewport this step is hardest on —
+   would have got nothing at all. The tap also needs one line of JS, in
+   `bindCalculator`'s delegated `click` listener; see the note there for why CSS alone
+   cannot hold the panel open inside a `<label>`.
+
+   **The containing block is the LABEL, not the `.term`, and that is the rule this whole
+   block turns on.** `.result-explanation__body` records the same lesson one screen over:
+   anchored to its own short inline trigger, a panel has no relation to the room available,
+   and it went off-screen at 768px and below with no scroll to recover it — an overflow
+   `scrollWidth` cannot even see, because nothing overflows, the panel is simply outside the
+   viewport. The prototype for this step sized the panel `max(250px, 100%)` of the span,
+   and at 320px the zone's own content box is about 248px, so the minimum alone was wider
+   than the box. Spanning the label instead spans the zone's content width exactly, at
+   every viewport and in both directions, by construction. `inset-inline: 0` is also why
+   nothing here needs a direction-specific rule for Arabic.
+
+   **It opens DOWNWARD.** #96's `i` is at the foot of a results card, so its panel goes up;
+   a term is a label at the TOP of a field, and upward puts the panel outside the card and
+   over the page heading — observed in the prototype, not reasoned about. `calc(100% + 8px)`
+   is measured from the label's own box, so a label that wraps to two lines pushes the panel
+   down with it. It covers that field's input while open, which is the trade every tooltip
+   makes and is the lesser of the two.
+
+   Border, radius, shadow and type size are `.result-explanation__body`'s, deliberately —
+   two explanation panels on one wizard should not be two different objects. The selector is
+   this file's own: sharing `.result-explanation__body`'s would have coupled a results-page
+   rule to a form step, and the two differ in every position property they have. */
+.term { text-decoration: underline dotted var(--muted); text-underline-offset: 3px; cursor: help; }
+.term:focus-visible { outline: 3px solid var(--blueberry); outline-offset: 2px; border-radius: 3px; }
+/* Scoped to a zone rather than written as `.form-field > label`: `position: relative` on
+   every label on the site would hand any future absolutely positioned descendant of any
+   label a containing block it did not ask for, and that is the kind of rule nobody finds
+   again. Steps 3 is where the terms are. */
+.zone .form-field > label { position: relative; }
+.term > .tip {
+  position: absolute;
+  z-index: 5;
+  inset-inline: 0;
+  inset-block-start: calc(100% + 8px);
+  visibility: hidden;
+  opacity: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--green-dark);
+  box-shadow: 0 5px 18px rgba(0, 50, 35, 0.09);
+  pointer-events: none;
+  transform: translateY(4px);
+  font-weight: 400;
+  text-align: start;
+  text-decoration: none;
+}
+/* The panel is a DESCENDANT of the term, so a pointer that travels from the word down onto
+   the panel never leaves `.term:hover` — `:hover` matches up the DOM, not the box tree. */
+.term:hover > .tip, .term:focus-within > .tip { visibility: visible; opacity: 1; pointer-events: auto; transform: none; }
+.term > .tip p { margin: 0; font-size: 0.86rem; line-height: 1.45; }
+.term > .tip p + p { margin-block-start: 8px; }
 
 /* The running kilogram total, under the amount row when a container is chosen.
 
@@ -1515,16 +1592,13 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
   font-weight: 700;
   color: var(--kale, #003223);
 }
-/* The three optional scalars behind a disclosure. §7.6.3 requires that advancing never
-   need scrolling, measured rather than assumed, and three full panels cannot hold that at
-   390x700. The required pair - amount and unit - stays always visible; the disclosure is
-   rendered open when the leaf already carries any of the three, so an entry re-opened by
-   `edit-entry` never hides a figure the visitor typed. */
-.leaf-extras { margin-block-start: 6px; }
-.leaf-extras > summary { cursor: pointer; font-weight: 700; color: var(--green-dark); }
-.leaf-extras > summary::marker { color: var(--green-dark); }
-.leaf-extras .field-hint { margin-block: 4px 0; }
-.leaf-extras .money-fields { margin-block-start: 4px; }
+/* **Nothing on a leaf card is behind a disclosure.** `.leaf-extras` and its five rules
+   are gone: the three optional scalars sat behind a `<details>` on the stated ground that
+   §7.6.3 requires advancing never to need scrolling and three full panels could not hold
+   that at 390x700. That was written when the step bar was not sticky. It is
+   `position: sticky` now, so the bar - and Continue with it - is on screen whatever the
+   panel's height, measured at all three viewports; page length is the only thing content
+   height still decides. The card uses `.zones` above, same as the single-leaf panel. */
 
 .combined-total {
   margin: 16px 0 0;
@@ -1596,44 +1670,52 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 
 @media (min-width: 650px) {
   .results-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  /* Two groups, inline-start to inline-end - `.mass-fields` (waste amount,
-     unit, total produced) and `.money-fields` (the two optional NZ$ figures),
-     each a single grid item, **not** a grid of five equal cells. The former
-     three-column template put the production total in its own column and
-     forced a subgrid down every field to keep the three columns' labels and
-     hints on a shared baseline; that machinery aligned columns this layout no
-     longer has; see `amountStep()`'s own docstring for why the two groups are
-     not a plain 50/50 split of five peers.
-     `align-items: start` keeps the two groups top-aligned without stretching
-     the shorter `.money-fields` column to match `.mass-fields`'s height - it
-     may be left entirely empty and is not padded out to look otherwise. */
-  .amount-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
-  /* The unit sits between the two quantities it governs and is visibly
-     narrower than the inputs above and below it - that is the point of the
-     placement: it is the unit of the waste amount and the production total,
-     not a third quantity beside them. Half the field's own inline-size reads
-     as narrow against a 100%-wide sibling at every width this rule applies
-     from; the closed control may still truncate a long container label
-     (`title` on the select carries the full text - see `amountStep()`). */
+  /* The two zones, inline-start to inline-end, **not** a grid of five equal
+     cells and not a required/optional split: the first zone holds the unit and
+     the two quantities it measures, the second the two supporting NZ$ figures.
+     See `leafPanel()`'s own docstring for why the production total, which is
+     optional, still belongs in the first.
+     **The zones stretch to a shared height, and `align-items: start` is
+     deliberately NOT carried over from the untinted layout this replaces.**
+     That rule was written when the two groups were bare text on the card's own
+     white, where a short column beside a long one reads as nothing at all, and
+     its stated reason was that the money group "may be left entirely empty and
+     is not padded out to look otherwise". Neither half of that still holds: a
+     zone is a bordered, filled box, and a box that stops short of its
+     neighbour reads as a container the wrong size rather than as an honest
+     absence; and the group is never empty now, because it always carries a
+     heading, its sub-line and two labelled inputs. Stretching costs no height -
+     the row is already as tall as the taller zone - it only fills the shorter
+     box out to meet it.
+     `gap: 0 24px` replaces the stacked `14px`: the row gap does nothing with
+     one row, and 24px between two tinted boxes is the separation the zones
+     exist to provide. */
+  .zones { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 24px; }
+  /* The unit leads the two quantities it governs and is visibly narrower than
+     the inputs below it - that is the point of the placement: it is the unit of
+     the waste amount and the production total, not a third quantity beside
+     them. Half the field's own inline-size reads as narrow against a 100%-wide
+     sibling at every width this rule applies from; the closed control may still
+     truncate a long container label (`title` on the select carries the full
+     text - see `leafPanel()`). Applies inside a leaf card too: one leaf and
+     five are the same layout, so the unit is the same width in both. */
   .unit-field select { inline-size: 50%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 }
 
-/* No margin override here any more - `.money-fields .form-field` used to be
-   `16px 0`, tighter than `.form-field`'s own `25px 0`, back when the money
-   pair sat in its own row below the three-column primary one and the
-   tighter margin read as "these two lean on each other" against a row of
-   independent questions above. Now the two groups are side-by-side columns,
-   not stacked, and the 9px the two margins disagreed by showed up as the
-   groups' first labels landing on two different lines - a misalignment that
-   reads as a bug, not a deliberate difference in weight. Both groups now
-   share `.form-field`'s one rhythm, so their first labels share a line.
+/* No per-zone margin override here, and there should not be one. The money pair
+   once had `margin: 16px 0` against `.form-field`'s own `25px 0`, from when it
+   sat in its own row below the primary one and the tighter margin read as
+   "these two lean on each other". Side by side, the 9px the two rhythms
+   disagreed by showed up as the two groups' first labels starting on different
+   lines - a misalignment that reads as a bug rather than as a deliberate
+   difference in weight. Both zones carry `.form-field`'s one rhythm, and both
+   open with the same `h2` and `.zone-sub`, so their first labels share a line.
 
-   **Their controls will still not share a line further down**, because the
-   mass group's hints wrap to one line at this width and the money group's
-   wrap to two - and that is correct, not a regression to fix. The two
-   groups are independent vertical flows now; forcing every control onto a
-   shared baseline across them is exactly what the old subgrid did, and
-   exactly what removing it was for. */
+   **Their controls will still not line up further down**, because the first
+   zone has three fields and the second has two, and their hints wrap
+   differently - that is correct, not a regression to fix. The zones are
+   independent vertical flows; forcing every control onto a shared baseline
+   across them is what the old subgrid did, and removing it was the point. */
 
 @media (min-width: 650px) {
   .equivalent-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -2628,11 +2710,14 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
      by the label being hidden. */
   .allocation-matrix .destination-row > label { display: var(--cell-label-display, none); }
   .allocation-matrix .amount-with-unit { grid-template-columns: var(--amount-unit-columns, minmax(0, 1fr)); gap: var(--amount-unit-gap, 6px); }
-  /* One leaf card lays its three mass fields across the card rather than stacking them,
-     so a three-leaf stack is roughly the height of one panel plus two short rows. */
-  .leaf-panel .mass-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 150px) minmax(0, 1fr); align-items: start; gap: 0 18px; }
-  .leaf-panel .unit-field select { inline-size: 100%; }
-  .leaf-panel .money-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 0 18px; }
+  /* **No leaf-card override of step 3's own layout here any more.** Three rules stood
+     here: a three-column `.leaf-panel .mass-fields`, a `.leaf-panel .money-fields` pair,
+     and a `.leaf-panel .unit-field select { inline-size: 100% }` that undid the unit's
+     half-width inside a card. They existed because the card's money pair lived outside
+     the grid, behind a disclosure, and the three mass fields had to be crushed into the
+     one live column of a two-column template whose other 445px was dead - `.amount-grid
+     --leaf` was a class with no rule anywhere. The card uses `.zones` now, the same two
+     tinted columns the single-leaf panel uses, so there is nothing left to override. */
 }
 
 /* ------------------------------------------- the matrix stands down where it will not fit

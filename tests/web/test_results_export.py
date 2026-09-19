@@ -43,6 +43,9 @@ from pathlib import Path
 
 import pytest
 
+from tests.web.steps import press_continue
+
+
 pytest.importorskip(
     "playwright.sync_api",
     reason="the export is asserted by driving a real browser, not by reading source",
@@ -330,6 +333,38 @@ def build_state_with_item_basis(*bases: str) -> dict:
         item["response"] = dict(item["response"], item_basis=basis,
                                 food_item=foods[index])
     return state
+
+
+def test_the_results_page_renders_every_section_it_composes(tmp_path):
+    """**The improvement panel has now vanished in a merge twice.**
+
+    Both times the shape was the same: moving a section is a removal plus an
+    insertion, the removal merged cleanly on its own, and the insertion went
+    with the discarded side. `ImprovementScenario` stayed imported, so nothing
+    complained; it was simply called zero times, and `renderResults` went on
+    returning a page that looked complete. The first time, ninety-six tests
+    stayed green. The second time it took out every browser test that reaches
+    the panel -- but only after the merge was already on `main`.
+
+    Counting call sites is what found it by hand and is not what this asserts:
+    a call inside a branch nobody takes would satisfy that. This renders the
+    page and looks for what each composed section puts on screen, so a section
+    that stops being called fails here whatever the source looks like.
+    """
+    screen = screen_for(tmp_path, build_state())
+
+    for marker, section in (
+        ('id="impact-summary"', "the impact summary"),
+        ('data-action="explore-improvements"', "the improvement panel"),
+        ('id="tangible-equivalents"', "the tangible equivalents"),
+        ('id="breakdown-section"', "the breakdown"),
+        ('id="results-methodology"', "the methodology block"),
+        ('data-action="download-results"', "the download actions"),
+    ):
+        assert marker in screen, (
+            f"{section} is not on the rendered results page -- `renderResults` "
+            f"composes it, so it has stopped being called ({marker!r})"
+        )
 
 
 def test_the_screen_and_the_file_carry_the_same_disclosure(tmp_path):
@@ -882,16 +917,16 @@ def _submit_two_entries(page, time_frame=None):
     for first_entry in (True, False):
         page.evaluate("document.querySelector('input[name=sector]').click()")
         page.wait_for_timeout(60)
-        page.click('[data-action="continue"]')
+        press_continue(page)
         page.wait_for_selector('input[name="food-category"]')
-        page.click('[data-action="continue"]')
+        press_continue(page)
         page.wait_for_selector("#total-waste")
         page.fill("#total-waste", "1000")
-        page.click('[data-action="continue"]')
+        press_continue(page)
         page.wait_for_selector('[data-line-field="amount"]')
         page.fill('[data-line-field="amount"] >> nth=0', "1000")
         page.wait_for_timeout(60)
-        page.click('[data-action="continue"]')
+        press_continue(page)
         page.wait_for_selector('[data-action="calculate"]')
         if first_entry:
             page.click('[data-action="add-entry"]')
@@ -2758,16 +2793,16 @@ def _submit_two_entries_of_different_sectors(page):
     for index, code in enumerate(codes):
         page.check(f'input[name="sector"][value="{code}"]')
         page.wait_for_timeout(60)
-        page.click('[data-action="continue"]')
+        press_continue(page)
         page.wait_for_selector('input[name="food-category"]')
-        page.click('[data-action="continue"]')
+        press_continue(page)
         page.wait_for_selector("#total-waste")
         page.fill("#total-waste", "1000")
-        page.click('[data-action="continue"]')
+        press_continue(page)
         page.wait_for_selector('[data-line-field="amount"]')
         page.fill('[data-line-field="amount"] >> nth=0', "1000")
         page.wait_for_timeout(60)
-        page.click('[data-action="continue"]')
+        press_continue(page)
         page.wait_for_selector('[data-action="calculate"]')
         if index == 0:
             page.click('[data-action="add-entry"]')

@@ -61,6 +61,9 @@ import os
 
 import pytest
 
+from tests.web.steps import press_continue
+
+
 playwright_api = pytest.importorskip(
     "playwright.sync_api",
     reason="playwright is required to drive the wizard the way the owner drove it",
@@ -136,16 +139,16 @@ def _pick_sector(page, index: int) -> str:
 
 def _build_chain(page, amount: str):
     """Steps 1 to 5 with the sector already chosen, leaving the visitor on review."""
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('input[name="food-category"]')
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#total-waste")
     page.fill("#total-waste", amount)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-line-field="amount"]')
     page.fill('[data-line-field="amount"] >> nth=0', amount)
     page.wait_for_timeout(100)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-action="calculate"]')
 
 
@@ -158,15 +161,15 @@ def _walk_forward_to_review(page, amount: str | None = None):
     below needs but which keeps the helper honest about what it assumes.
     """
     page.wait_for_selector("#stage-title")
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#food-title")
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#total-waste")
     if amount is not None:
         page.fill("#total-waste", amount)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#destination-title")
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-action="calculate"]')
 
 
@@ -303,7 +306,7 @@ def test_the_duplicate_notice_still_opens_its_entry_silently(page):
     _build_chain(page, "1000")
     page.click('[data-action="add-entry"]')
     _pick_sector(page, 0)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector(".duplicate-notice")
 
     page.click('.duplicate-notice [data-action="edit-entry"]')
@@ -340,9 +343,9 @@ def _notice_over_a_part_built_chain(page) -> str:
     _build_chain(page, "1000")
     page.click('[data-action="add-entry"]')
     name = _pick_sector(page, 0)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#food-title")
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#total-waste")
     page.fill("#total-waste", "777")
     _back(page)
@@ -377,7 +380,7 @@ def test_a_part_built_chain_is_never_discarded_without_asking(page):
     assert page.locator(".duplicate-notice").count() == 1, (
         "declining must leave the saved entry on the list — the notice reads it"
     )
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#total-waste")
     assert page.input_value("#total-waste") == "777", (
         f"declining kept the visitor here but dropped the figure the dialog was about; "

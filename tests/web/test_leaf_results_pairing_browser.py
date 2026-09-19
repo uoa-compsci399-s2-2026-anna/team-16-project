@@ -38,6 +38,9 @@ import re
 
 import pytest
 
+from tests.web.steps import press_continue
+
+
 pytestmark = pytest.mark.browser
 
 playwright_api = pytest.importorskip(
@@ -74,7 +77,7 @@ def _pick_sector(page, index):
     page.wait_for_selector('input[name="sector"]')
     page.evaluate(f"document.querySelectorAll('input[name=sector]')[{index}].click()")
     page.wait_for_timeout(80)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
 
 
 def _build_chain(page, categories, amounts):
@@ -84,7 +87,7 @@ def _build_chain(page, categories, amounts):
     for index in categories:
         boxes.nth(index).click()
         page.wait_for_timeout(60)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-leaf-field="amount"]')
     ids = page.evaluate(
         "() => [...document.querySelectorAll('[data-leaf-field=amount]')].map(e => e.id)"
@@ -96,7 +99,7 @@ def _build_chain(page, categories, amounts):
     for field, amount in zip(ids, amounts):
         page.fill(f"#{field}", amount)
         page.wait_for_timeout(50)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-line-field="amount"]')
     first_row = page.evaluate(
         """() => {
@@ -114,7 +117,7 @@ def _build_chain(page, categories, amounts):
     for field, amount in zip(first_row, amounts):
         page.fill(f"#{field}", amount)
         page.wait_for_timeout(70)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-action="calculate"]')
 
 

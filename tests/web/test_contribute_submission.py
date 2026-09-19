@@ -42,6 +42,9 @@ from pathlib import Path
 
 import pytest
 
+from tests.web.steps import press_continue
+
+
 playwright_api = pytest.importorskip(
     "playwright.sync_api",
     reason="playwright is required to drive the calculation this file reads back",
@@ -108,16 +111,16 @@ def calculate(page) -> str:
     page.wait_for_selector('input[name="sector"]')
     page.evaluate("document.querySelector('input[name=sector]').click()")
     page.wait_for_timeout(80)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('input[name="food-category"]')
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#total-waste")
     page.fill("#total-waste", "10")
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-line-field="amount"]')
     page.fill('[data-line-field="amount"] >> nth=0', "10")
     page.wait_for_timeout(80)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-action="calculate"]')
     page.click('.step-nav [data-action="calculate"]')
     page.wait_for_selector(".results-page", timeout=20000)

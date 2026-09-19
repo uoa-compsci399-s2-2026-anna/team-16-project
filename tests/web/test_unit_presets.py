@@ -52,6 +52,9 @@ from pathlib import Path
 
 import pytest
 
+from tests.web.steps import press_continue
+
+
 ROOT = Path(__file__).resolve().parents[2]
 UNITS_JS = ROOT / "web" / "js" / "units.js"
 
@@ -400,9 +403,9 @@ def to_amount_step(page):
     page.wait_for_selector('input[name="sector"]')
     page.evaluate("document.querySelector('input[name=sector]').click()")
     page.wait_for_timeout(60)
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('input[name="food-category"]')
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#total-waste")
     return page
 
@@ -419,7 +422,7 @@ def test_each_destination_row_carries_its_own_unit(page_at):
     page = to_amount_step(page_at(1278, 983, 1.25))
     page.fill("#total-waste", "5")
     page.select_option("#total-unit", "tonnes")
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector(".destination-row")
 
     rows = page.locator(".destination-row")
@@ -442,7 +445,7 @@ def test_changing_one_row_s_unit_does_not_change_the_others(page_at):
     page = to_amount_step(page_at(1278, 983, 1.25))
     page.fill("#total-waste", "5")
     page.select_option("#total-unit", "tonnes")
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector(".destination-row")
 
     selects = page.locator('.destination-row select[data-line-field="unit"]')
@@ -478,12 +481,12 @@ def test_the_review_step_shows_each_row_in_the_unit_it_was_typed_in(page_at):
     page = to_amount_step(page_at(1278, 983, 1.25))
     page.fill("#total-waste", "5")
     page.select_option("#total-unit", "tonnes")
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector(".destination-row")
 
     page.locator('.destination-row select[data-line-field="unit"]').nth(0).select_option("kilograms")
     page.locator('.destination-row input[data-line-field="amount"]').nth(0).fill("250")
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector(".review-destinations")
 
     #: An exact pair in one `dd`, not a substring scan of the whole section. `"250" in
@@ -506,7 +509,7 @@ def test_two_rows_in_different_units_convert_to_different_kilograms(page_at):
     page = to_amount_step(page_at(1278, 983, 1.25))
     page.fill("#total-waste", "6000")
     page.select_option("#total-unit", "kilograms")
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector(".destination-row")
 
     amounts = page.locator('.destination-row input[data-line-field="amount"]')
@@ -517,7 +520,7 @@ def test_two_rows_in_different_units_convert_to_different_kilograms(page_at):
     units.nth(1).select_option("tonnes")
     page.wait_for_timeout(80)
 
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector(".review-destinations")
     lines = page.locator(".review-destinations dd").all_inner_texts()
 
@@ -543,7 +546,7 @@ def test_the_amount_input_stays_usable_beside_the_unit_select(page_at, width):
     """
     page = to_amount_step(page_at(width, 800))
     page.fill("#total-waste", "1000")
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('.destination-row input[data-line-field="amount"]')
 
     box = page.locator('.destination-row input[data-line-field="amount"]').first.bounding_box()

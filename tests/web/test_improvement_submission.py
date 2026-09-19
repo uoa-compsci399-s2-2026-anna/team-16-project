@@ -42,6 +42,9 @@ from pathlib import Path
 
 import pytest
 
+from tests.web.steps import press_continue
+
+
 playwright_api = pytest.importorskip(
     "playwright.sync_api",
     reason="playwright is required to drive the two calls this file measures between",
@@ -154,9 +157,9 @@ def calculate(page) -> str:
     page.wait_for_selector('input[name="sector"]')
     page.evaluate("document.querySelector('input[name=sector]').click()")
     page.wait_for_timeout(80)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('input[name="food-category"]')
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#total-waste")
 
     # The unit first: changing it clears the amounts entered against the old one,
@@ -167,7 +170,7 @@ def calculate(page) -> str:
     page.fill("#total-input", "50")
     page.fill("#total-value", "120000")
     page.fill("#wasted-value", "4500")
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-line-field="amount"]')
 
     # Row one keeps the entry's tonnes; row two is switched to kilograms. This is
@@ -179,7 +182,7 @@ def calculate(page) -> str:
     page.wait_for_timeout(80)
     page.fill('[data-line-field="amount"] >> nth=1', "500")
     page.wait_for_timeout(120)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-action="calculate"]')
 
     page.select_option("#time-frame", "one_year")

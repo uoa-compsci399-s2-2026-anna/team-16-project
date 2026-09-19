@@ -45,6 +45,9 @@ from pathlib import Path
 
 import pytest
 
+from tests.web.steps import press_continue
+
+
 from api.schemas import CalculatePayload
 
 playwright_api = pytest.importorskip(
@@ -91,7 +94,6 @@ PAST_FOLD = """
   return Math.round(el.getBoundingClientRect().bottom - window.innerHeight);
 }
 """
-
 
 
 @pytest.fixture
@@ -233,19 +235,19 @@ def walk(page):
     yield 0
     page.evaluate("document.querySelector('input[name=sector]').click()")
     page.wait_for_timeout(60)
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('input[name="food-category"]')
     yield 1
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#total-waste")
     yield 2
     page.fill("#total-waste", "1000")
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-line-field="amount"]')
     yield 3
     page.fill('[data-line-field="amount"] >> nth=0', "1000")
     page.wait_for_timeout(60)
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-action="calculate"]')
     yield 4
     page.click('[data-action="calculate"]')
@@ -580,16 +582,16 @@ def test_the_longest_primary_label_does_not_overflow_the_narrowest_viewport(page
     page.wait_for_selector('input[name="sector"]')
     page.evaluate("document.querySelector('input[name=sector]').click()")
     page.wait_for_timeout(60)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('input[name="food-category"]')
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#total-waste")
     page.fill("#total-waste", "500")
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-line-field="amount"]')
     page.fill('[data-line-field="amount"] >> nth=0', "500")
     page.wait_for_timeout(60)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-action="calculate"]')
     page.wait_for_timeout(120)
     measured = page.evaluate(
@@ -1111,7 +1113,7 @@ def test_step_three_container_feedback_does_not_overlap_its_error(page_at):
     page.select_option("#total-unit", preset)
     page.wait_for_selector("#unit-count")
     page.fill("#unit-count", "0")
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#amount-error")
 
     error_box = page.locator("#amount-error").bounding_box()
@@ -1194,7 +1196,7 @@ def test_the_production_total_is_optional_and_continue_still_works(page_at):
 
     page.fill("#total-waste", "1200")
     #: #total-input deliberately left empty
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector(".destination-row", timeout=5000)
 
     assert page.locator(".destination-row").count() > 0, (
@@ -1216,7 +1218,7 @@ def test_a_wasted_value_greater_than_the_total_value_is_refused_at_entry(page_at
     page.fill("#total-waste", "1000")
     page.fill("#total-value", "46.00")
     page.fill("#wasted-value", "47.00")
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_timeout(80)
 
     assert page.locator("#amount-title").count() == 1, (
@@ -1246,7 +1248,7 @@ def test_a_wasted_value_greater_than_the_total_value_is_refused_at_entry(page_at
     #: The affirmative half: pulling the wasted figure back under the total
     #: lets the visitor continue, exactly as editable as it always was.
     page.fill("#wasted-value", "45.00")
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector(".destination-row", timeout=5000)
     assert page.locator(".destination-row").count() > 0, (
         "a wasted value under the total was still refused"
@@ -1264,7 +1266,7 @@ def test_a_waste_amount_greater_than_the_production_total_is_refused_at_entry(pa
 
     page.fill("#total-waste", "1500")
     page.fill("#total-input", "1000")
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_timeout(80)
 
     assert page.locator("#amount-title").count() == 1, (
@@ -1288,7 +1290,7 @@ def test_a_waste_amount_greater_than_the_production_total_is_refused_at_entry(pa
 
     #: The affirmative half.
     page.fill("#total-input", "2000")
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector(".destination-row", timeout=5000)
     assert page.locator(".destination-row").count() > 0, (
         "a waste amount under the production total was still refused"
@@ -1321,7 +1323,7 @@ def test_a_blank_money_field_is_exempt_from_the_contradiction_check(page_at, tot
         page.fill("#total-value", total_value)
     if wasted_value:
         page.fill("#wasted-value", wasted_value)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector(".destination-row", timeout=5000)
 
     assert page.locator(".destination-row").count() > 0, (
@@ -1363,7 +1365,7 @@ def test_the_money_contradiction_is_decided_at_the_exact_cent_not_by_float_dust(
     page.fill("#total-waste", "1000")
     page.fill("#total-value", total_value)
     page.fill("#wasted-value", wasted_value)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_timeout(80)
 
     advanced = page.locator(".destination-row").count() > 0
@@ -1391,26 +1393,26 @@ def test_the_money_contradiction_is_checked_per_entry_not_across_the_whole_submi
     page.fill("#total-waste", "1000")
     page.fill("#total-value", "1000")
     page.fill("#wasted-value", "10")
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-line-field="amount"]')
     page.fill('[data-line-field="amount"] >> nth=0', "1000")
     page.wait_for_timeout(60)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-action="add-entry"]')
 
     page.click('[data-action="add-entry"]')
     page.wait_for_selector('input[name="sector"]')
     page.evaluate("document.querySelector('input[name=sector]').click()")
     page.wait_for_timeout(60)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('input[name="food-category"]')
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#total-waste")
 
     page.fill("#total-waste", "500")
     page.fill("#total-value", "5")
     page.fill("#wasted-value", "500")
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_timeout(80)
 
     assert page.locator(".destination-row").count() == 0, (
@@ -2465,7 +2467,7 @@ def test_a_step_heading_does_not_overflow_in_translation(page_at_locale, width, 
     page.wait_for_selector('input[name="sector"]')
     page.evaluate("document.querySelector('input[name=sector]').click()")
     page.wait_for_timeout(60)
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('input[name="food-category"]')
 
     measured = page.evaluate(

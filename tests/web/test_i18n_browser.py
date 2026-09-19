@@ -30,6 +30,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.web.steps import press_continue
+
 from tests.web import i18n_keys
 
 pytestmark = pytest.mark.browser
@@ -1746,7 +1748,7 @@ def test_a_validation_message_is_translated(browser):
     try:
         page.click('[data-action="start"]')
         page.wait_for_selector("#stage-title")
-        page.click('.step-nav [data-action="continue"]')
+        press_continue(page)
         page.wait_for_selector(".field-error")
         assert page.inner_text(".field-error") == "请选择浪费发生在食物供应链的哪个环节。"
     finally:

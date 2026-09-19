@@ -71,6 +71,9 @@ import os
 
 import pytest
 
+from tests.web.steps import press_continue
+
+
 playwright_api = pytest.importorskip(
     "playwright.sync_api",
     reason="playwright is required to drive the wizard the way the owner drove it",
@@ -133,16 +136,16 @@ def _pick_sector(page, index: int) -> str:
 
 def _build_chain(page, amount: str):
     """Steps 1 to 5 with the sector already chosen, leaving the visitor on review."""
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('input[name="food-category"]')
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#total-waste")
     page.fill("#total-waste", amount)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-line-field="amount"]')
     page.fill('[data-line-field="amount"] >> nth=0', amount)
     page.wait_for_timeout(100)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-action="calculate"]')
 
 
@@ -261,7 +264,7 @@ def test_backing_out_of_an_edit_from_the_duplicate_notice_returns_to_step_two(pa
     _build_chain(page, "1000")
     page.click('[data-action="add-entry"]')
     _pick_sector(page, 0)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector(".duplicate-notice")
 
     page.click('.duplicate-notice [data-action="edit-entry"]')
@@ -402,13 +405,13 @@ def test_a_chain_built_after_an_add_is_never_restored_away(page):
 
     page.click('[data-action="start"]')
     page.wait_for_selector("#stage-title")
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#food-title")
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#total-waste")
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#destination-title")
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#review-title")
 
     assert _saved_cards(page) == 1, (
@@ -485,12 +488,12 @@ def _build_to_destinations(page, amount: str):
     a chain built all the way to review is precisely the path where the defect
     does not reproduce.
     """
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('input[name="food-category"]')
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#total-waste")
     page.fill("#total-waste", amount)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-line-field="amount"]')
     page.fill('[data-line-field="amount"] >> nth=0', amount)
     page.wait_for_timeout(100)
@@ -499,7 +502,7 @@ def _build_to_destinations(page, amount: str):
 def _walk_forward_to_review(page):
     """Continue until the review step, from wherever the visitor is standing."""
     for selector in ("#food-title", "#total-waste", "#destination-title", "#review-title"):
-        page.click('.step-nav [data-action="continue"]')
+        press_continue(page)
         page.wait_for_selector(selector, timeout=10000)
 
 
@@ -768,14 +771,14 @@ def test_a_marker_from_the_duplicate_notice_does_not_fire_on_another_steps_back(
     _build_chain(page, "1000")
     page.click('[data-action="add-entry"]')
     _pick_sector(page, 0)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector(".duplicate-notice")
 
     page.click('.duplicate-notice [data-action="edit-entry"]')
     page.wait_for_selector("#stage-title")
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#food-title")
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#total-waste")
     assert _screen(page) == "step 3 (waste amount)", (
         f"precondition: the opened entry was walked forward to step 3, got {_screen(page)}"

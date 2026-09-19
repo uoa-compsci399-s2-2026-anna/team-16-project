@@ -57,6 +57,9 @@ import os
 
 import pytest
 
+from tests.web.steps import press_continue
+
+
 playwright_api = pytest.importorskip(
     "playwright.sync_api",
     reason="playwright is required to drive the real 400 this file asserts against",
@@ -95,16 +98,16 @@ def _build_one_chain(page, *, then_add_another: bool):
     subject of this file, and it is exactly what the helper in
     `test_results_export.py` goes out of its way to avoid.
     """
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('input[name="food-category"]')
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#total-waste")
     page.fill("#total-waste", "1000")
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-line-field="amount"]')
     page.fill('[data-line-field="amount"] >> nth=0', "1000")
     page.wait_for_timeout(80)
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-action="calculate"]')
     if then_add_another:
         page.click('[data-action="add-entry"]')
@@ -188,7 +191,7 @@ def test_the_collision_is_named_at_the_point_of_choice(page):
     _build_one_chain(page, then_add_another=True)
     page.evaluate("document.querySelectorAll('input[name=sector]')[0].click()")
     page.wait_for_timeout(80)
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('input[name="food-category"]')
     notice = page.locator(".duplicate-notice")
     assert notice.is_visible(), (
@@ -207,7 +210,7 @@ def test_the_notice_opens_the_chain_it_names(page):
     _build_one_chain(page, then_add_another=True)
     page.evaluate("document.querySelectorAll('input[name=sector]')[0].click()")
     page.wait_for_timeout(80)
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector(".duplicate-notice")
     page.click('.duplicate-notice [data-action="edit-entry"]')
     page.wait_for_timeout(200)
@@ -228,7 +231,7 @@ def test_continuing_past_the_notice_is_still_allowed(page):
     _build_one_chain(page, then_add_another=True)
     page.evaluate("document.querySelectorAll('input[name=sector]')[0].click()")
     page.wait_for_timeout(80)
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector(".duplicate-notice")
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#total-waste", timeout=5000)

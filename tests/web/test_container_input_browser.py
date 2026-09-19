@@ -94,6 +94,9 @@ from decimal import Decimal
 
 import pytest
 
+from tests.web.steps import press_continue
+
+
 pytest.importorskip(
     "playwright.sync_api",
     reason="playwright is required to drive the container input; it is unverified without it",
@@ -253,9 +256,9 @@ def to_amount_step(page):
     page.wait_for_selector('input[name="sector"]')
     page.evaluate("document.querySelector('input[name=sector]').click()")
     page.wait_for_timeout(60)
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('input[name="food-category"]')
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#total-unit")
     return page
 
@@ -449,7 +452,7 @@ def test_the_total_that_reaches_step_four_is_that_mass(page_at):
     """Step 4 allocates the step-3 total, and §6.2 compares the two. The summary
     is read off the screen the visitor is looking at."""
     page = fill_container(to_container_step(page_at(1278, 983)))
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-line-field="amount"]')
     summary = page.inner_text("#current-summary")
     assert "139.20" in summary, summary
@@ -475,9 +478,9 @@ def test_switching_from_tonnes_to_containers_leaves_step_four_in_kilograms(page_
     page.wait_for_selector('input[name="sector"]')
     page.evaluate("document.querySelector('input[name=sector]').click()")
     page.wait_for_timeout(60)
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('input[name="food-category"]')
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector("#total-unit")
     page.select_option("#total-unit", "tonnes")
     page.wait_for_timeout(80)
@@ -485,7 +488,7 @@ def test_switching_from_tonnes_to_containers_leaves_step_four_in_kilograms(page_
     page.select_option("#total-unit", f"preset:{PRESET_CODE}")
     page.wait_for_selector("#unit-count")
     fill_container(page)
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-line-field="amount"]')
 
     summary = page.inner_text("#current-summary")
@@ -513,11 +516,11 @@ def test_the_review_step_says_what_was_entered_and_what_it_came_to(page_at, taxo
     than by reading.
     """
     page = fill_container(to_container_step(page_at(1278, 983)))
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-line-field="amount"]')
     page.fill('[data-line-field="amount"] >> nth=0', "139.2")
     page.wait_for_timeout(80)
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-action="calculate"]')
     label = next(
         row["label"] for row in taxonomy["unit_presets"] if row["code"] == PRESET_CODE
@@ -541,11 +544,11 @@ def test_the_request_body_is_what_a_typed_mass_would_have_sent(page_at):
     differently.
     """
     page = fill_container(to_container_step(page_at(1278, 983)))
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-line-field="amount"]')
     page.fill('[data-line-field="amount"] >> nth=0', "139.2")
     page.wait_for_timeout(80)
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-action="calculate"]')
     page.click('[data-action="calculate"]')
     page.wait_for_timeout(600)
@@ -556,16 +559,16 @@ def test_the_request_body_is_what_a_typed_mass_would_have_sent(page_at):
     typed.wait_for_selector('input[name="sector"]')
     typed.evaluate("document.querySelector('input[name=sector]').click()")
     typed.wait_for_timeout(60)
-    typed.click('[data-action="continue"]')
+    press_continue(typed)
     typed.wait_for_selector('input[name="food-category"]')
-    typed.click('[data-action="continue"]')
+    press_continue(typed)
     typed.wait_for_selector("#total-waste")
     typed.fill("#total-waste", "139.2")
-    typed.click('[data-action="continue"]')
+    press_continue(typed)
     typed.wait_for_selector('[data-line-field="amount"]')
     typed.fill('[data-line-field="amount"] >> nth=0', "139.2")
     typed.wait_for_timeout(80)
-    typed.click('[data-action="continue"]')
+    press_continue(typed)
     typed.wait_for_selector('[data-action="calculate"]')
     typed.click('[data-action="calculate"]')
     typed.wait_for_timeout(600)
@@ -582,7 +585,7 @@ def test_a_count_of_more_than_ten_thousand_is_refused(page_at):
     """The bound, on the screen. Half a wheelie bin is a reasonable thing to
     say; two hundred and forty thousand of them is not."""
     page = fill_container(to_container_step(page_at(1278, 983)), count="10001")
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_timeout(150)
     assert page.query_selector("#unit-count"), "the step advanced on a refused count"
     assert "10,000" in page.inner_text(".content-section")
@@ -592,7 +595,7 @@ def test_a_third_decimal_place_in_the_count_is_refused(page_at):
     """The two-decimal rule follows the count, which is what somebody types —
     not the derived total, which has three because §6.2 accepts three."""
     page = fill_container(to_container_step(page_at(1278, 983)), count="1.234")
-    page.click('[data-action="continue"]')
+    press_continue(page)
     page.wait_for_timeout(150)
     assert page.query_selector("#unit-count"), "the step advanced on a refused count"
 

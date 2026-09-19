@@ -31,6 +31,9 @@ import os
 
 import pytest
 
+from tests.web.steps import press_continue
+
+
 pytestmark = pytest.mark.browser
 
 playwright_api = pytest.importorskip(
@@ -77,7 +80,7 @@ def _to_step_four(page, leaves):
     page.wait_for_selector('input[name="sector"]')
     page.evaluate("document.querySelectorAll('input[name=sector]')[0].click()")
     page.wait_for_timeout(80)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('input[name="food-category"]')
     boxes = page.locator('input[name="food-category"]')
     offered = boxes.count()
@@ -85,14 +88,14 @@ def _to_step_four(page, leaves):
     for index in range(leaves):
         boxes.nth(index).click()
         page.wait_for_timeout(50)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-leaf-field="amount"]')
     ids = page.evaluate("() => [...document.querySelectorAll('[data-leaf-field=amount]')].map(e => e.id)")
     assert len(ids) == leaves, f"step 3 rendered {len(ids)} amount fields for {leaves} leaves: {ids}"
     for index, field in enumerate(ids):
         page.fill(f"#{field}", str((index + 1) * 100))
         page.wait_for_timeout(40)
-    page.click('.step-nav [data-action="continue"]')
+    press_continue(page)
     page.wait_for_selector('[data-line-field="amount"]')
 
 

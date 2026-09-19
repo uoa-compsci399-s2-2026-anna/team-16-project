@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-09-18 (v1.60 draft)"
+date: "2026-09-19 (v1.61 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,17 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.61 — 2026-09-19 (step 3's zoning reaches the twenty catalogues; affects C and D)
+
+Step 3 was re-laid as two tinted zones, each with its own heading and sub-line, and its four field names became tooltip terms. That is a front-end change with no wire in it, and it is recorded here only because it moves the **catalogue** contract: the English source string is the key (§7.7.1), so rewording a label orphans every translation of it silently.
+
+**No request or response shape changes, and no contract field moved.** `POST /api/v1/calculate` sends the byte-identical body before and after — the same `entries[]`, the same `total_input_kg`, `total_value_nzd` and `wasted_value_nzd`, from the same inputs under the same `id`s. Nothing in §2, §3, §6 or §9 is touched. `tests/fixtures/*.json` is unchanged for the same reason.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **Each catalogue goes from 403 strings to 415: eighteen keys added, six removed, in all twenty files.** Added are the two zone headings and their sub-lines (`How much was wasted`, `Needed for the calculation.`, `Supporting figures`, `Optional. They never enter the emissions calculation.`), the three bare field names, the eight tooltip sentences behind the four terms, and the two money hints. Removed are `Add production and value figures` (the disclosure it opened is gone), the sub-line that sat under it, the money hint that was the same sentence twice, and three labels whose **unit or currency marker has moved out of the key**: `Total amount produced (%(unit)s)`, `Value of production (NZ$)` and `Value of the waste (NZ$)` are now `Total amount produced`, `Value of production` and `Value of the waste`, with `" (" + marker + ")"` appended outside the term's dotted underline. The rendered label is byte-identical; what changes is that a translator can no longer move the unit relative to the name, so the three translations were rewritten rather than carried over. **One of the removed keys differs from a new one only in punctuation** — `Optional — they never enter…` against `Optional. They never enter…` — which is exactly the shape §7.7.1's key rule makes invisible to every test but the stale-key one | §7.7, §7.7.1 |
+| 2 | **`api/assets/locales/` is re-copied byte-for-byte and the four CJK subsets are re-cut.** The two trees are compared by file list *and* SHA-256, so the embedded copies are copied, never re-serialised. The new Japanese, Korean and Chinese strings use characters the subset faces did not carry — `test_no_character_in_any_catalogue_would_print_as_a_box` named twenty-three code points — so `recut_cjk_subsets.py` was re-run and `PROVENANCE.md` records the counts: jp 634→646, kr 556→558, sc 694→705, tc 690→705 | §6.2.3, §7.7 |
 
 ### v1.60 — 2026-09-18 (the visitor can name a food, and one deployment will let them; affects C, D, E and B)
 

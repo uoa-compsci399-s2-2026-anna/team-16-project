@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-09-20 (v1.62 draft)"
+date: "2026-09-21 (v1.66 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,18 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.66 — 2026-09-21 (the results page's section nav stops covering the page; affects C and D)
+
+The floating section nav was anchored just outside the content column, but its panel hangs off the handle's *inline-start* edge, so it opened backwards — over the text — and it opened by default at every width it was drawn at. Measured on the running stack, English, column at 32–1032 at a 1100px window: panel 788–1040 at 1100, 878–1130 at 1280, 958–1210 at 1440, 1038–1290 at 1600, 1198–1450 at 1920 — **244 of its 252px on the page, with nothing clicked**. Arabic mirrored it exactly.
+
+**No request or response shape changes, no route or field moved, and no catalogue key changes.** The four section labels are the keys they already were, so `tests/fixtures/*.json` and all twenty catalogues are untouched. This is recorded because §7 governs cross-module calls and `results.js` gains two that `calculator.js` makes.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **§7's `results.js` gains `bindResultsSectionSpy(root)`.** `render()` calls it after every `main.innerHTML` write, on every screen. It points one `IntersectionObserver` — the same object for the life of the page, disconnected and re-pointed, never recreated — at the four sections the nav indexes, and writes `aria-current="location"` onto the link for the section in view. The reader's position is held in module scope and **not on `state`**: `setState` re-renders the whole results page, so a scroll position kept there would rebuild it per scroll event | §7.3a |
+| 2 | **§7's `results.js` gains `resultsNavIsDocked(root)`**, which reads the `--results-floating-nav-docked` custom property off the rendered nav. `state.resultsNavOpen === undefined` still means "the stylesheet decides", but it now stands for **two** defaults — docked and open in the gutter from 1600px up, a closed handle from 1100 to 1599 — so the first press of the handle has to ask which one is on screen instead of assuming "open" and setting `false`, which was a dead button at every width below 1600 | §7.3a |
+| 3 | **The nav's own geometry is CSS and stays CSS**, including the breakpoint: the offset is `inset-inline-start: 50%` plus `margin-inline-start: 490px`, which is the column's far edge measured in both writing directions, and 1600 is derived in the stylesheet from 24px of clearance, a 252px panel, 16px before the viewport edge and a 17px scrollbar. `tests/web/test_results_floating_nav_browser.py` measures the two rectangles rather than any class name, at five widths, in both directions, with scrollbars **drawn** — the shared browser fixture hides them, which reports every gutter 15px wider than a visitor's and passed the old geometry | §7.6 |
 
 ### v1.62 — 2026-09-20 (the contribute control's two steps reach the twenty catalogues; affects C and D)
 
@@ -4358,6 +4370,41 @@ export function downloadResults(state);
  * has finished reading the URL can cancel the download in some browsers.
  */
 export async function downloadPdf(state);
+
+/**
+ * Point the floating section nav's scroll-spy at whatever `render()` has just
+ * written into `<main>`, and write `aria-current="location"` onto the link for
+ * the section the reader is in.
+ *
+ * **Called at the end of every `render()`, including the renders that are not
+ * the results page** — no nav means the observer is disconnected, so it is never
+ * left holding elements that have left the document. `render()` replaces
+ * `main.innerHTML` on every `setState`, so the four sections this watches are
+ * destroyed and rebuilt constantly; there is exactly ONE `IntersectionObserver`
+ * for the life of the page, disconnected and re-pointed here rather than
+ * recreated, and the reader's section is held in module scope rather than on
+ * `state` (a scroll must not re-render the results page).
+ *
+ * @param {Element} root The container `render()` wrote into.
+ */
+export function bindResultsSectionSpy(root);
+
+/**
+ * Whether the stylesheet currently has the nav **docked in the page's gutter**
+ * (open by default) rather than collapsed to a handle (closed by default).
+ *
+ * Reads `--results-floating-nav-docked` off the rendered nav instead of
+ * repeating the breakpoint in JavaScript: the viewport is the stylesheet's to
+ * know, and a media query written in both places is one fact stated twice.
+ * `calculator.js`'s `toggle-results-nav` is the only caller — it is what the
+ * FIRST press has to invert, because `state.resultsNavOpen` is `undefined`
+ * until the visitor toggles and the default it stands for is now two different
+ * defaults.
+ *
+ * @param {Document|Element} [root] Where to look for the nav; the document by default.
+ * @returns {boolean} `false` when there is no nav, no DOM, or no docked regime.
+ */
+export function resultsNavIsDocked(root);
 ```
 
 > **"Per entry" on this screen means per LEAF, not per chain (v1.55).** A supply-chain chain that names three food categories is three `entries[]` elements and therefore three breakdown sections and three rows in the text report, each named by `leafDisplayName` (§7.2) rather than by a label this module decides. That is what closed two defects at once here: a leaf carried one name on step 3, another on step 4 and a third on the review step, and `Standard mix / not specified` was returned both for a NULL `food_category` and for the `standard_mix` category — two answers step 2 offers as two separate boxes, rendering byte-identically on a page whose rows carry different numbers. The pairing itself is `entryResultsFrom`'s (§7.2), which must be handed the leaves the request was built from; handed chains it pairs by index against a longer response and attaches every figure to the wrong entry, silently.

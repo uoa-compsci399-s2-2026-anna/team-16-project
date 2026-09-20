@@ -465,6 +465,25 @@ class SubmissionAdmin(AuditedModelView, model=Submission):
     can_edit = False
     can_view_details = True
 
+    # NO IMPORT, EVER, AND THAT IS WHY `AuditedImport` IS NOT IN THE BASES.
+    #
+    # Fourteen tables accept a bulk CSV import (admin/importing.py). This is
+    # one of the four that never will. **`submission` is the raw material of
+    # the public statistics the client publishes**, and an import is a way to
+    # manufacture them: a file of a thousand rows would move every share on
+    # /stats, past the suppression threshold and into a figure the client's
+    # name is on, with nothing on the page able to say which rows came from a
+    # visitor and which from a spreadsheet.
+    #
+    # The same reason `can_create` above is off, at the scale that makes it
+    # matter. A submission is a record of something a member of the public did;
+    # it is the one table on this panel that is not staff-authored content, and
+    # the panel's job here is to read it and to exclude a row from the public
+    # aggregate, never to add one.
+    #
+    # tests/admin/test_import_tables.py fails if this view ever acquires
+    # `can_import`, by any route including inheritance.
+
     #: Four columns, and two of the derived ones are rendered by the
     #: formatters below. `excluded_from_public` is deliberately **not** one of
     #: them: the state is shown on the row itself (see `_format_created_at`),

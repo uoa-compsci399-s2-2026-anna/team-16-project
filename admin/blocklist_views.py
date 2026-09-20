@@ -109,6 +109,27 @@ class IpBlockAdmin(AdministratorOnly, AuditedModelView, model=IpBlock):
     # two that have to be kept in sync).
     can_delete = False
 
+    # NO IMPORT, EVER, AND THAT IS WHY `AuditedImport` IS NOT IN THE BASES.
+    #
+    # Fourteen tables accept a bulk CSV import (admin/importing.py). This is
+    # one of the four that never will. **`ip_block` is a security control, and
+    # a bulk overwrite of it is a bulk change to the panel's own defences** —
+    # the one table where the harm of a wrong file is that something stops
+    # being refused. Applied mid-incident, which is when this screen is used,
+    # a file that dropped or shortened blocks would be indistinguishable on
+    # the page from one that added them.
+    #
+    # It is also the wrong shape for a file: `ip_hmac` is 64 hex characters
+    # derived from an address under a key held by this deployment, and this
+    # whole module exists to keep it off the screen. A file naming addresses
+    # would need `block_ip` to fingerprint them, which is the manual-block
+    # route below and not an import; a file naming hashes would neither be
+    # readable nor portable — the fingerprint key is derived from `SECRET_KEY`,
+    # so the same address hashes differently in another deployment.
+    #
+    # tests/admin/test_import_tables.py fails if this view ever acquires
+    # `can_import`, by any route including inheritance.
+
     # Never ip_hmac: 64 hex characters no human can act on, and the one
     # thing every other part of this module exists to keep off the screen.
     column_list = [

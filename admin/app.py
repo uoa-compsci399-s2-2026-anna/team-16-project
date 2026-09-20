@@ -9,7 +9,6 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
-from sqladmin import Admin
 from starlette.staticfiles import StaticFiles
 
 from admin.backend import AdminAuth
@@ -17,7 +16,9 @@ from admin.bootstrap import ensure_bootstrap_admins
 from admin.calc_client import HttpCalculateClient
 from admin.cli import report_bootstrap_result
 from admin.config import Settings, load_settings
+from admin.csrf import issue_token
 from admin import i18n as admin_i18n
+from admin.importing import KaiAdmin
 from admin.language_view import register as register_language_route
 from admin.protection import ProtectionMiddleware
 from admin.runtime import Runtime
@@ -175,7 +176,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # admin/language_view.py says why it carries no CSRF token.
     register_language_route(app)
 
-    admin = Admin(
+    # KaiAdmin rather than sqladmin's Admin: one overridden route, the one
+    # that carries a bulk CSV upload. admin/importing.py says what it adds and
+    # why none of the three additions can live on the view instead.
+    admin = KaiAdmin(
         app,
         session_maker=session_factory,
         base_url="/admin",
@@ -199,6 +203,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         settings.login_lockout_minutes
     )
     admin.templates.env.globals["login_max_failures"] = settings.login_max_failures
+
+    # THE CSRF TOKEN, FOR THE TEMPLATES SQLADMIN RENDERS ITSELF.
+    #
+    # Every hand-written screen in this panel is rendered by its own view,
+    # which puts `csrf_token` in the context it passes (admin/views.py,
+    # admin/accounts_view.py, admin/factor_views.py, admin/self_service_view.py).
+    # sqladmin's own list page is rendered by sqladmin, from a context this
+    # project never sees, so a template shadowed under templates/sqladmin/ has
+    # no other way to reach the session's token - the same seam, and the same
+    # reason, as the two login globals above.
+    #
+    # A callable taking the request rather than a value: a Jinja global is
+    # evaluated once per render and there is one environment per app, so a
+    # bare string here would be one session's token handed to every session.
+    # `issue_token` mints on first use and is idempotent afterwards
+    # (admin/csrf.py), and the render happens inside the endpoint, before
+    # SessionMiddleware writes the response's cookie.
+    admin.templates.env.globals["kaicalc_csrf_token"] = (
+        lambda request: issue_token(request.session)
+    )
 
     # TRANSLATION. Contract open item O-8, and admin/i18n.py says why it is
     # shaped this way rather than as gettext or as sqladmin's own i18n.

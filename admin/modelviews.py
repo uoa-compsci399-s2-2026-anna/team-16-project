@@ -28,6 +28,7 @@ session this class did not create.
 """
 
 import contextvars
+from dataclasses import dataclass
 from typing import Any
 
 from markupsafe import Markup
@@ -66,6 +67,97 @@ _actor_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 _view_var: contextvars.ContextVar["AuditedModelView | None"] = contextvars.ContextVar(
     "kai_admin_audit_view", default=None
 )
+
+
+@dataclass(frozen=True)
+class ImportedFile:
+    """The one uploaded file a bulk import is writing rows out of.
+
+    Set on ``_import_var`` by ``admin/importing.py``'s import route before it
+    hands the upload to sqladmin, read by the ``before_commit`` listener
+    below, which turns it into the single file-level ``audit_log`` entry that
+    heads the per-row entries for the same commit.
+
+    Carries what identifies the *file* and nothing that identifies the rows:
+    the row counts are measured by the listener from the flush it is about to
+    commit, because a count taken from the upload is a count of what was asked
+    for rather than of what happened.
+    """
+
+    #: As the browser sent it. Not a path — there is no file on this server.
+    filename: str
+    #: The uploaded bytes, before any decoding.
+    byte_count: int
+    #: SHA-256 of those same bytes, hex. Two people asking "was this the file
+    #: I sent?" six months apart have nothing else to compare; a filename is
+    #: whatever the person's spreadsheet happened to be called.
+    sha256: str
+
+
+#: The file whose import is in flight, or None. Set by
+#: ``admin/importing.py``'s ``import_endpoint`` alongside ``_actor_var`` and
+#: ``_view_var``, for the same reason those two exist: the listener runs deep
+#: inside sqladmin's own import machinery with no reference to the request.
+#:
+#: **Defined here rather than in admin/importing.py**, even though only that
+#: module sets it, because the listener below is the only thing that reads it
+#: and the import module already imports this one. The other way round is a
+#: cycle.
+_import_var: contextvars.ContextVar[ImportedFile | None] = contextvars.ContextVar(
+    "kai_admin_audit_import", default=None
+)
+
+#: Key under ``Session.info`` for the rows a bulk import has flushed so far.
+#: Scoped to one session - the importer opens one per file - so nothing here
+#: outlives the transaction it belongs to. See ``_remember_imported_rows``.
+_IMPORTED_ROWS = "kai_admin_imported_rows"
+
+#: Key under ``Session.info`` for the **existing** rows a bulk import wrote
+#: over, as ``[(row, before)]``. Filled by ``admin/importing.py``'s upsert
+#: listener, read by the ``before_commit`` listener below.
+#:
+#: **Why the before-snapshot cannot be taken here.** ``_snapshot_before``
+#: reads SQLAlchemy's attribute history, and the importer flushes every row
+#: inside its own ``SAVEPOINT`` - so by the single commit at the end of the
+#: file the row is clean and its history is gone, exactly as
+#: ``_remember_imported_rows`` describes for the created ones. The upsert
+#: listener runs at ``before_flush``, with the row freshly loaded and not yet
+#: touched, which is the last moment its "before" exists at all.
+_IMPORTED_UPDATES = "kai_admin_imported_updates"
+
+#: Key under ``Session.info`` for how many of ``_IMPORTED_UPDATES`` are
+#: deactivations rather than rows the file restated - the "also deactivate the
+#: rest" mode setting ``active = false`` on a row whose natural key the file
+#: does not carry. Counted apart so that the file-level audit entry can say
+#: which of the two happened; the per-row entries are identical in shape
+#: (``action = 'update'``, an ``active`` that went from true to false) and
+#: deliberately so, because that is what the change *is*.
+_IMPORT_DEACTIVATED = "kai_admin_import_deactivated"
+
+
+def account_is_admin(session_maker, username: str | None) -> bool:
+    """Does this username belong to an account whose role is ``admin``?
+
+    Read out of the database on every call, never from the session cookie:
+    the cookie carries the username and nothing else about the account, and a
+    session minted while somebody was an administrator must not keep the
+    capability after the role is taken away.
+
+    A free function rather than a method so that a view which is *not*
+    ``AdministratorOnly`` — one whose screen is open to both roles but which
+    gates one route behind the administrator floor — can ask the same
+    question without inheriting a whole class's worth of visibility
+    overrides. ``admin/factor_views.py``'s ``_require_admin_for_import``
+    predates this and still carries its own copy of the predicate; it was left
+    alone rather than widened into this change.
+    """
+    if not username:
+        return False
+    with session_maker() as session:
+        try:
+            return get_staff(session, username).role is StaffRole.admin
+        except UnknownStaffError:
+            return False
 
 
 def _snapshot_before(row: Any) -> dict:
@@ -138,6 +230,36 @@ def _audited_session_maker(
     """
     audited = sessionmaker(**real_maker.kw)
 
+    @event.listens_for(audited, "after_flush")
+    def _remember_imported_rows(session: Session, flush_context) -> None:
+        """Keep hold of the rows a bulk import has just flushed.
+
+        **Only during an import**, and this is the one thing the ordinary
+        CRUD path has no need of. sqladmin's importer persists each row
+        inside its own ``session.begin_nested()`` and calls
+        ``session.flush()`` there (``persist_import_row_sync``,
+        sqladmin/_import.py), so by the time the single ``session.commit()``
+        at the end of the file fires ``before_commit`` below, every imported
+        object has long since left ``session.new`` and the listener sees an
+        empty set — a file of 40 rows would produce a header entry saying it
+        wrote nothing and not one entry for a row.
+
+        ``after_flush`` is the last moment they are still identifiable:
+        SQLAlchemy documents ``session.new`` as still holding its pre-flush
+        contents inside this event. The primary keys are assigned by then,
+        which is what makes ``row_id`` on the entries below a real value.
+
+        A rolled-back import never reaches ``before_commit`` at all, so
+        nothing accumulated here can outlive the transaction it describes.
+        """
+        if _import_var.get() is None:
+            return
+        remembered = session.info.setdefault(_IMPORTED_ROWS, [])
+        known = {id(obj) for obj in remembered}
+        for obj in session.new:
+            if isinstance(obj, model) and id(obj) not in known:
+                remembered.append(obj)
+
     @event.listens_for(audited, "before_commit")
     def _write_audit_entries(session: Session) -> None:
         actor = _actor_var.get()
@@ -160,12 +282,71 @@ def _audited_session_maker(
         # and owns a cascading relationship needs its own handling for the
         # children, or they vanish untracked.
         created = [obj for obj in session.new if isinstance(obj, model)]
+
+        # SQLADMIN'S IMPORT MAKES THIS LISTENER FIRE MORE THAN ONCE, AND ONLY
+        # THE LAST TIME IS THE COMMIT.
+        #
+        # `persist_import_row_sync` wraps every row in `session.begin_nested()`
+        # (a SAVEPOINT), and SQLAlchemy raises `before_commit` when a NESTED
+        # transaction is released as well as when the real one commits -
+        # `SessionTransaction._prepare_impl` dispatches it under
+        # `if self._parent is None or self.nested`. Left alone, a two-row
+        # import produced three invocations of this function and three audit
+        # entries, none of which described a row: the flush inside each
+        # SAVEPOINT had already moved the object out of `session.new` before
+        # the release fired.
+        #
+        # So the releases are skipped and the single commit at the end of the
+        # file writes everything, out of what `_remember_imported_rows`
+        # gathered at each flush. Scoped to an import in flight rather than
+        # applied to every nested transaction: a session joined to an outer
+        # SAVEPOINT is exactly how tests/admin/test_taxonomy_rules.py drives
+        # the invariant guards, and a blanket skip would turn the auditing off
+        # underneath them.
+        imported_file = _import_var.get()
+        if imported_file is not None:
+            if session.in_nested_transaction():
+                return
+            known = {id(obj) for obj in created}
+            created.extend(
+                obj for obj in session.info.get(_IMPORTED_ROWS, ())
+                if id(obj) not in known
+            )
+
+        # THE SAME PROBLEM AS `created`, IN THE OTHER DIRECTION.
+        #
+        # An imported row that matched an existing one is an UPDATE of that
+        # existing row, flushed inside its own SAVEPOINT - so by this commit
+        # it is clean, `session.dirty` does not hold it, and its attribute
+        # history (which `_snapshot_before` reads) is gone. The upsert
+        # listener in admin/importing.py therefore hands both the row and its
+        # before-snapshot over through `Session.info`, taken at `before_flush`
+        # while the row was still untouched.
+        #
+        # The deactivations the second import mode performs come through the
+        # same accumulator. They are mutated in a `before_commit` listener
+        # that runs ahead of this one and are therefore genuinely dirty here,
+        # but routing them through the accumulator as well is what lets this
+        # function count them separately without asking the database what a
+        # deactivation looks like.
+        imported_updates = list(session.info.get(_IMPORTED_UPDATES, ()))
+        accumulated = {id(obj) for obj, _ in imported_updates}
+
         updated = [
             obj for obj in session.dirty
             if isinstance(obj, model) and session.is_modified(obj)
+            and id(obj) not in accumulated
         ]
         deleted = [obj for obj in session.deleted if isinstance(obj, model)]
-        if not (created or updated or deleted):
+
+        # A bulk import is audited even when it changed nothing. Every other
+        # write reaching this listener is one staff member pressing Save on
+        # one row, and "Save with nothing edited" is not an event worth a
+        # row in the trail. An upload is: somebody handed the panel a file
+        # and the panel accepted it, and "the file I sent did nothing" is
+        # exactly the question the entry has to be able to answer. See
+        # ImportedFile above.
+        if not (created or updated or deleted) and imported_file is None:
             return
 
         # Before-snapshots have to be taken before the flush below: flush
@@ -174,6 +355,15 @@ def _audited_session_maker(
         before_by_id = {
             id(obj): _snapshot_before(obj) for obj in (*updated, *deleted)
         }
+
+        # The accumulated ones bring their own, for the reason above. Added
+        # after the snapshot pass rather than inside it, because there is
+        # nothing left on these rows to snapshot.
+        for obj, before in imported_updates:
+            if isinstance(obj, model):
+                updated.append(obj)
+                before_by_id[id(obj)] = before
+        deactivated_count = int(session.info.get(_IMPORT_DEACTIVATED, 0))
 
         # Assigns primary keys to `created` rows so row_id/after below are
         # real values, not None. This is a flush, not a commit — it happens
@@ -193,6 +383,51 @@ def _audited_session_maker(
         view = _view_var.get()
         if view is not None:
             view.validate_before_commit(session)
+
+        # THE FILE-LEVEL ENTRY, AND WHY THERE IS BOTH THIS AND THE PER-ROW
+        # ENTRIES BELOW.
+        #
+        # A 500-row import that writes 500 indistinguishable entries is a
+        # trail nobody will read: the one thing a reader wants first - "what
+        # was uploaded, by whom, and did it land?" - is the one thing 500
+        # `create` rows do not say. One entry with no per-row detail cannot
+        # answer the other question the trail exists for, "who changed this
+        # number", because the rows the file wrote are indistinguishable from
+        # rows nobody wrote. So: one header naming the file and counting what
+        # it did, written first so it sits immediately before its own rows in
+        # `id` order, and then the ordinary per-row entries the loops below
+        # already produce.
+        #
+        # `row_id` is None, deliberately. This entry is about a file, and a
+        # file is not a row of `sector`; an id here would point at one
+        # arbitrary row of the several it wrote.
+        #
+        # THE ROW COUNT IS MEASURED HERE, NOT TAKEN FROM THE UPLOAD, and with
+        # `continue_on_error=False` (admin/importing.py pins it) the two
+        # cannot disagree: one bad row anywhere aborts the whole file with
+        # nothing written, so a file that reaches this point wrote one row per
+        # data row it carried. A count read off the upload would be a count of
+        # what was asked for, which is the wrong number to keep in a trail.
+        if imported_file is not None:
+            write_audit(
+                session, actor=actor, action="import", table_name=table_name,
+                row_id=None, before=None,
+                after={
+                    "import_file": imported_file.filename,
+                    "bytes": imported_file.byte_count,
+                    "sha256": imported_file.sha256,
+                    "rows_created": len(created),
+                    # `rows_updated` counts the rows the **file** wrote over,
+                    # so the deactivations the second mode performed are taken
+                    # back out of it and reported under their own name. A
+                    # reader asking "what did this upload do" needs the two
+                    # apart: one is a row somebody typed into a spreadsheet,
+                    # the other is a row they left out of it.
+                    "rows_updated": len(updated) - deactivated_count,
+                    "rows_deactivated": deactivated_count,
+                    "rows_deleted": len(deleted),
+                },
+            )
 
         for obj in created:
             write_audit(
@@ -274,14 +509,9 @@ class AdministratorOnly:
         return self.session_maker
 
     def _is_admin(self, request) -> bool:
-        username = request.session.get(SESSION_KEY)
-        if not username:
-            return False
-        with self._session_maker_for(request)() as session:
-            try:
-                return get_staff(session, username).role is StaffRole.admin
-            except UnknownStaffError:
-                return False
+        return account_is_admin(
+            self._session_maker_for(request), request.session.get(SESSION_KEY)
+        )
 
     def is_visible(self, request) -> bool:
         return self._is_admin(request)
@@ -525,6 +755,24 @@ class AuditLogAdmin(AdministratorOnly, ModelView, model=AuditLog):
     can_edit = False
     can_delete = False
     can_export = True
+
+    # NO IMPORT, EVER, AND THAT IS WHY `AuditedImport` IS NOT IN THE BASES.
+    #
+    # Fourteen tables accept a bulk CSV import (admin/importing.py). This is
+    # one of the four that never will, and the reason is the same one the
+    # three lines above give: **a log that can be written to is not a log.**
+    # It is appended to by the system, by one function (`write_audit`), as a
+    # side effect of the write it describes. A file upload that could add
+    # entries could also add entries describing things that never happened —
+    # and an investigation resting on this table would have no way to tell
+    # those from the rest, because they would be rows of exactly the same
+    # shape written through exactly the same column.
+    #
+    # Export stays on. Export is a read and import is a write, and their
+    # risks are not symmetric.
+    #
+    # tests/admin/test_import_tables.py fails if this view ever acquires
+    # `can_import`, by any route including inheritance.
 
     column_list = [
         AuditLog.at, AuditLog.actor, AuditLog.action,

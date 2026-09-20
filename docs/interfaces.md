@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-09-19 (v1.61 draft)"
+date: "2026-09-20 (v1.62 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,18 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.62 — 2026-09-20 (the contribute control's two steps reach the twenty catalogues; affects C and D)
+
+The results page's contribute control became a tick and then a separate Submit, with a five-second window in which Undo stops the request before it is made. That is a front-end change with no wire in it, and it is recorded here only because it moves the **catalogue** contract: the English source string is the key (§7.7.1), so rewording the consent sentence orphans every translation of it silently and the page falls back to English at the one place a visitor is being asked to give something away.
+
+**No request or response shape changes, and no route or field moved.** `POST /api/v1/contribute` is unchanged, the grace window is spent entirely in the browser before the request is made (there is no server-side undo to contract for), and nothing in §2, §3, §6 or §9 is touched. `tests/fixtures/*.json` is unchanged for the same reason.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **Each catalogue goes from 416 strings to 419: four keys added, two removed, in all twenty files.** Added are the two button labels (`Submit`, `Undo`), the countdown line (`Not sent yet. Press Undo to stop it.`) and the consent sentence rewritten to say that there are five seconds after Submit in which to undo and that once they pass it cannot be undone from here. Removed are the one-step consent sentence it replaces, which said only that it *cannot be undone from here once sent* — the two differ by one clause in the middle and are otherwise the same words, which is exactly the shape §7.7.1's key rule makes invisible to every test but the stale-key one — and a first draft of the countdown line, `Sending in five seconds. Press Undo to stop it.`, which was orphaned within the same change | §7.7, §7.7.1 |
+| 1a | **The duration is named in the paragraph and drawn by the bar, and the line beside the bar names neither.** The first countdown line promised a future — *sending in five seconds* — beside a bar that was already spending those seconds, and counted them from *now* while the paragraph above counts them from the press. The line now states the fact a visitor needs while the bar runs: nothing has gone yet, and this button is what keeps it that way. `five seconds` is still spelled in words in the consent sentence, deliberately, so it reads rather than scans; each catalogue follows its own convention there, and the CJK four use a numeral. **No catalogue may reintroduce a duration in the countdown line**, and `yet` is load-bearing in it: a rendering that reads as *not sent* loses the reason the Undo button is on screen, and one that reads as *will not be sent* is wrong | §7.7, §7.7.1 |
+| 2 | **`api/assets/locales/` is re-copied byte-for-byte and the four CJK subsets are *not* re-cut.** The two trees are compared by file list *and* SHA-256, so the embedded copies are copied, never re-serialised. Unlike v1.61 this landed inside the existing subsets: two candidate renderings were rejected for characters the faces do not carry — Korean 릴 (U+B9B4) and Traditional Chinese 點 (U+9EDE) — and reworded to 되돌리기를 할 수 있습니다 and 按 rather than re-cutting for two glyphs, so `PROVENANCE.md` is untouched and the counts still read jp 646, kr 558, sc 705, tc 705. The countdown line's replacement landed inside the subsets as well — 尚未 and 아직 are already carried | §6.2.3, §7.7 |
 
 ### v1.61 — 2026-09-19 (step 3's zoning reaches the twenty catalogues; affects C and D)
 

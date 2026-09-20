@@ -4,7 +4,7 @@ import { containerKg, countLimit, entryTotal, isPlainDecimal, isPresetUnit, kgTo
 import { requestLines, submissionLeaves, submissionPayload } from './submission.js'
 import { escapeHtml, formatNumber, slug, stepNav } from './view.js'
 import { t } from './i18n.js'
-import { contributeCalculation, downloadPdf, downloadResults, renderResults } from './results.js'
+import { armContribute, cancelContribute, downloadPdf, downloadResults, renderResults } from './results.js'
 import { compareImprovement, openImprovement, resetImprovement, updateImprovementInput } from './improvement.js'
 
 const decimalPattern = /^\d+(\.\d{1,2})?$/
@@ -2681,6 +2681,12 @@ export function bindCalculator(main, retryTaxonomy) {
     if (action === 'start-over' && window.confirm(t('Clear all calculator data and return to the introduction?'))) resetCalculator()
     if (action === 'download-results') downloadResults(state)
     if (action === 'download-pdf') downloadPdf(state)
+    // Round four's two steps. Submit arms a five-second window and sends nothing;
+    // Undo cancels it. Neither of them talks to the API directly — see
+    // `CONTRIBUTE_GRACE_MS` in `results.js` for why the window is spent before the
+    // request rather than after it.
+    if (action === 'contribute-submit') armContribute(state, publicError)
+    if (action === 'contribute-undo') cancelContribute()
     if (action === 'breakdown-tab') setState({ resultBreakdownTab: control.dataset.tab })
     // Through `setState`, not by writing the DOM. `render()` replaces
     // `main.innerHTML` on every state change, so the element's own
@@ -2766,10 +2772,19 @@ export function bindCalculator(main, retryTaxonomy) {
         errorAt: null,
       })
     }
-    // §6.2.2: fires only on the tick, never on the untick — the route only ever sets
-    // the flag, and the box is disabled the moment it is checked, so there is nothing
-    // an untick could mean here anyway.
-    if (target.id === 'contribute' && target.checked) contributeCalculation(state, publicError)
+    // §6.2.2, round four: **the tick sends nothing.** It records the visitor's intent
+    // and enables the Submit button beside it, and that is all — the request is
+    // `armContribute`'s, five seconds after Submit is pressed. Both directions are
+    // handled now, unlike the one-way version this replaces: while the box is a
+    // statement of intent rather than the act itself, unticking it is a real gesture
+    // with a real meaning (it disables Submit again), and the box is only locked once
+    // Submit has actually been pressed.
+    //
+    // Through `setState` rather than left in the DOM, for this file's usual reason:
+    // `render()` replaces `main.innerHTML` on every state change, so a tick held only
+    // by the element would be erased by the next unrelated update — a keystroke in the
+    // improvement panel silently unticking a consent box.
+    if (target.id === 'contribute') setState({ contributeTicked: target.checked, contributeError: null })
     // Item ⑧'s percentage/unit toggle. A discrete choice like every other `<select>`
     // on this page, so it goes through `setState` and a full re-render rather than the
     // keystroke-preserving patch `updateImprovementInput` uses — there is no caret in a

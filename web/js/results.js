@@ -4,7 +4,12 @@ import { entryTotal, isPresetUnit, kgToTonnes, presetUnitCode, rowKgString } fro
 import { ComparisonResults, ImprovementScenario } from './improvement.js'
 import { contribute, exportPdf } from './api.js'
 import { exportPayload } from './submission.js'
-import { leafDisplayName, setState } from './state.js'
+// `state as liveState`: the grace window's `setTimeout` fires long after the click that
+// armed it, and the snapshot that click was handed may by then describe a calculator the
+// visitor has cleared or recalculated. `setState` mutates this object in place, so the
+// module binding is always the current state — and every renderer here still takes its
+// `state` as a parameter, so nothing else in this file reads the global by accident.
+import { leafDisplayName, setState, state as liveState } from './state.js'
 
 const DEMONSTRATION_NOTICE = 'Demonstration only — verified calculation factors have not yet been supplied.'
 
@@ -13,6 +18,34 @@ const DEMONSTRATION_NOTICE = 'Demonstration only — verified calculation factor
 // duration alone: a re-render that lands mid-tween (a keystroke in the improvement panel,
 // say) would otherwise cut the bloom off with the timer already spent.
 const CONTRIBUTE_CELEBRATE_MS = 900
+
+// Round four: the client asked for a tick on the left, a separate Submit button on the
+// right, and five seconds in which the press can be taken back.
+//
+// **The five seconds are a grace period BEFORE the request, not an undo after it.**
+// `POST /api/v1/contribute` is one-way by construction — `set_public_contribution`
+// (`db/repository.py`) only ever sets `is_public_contributed` to TRUE and §6.2.2 has no
+// path that clears it — so a real undo would mean a new route, a new repository function
+// and a contract change. It would also mean a window in which the row is in the public
+// aggregate and the visitor has been told they can still withdraw it. Arming a timer and
+// sending nothing until it expires gives the visitor the same five seconds with none of
+// that: "undo" cancels a request that was never made, so there is nothing to unsend.
+//
+// Kept in step with `--contribute-grace` in `styles.css`, which is the countdown
+// animation's own duration. The two are the same five seconds seen from two sides, and a
+// change to one without the other shows a bar that empties early or late.
+const CONTRIBUTE_GRACE_MS = 5000
+
+// **The timer handle lives here, in module scope, and it has to.** `render()`
+// (`calculator.js`) replaces `main.innerHTML` on every `setState`, so a handle parked on
+// a `data-` attribute, a closure over an element or anything else inside `<main>` is
+// discarded by the first unrelated re-render — and a handle that is discarded is a
+// `setTimeout` nobody can cancel, i.e. an Undo button that does not undo. Same pattern,
+// and the same reason, as `reloadTaxonomy` in `calculator.js`.
+//
+// `null` when no window is open. `state.contributeArmedUntil` is the *visible* half of
+// the same fact and is what renders; this is only the cancel handle.
+let contributeGraceTimer = null
 
 // §7.6.5-adjacent: the one piece of user *preference* this module reads rather than an
 // API figure. Guarded rather than called bare because the Node harness
@@ -1044,14 +1077,39 @@ function contributeFlower() {
  * reader, still gets an unambiguous answer either way.
  *
  * **One-way, and said so before the click, not after.** The route only ever sets the
- * flag (§6.2.2's own table has no path that clears it), so unticking this box would be
- * a control that lies about its own affordance. Rather than allow that gesture, both
- * `checked` and `disabled` are keyed on `pending || done` — ticked and locked the
- * moment the press happens, not only once the response lands. **Fix round 1:** `checked`
- * used to read `done` alone, so for the whole of the request the box showed unticked
- * and disabled — a visitor watching their own tick appear to undo itself, which is the
- * one message this particular control must never send. The sentence beside it says the
- * choice is one-way before the click reaches it at all.
+ * flag (§6.2.2's own table has no path that clears it), so unticking this box once the
+ * request has gone would be a control that lies about its own affordance. Rather than
+ * allow that gesture, both `checked` and `disabled` are keyed on `armed || pending ||
+ * done` — ticked and locked from the moment Submit is pressed, not only once the
+ * response lands. **Fix round 1:** `checked` used to read `done` alone, so for the whole
+ * of the request the box showed unticked and disabled — a visitor watching their own
+ * tick appear to undo itself, which is the one message this particular control must
+ * never send. The sentence beside it says the choice is one-way before the click
+ * reaches it at all.
+ *
+ * **Round four: two steps, and the tick is not one of them.** The client asked for a
+ * tick on the left and a separate Submit button on the right. So the tick now does
+ * *nothing* on its own — it sets `state.contributeTicked` and enables Submit, and no
+ * request leaves the browser until Submit is pressed and its five seconds have run out.
+ * That is a real change of meaning, not a layout change: the box is now a statement of
+ * intent that the visitor can still change their mind about, which is exactly what makes
+ * a grace period coherent. `#contribute` is unchanged in every other respect — still a
+ * native checkbox, still named by `label[for="contribute"]`, still described by the
+ * sentence — because Playwright's `check()` / `is_checked()` and a screen reader depend
+ * on precisely that.
+ *
+ * **The five seconds are spent before the request, not after it.** See
+ * `CONTRIBUTE_GRACE_MS` at the top of this file for why a server-side undo was refused.
+ * While the window is open, the action slot holds Undo instead of Submit and
+ * `contributeCountdown` below draws the time. Undo cancels the timer and leaves the box
+ * **ticked** — the visitor said what they wanted and then declined to send it yet; the
+ * pre-press state is the ticked, unsent one, and Submit can be pressed again.
+ *
+ * **One id for the action slot, deliberately.** Submit and Undo are two buttons, but
+ * they are one slot, and `main.js` restores focus after a re-render by id. Sharing
+ * `#contribute-action` is what keeps a keyboard visitor on the control they just pressed
+ * instead of being dropped back on `<main>` at the moment the page grows an Undo button
+ * they were never told about. The button's accessible name is what announces the change.
  *
  * **Consent survives a recalculation, on purpose.** `state.contributed` is not reset
  * by `submitCalculation` or `compareImprovement` on a return trip through the wizard,
@@ -1071,18 +1129,125 @@ function contributeFlower() {
 function contributeBlock(state) {
   const pending = state.contributing
   const done = state.contributed
-  const active = pending || done
+  const armed = contributeWindowIsOpen(state)
+  // `pending || done` still forces the tick on: a request in flight, or landed, is a
+  // consent given, whatever `contributeTicked` happens to hold. That is the fix-round-1
+  // rule unchanged — the box must never read back empty over a consent already sent.
+  const ticked = state.contributeTicked || pending || done
+  const locked = armed || pending || done
   const celebrate = done && state.contributeCelebrating && !prefersReducedMotion()
+  // Three states for one slot, and `done` has none: trap 4 in the brief — a visitor who
+  // returns through the wizard after contributing must not be offered Submit again, so
+  // the slot is empty and `.contribute-status` speaks for it.
+  const action = done
+    ? ''
+    : armed
+      ? `<button class="button button-secondary contribute-action" type="button" id="contribute-action" data-action="contribute-undo">${escapeHtml(t('Undo'))}</button>`
+      : `<button class="button button-primary contribute-action" type="button" id="contribute-action" data-action="contribute-submit" ${ticked && !pending ? '' : 'disabled'}>${escapeHtml(t('Submit'))}</button>`
   return `<div class="contribute-block">
-    <p class="contribute-sentence" id="contribute-sentence">${escapeHtml(t('This sends an anonymous copy of your results into this calculator\'s public statistics — no name, no address, nothing that identifies you. It cannot be undone from here once sent, and if you come back and recalculate, your updated figures take its place under this same choice.'))}</p>
+    <p class="contribute-sentence" id="contribute-sentence">${escapeHtml(t('This sends an anonymous copy of your results into this calculator\'s public statistics — no name, no address, nothing that identifies you. You have five seconds after pressing Submit to undo it; once those five seconds pass it cannot be undone from here, and if you come back and recalculate, your updated figures take its place under this same choice.'))}</p>
     <div class="contribute-control">
-      <input type="checkbox" id="contribute" aria-describedby="contribute-sentence" aria-checked="${active ? 'true' : 'false'}" ${active ? 'checked' : ''} ${active ? 'disabled' : ''}>
-      <label for="contribute" class="contribute-toggle"><span class="contribute-toggle__mark" aria-hidden="true"></span><span class="contribute-toggle__text">${escapeHtml(t('I would like to contribute to the Kai Commitment'))}</span></label>
-      ${celebrate ? contributeFlower() : ''}
+      <span class="contribute-choice">
+        <input type="checkbox" id="contribute" aria-describedby="contribute-sentence" aria-checked="${ticked ? 'true' : 'false'}" ${ticked ? 'checked' : ''} ${locked ? 'disabled' : ''}>
+        <label for="contribute" class="contribute-toggle"><span class="contribute-toggle__mark" aria-hidden="true"></span><span class="contribute-toggle__text">${escapeHtml(t('I would like to contribute to the Kai Commitment'))}</span></label>
+        ${celebrate ? contributeFlower() : ''}
+      </span>
+      ${action}
     </div>
+    ${armed ? contributeCountdown(state) : ''}
     ${done ? `<p class="contribute-status" role="status">${escapeHtml(t("Your latest figures are in this calculator's public statistics."))}</p>` : ''}
     ${state.contributeError ? `<p class="field-error" role="alert">${escapeHtml(state.contributeError)}</p>` : ''}
   </div>`
+}
+
+/** Whether a grace window is open right now. `null` when none is. */
+const contributeWindowIsOpen = state => Number(state.contributeArmedUntil) > 0
+
+/**
+ * The five seconds, drawn — and the one piece of this control that is a CSS animation
+ * rather than a re-render, on purpose.
+ *
+ * **Why not a counter.** Showing "4… 3… 2…" means a state change a second, and
+ * `render()` (`calculator.js`) replaces `main.innerHTML` on every `setState`. The
+ * results page would be rebuilt five times over a window the visitor is quite likely to
+ * be spending in the improvement panel, wiping the caret out of whatever they were
+ * typing. The bar is one element with one 5s animation and costs nothing per frame.
+ *
+ * **Why the negative delay.** A CSS animation restarts whenever its element is created,
+ * and this element is created afresh by every re-render. `animation-delay` with a
+ * negative value starts an animation already part-way through, so offsetting it by the
+ * time that has actually elapsed — `now` against `state.contributeArmedUntil`, the
+ * absolute instant the window ends — makes a rebuilt bar resume where the old one was
+ * instead of filling the visitor a second, third and fourth five seconds while the real
+ * `setTimeout` runs out underneath. The timer itself is never restarted by a render;
+ * only the picture of it could drift, and this is what stops it.
+ *
+ * **Reduced motion gets a stepped bar, not no bar.** `styles.css` switches the timing
+ * function to `steps(5)` under `prefers-reduced-motion: reduce`: the bar jumps once a
+ * second instead of sliding. Removing it entirely would leave a visitor who asked for
+ * no animation with an Undo button and no way to know how much of their window was
+ * left, which is worse than the motion. How long they have never depends on seeing the
+ * bar at all: the paragraph above the control says "five seconds" in words.
+ *
+ * **The line beside the bar says the state, not the duration.** It read *"Sending in
+ * five seconds"*, which is a promise about the future standing next to a bar that is
+ * already visibly spending those seconds — and it counted from now while the paragraph
+ * above counts from the press. What the visitor needs in this moment is the one fact
+ * that lets them relax or act: nothing has gone yet, and here is the button that keeps
+ * it that way. The duration belongs to the bar and to the paragraph, which both have
+ * it.
+ */
+function contributeCountdown(state) {
+  const elapsed = Math.min(Math.max(CONTRIBUTE_GRACE_MS - (state.contributeArmedUntil - Date.now()), 0), CONTRIBUTE_GRACE_MS)
+  return `<div class="contribute-countdown">
+    <span class="contribute-countdown__track" aria-hidden="true"><span class="contribute-countdown__bar" style="animation-delay: -${Math.round(elapsed)}ms"></span></span>
+    <span class="contribute-countdown__text">${escapeHtml(t('Not sent yet. Press Undo to stop it.'))}</span>
+  </div>`
+}
+
+/**
+ * Submit: arm the window, and send nothing.
+ *
+ * The request is `contributeCalculation`'s, fired by the `setTimeout` below once the
+ * five seconds are spent — so up to that instant there is nothing to withdraw, which is
+ * the whole design (see `CONTRIBUTE_GRACE_MS`). `toPublicMessage` is threaded through
+ * rather than imported for `contributeCalculation`'s own reason: `calculator.js` already
+ * imports this module and the import back would be a cycle.
+ *
+ * Guarded on `contributeTicked` as well as on the three states that already exclude a
+ * press, because the button is `disabled` in markup only — a disabled attribute is a
+ * statement to the browser, not a guarantee to this function.
+ */
+export function armContribute(state, toPublicMessage) {
+  if (!state.contributeTicked || state.contributing || state.contributed || contributeWindowIsOpen(state)) return
+  clearTimeout(contributeGraceTimer)
+  contributeGraceTimer = setTimeout(() => {
+    contributeGraceTimer = null
+    // `liveState`, not the snapshot this closure was created with: five seconds is long
+    // enough for the visitor to have pressed Undo (which clears this), cleared the
+    // calculator, or run another calculation. A window that is no longer open is a
+    // request that must not be sent, and returning here — rather than in
+    // `contributeCalculation` — means no `setState` and so no re-render either.
+    if (!contributeWindowIsOpen(liveState)) return
+    setState({ contributeArmedUntil: null })
+    contributeCalculation(liveState, toPublicMessage)
+  }, CONTRIBUTE_GRACE_MS)
+  setState({ contributeArmedUntil: Date.now() + CONTRIBUTE_GRACE_MS, contributeError: null })
+}
+
+/**
+ * Undo: cancel the timer, and leave the tick alone.
+ *
+ * Nothing is unsent because nothing was sent. The box stays **ticked** and becomes
+ * editable again, so the visitor is returned to the state they were in immediately
+ * before the press rather than to a blank control — they chose to contribute and then
+ * chose not to send it yet, and only the second of those two decisions was undone.
+ * Submit can be pressed again straight away, on a fresh five seconds.
+ */
+export function cancelContribute() {
+  clearTimeout(contributeGraceTimer)
+  contributeGraceTimer = null
+  setState({ contributeArmedUntil: null })
 }
 
 /**
@@ -1097,7 +1262,14 @@ function contributeBlock(state) {
  *
  * A failed call leaves `contributed` false, which re-enables the checkbox and leaves it
  * unticked — the "pre-press state" the brief asks for — rather than reporting a success
- * that did not happen.
+ * that did not happen. **Round four clears `contributeTicked` with it**, deliberately,
+ * and this is the one place the two-step control does *not* keep the tick. Undo leaves
+ * the box ticked because the visitor withdrew only the sending; a failure withdraws
+ * nothing — it means the calculator could not be reached — and the recorded decision
+ * here is that a failed press returns the control to exactly the state it was in before
+ * the press. Leaving the tick standing under an error message would put the control in a
+ * state a visitor can reasonably read as "it went through, with a warning". The error
+ * message says what happened and the two steps are there to be taken again.
  *
  * **`contributeCelebrating` is set on success and cleared by this function, not by the
  * next render.** `renderResults` rebuilds the whole section on every `setState`
@@ -1115,7 +1287,7 @@ export async function contributeCalculation(state, toPublicMessage = error => er
     setState({ contributing: false, contributed: true, contributeCelebrating: true })
     setTimeout(() => setState({ contributeCelebrating: false }), CONTRIBUTE_CELEBRATE_MS)
   } catch (error) {
-    setState({ contributing: false, contributed: false, contributeError: toPublicMessage(error) })
+    setState({ contributing: false, contributed: false, contributeTicked: false, contributeError: toPublicMessage(error) })
   }
 }
 
@@ -1188,10 +1360,15 @@ function categoryAverageLines(state, prefix) {
 function resultsFloatingNavigation(state) {
   const label = t('Sections on this page')
   const links = [
+    //: **This list is in the page's order, and that is the whole of its
+    //: correctness.** It read summary / improvements / equivalents / breakdown
+    //: while the improvement panel sat below the downloads, three sections
+    //: further down than the second slot claimed -- so its one link that was
+    //: meant to save a scroll was the one that jumped past everything.
     ['#impact-summary', t('Impact summary')],
-    ['#improvement-section', t('Explore Improvements')],
     ['#tangible-equivalents', t('Tangible equivalents')],
     ['#breakdown-section', t('Breakdown by category')],
+    ['#improvement-section', t('Explore Improvements')],
   ].map(([href, text]) => `<li><a href="${href}">${escapeHtml(text)}</a></li>`).join('')
   //: Absent until the visitor decides, so the CSS default stands. `aria-expanded`
   //: follows the same value: stating `false` while the stylesheet has the panel open
@@ -1242,10 +1419,10 @@ export function renderResults(state) {
     <section class="results-section" id="impact-summary" aria-labelledby="summary-title"><div class="result-section-heading"><span class="section-number">01</span><div><h2 id="summary-title">${escapeHtml(t('Impact summary'))}</h2><p>${escapeHtml(t('A high-level view of the recorded food waste.'))}</p></div></div><div class="results-grid">${summaryCards(totals, state.taxonomy)}</div>${moneySummary(totals)}</section>
     <section class="results-section" id="tangible-equivalents" aria-labelledby="equivalents-title"><div class="result-section-heading"><span class="section-number">02</span><div><h2 id="equivalents-title">${escapeHtml(t('Tangible equivalents'))}</h2><p>${escapeHtml(t('Plain-language comparisons appear when supplied by the calculation service.'))}</p></div></div>${equivalences(totals, mock)}</section>
     ${breakdownSection(state, entryResults)}
-    <section class="methodology-compact" id="results-methodology" aria-labelledby="results-methodology-title"><h2 id="results-methodology-title">${escapeHtml(t('Methodology & Limitations'))}</h2><p>${escapeHtml(t('Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.'))}</p><p>${escapeHtml(t('Factor version'))}: ${escapeHtml(version)}.</p><details><summary>${escapeHtml(t('View methodology'))}</summary><div><p>${escapeHtml(t('Data sources and calculation factors are maintained and approved by Kai Commitment.'))}</p><p>${escapeHtml(t('Waste as a share of food handled is a ratio of the two masses you typed, not a factor-based figure, so the placeholder data above does not affect it.'))}</p></div></details></section>
-    <div class="result-actions"><button class="button button-secondary" type="button" data-action="start-over">${escapeHtml(t('Start a new calculation'))}</button><div class="download-actions"><button class="button button-primary" type="button" data-action="download-results">${escapeHtml(t('Download results'))}</button><button class="button button-primary" type="button" data-action="download-pdf" ${state.pdfExporting ? 'disabled' : ''}>${escapeHtml(t('Download PDF'))}</button></div>${state.pdfError ? `<p class="field-error" role="alert">${escapeHtml(state.pdfError)}</p>` : ''}</div>
     ${ImprovementScenario(state)}
     ${ComparisonResults(state)}
+    <section class="methodology-compact" id="results-methodology" aria-labelledby="results-methodology-title"><h2 id="results-methodology-title">${escapeHtml(t('Methodology & Limitations'))}</h2><p>${escapeHtml(t('Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.'))}</p><p>${escapeHtml(t('Factor version'))}: ${escapeHtml(version)}.</p><details><summary>${escapeHtml(t('View methodology'))}</summary><div><p>${escapeHtml(t('Data sources and calculation factors are maintained and approved by Kai Commitment.'))}</p><p>${escapeHtml(t('Waste as a share of food handled is a ratio of the two masses you typed, not a factor-based figure, so the placeholder data above does not affect it.'))}</p></div></details></section>
+    <div class="result-actions"><button class="button button-secondary" type="button" data-action="start-over">${escapeHtml(t('Start a new calculation'))}</button><div class="download-actions"><button class="button button-primary" type="button" data-action="download-results">${escapeHtml(t('Download results'))}</button><button class="button button-primary" type="button" data-action="download-pdf" ${state.pdfExporting ? 'disabled' : ''}>${escapeHtml(t('Download PDF'))}</button></div>${state.pdfError ? `<p class="field-error" role="alert">${escapeHtml(state.pdfError)}</p>` : ''}</div>
     ${contributeBlock(state)}
     ${stepNav({ step: 5, back: 4, backLabel: t('Edit your data'), action: null })}
   </section>`

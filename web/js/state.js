@@ -249,6 +249,28 @@ export const state = {
   contributing: false,
   contributed: false,
   contributeError: null,
+  // The tick, on its own. Round four split the control in two — a tick on the left and
+  // a Submit button on the right — so the box's own state is no longer the same fact as
+  // "a request is in flight or has landed". Ticking sets this and NOTHING else: no
+  // request, no lock. `contributeBlock` (`results.js`) is what turns it into a `checked`
+  // attribute on the next render, because `render()` replaces `main.innerHTML` on every
+  // `setState` and a checked box held only in the DOM would be erased by the first
+  // unrelated update — a keystroke in the improvement panel unticking a consent box.
+  contributeTicked: false,
+  // The five-second grace window, as the epoch-millisecond instant it ENDS.
+  //
+  // **An absolute deadline, not a countdown that ticks.** The window has to survive a
+  // re-render — `main.innerHTML` goes on every `setState`, and the visitor may well be
+  // typing in the improvement panel while it runs — and it must not be *extended* by
+  // one. A remaining-seconds number would have to be decremented, and decrementing it
+  // through `setState` would re-render the whole results page once a second; a number
+  // recomputed at render time from a fixed instant costs nothing and cannot drift.
+  // `contributeBlock` subtracts `Date.now()` from this to offset the countdown
+  // animation, so the bar resumes where it was rather than restarting from full.
+  // `null` means no window is open. The `setTimeout` that fires the request at the end
+  // of it is held in module scope in `results.js`, for the same reason: a handle stored
+  // on an element would be thrown away with the element.
+  contributeArmedUntil: null,
   // Task 4's flower, and nothing else. `contributed` above is the durable choice and
   // survives every re-render for as long as it holds; this is a one-shot flourish tied
   // to the exact transition into it. `render()` (`calculator.js`) replaces `<main>`
@@ -507,6 +529,14 @@ export function resetCalculator() {
     contributing: false,
     contributed: false,
     contributeError: null,
+    // The tick and the window go with it, and the window is the one that matters: a
+    // grace period still running over a calculator that has just been cleared would
+    // otherwise fire a `/contribute` for the token removed at the top of this patch.
+    // Clearing it here is what stops that, because `armContribute`'s timer re-reads this
+    // field when it fires and sends nothing if no window is open any more — the handle
+    // itself is unreachable from this module and does not need to be.
+    contributeTicked: false,
+    contributeArmedUntil: null,
     contributeCelebrating: false,
     pdfExporting: false,
     pdfError: null,

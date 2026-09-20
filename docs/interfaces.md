@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-09-19 (v1.61 draft)"
+date: "2026-09-20 (v1.63 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,46 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.63 — 2026-09-20 (an import updates the row it names, and can say what it would do before it does it; affects E)
+
+v1.62 turned the import on and left it **insert-only**, which is `sqladmin`'s own behaviour — `Query._get_model_object` is `return self.model_view.model(**data)`, a new instance per row, no lookup. So the workflow the feature exists for, *export, correct in a spreadsheet, re-import*, collided on the row's own key and the file was refused by the database. This closes it, adds the second mode that was promised with it, and adds the dry run the preview is built on.
+
+**Nothing on the wire changes**, again: no request or response shape on the public API, no field, no route, no error code, and `tests/fixtures/*.json` is untouched. §2's schema is unchanged — no migration, no column, no constraint. What moves is §8.1.1.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **An import matches an existing row on the table's natural key and updates it.** Never on the autoincrement `id`, for the reason §8.1.1 already gives about foreign keys: ids differ between deployments. **The natural key is read off the schema's own `UNIQUE` constraint, and it is `code` on only eight of the fourteen** — see the table in §8.1.1. Three of the fourteen have no `code` column at all | §8.1.1 |
+| 2 | **Two modes, chosen on the upload.** *Update and add* (the default, and what an upload naming no mode gets): a key the file carries is updated, one it does not carry is created, and a row the file does not name is left alone. *Update, add and retire the rest*: the same, and every row whose natural key the file does not carry is **deactivated** | §8.1.1 |
+| 3 | **The second mode deactivates; it does not delete — except on the five tables that have no `active` column, where it does.** The seven taxonomy tables are pointed at by `submission_entry` and `submission_line`, so once any calculation has been run the database refuses to delete those rows, and with `continue_on_error` pinned false a refused delete aborts the whole file: a literal "replace the table" option would fail on every deployment that has ever been used. `factor_upstream`, `factor_downstream`, `constant`, `formula` and `comparison_scenario_line` carry no `active` column, are referenced by nothing, and are deleted | §8.1.1, §2.2, §2.2a |
+| 4 | **"The rest" is scoped to the rows the file is about.** On the six tables that are somebody's child — the five factor children and `comparison_scenario_line` — the retirement reaches only the parents the file names. A file of one draft's constants must not delete the published set's, and a file of one scenario's lines must not delete another scenario's. Read off the one `ON DELETE CASCADE` foreign key each of those tables carries | §8.1.1 |
+| 5 | **`X-Dry-Run: true` on the import route computes what the file would do and writes nothing** — created, updated, deactivated, deleted, rejected — and answers JSON rather than the progress stream a real import answers with. The same header §6.2 and `/admin/try` already use, read the same way. Upsert is what makes the preview necessary rather than pleasant: a mistyped key is silently a new row instead of a correction, and the preview is the only place a reader catches it | §8.1.1, §6.2, §8.2 |
+| 6 | **The audit header gains `rows_deactivated`, and `update` entries are now real.** An `update` carries the row's values **before** and **after**, taken at `before_flush` because the importer flushes each row inside its own `SAVEPOINT` and the attribute history the ordinary CRUD path reads is gone by the commit. A deactivation is an ordinary `update` entry whose `active` went from true to false, counted apart in the header because "somebody typed this row into a spreadsheet" and "somebody left this row out of one" are different acts | §8.1.1, §5.5 |
+| 7 | **The second mode refuses a file with a header and no data rows.** Obeyed it would retire a whole table from an empty file; ignored it would silently do nothing, because `sqladmin` never opens a database session when there are no rows to persist — and the dry run would then have promised something the import does not do | §8.1.1 |
+
+> **What still does not work, and it is the export's half.** A relationship column is exported as `str(row)` — `"code — name"` on these models — and the import wants a bare `code`, so a file straight out of the export still needs its foreign-key cells corrected by hand. `sqladmin` also ships a JSON export whose round trip is broken in exactly the same way. Both are the next package, together, because a file format has two ends and defining them in two places is how they drift.
+
+### v1.62 — 2026-09-20 (staff can import a table from a file; affects E, and B as the owner of the schema it writes)
+
+The panel could export every table it edits and import none of them, so a correction made in a spreadsheet had to be retyped. Fourteen tables now accept an uploaded CSV, on `sqladmin`'s own import mechanism, configured rather than replaced. **§8.1.1 is new and is the specification.**
+
+**Nothing on the wire changes.** No request or response shape, no field, no route on the public API, no error code. `POST /api/v1/calculate` and every `GET` under `/api/v1/` are byte-identical before and after. `tests/fixtures/*.json` is untouched, for the same reason it was untouched by v1.61: this is panel capability, not contract data. §2's schema is unchanged — no migration, no column, no constraint. What moves is §8: one row in §8.3's role table, and a new §8.1.1 under §8.1.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **Fourteen tables accept a bulk CSV import**, and the list is closed: seven taxonomy, the five children of a factor set, and the two comparison-scenario tables. The mechanism is `sqladmin`'s shipped import; what is specified here is everything it cannot know — the role floor, the CSRF token, atomicity, the audit entry, the numeric refusals, foreign keys by `code` and the draft-only rule | §8.1.1 |
+| 2 | **§8.3's role table gains a row: "Import rows from a file — ❌ `staff` / ✅ `admin`."** The seven taxonomy screens stay open to both roles and every row-at-a-time control on them is unchanged; it is the *import* that carries the floor. An import is the largest single write the panel can make, from a file nobody reviewed in the panel, with no undo — the same grounds §8.3 already puts `/admin/staff/action/delete` and `/admin/factor-set/action/import-published` on. A capability about *what the system says* rather than *who may use it* would normally be both roles; this one is weighed by the size and irreversibility of the act, not by the table | §8.3, §8.1.1 |
+| 3 | **`audit_log`, `staff`, `submission` and `ip_block` get no import, ever**, and §8.1.1 gives the reason for each: a log that can be written to is not a log; a staff row carries credential material, so an import is privilege escalation with a file upload; `submission` is the raw material of the public statistics and an import is a way to manufacture them; `ip_block` is a security control whose bulk overwrite is a bulk change to the panel's own defences. Each reason is also written as a comment on the view that does not carry the attribute — **a refusal nobody can find gets "fixed" by the next person** — and a test fails if any of the four ever gains one | §8.1.1, §2.3, §2.4 |
+| 4 | **A foreign key in an imported file is the referenced row's `code`, never its `id`.** `code` is the cross-layer identifier everywhere else and the import is another layer; more decisively, **ids differ between deployments**, so a file keyed on them could only ever be loaded back into the database it came from. `factor_set` is the one exception and only because it has no `code` column — §2.2 gives it a unique `version_label`, which is what the factor screens already filter by. A value nothing answers to refuses the whole file, naming the line, the column, the value and the fact that nothing resolves it | §8.1.1, §2.1, §2.2 |
+| 5 | **The five factor children may be imported only into a `draft`, enforced against the file's own rows.** The same rule §2.2 already states for editing and deleting a factor row in place: every `submission` stamps the `factor_set_id` it was calculated against and has to keep reproducing years later. **Not enforced against the page the visitor is on** — a visitor standing on a draft's screen can upload a file whose rows name the published set, which is the exact file the test uploads | §8.1.1, §2.2 |
+| 6 | **The import path is audited through its own contextvar rather than through `insert_model`.** The `before_commit` listener that audits every other write fires only when an actor contextvar is set, and `sqladmin`'s import calls none of the three methods that set it. §8.1.1 records this, and the two non-obvious consequences: the rows are gathered in an `after_flush` accumulator because the importer flushes each row inside its own `SAVEPOINT`, and the listener skips nested releases because SQLAlchemy raises `before_commit` on a `SAVEPOINT` release too. One header entry per file — `action = 'import'`, `row_id` NULL, naming the filename, the byte count, a SHA-256 of the uploaded bytes and the row counts — then the ordinary per-row entries | §8.1.1, §5.5 |
+| 7 | **A numeric cell is refused, never coerced**, for a comma decimal separator, a thousands separator, scientific notation, or more decimal places than the column keeps; each refusal names the line, the column, the value and what was expected. `DECIMAL` everywhere with `FLOAT` and `DOUBLE` prohibited is §1.2, and a CSV round trip through a spreadsheet is the seam a float artefact gets in by | §8.1.1, §1.2 |
+
+> **What an importable file looks like, and why the columns are the create form's.** Every imported row is validated through the view's own scaffolded *create* form, so a column outside that form is a value nothing validates and a required field outside it fails every row of every file. The import column list is therefore the form's column list, written as the assignment rather than as a second copy, so the two cannot drift.
+>
+> **What this round deliberately does not do.** The import is **insert-only**: a `code` already in the table collides rather than updating, so *export, correct, re-import* — the workflow the feature exists for — is not yet closed. Upsert on `code`, and the second mode that deactivates rows absent from the file, are a separate package because they replace `sqladmin`'s persistence rather than configuring its views. JSON, the modal and drag-and-drop are separate again, as is the configuration export/import that moves a whole deployment's configuration.
+>
+> **One thing the export does not yet meet it on.** A relationship column is exported as `str(row)`, which on these models is `"code — name"`, not a bare `code`. So a file that came out of the export needs its foreign-key cells corrected before it will import, and that is the export's half of this round, not the import's.
 
 ### v1.61 — 2026-09-19 (step 3's zoning reaches the twenty catalogues; affects C and D)
 
@@ -5047,6 +5087,73 @@ Requirements: list views must offer search and filtering.
 
 `AuditedModelView` captures the pre-change row in the before-write hook — the after-write hook only ever sees the new values — and hard-codes `can_create = can_edit = can_delete = False` on the `audit_log` view itself.
 
+### 8.1.1 Bulk import from a file
+
+**Fourteen tables accept an uploaded CSV, and the list is closed.** Seven taxonomy — `sector`, `food_category`, `food_item`, `destination_group`, `destination`, `metric`, `unit_preset`; five children of a factor set — `factor_upstream`, `factor_downstream`, `constant`, `formula`, `equivalence`; and the two comparison-scenario tables — `comparison_scenario`, `comparison_scenario_line`. The mechanism is `sqladmin`'s own import, configured rather than replaced; what this project adds around it is in `admin/importing.py` and specified here.
+
+| Property | Specification |
+| --- | --- |
+| **Role** | `role = admin`, even on the screens §8.3 otherwise opens to both roles. An import is the largest single write the panel can make, it is made from a file nobody reviewed in the panel, and it has no undo — the same grounds as `/admin/staff/action/delete` and `/admin/factor-set/action/import-published` |
+| **CSRF** | A token per form, checked on the route, like every other form in this panel |
+| **Atomicity** | The file lands whole or not at all. `continue_on_error` is pinned false and the modal's checkbox for it is ignored, because a hand-built POST can send the field whatever the modal does |
+| **Audit** | One `audit_log` entry naming the file, its byte count, a SHA-256 of the bytes as uploaded and the row counts (`rows_created`, `rows_updated`, `rows_deactivated`, `rows_deleted`), followed by the ordinary per-row entries. `action = 'import'`, `row_id` NULL — the header describes a file, not a row. A row the file wrote over gets an `update` entry carrying its values **before** and **after** (v1.63) |
+| **Numbers** | Every numeric cell is read from its raw string and **refused, never coerced**, for a comma decimal, a thousands separator, scientific notation, or more decimal places than the column keeps. Each refusal names the line, the column, the value and what was expected |
+| **Foreign keys** | Written as the referenced row's **`code`**, never its `id`. The one exception is `factor_set`, which has no `code` column: it is named by its unique `version_label`. A value nothing answers to refuses the whole file |
+| **Draft only** | The five factor children may be imported only into a factor set whose `status` is `draft`, checked against **the file's own rows** — not against the screen the visitor is on, because a visitor on a draft's page can upload a file whose rows name the published set |
+| **Columns** | Exactly the create form's fields (`column_import_list = form_columns`). Every imported row is validated through that form, so a column outside it is unvalidated and a required field outside it fails every row |
+
+**`audit_log`, `staff`, `submission` and `ip_block` get no import, ever.** Export is a read and import is a write, and their risks are not symmetric. Each refusal is also written as a comment on the view that does not carry the attribute, because a refusal nobody can find gets "fixed" by the next person.
+
+| Table | Why it is refused |
+| --- | --- |
+| `audit_log` | **A log that can be written to is not a log.** It is appended to by the system, by `write_audit` alone, as a side effect of the write it describes. Entries arriving from a file would be indistinguishable from the rest, and an investigation rests on this table |
+| `staff` | **Rows carry a password hash and, since v1.15, a reversibly encrypted password**; the device table beside it carries TOTP secrets. Anyone who could import one could mint an administrator. That is privilege escalation with a file upload, and it bypasses the service layer §8.3 requires these rules to be enforced in — `sqladmin`'s import reaches no service function at all |
+| `submission` | **These rows are the raw material of the public statistics the client publishes**, and an import is a way to manufacture them. The panel's job here is to read them and to exclude one from the public aggregate, never to add one |
+| `ip_block` | **A security control**, where a bulk overwrite is a bulk change to the panel's own defences, applied at the moment this screen is used. It is also the wrong shape for a file: `ip_hmac` is derived under a key this deployment holds, so the same address hashes differently elsewhere |
+
+`factor_set` itself is not importable either — a set is created by cloning and its `status` is moved by the four lifecycle actions of §8.2, each of which takes a lock, revalidates the formulas and stamps `published_at`/`published_by`. It is not refused on principle; its writes have a route of their own.
+
+#### What an uploaded row is matched against (v1.63)
+
+**The import upserts on the table's own natural key, never on `id`.** Ids differ between deployments, so a file keyed on them could only ever be loaded back into the database it came from — the same argument as for foreign keys above. The key is read off the table's `UNIQUE` constraint rather than declared per screen, because a second, hand-kept list of key columns is a second answer to "which rows are the same row" and is free to disagree with the database's.
+
+**It is `code` on eight of the fourteen, and three of them have no `code` column at all.**
+
+| Table | Natural key | The second mode | "The rest" reaches |
+| --- | --- | --- | --- |
+| `sector`, `food_category`, `food_item`, `destination_group`, `destination`, `metric`, `unit_preset`, `comparison_scenario` | `(code)` | deactivates | the whole table |
+| `equivalence` | `(factor_set_id, code)` | deactivates | the factor sets the file names |
+| `constant` | `(factor_set_id, code)` | **deletes** | the factor sets the file names |
+| `formula` | `(factor_set_id, metric_id)` | **deletes** | the factor sets the file names |
+| `factor_upstream` | `(factor_set_id, sector_id, food_category_id, food_item_id, destination_id, metric_id)` | **deletes** | the factor sets the file names |
+| `factor_downstream` | `(factor_set_id, destination_id, sector_id, food_category_id, metric_id)` | **deletes** | the factor sets the file names |
+| `comparison_scenario_line` | `(scenario_id, destination_id)` | **deletes** | the scenarios the file names |
+
+A nullable part of a key is a key **value**, not a missing one: `factor_downstream.sector_id` NULL means "every sector for this destination" and is how the waste levy is written. That is why those two tables carry a second, `COALESCE`'d unique index on top of the plain constraint (§2.2), and the matching here has the `COALESCE`'d index's semantics.
+
+**Two modes, chosen on the upload; the default is what an upload naming no mode gets.**
+
+| Mode | What it does |
+| --- | --- |
+| **Update and add** (default) | A natural key in the file that exists updates that row; one that does not creates it. A row in the table and not in the file is left exactly as it was |
+| **Update, add and retire the rest** | The same, and every row whose natural key the file does not carry is **deactivated** — or deleted, on the five tables above that have no `active` column |
+
+**It deactivates rather than deletes, and that is the schema talking rather than caution.** All seven taxonomy tables are pointed at by foreign keys, four of them from `submission_entry` or `submission_line`, so once any calculation has been run the database refuses to delete those rows — and with `continue_on_error` pinned false a refused delete aborts the whole file. A literal "replace the table" option would be one that fails on every deployment that has ever been used. Deactivating instead keeps historical reproducibility (a `submission_entry` stamped years ago still points at a row that exists), is invisible to the public (the panel and the calculator both read active rows only), and is reversible. The five tables that are deleted from instead have no `active` column to set, are referenced by **nothing**, and four of them are reachable only inside a `draft` — and the control on the screen says "deleted" rather than "deactivated" on exactly those five, because a control must not tell a staff member something the panel will not do.
+
+**A file with a header and no data rows is refused in the second mode.** Obeyed it would retire a whole table from an empty file; ignored it would do nothing at all, because `sqladmin` opens no database session when there are no rows to persist — which would make the dry run below promise something the import does not do.
+
+#### The dry run (v1.63)
+
+**`X-Dry-Run: true` on `POST /admin/{identity}/import` computes what the file would do and writes nothing.** The same header §6.2 puts on `POST /api/v1/calculate` and `/admin/try` sends, read the same way: `true` or `false`, case-insensitively, and anything else is a 400 so that a typo cannot silently write the file.
+
+It answers `application/json` rather than the newline-delimited progress stream a real import answers with, because nothing is being written and so there is nothing to be part-way through: `{dry_run, ok, table, mode, total, aborts_at_line, created[], updated[], deactivated[], deleted[], rejected[], counts{}, summary}`. Rejections come from `sqladmin`'s own `validate_import_row` — the same function the real import validates through, not a second set of rules — and `aborts_at_line` is where the import would stop, because `continue_on_error` is pinned false and one bad row means no rows at all.
+
+**Upsert is what makes this necessary rather than pleasant.** Insert-only, a mistyped key was a collision and an error message. With upsert it is silently a new row instead of a correction, and the preview is the only place a reader catches it.
+
+**The import path is audited through its own contextvar, not through `insert_model`.** Auditing on this panel is a `before_commit` listener that writes only when an actor contextvar is set, and that var is set by `AuditedModelView`'s `insert_model` / `update_model` / `delete_model` — none of which `sqladmin`'s import calls. The import route sets the actor itself, and a second contextvar carrying the uploaded file, before handing the upload over. Two consequences worth stating because neither is guessable from the code: the rows are collected in an `after_flush` accumulator, since the importer flushes each row inside its own `SAVEPOINT` and they have left `session.new` by the time the commit fires; and the listener skips the nested releases, since SQLAlchemy raises `before_commit` on a `SAVEPOINT` release as well as on a real commit.
+
+**And the upsert is made on the session, not by replacing `sqladmin`'s import.** None of the five steps of `persist_import_row_sync` is replaceable from a `ModelView`: `Query` is constructed inside the persistence function and cannot be substituted, `on_import_row` is handed the new object and cannot return a different one, and `validate_import_row` is a module-level function with no hook onto it. The session, however, is already this panel's — the importer calls `model_view.session_maker(...)`, which is the audited one — so the match is made in a `before_flush` listener, in the window where the row `sqladmin` built is still an object and not yet an INSERT, and the transient object is expunged rather than written and then deleted. The retirement pass is a `before_commit` listener registered **ahead** of the audit one, so that what it changes is audited by it. Every line of `sqladmin/_import.py` still runs.
+
 ## 8.2 Custom Views
 
 | View | Path | Function |
@@ -5097,6 +5204,7 @@ Because a dry-run request body is a `bundle` plus a scenario, the dry-run view c
 | Create, deactivate, re-role and delete accounts | ❌ | ✅ |
 | Reveal an unclaimed password | ❌ | ✅ |
 | Reset another account's MFA, issue a random password | ❌ | ✅ |
+| Import rows from a file (§8.1.1, v1.62) | ❌ | ✅ |
 
 **`food_item` is both roles too (v1.57)**, decided on the same ground and recorded here because this section is where a role decision lives. The administrator floor is reserved for capabilities about *who may use the system* — account management, the blocklist, the audit trail. A food is the same kind of row as the food category beside it: staff-typed vocabulary, `active` rather than delete, nothing identifying, every write already audited. The act that carries outward consequence is switching `item_level_enabled` on and publishing that set, which is itself both roles by the rule above — so a floor on the typing would leave the releasing open, which is the wrong way round.
 

@@ -1,95 +1,266 @@
-{# sqladmin's import modal, unchanged, plus this panel's CSRF token.
+{# The import dialog: drag-and-drop, both file formats, and a preview that has
+   to be confirmed before anything is written.
 
-   THE ORIGINAL IS INCLUDED, NOT COPIED. `sqladmin_original` is a prefix
-   loader sqladmin registers for exactly this (`Admin.init_templating_engine`),
-   so the ninety lines of modal markup - the file input, the progress bar, the
-   result modal and every translated string in them - stay sqladmin's and
-   cannot go stale here. The same rule admin/templates/sqladmin/layout.html
-   follows, and the one admin/modelviews.py's `described()` gives the argument
-   for: a forked template is somebody else's code that rots silently at the
-   next upgrade.
+   THIS FILE REPLACES SQLADMIN'S OWN MODAL RATHER THAN INCLUDING IT, AND THAT
+   IS A CHANGE FROM WHAT STOOD HERE. Until WP4 this template was
+   `{% include "sqladmin_original/modals/import.html" %}` plus three patches
+   around it, on the rule this project follows everywhere else: reach a
+   template, do not fork it. The rule has not changed and neither has the
+   reason — a copied template is somebody else's code that rots silently at
+   the next upgrade — but three of the things this dialog has to do cannot be
+   reached from outside the markup:
 
-   WHY THE TOKEN IS HERE RATHER THAN INSIDE THE FORM. sqladmin's own
-   `statics/js/main.js` does not serialise the form. It builds a `FormData`
-   by hand:
+     * **the CSRF token has to be in the request.** sqladmin's own
+       `statics/js/main.js` builds the upload's `FormData` by hand and never
+       serialises the form, so a hidden `<input name="csrf_token">` inside its
+       form is in the DOM and in no request. WP1 carried the field past that
+       by replacing `window.fetch` for the duration of one call. It said this
+       modal's replacement would delete that wrapper, and it does:
+       /admin/static/import.js builds its own body and puts the token in it,
+       which is what every other form in this panel does.
+     * **both formats in one dialog.** The shipped input is
+       `accept="text/csv"` and the shipped heading says "Import CSV". This
+       screen takes `.csv` and `.json` on one path (admin/importing.py).
+     * **drag-and-drop.** `dragover`, `drop` and `dragenter` appear zero times
+       in what sqladmin ships; it is a plain `<input type="file">`.
 
-       const formData = new FormData();
-       formData.append('csvfile', file);
-       formData.append('continue_on_error', ...);
+   NOTHING OF SQLADMIN'S IS COPIED HERE. This is not a fork of that file — it
+   is different markup for a different dialog, and every line of
+   `sqladmin/_import.py` (619 of them: the CSV parsing, the per-row
+   validation, the count check, the streaming response) still runs on the
+   server exactly as before. What changed is the browser half, which is the
+   half sqladmin could not know this panel's rules about.
 
-   so a hidden `<input name="csrf_token">` inside that form would be in the
-   DOM and in no request. The field is carried to the request by
-   /admin/static/import-csrf.js instead, which reads it from here. It stays a
-   real form field in the POST, which is what admin/importing.py checks and
-   what every other form in this panel sends.
+   THE OUTER `id="modal-import"` IS KEPT deliberately. sqladmin's own list
+   page renders the Import button with `data-bs-target="#modal-import"`, so
+   keeping the id means the button still opens this dialog without the list
+   template being touched. sqladmin's `main.js` also binds a few handlers at
+   `#modal-import-form`, `#modal-import-text` and `#modal-import-progress` —
+   none of which exist below, so jQuery matches an empty set and they do
+   nothing. That is the point: its submit handler never fires, because there
+   is no `#modal-import-form` for it to fire on.
 
-   This modal renders only where `can_import` is true, which on this panel is
+   THIS DIALOG RENDERS ONLY WHERE `can_import` IS TRUE, which on this panel is
    an administrator on one of the fourteen importable screens — seven
    taxonomy, the five children of a factor set, and the two comparison-
    scenario tables (admin/importing.py, contract §8.1.1). #}
-{% include "sqladmin_original/modals/import.html" %}
 
-{# KEEPING A REFUSAL READABLE ONCE IT IS IN THE PAGE.
-
-   When the import route answers anything other than 200, sqladmin's own
-   `main.js` reads the body as text and puts it into `#modal-import-text`
-   with jQuery's `.text()`:
-
-       const message = await response.text();
-       throw new Error(message || 'An error occurred while importing CSV.');
-       ...
-       $('#modal-import-text').text(error.message);
-
-   `.text()` sets `textContent`, so the newlines survive into the DOM and
-   then collapse on screen under the browser's default `white-space: normal`.
-   That is fine for sqladmin's own one-line errors and wrong for this
-   panel's: admin/importing.py refuses a file by naming *every* value it
-   could not read, one per line, and a staff member looking at four of those
-   run together into a single paragraph has been handed the wall of text the
-   messages were written to avoid.
-
-   `pre-wrap` rather than `pre-line`: it keeps the two-space indent that sets
-   each refusal off from the next, and still wraps a long line to the width
-   of the dialog. Scoped to the one element, so nothing else sqladmin renders
-   changes. #}
 <style>
-  #modal-import-text { white-space: pre-wrap; }
+  /* Scoped to this dialog's own ids and classes, so nothing else sqladmin
+     renders changes. Inline rather than in brand.css for the same reason
+     brand/_list_table_css.html is inline: the rules and the markup they are
+     written for are read together, and a rule in another file that no page
+     but this one uses is a rule nobody finds when this page changes. */
+
+  #kaicalc-import-drop {
+    position: relative;
+    border: 2px dashed #003223;          /* Kale */
+    border-radius: 12px;
+    background: #FFFFFF;
+    padding: 1.75rem 1rem;
+    text-align: center;
+    transition: background-color .12s ease, border-color .12s ease;
+  }
+  /* The whole panel is the target, so a person can aim at the box rather
+     than at a link inside it. The input is still a real, focusable
+     `<input type="file">` underneath — drag-and-drop is added to the
+     control, never instead of it, because a keyboard user and a browser
+     with dragging disabled both have to be able to choose a file. */
+  #kaicalc-import-drop .kaicalc-drop-input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+  }
+  #kaicalc-import-drop.is-dragging {
+    border-color: #28C882;               /* Pea */
+    background: #F1FCF6;
+  }
+  #kaicalc-import-drop .kaicalc-drop-title {
+    display: block;
+    font-weight: 600;
+    color: #003223;
+  }
+  #kaicalc-import-drop .kaicalc-drop-hint {
+    display: block;
+    margin-top: .25rem;
+    font-size: .875rem;
+    color: #4a635a;
+  }
+  #kaicalc-import-filename {
+    margin: .75rem 0 0;
+    font-size: .875rem;
+    color: #003223;
+    word-break: break-all;
+  }
+  #kaicalc-import-filename.is-empty { color: #6c757d; }
+
+  /* A refusal from admin/importing.py names EVERY value it could not read,
+     one per line, with a two-space indent setting each off from the next. The
+     browser's default `white-space: normal` collapses all of it into one
+     run-on paragraph — which is the wall of text those messages were written
+     to replace. `pre-wrap` rather than `pre-line` keeps the indent and still
+     wraps a long line to the width of the dialog. */
+  #kaicalc-import-message,
+  #kaicalc-import-preview .kaicalc-import-rejections { white-space: pre-wrap; }
+
+  /* TABLER'S `.alert` IS `display: flex`, and these blocks carry that class
+     for its colours. Without this rule the summary, the count pills and each
+     list of row keys lay out side by side in one row — measured on the
+     rendered dialog, not guessed: the preview read as three narrow columns
+     jammed against each other rather than as a summary with its detail
+     beneath, while every assertion about its *text* passed.
+
+     NO `!important`, AND THAT IS NOT A STYLE PREFERENCE. Written with one,
+     this rule beat Bootstrap's `.d-none { display: none !important; }` —
+     because an id selector outranks a class at equal importance — so the
+     script could no longer hide either element, and a preview of the
+     previous file stayed on screen beside the new file's name. The browser
+     test for exactly that caught it on the next run. An id already outranks
+     `.alert`, which is not `!important`, so the rule needs nothing more. */
+  #kaicalc-import-preview,
+  #kaicalc-import-message { display: block; }
+
+  #kaicalc-import-preview .kaicalc-import-counts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    margin: .75rem 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  #kaicalc-import-preview .kaicalc-import-counts li {
+    border-radius: 999px;
+    padding: .2rem .7rem;
+    font-size: .875rem;
+    background: #E9F1EE;
+    color: #003223;
+  }
+  #kaicalc-import-preview .kaicalc-import-counts li.is-retiring { background: #FFE6E1; }
+  #kaicalc-import-preview .kaicalc-import-counts li.is-rejected { background: #FF5032; color: #FFFFFF; }
+  #kaicalc-import-preview .kaicalc-import-rows {
+    margin: .5rem 0 0;
+    padding-left: 1.1rem;
+    font-size: .875rem;
+    max-height: 11rem;
+    overflow-y: auto;
+  }
+  #kaicalc-import-preview .kaicalc-import-heading {
+    margin-top: .75rem;
+    font-size: .8125rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: #4a635a;
+  }
 </style>
 
-{# THE MODE CONTROL, AND WHY IT IS OUT HERE RATHER THAN IN THE FORM.
+<div class="modal modal-blur fade" id="modal-import" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
 
-   Same reason as the token above: the original modal is *included*, not
-   copied, so there is nowhere inside it to write a field without forking
-   ninety lines of somebody else's markup. /admin/static/import-csrf.js moves
-   this block into the dialog and puts its value into the upload, exactly as
-   it does for the token.
+      {# `action` is rendered here rather than set by script, so the dialog
+         knows where it posts even if the button that opened it did not say.
+         `method="POST"` and `enctype` are on the element for the same reason:
+         the form is a real form, and the script below only intercepts it. #}
+      <form id="kaicalc-import-form"
+            action="{{ url_for('admin:import', identity=model_view.identity) }}"
+            method="POST" enctype="multipart/form-data">
+        <div class="modal-body py-4">
+          <h3 class="mb-1">Import into {{ model_view.name_plural }}</h3>
+          <p class="text-muted mb-3" style="font-size: .875rem;">
+            The file is checked first and nothing is written until you say so.
+          </p>
 
-   THE WORDING IS THE POINT. `model_view.import_retirement_word` is
-   "deactivated" on the nine tables that carry an `active` column and
-   "deleted" on the five that do not (admin/importing.py's `retirement_for`),
-   so the option says what this screen will actually do. A control labelled
-   "delete rows not in the file" on a table where nothing is deleted, or
-   "deactivate" on one where the rows are gone for good, is the panel telling
-   a staff member something false about an act with no undo.
+          <div id="kaicalc-import-drop">
+            <input id="kaicalc-import-file" name="csvfile" type="file"
+                   class="kaicalc-drop-input"
+                   accept=".csv,.json,text/csv,application/json">
+            <label for="kaicalc-import-file" class="kaicalc-drop-label">
+              <span class="kaicalc-drop-title">Drop a file here, or choose one</span>
+              <span class="kaicalc-drop-hint">
+                A <strong>.csv</strong> or a <strong>.json</strong> file, written the
+                way this screen's own Export writes one — a file exported from
+                here can be corrected and sent straight back.
+              </span>
+            </label>
+          </div>
+          <p id="kaicalc-import-filename" class="is-empty" data-empty="No file chosen">
+            No file chosen
+          </p>
 
-   WP4 REPLACES THIS MODAL and will draw the control properly, with the
-   preview that admin/importing.py's dry run already computes. Nothing here is
-   meant to survive that. #}
-<div id="kaicalc-import-mode-block" class="mt-3 text-start d-none">
-  <label class="form-label" for="kaicalc-import-mode">
-    Rows already in this table
-  </label>
-  <select id="kaicalc-import-mode" class="form-select">
-    <option value="update_and_add" selected>
-      Update and add — a row the file names is updated, a row it does not name
-      is left alone
-    </option>
-    <option value="deactivate_missing">
-      Update and add, and every row the file does not name is
-      {{ model_view.import_retirement_word }}
-    </option>
-  </select>
+          {# THE WORDING OF THE SECOND OPTION IS THE POINT.
+             `model_view.import_retirement_word` is "deactivated" on the nine
+             tables that carry an `active` column and "deleted" on the five
+             that do not (admin/importing.py's `retirement_for`), so the option
+             says what this screen will actually do. A control labelled "delete
+             rows not in the file" on a table where nothing is deleted, or
+             "deactivate" on one where the rows are gone for good, is the panel
+             telling a staff member something false about an act with no
+             undo. #}
+          <div class="mt-3 text-start">
+            <label class="form-label" for="kaicalc-import-mode">
+              Rows already in this table
+            </label>
+            <select id="kaicalc-import-mode" name="import_mode" class="form-select">
+              <option value="update_and_add" selected>
+                Update and add — a row the file names is updated, a row it does not name
+                is left alone
+              </option>
+              <option value="deactivate_missing">
+                Update and add, and every row the file does not name is
+                {{ model_view.import_retirement_word }}
+              </option>
+            </select>
+          </div>
+
+          {# THE PREVIEW. Filled from the dry run's own JSON — every count and
+             every line number in it was computed by the code that would do the
+             writing (admin/importing.py's `build_import_plan`), not by the
+             browser. `role="status"` rather than `role="alert"`: it is the
+             answer to something the visitor asked for, not an interruption. #}
+          <div id="kaicalc-import-preview" class="mt-3 d-none" role="status"></div>
+
+          <div id="kaicalc-import-message" class="mt-3 d-none" role="alert"></div>
+        </div>
+
+        <div class="modal-footer">
+          <div class="w-100">
+            <div class="row g-2">
+              <div class="col">
+                <a href="#" class="btn w-100" data-bs-dismiss="modal">Cancel</a>
+              </div>
+              <div class="col">
+                <button id="kaicalc-import-check" type="submit" class="btn btn-primary w-100">
+                  Check this file
+                </button>
+              </div>
+              {# HIDDEN UNTIL THE PREVIEW HAS BEEN SEEN, and hidden again the
+                 moment the file or the mode changes. Upsert is what makes the
+                 preview necessary rather than pleasant: a mistyped `code` is
+                 silently a NEW ROW instead of a correction, and the preview is
+                 the only place a reader catches it. A confirm button that
+                 stayed live after the file changed would be a confirmation of
+                 something else. #}
+              <div class="col d-none" id="kaicalc-import-confirm-cell">
+                <button id="kaicalc-import-confirm" type="button" class="btn btn-green w-100">
+                  Import
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {# The token this panel checks on every state-changing form
+           (admin/csrf.py). A real field in the POST, put there by
+           /admin/static/import.js, which builds the request body itself. #}
+        <input type="hidden" id="kaicalc-import-csrf" value="{{ kaicalc_csrf_token(request) }}">
+      </form>
+    </div>
+  </div>
 </div>
 
-<input type="hidden" id="kaicalc-import-csrf" value="{{ kaicalc_csrf_token(request) }}">
-<script src="/admin/static/import-csrf.js"></script>
+<script src="/admin/static/import.js"></script>

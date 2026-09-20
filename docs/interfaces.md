@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-09-20 (v1.63 draft)"
+date: "2026-09-21 (v1.64 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,32 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.64 — 2026-09-21 (a file this panel exports can be imported back into it, in either format; affects E)
+
+v1.62 turned the import on and v1.63 made it correct the row it names. Neither closed the loop they were built for: **a file this panel exported was refused by this panel's own import**, on eight of the fourteen screens outright and on the other six at every foreign-key cell. So the client's own workflow — export, correct a figure in a spreadsheet, upload it again — did not work end to end, and no test drove it, because every test in the four files before this one uploaded a file a *test* had written.
+
+Three faults, all of them properties of the *file* rather than of any row, and all of them invisible in a `200`:
+
+- **the exported columns were not the imported columns.** `get_export_columns` falls back to `column_list`, `get_import_columns` is `column_import_list`; `parse_csv` refuses a file missing any import column before it looks at a row. On `equivalence` the missing column was `label_template`, which is `NOT NULL`;
+- **every foreign-key cell was the row's `__str__`** — `"dairy — Dairy"` — where the import wants the bare `code`;
+- **an empty cell was written as the four characters `None`**, which is stored as text in a nullable column and is a code nothing answers to in a foreign-key one.
+
+And the JSON export, which `sqladmin` has shipped all along (`export_types = ["csv", "json"]`), was live and broken in exactly the same three ways. **Fixing CSV and leaving JSON alone would have been two truths evolving apart in a new costume**, so both ends of both formats are now defined in one place and written by one pair of functions.
+
+**Nothing on the wire changes**, for the third time: no request or response shape on the public API, no field, no route, no error code, no migration, no column, no constraint. `tests/fixtures/*.json` is untouched — this is panel capability, not contract data. What moves is §8.1.1.
+
+| # | Decision | Where |
+| --- | --- | --- |
+| 1 | **What a screen exports is what that screen imports.** The exported columns are the import columns exactly, in that order, on all fourteen screens. The list page still decides what the *table on screen* shows; `column_list` and the file's columns answer different questions and were only ever the same answer by `sqladmin`'s default | §8.1.1 |
+| 2 | **A foreign key is exported as the referenced row's natural key** — `code`, or `version_label` on `factor_set` — which is the same rule §8.1.1 already states for reading one back. Never `__str__`, never the `id` | §8.1.1 |
+| 3 | **An empty cell is empty**: `""` in CSV, `null` in JSON. Never the word `None` | §8.1.1 |
+| 4 | **Every other cell is text, in both formats.** The digits of a `DECIMAL` exactly as stored, `true`/`false` for a boolean, the string for anything else. **A `DECIMAL` is never written as a JSON number**, because JavaScript's `Number` is a double and §1.2 puts decimals on the wire as strings everywhere else in this system. Writing the integers as text too is what makes the CSV and the JSON of one table carry identical text, so that the difference between the two files is syntax and nothing else | §8.1.1, §1.2 |
+| 5 | **`.json` is accepted on the import route beside `.csv`, and is an entry format rather than a second pipeline.** The array is converted into the row structure a CSV would have produced and every pass after that point is the same code: the decimal refusals, the foreign keys by `code`, the draft-only rule, the upsert, the two modes, the dry run and the audit trail. The audit entry still digests **the bytes that arrived**, not the form they were converted into | §8.1.1 |
+| 6 | **A JSON number never becomes a float.** `json.loads` parses a bare number into a double, which on a `decimal(20,10)` column loses digits before any of this project's code sees the file — the `FLOAT` §1.2 prohibits, arriving through a door nothing was watching. The literal that was typed is kept instead, and is then judged by the same numeric rules a CSV cell is: `1e15` is refused for being scientific notation, in the same words | §8.1.1, §1.2 |
+| 7 | **The dry-run response gains `line_note`.** Every refusal in the panel names a *line*, which is what a spreadsheet shows and what a person can go to; a JSON array has no lines of its own, so its entries are numbered as the rows they become and the reader is told what the numbers mean. A second numbering would have meant the same fault reported two different ways depending on the format | §8.1.1 |
+| 8 | **The import dialog previews the file and is confirmed before anything is written**, and accepts a dropped file. Two requests: `X-Dry-Run: true`, then the import. Every count and every line number shown came from the server — the browser parses nothing and counts nothing. The confirmation is spent the moment the file or the mode changes under it | §8.1.1 |
+| 9 | **One thing a round trip does change, and it cannot be otherwise:** an empty string in a nullable column comes back `NULL`, because a file has one spelling for "blank". Stated here rather than left to be discovered | §8.1.1 |
 
 ### v1.63 — 2026-09-20 (an import updates the row it names, and can say what it would do before it does it; affects E)
 
@@ -5089,7 +5115,7 @@ Requirements: list views must offer search and filtering.
 
 ### 8.1.1 Bulk import from a file
 
-**Fourteen tables accept an uploaded CSV, and the list is closed.** Seven taxonomy — `sector`, `food_category`, `food_item`, `destination_group`, `destination`, `metric`, `unit_preset`; five children of a factor set — `factor_upstream`, `factor_downstream`, `constant`, `formula`, `equivalence`; and the two comparison-scenario tables — `comparison_scenario`, `comparison_scenario_line`. The mechanism is `sqladmin`'s own import, configured rather than replaced; what this project adds around it is in `admin/importing.py` and specified here.
+**Fourteen tables accept an uploaded CSV or JSON file, and the list is closed.** Seven taxonomy — `sector`, `food_category`, `food_item`, `destination_group`, `destination`, `metric`, `unit_preset`; five children of a factor set — `factor_upstream`, `factor_downstream`, `constant`, `formula`, `equivalence`; and the two comparison-scenario tables — `comparison_scenario`, `comparison_scenario_line`. The mechanism is `sqladmin`'s own import, configured rather than replaced; what this project adds around it is in `admin/importing.py` and specified here.
 
 | Property | Specification |
 | --- | --- |
@@ -5100,7 +5126,9 @@ Requirements: list views must offer search and filtering.
 | **Numbers** | Every numeric cell is read from its raw string and **refused, never coerced**, for a comma decimal, a thousands separator, scientific notation, or more decimal places than the column keeps. Each refusal names the line, the column, the value and what was expected |
 | **Foreign keys** | Written as the referenced row's **`code`**, never its `id`. The one exception is `factor_set`, which has no `code` column: it is named by its unique `version_label`. A value nothing answers to refuses the whole file |
 | **Draft only** | The five factor children may be imported only into a factor set whose `status` is `draft`, checked against **the file's own rows** — not against the screen the visitor is on, because a visitor on a draft's page can upload a file whose rows name the published set |
-| **Columns** | Exactly the create form's fields (`column_import_list = form_columns`). Every imported row is validated through that form, so a column outside it is unvalidated and a required field outside it fails every row |
+| **Columns** | Exactly the create form's fields (`column_import_list = form_columns`). Every imported row is validated through that form, so a column outside it is unvalidated and a required field outside it fails every row. **The export writes the same columns, in the same order** (v1.64) |
+| **Formats** | `.csv` and `.json`, decided by the filename. A JSON file is an array of objects and is converted into the same row structure a CSV produces; everything after that point is one code path (v1.64) |
+| **Preview** | The dialog asks what the file would do (`X-Dry-Run: true`) and draws the answer; nothing is written until the visitor confirms it, and the confirmation is spent if the file or the mode changes (v1.64) |
 
 **`audit_log`, `staff`, `submission` and `ip_block` get no import, ever.** Export is a read and import is a write, and their risks are not symmetric. Each refusal is also written as a comment on the view that does not carry the attribute, because a refusal nobody can find gets "fixed" by the next person.
 
@@ -5142,11 +5170,35 @@ A nullable part of a key is a key **value**, not a missing one: `factor_downstre
 
 **A file with a header and no data rows is refused in the second mode.** Obeyed it would retire a whole table from an empty file; ignored it would do nothing at all, because `sqladmin` opens no database session when there are no rows to persist — which would make the dry run below promise something the import does not do.
 
+#### The file, both ends and both formats (v1.64)
+
+**A file this panel exports can be uploaded back into it without a cell being edited.** That is the workflow the whole feature exists for, and until v1.64 it did not work: the export was `sqladmin`'s, the import was this project's, and the two had never been defined in the same place. They are now — one writer, one reader, in `admin/importing.py`.
+
+| | CSV | JSON |
+| --- | --- | --- |
+| Shape | a header row of the import columns, then one row per record | an array of objects, keyed by the import column names |
+| A foreign key | the referenced row's `code` (or `version_label` on `factor_set`) | the same |
+| An empty cell | `""` | `null` |
+| A boolean | `true` / `false` | `"true"` / `"false"` |
+| A `DECIMAL` | the digits exactly as stored | the digits exactly as stored, **as a string** |
+| Anything else | text | text |
+| Encoding | UTF-8, `CRLF`; a BOM is stripped on the way in | UTF-8; a BOM is stripped on the way in |
+
+**Every cell is written as text or `null`, and that is one rule rather than a type system.** A `DECIMAL` has to be a string because JavaScript's `Number` is a double and §1.2 transmits decimals as strings everywhere else; writing the integers as text too costs nothing and means the CSV and the JSON of one table carry identical text.
+
+**The reader is deliberately more liberal than the writer.** A hand-written file may use a real JSON `true` and a real JSON number, because a person writing one by hand will, and refusing a file that says exactly what it means would be a refusal nobody can defend. A bare number is read as **the literal that was typed**, never through a float: `json.loads` would otherwise parse `1234567890.1234567891` into a double and drop the last three digits of a `decimal(20,10)` column before this project's code ever saw the file. The literal is then judged by the same numeric rules as a CSV cell, so `1e15` is refused for being scientific notation in the same words.
+
+**A JSON file's refusals name a line, and the line is the row's ordinal.** Line 2 is the first object in the array, line 3 the second — the same numbering a CSV of the same rows would have, so that one fault is not reported two different ways depending on the format. A refusal of a JSON file says so, and the dry-run response carries it as `line_note`. The one exception is a *syntax* error, which is found before there are any rows to number and names a real line of the file; that message says which kind it is.
+
+**One thing a round trip changes.** An empty string in a nullable column comes back `NULL`, because a file has one spelling for "blank" and `sqladmin`'s own row merge reads an empty cell in a nullable column as `NULL`. It is invisible on every screen and in every API response — both render blank — and it is visible in `audit_log`, which records it as an update. It is stated here rather than left to be found, and the place to fix it, if it is ever worth fixing, is the create form that stores `""` in a nullable column in the first place.
+
+**What the export does not do: it does not honour the list page's filters.** `GET /admin/{identity}/export/{csv|json}` serves the whole table, which on the five factor children means the rows of every factor set at once — and a file naming a published set is refused by the draft-only rule above, at the first such row, naming the line and the version label. So on those five screens a whole-table export is not a round trip on any deployment that has published anything. It is refused clearly rather than accepted wrongly, and the preview shows the refusal before anything is written; making the export follow the page's own filter is not part of v1.64.
+
 #### The dry run (v1.63)
 
 **`X-Dry-Run: true` on `POST /admin/{identity}/import` computes what the file would do and writes nothing.** The same header §6.2 puts on `POST /api/v1/calculate` and `/admin/try` sends, read the same way: `true` or `false`, case-insensitively, and anything else is a 400 so that a typo cannot silently write the file.
 
-It answers `application/json` rather than the newline-delimited progress stream a real import answers with, because nothing is being written and so there is nothing to be part-way through: `{dry_run, ok, table, mode, total, aborts_at_line, created[], updated[], deactivated[], deleted[], rejected[], counts{}, summary}`. Rejections come from `sqladmin`'s own `validate_import_row` — the same function the real import validates through, not a second set of rules — and `aborts_at_line` is where the import would stop, because `continue_on_error` is pinned false and one bad row means no rows at all.
+It answers `application/json` rather than the newline-delimited progress stream a real import answers with, because nothing is being written and so there is nothing to be part-way through: `{dry_run, ok, table, mode, total, aborts_at_line, created[], updated[], deactivated[], deleted[], rejected[], counts{}, summary, line_note}`. Rejections come from `sqladmin`'s own `validate_import_row` — the same function the real import validates through, not a second set of rules — and `aborts_at_line` is where the import would stop, because `continue_on_error` is pinned false and one bad row means no rows at all.
 
 **Upsert is what makes this necessary rather than pleasant.** Insert-only, a mistyped key was a collision and an error message. With upsert it is silently a new row instead of a correction, and the preview is the only place a reader catches it.
 

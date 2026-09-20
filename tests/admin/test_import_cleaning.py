@@ -685,19 +685,26 @@ async def test_the_modal_renders_a_multi_line_refusal_as_multiple_lines(
     """The browser half of the message quality, which no server-side test can
     see.
 
-    A refusal naming four bad values is four lines of text, and sqladmin's
-    own `main.js` puts a non-200 body into `#modal-import-text` with
-    jQuery's `.text()`. That sets `textContent`, so the newlines reach the
-    DOM and then collapse under the browser's default `white-space: normal`.
-    Every assertion in this file would still pass while what a staff member
-    actually sees is the single run-on paragraph the messages were written to
-    avoid.
+    A refusal naming four bad values is four lines of text, and the dialog
+    puts a non-200 body into the page as `textContent` — so the newlines reach
+    the DOM and then collapse under the browser's default
+    `white-space: normal`. Every assertion in this file would still pass while
+    what a staff member actually sees is the single run-on paragraph the
+    messages were written to avoid.
+
+    The element named here changed with WP4's dialog and the property did not:
+    it is the box a refusal is written into that has to keep the line breaks.
     """
     page = await admin_client.get("/admin/unit-preset/list")
 
-    assert "#modal-import-text" in page.text and "pre-wrap" in page.text, (
-        "the import modal does not preserve the line breaks in a refusal, so "
+    assert "#kaicalc-import-message" in page.text and "pre-wrap" in page.text, (
+        "the import dialog does not preserve the line breaks in a refusal, so "
         "a file with four bad values is shown as one paragraph"
+    )
+    script = await admin_client.get("/admin/static/import.js")
+    assert "textContent" in script.text, (
+        "the dialog does not write a refusal as text, so a message quoting a "
+        "value somebody typed would be rendered as markup"
     )
 
 

@@ -145,12 +145,35 @@ Three things live there and each has its own argument in place:
   by the database on any deployment that has ever been used;
 * **the dry run is the same code with the write left off**, so a preview and
   the import it previews cannot describe the file differently.
+
+AND THE EXPORT IS IN HERE TOO, WHICH IS THE ONE PART OF THIS MODULE'S NAME
+THAT LIES.
+
+A file format has two ends. Until WP4 this module owned one of them and
+``sqladmin``'s ``ModelView`` owned the other, and the two had never been
+written down in the same place — so **a file this panel exported was refused
+by this panel's own import**, three ways over, on every screen, and no test in
+the four files of tests before it could see any of them, because every one of
+those tests uploaded a file a *test* had written. The section headed "One file
+format, both ends, both spellings" below holds the whole account: the columns,
+the foreign keys, the empty cell, and why JSON was never a new export but an
+existing broken one.
+
+That is also why ``.json`` arrives on the way *in* through the same section
+rather than one of its own. It is an **entry format**: the array is turned
+into the row structure a CSV would have produced and everything past that
+point — the decimal refusals, the foreign keys by ``code``, the draft-only
+rule, the upsert, the two modes, the dry run, the audit trail — is the code
+that was already here. A JSON file is refused for a comma decimal by the same
+function and in the same words as a CSV one, because it *is* the same
+function.
 """
 
 import contextvars
 import csv
 import hashlib
 import io
+import json
 import re
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
@@ -164,7 +187,7 @@ from sqladmin._import import (
     validate_import_row,
 )
 from sqladmin.authentication import login_required
-from sqladmin.helpers import parse_csv
+from sqladmin.helpers import parse_csv, secure_filename
 from sqlalchemy import UniqueConstraint, event, select
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
@@ -464,13 +487,21 @@ def numeric_rejections(content: bytes, model_view: Any) -> list[str]:
     return rejections
 
 
-def rejection_response(rejections: list[str], limit: int) -> Response:
+def rejection_response(rejections: list[str], limit: int,
+                       note: str = "") -> Response:
     """The whole file refused, in one message, in plain words.
 
     Says three things in this order, because that is the order a reader needs
     them: nothing happened, here is exactly what is wrong, here is what to do.
     The middle part is the only one that varies, and it is the reason the
     refusal is worth building at all.
+
+    `note` carries `JSON_LINE_NOTE` when the upload was JSON. Every message
+    above names a *line*, which is what a spreadsheet shows and what a person
+    can go to; a JSON array has no lines of its own, and inventing a second
+    numbering for it would mean the same fault reported two different ways
+    depending on the format. The entries are numbered as the rows they become
+    and the reader is told so.
     """
     shown = rejections[:limit]
     count = len(rejections)
@@ -486,6 +517,8 @@ def rejection_response(rejections: list[str], limit: int) -> Response:
     tail = ""
     if count > len(shown):
         tail = f"\n\n  … and {count - len(shown)} more."
+    if note:
+        tail += f"\n\n{note}"
     return import_error_response(
         f"{head}\n\n{body}{tail}\n\n"
         "Correct them in the spreadsheet and upload the file again."
@@ -732,16 +765,48 @@ def resolve_foreign_keys(
     return _rewritten(model_view._import_prop_names, resolved), []
 
 
-def _rewritten(names: list[str], rows: list[dict[str, str]]) -> bytes:
-    """The same file with its foreign-key cells translated.
+def _rewritten(names: list[str], rows: list[dict[str, Any]]) -> bytes:
+    """Rows into a CSV file: **the one writer, used by all three callers.**
+
+    Three passes hand rows to this function and none of them may write a
+    different file from the others:
+
+    * `resolve_foreign_keys` above, re-emitting an uploaded file with its
+      foreign-key cells translated from codes into primary keys;
+    * `rows_from_json` below, turning a JSON upload into the row structure
+      the rest of this route reads - which is what keeps JSON an *entry
+      format* rather than a second import pipeline;
+    * `AuditedImport.export_data` below, writing the file a staff member
+      downloads.
+
+    That the export and the import share a writer is the point of putting
+    them in one module: a file format has two ends, and the way this project
+    has gone wrong before is two truths evolving apart.
 
     Re-emitted rather than patched in place, because the bytes that arrived
     may carry a BOM, either line ending and any quoting a spreadsheet felt
     like; `parse_csv` has already dealt with all three, and writing the parsed
     rows back out is what keeps this pass from having to deal with them again.
-    Only the columns this view imports are written - the ones `parse_csv`
-    itself keeps - so a file with extra columns loses them here exactly as it
-    would have lost them there.
+    Only the columns named are written - the ones `parse_csv` itself keeps -
+    so a file with extra columns loses them here exactly as it would have lost
+    them there.
+
+    ``None`` is written as an **empty cell**, never as `str(None)`. That is
+    not a nicety: `merge_import_row_data` reads an empty cell in a nullable
+    column as NULL, and reads the four characters `None` as the text somebody
+    typed - so an export that wrote the word would store it, and an export
+    that wrote it in a foreign-key cell would be refused as a code nothing
+    answers to. Both were live before WP4 and neither was visible in a 200.
+
+    **THE CONDITIONAL BELOW IS BELT-AND-BRACES, AND THAT WAS MEASURED RATHER
+    THAN ASSUMED.** Deleting it leaves every test green, and the mutation is
+    equivalent rather than the tests weak: `csv.writer` already writes ``None``
+    as an empty field (measured directly - `writerow(["a", None, "c"])` gives
+    `a,,c`), and the other two callers pass strings only. What actually
+    produces the property is `export_cell` returning ``None`` for an empty
+    value; this line is what keeps the promise from resting on a detail of the
+    standard library's csv module, and is kept for that and not because a test
+    can currently tell it apart.
 
     **Not what gets audited.** The file-level audit entry digests the bytes as
     they were uploaded, which is the only form of them the person who sent the
@@ -751,8 +816,442 @@ def _rewritten(names: list[str], rows: list[dict[str, str]]) -> bytes:
     writer = csv.writer(buffer, lineterminator="\r\n")
     writer.writerow(names)
     for row in rows:
-        writer.writerow([row[name] for name in names])
+        writer.writerow(
+            ["" if row.get(name) is None else row[name] for name in names]
+        )
     return buffer.getvalue().encode("utf-8")
+
+
+# --- One file format, both ends, both spellings ----------------------------
+#
+# WHY THE EXPORT IS IN THIS MODULE AT ALL. Because a round trip is the whole
+# feature, and until WP4 it did not work: **a file this panel exported was
+# refused by this panel's own import**, for two reasons, both of them
+# properties of the file rather than of any one row.
+#
+#   1. THE COLUMNS DID NOT MATCH. `get_export_columns` falls back to
+#      `column_list` and `get_import_columns` is `column_import_list`, which
+#      every importable view here sets to `form_columns`. On eight of the
+#      fourteen screens those differ, and `parse_csv` refuses a file missing
+#      any import column outright - "CSV file is missing required column(s):
+#      source_note." On `equivalence` the missing column is `label_template`,
+#      which is NOT NULL, so there was no correcting it by hand either.
+#   2. EVERY FOREIGN-KEY CELL WAS `__str__`. `_export_csv` writes
+#      `str(await get_prop_value(row, name))` and `get_prop_value` returns the
+#      related *object*, so the cell read `"dairy — Dairy"` where the import
+#      wants `dairy`.
+#
+# And a third that neither end could see on its own: `str(None)` is the four
+# characters `None`, which `merge_import_row_data` stores as text in a
+# nullable column and which is a code nothing answers to in a foreign-key one.
+#
+# **JSON IS NOT A NEW FEATURE ON THE EXPORT SIDE.** `ModelView.export_types`
+# is `["csv", "json"]` as shipped and `_export_json` already existed, so the
+# JSON export was live and broken in exactly the same three ways. Fixing CSV
+# and leaving JSON alone would have been this project's recurring failure -
+# two truths evolving apart - in a new costume, which is why the two formats
+# are written by the two functions below and by nothing else.
+#
+# WHAT A CELL LOOKS LIKE, AND WHY IT IS A STRING IN BOTH FORMATS.
+#
+#   * A foreign key is the referenced row's natural key - `code`, or
+#     `version_label` on `factor_set`. The same rule `resolve_foreign_keys`
+#     enforces on the way in, and for the same reason: **ids differ between
+#     deployments**, so a file keyed on them can only ever be loaded back into
+#     the database it came from.
+#   * An empty cell is an empty string in CSV and `null` in JSON.
+#   * Everything else is text: the digits of a `DECIMAL` exactly as stored,
+#     `true`/`false` for a boolean, the string for anything else.
+#
+# A JSON number is never written, and that is contract §1.2 rather than
+# fastidiousness: JavaScript's `Number` is a double, decimals are transmitted
+# as strings everywhere else in this system, and a `decimal(20,10)` written as
+# a JSON number is a value that has been through a float before anybody reads
+# it. Writing `sort_order` as a string too costs nothing and means the CSV and
+# the JSON of one table carry identical text - the difference between the two
+# files is syntax and nothing else. The *reader* below is more liberal than
+# this writer, because a person hand-writing a file will naturally type `true`
+# and `1.5`.
+
+
+def _codes_by_id(model_view: Any, target: Any, ids: set) -> dict:
+    """``{primary key: natural key}`` for the rows an export points at.
+
+    The mirror of `_lookup_by_code`, which answers the same question in the
+    other direction on the way in, and written the same way: one query per
+    foreign-key column per file, never one per row, and plain column values
+    rather than ORM rows.
+
+    **Not `getattr(obj.food_category, "code")`.** The objects an export is
+    handed come from `get_model_objects`, which eager-loads only the
+    relationships on the *list* page; every other one would be a lazy load,
+    and a `factor_upstream` export carries six foreign keys, so a five-hundred
+    row file would be three thousand queries. Reading the id off the row -
+    which is a plain column and already loaded - and resolving the ids in one
+    pass is six queries for the whole file.
+    """
+    key_column = natural_key_column(target)
+    pk_column = list(target.__table__.primary_key.columns)[0]
+    with model_view.session_maker() as session:
+        rows = session.execute(
+            select(pk_column, key_column).where(pk_column.in_(ids))
+        ).all()
+    return {row[0]: row[1] for row in rows}
+
+
+def export_cell(value: Any) -> str | None:
+    """One value as the file writes it: text, or ``None`` for an empty cell.
+
+    ``bool`` before anything else, because ``bool`` is a subclass of ``int``
+    in Python and `str(True)` is `"True"` - which `_coerce_bool` does happen
+    to accept, and which no reader should have to know that about.
+
+    Nothing here handles an ``Enum``, a ``date`` or a ``datetime``, because no
+    column any of the fourteen views imports is one of those - asserted by a
+    test that walks every importable view rather than left as a claim, so that
+    a screen that gains such a column fails here rather than exporting
+    something that cannot be read back.
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
+def export_rows(model_view: Any, data: list) -> list[dict[str, str | None]]:
+    """The rows of an export, as the row structure both formats are written
+    from and the import reads back.
+
+    One structure for CSV and JSON alike. The two writers below differ only in
+    how they spell it.
+    """
+    mapper = model_view._mapper
+    names = list(model_view._export_prop_names)
+    targets = foreign_key_import_columns(model_view)
+
+    # The local column behind each foreign-key relationship - `food_category`
+    # is carried on the row as `food_category_id` - so the id can be read off
+    # an object that was loaded without its relationships.
+    id_attributes: dict[str, str] = {}
+    for name in targets:
+        pairs = mapper.relationships[name].local_remote_pairs or []
+        id_attributes[name] = _attribute_for(mapper, pairs[0][0])
+
+    wanted: dict[str, set] = {name: set() for name in targets}
+    for obj in data:
+        for name in targets:
+            value = getattr(obj, id_attributes[name], None)
+            if value is not None:
+                wanted[name].add(value)
+
+    codes = {
+        name: (_codes_by_id(model_view, target, wanted[name])
+               if wanted[name] else {})
+        for name, target in targets.items()
+    }
+
+    rows = []
+    for obj in data:
+        row: dict[str, str | None] = {}
+        for name in names:
+            if name in targets:
+                key = getattr(obj, id_attributes[name], None)
+                row[name] = export_cell(
+                    None if key is None else codes[name].get(key)
+                )
+            else:
+                row[name] = export_cell(getattr(obj, name, None))
+        rows.append(row)
+    return rows
+
+
+def rows_to_json(names: list[str], rows: list[dict[str, str | None]]) -> bytes:
+    """The same rows as a JSON array of objects.
+
+    An array of objects rather than a header row and arrays of cells, because
+    the file is meant to be edited: a person correcting one number in a text
+    editor should be able to see which column it is without counting commas,
+    and a row whose keys are written in another order still reads. The reader
+    below takes the columns by name for the same reason, exactly as
+    `csv.DictReader` does on the other format.
+
+    `ensure_ascii=False`: the taxonomy carries macrons and the metric display
+    units carry a subscript, and a file full of `\\u014d` is one nobody can
+    correct by eye. UTF-8 throughout, the way the CSV writer above is.
+    """
+    ordered = [{name: row.get(name) for name in names} for row in rows]
+    return json.dumps(ordered, ensure_ascii=False, indent=2).encode("utf-8")
+
+
+# --- JSON on the way in: an entry format, never a second pipeline ----------
+#
+# THE DECISION THIS IMPLEMENTS, VERBATIM: "JSON and CSV land on one validation
+# and persistence path. JSON is another entry format, converted to the same
+# row structure, never a second pipeline."
+#
+# So this is the whole of the JSON import: read the array, turn each object
+# into the row structure `_rewritten` writes, and hand the resulting CSV to
+# the route it already had. Everything past that point is unchanged and
+# unaware - WP2's decimal rules, WP3's foreign keys by `code` and the
+# draft-only rule, WP3b's upsert, the two modes, the dry run, the audit
+# trail. A JSON file is refused for a comma decimal by the same function and
+# with the same words as a CSV one, because it *is* the same function.
+#
+# WHAT THIS READER ACCEPTS THAT THE WRITER ABOVE DOES NOT EMIT. A real JSON
+# boolean, a real JSON number, and `null`. The writer emits strings and
+# `null` only, but a person hand-writing a file - or a script producing one -
+# will type `true` and `1.5`, and refusing those would be refusing a file that
+# says exactly what it means.
+#
+# **A JSON NUMBER NEVER BECOMES A FLOAT**, and that is contract §1.2 rather
+# than a detail. `json.loads` parses `1.2345678901234567890` into a double by
+# default, losing digits before any of this project's code has seen the file,
+# on a column that is `decimal(20,10)` - exactly the FLOAT the contract
+# prohibits, arriving through a door nobody was watching. `parse_float=Decimal`
+# hands back the literal that was typed, digit for digit, and the numeric pass
+# then judges it on its own terms: `1e15` is refused for being scientific
+# notation, in the same words a CSV cell would be.
+
+#: The suffix that makes an upload JSON. The filename, not the content type:
+#: a browser's guess at the type of a `.json` file varies by platform, and
+#: `handle_import_upload` already decides CSV the same way.
+JSON_SUFFIX = ".json"
+
+#: What a visitor is told about line numbers when the file was JSON.
+#:
+#: Every refusal in this module names a *line*, because for a CSV that is
+#: what a spreadsheet shows and what a person can go to. A JSON array has no
+#: lines of its own, so rather than invent a second numbering - which would
+#: mean the same fault reported two different ways depending on the format -
+#: the entries are numbered exactly as the CSV rows they become, and the
+#: reader is told what that means.
+JSON_LINE_NOTE = (
+    "This file is JSON, so the line numbers below count the entries of the "
+    "array: line 2 is the first object in it, line 3 the second, and so on."
+)
+
+#: The content types a `.json` upload may declare. `None` and `""` are in the
+#: list for the same reason they are in sqladmin's own: a `FormData` built by
+#: hand, or by a client that did not guess, carries no type at all and that is
+#: not a fault. The check exists to catch a file sent to the wrong screen, not
+#: to referee anyone's MIME database.
+_JSON_CONTENT_TYPES = {
+    None, "", "application/json", "text/json", "application/x-json",
+    "text/plain",
+}
+
+
+def _json_cell(value: Any) -> str | None:
+    """One JSON value as the cell it becomes, or ``None`` if it is not a cell.
+
+    ``None`` is returned for a nested array or object, which is the one shape
+    a single cell cannot express and therefore the one shape this refuses. A
+    JSON `null` is an empty cell and comes back as `""`, not as `None` - the
+    two are distinguished deliberately, because the caller has to tell "this
+    row leaves the column blank" from "this row put a list in the column".
+    """
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (dict, list)):
+        return None
+    return str(value)
+
+
+def _json_is_not_a_list(parsed: Any) -> str:
+    kind = {
+        dict: "a single object", str: "a piece of text", int: "a number",
+        float: "a number", Decimal: "a number", bool: "true or false",
+        type(None): "null",
+    }.get(type(parsed), "something else")
+    return (
+        "This file was not imported and nothing in the table has changed.\n\n"
+        "  A JSON file for this screen has to be a list of rows — a JSON "
+        f"array of objects, which is what this panel's own JSON export "
+        f"writes. What arrived was {kind}.\n\n"
+        "Export the table to see the shape, correct the file and upload it "
+        "again."
+    )
+
+
+def rows_from_json(content: bytes, model_view: Any) -> tuple[bytes | None, str | None]:
+    """A JSON upload as the CSV the rest of this route already reads.
+
+    Returns the converted file and no message, or ``None`` and one refusal
+    naming everything wrong with the file - the same shape, and the same
+    all-of-it-at-once register, as `numeric_rejections` and
+    `resolve_foreign_keys`, for the same reason: one message per bad cell
+    means one trip back to the editor per bad cell.
+
+    Only the shape of the *file* is judged here. Whether `1,5` is a number,
+    whether `dairy` names a food category and whether the factor set is a
+    draft are all decided further down the route, by the passes that decide
+    them for a CSV, because a JSON file that got past this function is a CSV
+    file as far as everything after it is concerned.
+    """
+    names = list(model_view._import_prop_names)
+    try:
+        # `utf-8-sig` rather than `utf-8`: an editor on Windows will write a
+        # BOM without being asked, and `parse_csv` strips one from a CSV for
+        # the same reason. A file refused for three invisible bytes is a file
+        # nobody can debug.
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return None, (
+            "This file was not imported and nothing in the table has "
+            "changed.\n\n  It is not UTF-8 text, so none of it could be "
+            "read. JSON is UTF-8 by definition; save it again with UTF-8 "
+            "encoding.\n\nThen upload it again."
+        )
+
+    try:
+        parsed = json.loads(text, parse_float=Decimal)
+    except json.JSONDecodeError as exc:
+        return None, (
+            "This file was not imported and nothing in the table has "
+            f"changed.\n\n  It is not valid JSON: {exc.msg}, at line "
+            f"{exc.lineno}, column {exc.colno}. Those are real lines of this "
+            "file — a syntax error is found before there are any rows to "
+            "number.\n\nCorrect it and upload it again."
+        )
+
+    if not isinstance(parsed, list):
+        return None, _json_is_not_a_list(parsed)
+
+    problems: list[str] = []
+    rows: list[dict[str, str]] = []
+    for index, entry in enumerate(parsed):
+        # `+ 2` so that every message in this module numbers the same row the
+        # same way: line 1 is the header a CSV would have, line 2 the first
+        # row. See JSON_LINE_NOTE.
+        line = index + 2
+        if not isinstance(entry, dict):
+            problems.append(
+                f"Line {line}: this entry is not an object. Every entry in "
+                "the array is one row of the table, written as "
+                '{"code": "…", …}.'
+            )
+            continue
+        missing = [name for name in names if name not in entry]
+        if missing:
+            problems.append(
+                f"Line {line}: this row has no "
+                + ", ".join(f'"{name}"' for name in missing)
+                + ". Every row has to carry every column this screen "
+                "imports, the same way a CSV file does — write the column "
+                "with an empty string or null if it is meant to be blank. "
+                "This screen imports " + ", ".join(names) + "."
+            )
+            continue
+        row: dict[str, str] = {}
+        for name in names:
+            cell = _json_cell(entry[name])
+            if cell is None:
+                problems.append(
+                    f'Line {line}, column "{name}": the value is a '
+                    f"{'list' if isinstance(entry[name], list) else 'nested object'}, "
+                    "and one cell holds one value. Write it as a single "
+                    "string, number, true/false or null."
+                )
+                cell = ""
+            row[name] = cell
+        rows.append(row)
+
+    if problems:
+        count = len(problems)
+        head = (
+            "This file was not imported and nothing in the table has "
+            "changed.\n"
+            + ("One row could not be read:" if count == 1
+               else f"{count} rows could not be read:")
+        )
+        body = "\n\n".join(f"  {problem}" for problem in problems)
+        return None, (
+            f"{head}\n\n{body}\n\n{JSON_LINE_NOTE}\n\n"
+            "Correct them and upload the file again."
+        )
+
+    return _rewritten(names, rows), None
+
+
+#: What a visitor is told when nothing usable came up the wire. Names both
+#: spellings, because the dialog offers both and a message naming only CSV is
+#: the panel contradicting its own control.
+NO_FILE_REFUSAL = (
+    "No file was uploaded, or the file this panel was given is neither a "
+    ".csv nor a .json file. Choose the file again and press Import."
+)
+
+
+@dataclass(frozen=True)
+class Upload:
+    """An uploaded table, in both the form it arrived in and the form the rest
+    of the route reads.
+
+    The two are the same object for a CSV and differ for a JSON file, and
+    keeping both is not redundancy: **the audit entry digests `raw`**, because
+    the question a digest exists to answer is "is this the file I sent you",
+    and a digest of something this process converted first answers a different
+    question. Every pass after this one reads `content`, which is why JSON is
+    an entry format and not a second pipeline.
+    """
+
+    filename: str
+    is_json: bool
+    #: Exactly the bytes that arrived. Audited, never parsed twice.
+    raw: bytes
+    #: The same rows as CSV. What WP2's cleaning, WP3's foreign keys, WP3b's
+    #: plan and sqladmin's own `import_csv` all read.
+    content: bytes
+
+    @property
+    def line_note(self) -> str:
+        """`JSON_LINE_NOTE`, or nothing. Every refusal past this point names a
+        line, and a JSON array has none of its own."""
+        return JSON_LINE_NOTE if self.is_json else ""
+
+
+async def read_uploaded_table(request: Request, model_view: Any,
+                              form: Any) -> tuple["Upload | None", Response | None]:
+    """The upload, or the refusal that stops the route.
+
+    **The format is decided by the filename**, the way `handle_import_upload`
+    already decides CSV, and not by the declared content type: a browser's
+    guess at the type of a `.json` file varies by platform and by how the file
+    got onto the machine, so a check on the type alone refuses files that are
+    perfectly good.
+
+    The CSV branch is sqladmin's own function, untouched. The JSON branch does
+    the same three things it does - the type check, the size limit, the read -
+    and then converts, which is the whole of what "another entry format" means
+    here.
+    """
+    uploaded = form.get("csvfile")
+    filename = getattr(uploaded, "filename", None) or ""
+
+    if filename.lower().endswith(JSON_SUFFIX):
+        if getattr(uploaded, "content_type", None) not in _JSON_CONTENT_TYPES:
+            return None, import_error_response("Invalid JSON file type.")
+        raw = await uploaded.read()
+        if len(raw) > model_view.max_import_file_size:
+            # 413, the same answer and the same limit sqladmin gives a CSV
+            # that is too big. One limit for the screen, not one per format.
+            return None, import_error_response("JSON file is too large.", 413)
+        content, problem = rows_from_json(raw, model_view)
+        if problem is not None:
+            return None, import_error_response(problem)
+        return Upload(filename=filename, is_json=True, raw=raw,
+                      content=content), None
+
+    upload = await handle_import_upload(request, model_view)
+    if upload.error:
+        return None, import_error_response(upload.error, upload.status_code)
+    if not upload.content:
+        return None, import_error_response(NO_FILE_REFUSAL)
+    return Upload(filename=filename or "(unnamed)", is_json=False,
+                  raw=upload.content, content=upload.content), None
 
 
 # --- The two import modes, the upsert, and the dry run ---------------------
@@ -1452,13 +1951,20 @@ async def dry_run_rejections(request: Request, model_view: Any, content: bytes,
 
 
 def dry_run_response(plan: ImportPlan, retired: list, rejections: list[str],
-                     aborts_at: int | None, limit: int) -> Response:
+                     aborts_at: int | None, limit: int,
+                     note: str = "") -> Response:
     """What a dry run answers with: counts, and the rows behind each count.
 
     **JSON rather than the newline-delimited stream a real import answers
     with**, because there is no progress to report - nothing is being written,
-    so there is nothing to be part-way through. WP4 renders this; the shape is
-    the contract between the two.
+    so there is nothing to be part-way through. The preview in
+    admin/static/import.js renders this; the shape is the contract between the
+    two, and the browser adds nothing to it - every count and every line
+    number it shows was computed here, by the code that would do the writing.
+
+    `line_note` is `JSON_LINE_NOTE` for a JSON upload and empty otherwise, for
+    the reason `rejection_response` gives: the rejections name lines, and a
+    JSON array has none of its own.
 
     `ok` is false when anything would be refused, and the summary says so in
     the same words the real import would: with `continue_on_error` pinned
@@ -1516,6 +2022,7 @@ def dry_run_response(plan: ImportPlan, retired: list, rejections: list[str],
             },
             "rejected": rejections[:limit],
             "summary": summary,
+            "line_note": note,
         }
     )
 
@@ -1585,6 +2092,69 @@ class AuditedImport:
         """
         super().__init__()
         install_import_modes(self)
+
+    def get_export_columns(self) -> list[str]:
+        """**What this screen exports is what this screen imports.**
+
+        sqladmin has no single answer here and the two it does have differ:
+        `get_export_columns` falls back to `column_list`, `get_import_columns`
+        to `column_import_list`, which every view wearing this mixin sets to
+        `form_columns`. On eight of the fourteen screens that is not a
+        cosmetic difference - it is a file the import refuses to read at all,
+        because `parse_csv` rejects a file missing any import column outright.
+        On `equivalence` the column missing from the export
+        (`label_template`) is NOT NULL, so a staff member could not have
+        corrected the file by hand without reading the schema.
+
+        The method rather than `column_export_list = column_import_list`,
+        because the class attribute is per view and this is a property of the
+        mixin: a screen added later gets it by wearing the mixin rather than
+        by somebody remembering a second assignment. `__init__` calls this one
+        before `get_import_columns`, so it calls the method rather than
+        reading the cached `_import_prop_names`, which does not exist yet.
+
+        **The list page is untouched.** `column_list` still decides what the
+        table on screen shows; this decides only what the file carries. They
+        answer different questions - what is worth a column on a page, and
+        what a row needs to be re-readable - and they were only ever the same
+        answer by sqladmin's default.
+        """
+        return self.get_import_columns()
+
+    async def export_data(self, data: list, export_type: str = "csv",
+                          request: Request | None = None) -> Response:
+        """The file a staff member downloads, in either spelling.
+
+        Overrides sqladmin's `_export_csv` / `_export_json` pair with one that
+        writes the format defined in this module, because that format is what
+        this module's import reads. See the block comment above `_codes_by_id`
+        for the three ways the shipped export could not be read back.
+
+        A whole `Response` rather than the `StreamingResponse` sqladmin
+        returns: nothing here streams anyway - `export` has already fetched
+        every row into a list before this is called, and sqladmin's own
+        generator closes over that same list - so a streaming wrapper around a
+        value that is entirely in memory buys nothing and costs the caller the
+        ability to see the file's length.
+        """
+        names = list(self._export_prop_names)
+        rows = export_rows(self, data)
+        if export_type == "json":
+            body = rows_to_json(names, rows)
+            media_type = "application/json"
+        elif export_type == "csv":
+            body = _rewritten(names, rows)
+            media_type = "text/csv; charset=utf-8"
+        else:  # pragma: no cover - `_export` 404s on a type not in this list
+            raise NotImplementedError(
+                "Only export_type='csv' or 'json' is implemented."
+            )
+        filename = secure_filename(self.get_export_name(export_type=export_type))
+        return Response(
+            content=body,
+            media_type=media_type,
+            headers={"Content-Disposition": f"attachment;filename={filename}"},
+        )
 
     @property
     def import_retirement_word(self) -> str:
@@ -1698,13 +2268,19 @@ class KaiAdmin(Admin):
         if not check_token(request.session, form.get("csrf_token")):
             return import_error_response(CSRF_REFUSAL)
 
-        upload = await handle_import_upload(request, model_view)
-        if upload.error:
-            return import_error_response(upload.error, upload.status_code)
-        if not upload.content:
-            return import_error_response(
-                "No CSV file uploaded or file does not have a .csv extension."
-            )
+        # THE UPLOAD, IN EITHER SPELLING.
+        #
+        # A `.json` file is read here, converted into the row structure a CSV
+        # would have produced, and is a CSV to every line below this one -
+        # which is decision 4 of the plan, implemented rather than described:
+        # "JSON is another entry format, converted to the same row structure,
+        # never a second pipeline." The decimal rules, the foreign keys by
+        # `code`, the draft-only rule, the upsert, the two modes, the dry run
+        # and the audit trail are the same code for both formats because
+        # there is only one of each.
+        upload, refusal = await read_uploaded_table(request, model_view, form)
+        if refusal is not None:
+            return refusal
 
         # THE CLEANING PASS. Before the contextvars, because a file refused
         # here writes nothing and audits nothing - the same as a file refused
@@ -1737,7 +2313,8 @@ class KaiAdmin(Admin):
         rejections.extend(unresolved)
         if rejections:
             return rejection_response(
-                rejections, model_view.max_reported_missed_rows
+                rejections, model_view.max_reported_missed_rows,
+                upload.line_note,
             )
 
         # THE MODE, AND THE PLAN IT PRODUCES.
@@ -1786,11 +2363,14 @@ class KaiAdmin(Admin):
                 request, model_view, content, self._denormalize_wtform_data,
             )
             return dry_run_response(plan, retired, refusals, aborts_at,
-                                    model_view.max_reported_missed_rows)
+                                    model_view.max_reported_missed_rows,
+                                    upload.line_note)
 
-        uploaded = form.get("csvfile")
-        _import_var.set(_digest_upload(getattr(uploaded, "filename", None),
-                                       upload.content))
+        # `upload.raw`, not `upload.content`: the bytes as they arrived. See
+        # `Upload` and `_digest_upload` - a digest of something this process
+        # converted first answers a different question from the one it exists
+        # to answer.
+        _import_var.set(_digest_upload(upload.filename, upload.raw))
         _actor_var.set(request.session.get(SESSION_KEY) or "unknown")
         _view_var.set(model_view)
         # Set alongside the other three and never reset, for the reason spelled

@@ -1019,8 +1019,8 @@ async def test_the_modal_offers_the_mode_and_names_what_it_will_do(
         f"{line_option!r}"
     )
     assert "import_mode" in (await admin_client.get(
-        "/admin/static/import-csrf.js")).text, (
-        "nothing puts the chosen mode into sqladmin's hand-built upload, so "
+        "/admin/static/import.js")).text, (
+        "nothing puts the chosen mode into the upload the dialog builds, so "
         "every import from a browser is the default whatever is selected"
     )
 

@@ -292,24 +292,60 @@ async def test_an_import_with_the_wrong_token_is_refused(admin_client, admin_app
     assert _sectors(admin_app) == {}
 
 
-async def test_the_import_modal_carries_the_token_and_the_script_that_sends_it(
+async def test_the_import_dialog_carries_the_token_and_the_script_that_sends_it(
     admin_client,
 ):
     """The browser half, which the server-side check cannot prove on its own.
 
+    With the token rendered and nothing putting it into the request, every
+    import a real staff member attempts is refused by the check above and the
+    feature is dead on the panel while every server-side test still passes.
+
+    **The script named here changed in WP4 and the reason it exists did not.**
     sqladmin's own `main.js` builds the upload's `FormData` by hand and never
     serialises the form, so a hidden field alone is in the DOM and in no
-    request: /admin/static/import-csrf.js is what puts it in the body. With
-    the token rendered and the script missing, every import a real staff
-    member attempts is refused by the check above and the feature is dead on
-    the panel while every server-side test still passes.
+    request; WP1 carried the field past that by replacing `window.fetch` for
+    one call and said the replacement dialog would delete that wrapper.
+    /admin/static/import.js is the replacement and builds its own body, with
+    the token an ordinary field in it. The test below holds the wrapper gone.
     """
     page = await admin_client.get("/admin/sector/list")
 
     assert 'id="kaicalc-import-csrf"' in page.text
-    assert "/admin/static/import-csrf.js" in page.text, (
-        "the import modal renders a CSRF token but loads nothing that puts "
-        "it into sqladmin's upload, so no import from a browser can succeed"
+    assert "/admin/static/import.js" in page.text, (
+        "the import dialog renders a CSRF token but loads nothing that puts "
+        "it into the upload, so no import from a browser can succeed"
+    )
+    script = await admin_client.get("/admin/static/import.js")
+    assert script.status_code == 200, "the dialog loads a script that 404s"
+    assert "csrf_token" in script.text, (
+        "the import dialog's own script does not put the token into the "
+        "request body it builds"
+    )
+
+
+async def test_the_fetch_wrapper_wp1_left_behind_is_gone(admin_client):
+    """WP1's `window.fetch` wrapper, held deleted rather than described.
+
+    It existed for one reason — sqladmin's hand-built `FormData` had nowhere
+    to read a hidden field from — and it said so in its own header: "WP4 of
+    the import plan replaces this modal outright, and the replacement will
+    build its own request body with the token in it. Delete this file and the
+    template that loads it in the same change."
+
+    A monkeypatch of a global that nobody meant to keep is exactly the thing
+    that survives by being harmless. This asserts the file is not served and
+    that no page asks for it, so a later change that quietly restores either
+    is a red test rather than a rediscovery.
+    """
+    gone = await admin_client.get("/admin/static/import-csrf.js")
+    assert gone.status_code == 404, (
+        "/admin/static/import-csrf.js is still served; WP1's `window.fetch` "
+        "wrapper was to be deleted with the dialog that needed it"
+    )
+    page = await admin_client.get("/admin/sector/list")
+    assert "import-csrf.js" not in page.text, (
+        "the Sectors page still loads the fetch wrapper"
     )
 
 

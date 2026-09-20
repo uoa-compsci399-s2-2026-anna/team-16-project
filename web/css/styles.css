@@ -1150,7 +1150,13 @@ tbody th { font-weight: 700; }
   border-radius: 14px;
   background: var(--mint);
 }
-.contribute-sentence { margin: 0 0 14px; color: var(--ink); }
+/* Round four's own instruction: the explanation goes in smaller type. It is still the
+   sentence `#contribute`'s `aria-describedby` points at and still the one that has to
+   carry both true things — five seconds to undo, and nothing to be done from here after
+   them — so it is smaller, not shorter, and it keeps `--ink` rather than dropping to
+   `--muted`: shrinking the type and fading it at the same time is how a disclosure ends
+   up technically present and practically unreadable. */
+.contribute-sentence { margin: 0 0 14px; color: var(--ink); font-size: 0.875rem; line-height: 1.55; }
 /* Task 4 (2026-08-31): a long rounded button rather than a tick. `#contribute` stays a
    real `input[type="checkbox"]` - not `display: none`, which would drop it from the
    accessibility tree and the tab order alike, and not clipped to a single pixel either:
@@ -1162,7 +1168,24 @@ tbody th { font-weight: 700; }
    button, so it is what actually receives the click. The visible pill underneath is
    `pointer-events: none` for exactly that reason: the input, not the label, is the
    target. */
-.contribute-control { position: relative; display: inline-flex; }
+/* **Round four moved `position: relative` off this element and onto `.contribute-choice`,
+   and that is a correctness fix rather than tidying.** The input below is
+   `position: absolute; inset: 0` against its nearest positioned ancestor. While that was
+   `.contribute-control` the input covered exactly the pill, because the pill was all the
+   row held. Round four put a Submit button in the same row - so a `.contribute-control`
+   that stayed positioned would have stretched the invisible checkbox across the button
+   too, and every press of Submit would have landed on the checkbox sitting over it. The
+   wrapper is what the input is sized against now, and it wraps the tick alone. */
+.contribute-control { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+/* The tick, and the flower that blooms beside it. `min-inline-size: 0` because a flex
+   item's automatic minimum is its content, and a long German label would otherwise
+   refuse to shrink and push the row past 320px. */
+.contribute-choice { position: relative; display: inline-flex; flex: 0 1 auto; min-inline-size: 0; max-inline-size: 100%; }
+/* Submit / Undo: the same slot, at the row's end. The client's own words - "a tick on
+   the left, a separate Submit button on the right". `margin-inline-start: auto` rather
+   than `justify-content: space-between`, so the pair still reads as tick-then-action
+   when the row wraps at a narrow width instead of the two being flung apart. */
+.contribute-action { margin-inline-start: auto; }
 .contribute-control input[type="checkbox"] {
   position: absolute;
   inset: 0;
@@ -1243,8 +1266,11 @@ tbody th { font-weight: 700; }
   transform: rotate(40deg);
 }
 /* The flower - inline SVG only, built in `results.js`'s `contributeFlower()` from five
-   half-circles, the brand's own supporting graphic. `contribute-control`'s own
-   `position: relative` is what this positions against; `pointer-events: none` keeps it
+   half-circles, the brand's own supporting graphic. `contribute-choice`'s own
+   `position: relative` is what this positions against - the tick's wrapper, not the
+   whole row, so it blooms beside the pill rather than beyond the action button that now
+   shares the row (and in the done state there is no action button there at all, which is
+   the only state this ever renders in); `pointer-events: none` keeps it
    from ever intercepting the click that is about to lock the button anyway. It exists in
    the DOM only while `state.contributeCelebrating` is true and motion is allowed - see
    that flag's note in `state.js` - so the `@media (prefers-reduced-motion: reduce)` rule
@@ -1262,6 +1288,64 @@ tbody th { font-weight: 700; }
 @keyframes kc-flower-bloom {
   from { opacity: 0; transform: translateY(-50%) scale(0.15) rotate(-35deg); }
   to { opacity: 1; transform: translateY(-50%) scale(1) rotate(0deg); }
+}
+/* THE FIVE-SECOND GRACE WINDOW.
+   =============================
+   Drawn by `contributeCountdown()` (`results.js`), and drawn *here* rather than counted
+   down in JavaScript: `render()` replaces `main.innerHTML` on every `setState`, so a
+   "4… 3… 2…" counter would rebuild the whole results page once a second, underneath a
+   visitor who may well be typing in the improvement panel while the window runs.
+
+   `--contribute-grace` is the same five seconds as `CONTRIBUTE_GRACE_MS` in
+   `results.js`, which is what actually decides when the request goes. **Change one and
+   you must change the other** - they are the timer and the picture of the timer, and a
+   bar that empties before or after the send is a control that lies about its own window.
+
+   The bar's `animation-delay` is written as a negative inline value by `results.js` on
+   every render, from the absolute deadline held on `state.contributeArmedUntil`. A CSS
+   animation restarts whenever its element is created and this element is recreated by
+   every re-render, so without that offset a keystroke in the improvement panel would
+   refill the bar to full while the real `setTimeout` ran out underneath it - the picture
+   granting a fresh five seconds the visitor does not have. */
+.contribute-block { --contribute-grace: 5000ms; }
+.contribute-countdown { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 14px 0 0; }
+.contribute-countdown__track {
+  flex: 1 1 140px;
+  max-inline-size: 260px;
+  block-size: 8px;
+  border-radius: 999px;
+  background: rgba(0, 50, 35, 0.16);
+  overflow: hidden;
+}
+/* `inline-size` rather than a `transform: scaleX()`: a scale is physical and would empty
+   the bar from the wrong end in Arabic and Urdu. One element animating its own width for
+   five seconds is not a frame-rate question. */
+.contribute-countdown__bar {
+  display: block;
+  block-size: 100%;
+  inline-size: 100%;
+  border-radius: 999px;
+  background: var(--kai-orange);
+  animation: kc-contribute-countdown var(--contribute-grace) linear both;
+}
+@keyframes kc-contribute-countdown {
+  from { inline-size: 100%; }
+  to { inline-size: 0%; }
+}
+.contribute-countdown__text { color: var(--ink); font-weight: 700; font-size: 0.92rem; }
+/* **Reduced motion gets a stepped bar, not no bar**, and this is the one animation in
+   this stylesheet that is not simply switched off for it. A visitor who has asked for no
+   motion still has exactly five seconds to press Undo, and removing the only indication
+   that the clock is running leaves them worse off than the movement did - the accessible
+   answer to a timer is not to hide the timer. `steps(5)` makes the bar jump once a
+   second instead of sliding: discrete, so there is nothing continuously moving on the
+   screen, and still visibly a countdown. The sentence above the control says "five
+   seconds" in words for everyone, so how long they have never depends on seeing this.
+
+   Written after the rule it overrides, for the reason the drawer's own reduced-motion
+   block spells out: equal specificity, so source order decides. */
+@media (prefers-reduced-motion: reduce) {
+  .contribute-countdown__bar { animation-timing-function: steps(5); }
 }
 .contribute-status { margin: 12px 0 0; color: var(--green-dark); font-weight: 700; }
 .contribute-block .field-error { margin: 12px 0 0; }

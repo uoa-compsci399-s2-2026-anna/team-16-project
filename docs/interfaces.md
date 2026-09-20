@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-09-21 (v1.64 draft)"
+date: "2026-09-21 (v1.65 draft)"
 ---
 
 # 0. How to Use This Document
@@ -25,7 +25,7 @@ This document defines **what every person's code receives and what it returns.**
 
 ## 0.1 Change Log
 
-### v1.64 — 2026-09-21 (a file this panel exports can be imported back into it, in either format; affects E)
+### v1.65 — 2026-09-21 (a file this panel exports can be imported back into it, in either format; affects E)
 
 v1.62 turned the import on and v1.63 made it correct the row it names. Neither closed the loop they were built for: **a file this panel exported was refused by this panel's own import**, on eight of the fourteen screens outright and on the other six at every foreign-key cell. So the client's own workflow — export, correct a figure in a spreadsheet, upload it again — did not work end to end, and no test drove it, because every test in the four files before this one uploaded a file a *test* had written.
 
@@ -51,7 +51,7 @@ And the JSON export, which `sqladmin` has shipped all along (`export_types = ["c
 | 8 | **The import dialog previews the file and is confirmed before anything is written**, and accepts a dropped file. Two requests: `X-Dry-Run: true`, then the import. Every count and every line number shown came from the server — the browser parses nothing and counts nothing. The confirmation is spent the moment the file or the mode changes under it | §8.1.1 |
 | 9 | **One thing a round trip does change, and it cannot be otherwise:** an empty string in a nullable column comes back `NULL`, because a file has one spelling for "blank". Stated here rather than left to be discovered | §8.1.1 |
 
-### v1.63 — 2026-09-20 (an import updates the row it names, and can say what it would do before it does it; affects E)
+### v1.64 — 2026-09-20 (an import updates the row it names, and can say what it would do before it does it; affects E)
 
 v1.62 turned the import on and left it **insert-only**, which is `sqladmin`'s own behaviour — `Query._get_model_object` is `return self.model_view.model(**data)`, a new instance per row, no lookup. So the workflow the feature exists for, *export, correct in a spreadsheet, re-import*, collided on the row's own key and the file was refused by the database. This closes it, adds the second mode that was promised with it, and adds the dry run the preview is built on.
 
@@ -69,7 +69,7 @@ v1.62 turned the import on and left it **insert-only**, which is `sqladmin`'s ow
 
 > **What still does not work, and it is the export's half.** A relationship column is exported as `str(row)` — `"code — name"` on these models — and the import wants a bare `code`, so a file straight out of the export still needs its foreign-key cells corrected by hand. `sqladmin` also ships a JSON export whose round trip is broken in exactly the same way. Both are the next package, together, because a file format has two ends and defining them in two places is how they drift.
 
-### v1.62 — 2026-09-20 (staff can import a table from a file; affects E, and B as the owner of the schema it writes)
+### v1.63 — 2026-09-20 (staff can import a table from a file; affects E, and B as the owner of the schema it writes)
 
 The panel could export every table it edits and import none of them, so a correction made in a spreadsheet had to be retyped. Fourteen tables now accept an uploaded CSV, on `sqladmin`'s own import mechanism, configured rather than replaced. **§8.1.1 is new and is the specification.**
 
@@ -90,7 +90,17 @@ The panel could export every table it edits and import none of them, so a correc
 > **What this round deliberately does not do.** The import is **insert-only**: a `code` already in the table collides rather than updating, so *export, correct, re-import* — the workflow the feature exists for — is not yet closed. Upsert on `code`, and the second mode that deactivates rows absent from the file, are a separate package because they replace `sqladmin`'s persistence rather than configuring its views. JSON, the modal and drag-and-drop are separate again, as is the configuration export/import that moves a whole deployment's configuration.
 >
 > **One thing the export does not yet meet it on.** A relationship column is exported as `str(row)`, which on these models is `"code — name"`, not a bare `code`. So a file that came out of the export needs its foreign-key cells corrected before it will import, and that is the export's half of this round, not the import's.
+### v1.62 — 2026-09-20 (the contribute control's two steps reach the twenty catalogues; affects C and D)
 
+The results page's contribute control became a tick and then a separate Submit, with a five-second window in which Undo stops the request before it is made. That is a front-end change with no wire in it, and it is recorded here only because it moves the **catalogue** contract: the English source string is the key (§7.7.1), so rewording the consent sentence orphans every translation of it silently and the page falls back to English at the one place a visitor is being asked to give something away.
+
+**No request or response shape changes, and no route or field moved.** `POST /api/v1/contribute` is unchanged, the grace window is spent entirely in the browser before the request is made (there is no server-side undo to contract for), and nothing in §2, §3, §6 or §9 is touched. `tests/fixtures/*.json` is unchanged for the same reason.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **Each catalogue goes from 416 strings to 419: four keys added, two removed, in all twenty files.** Added are the two button labels (`Submit`, `Undo`), the countdown line (`Not sent yet. Press Undo to stop it.`) and the consent sentence rewritten to say that there are five seconds after Submit in which to undo and that once they pass it cannot be undone from here. Removed are the one-step consent sentence it replaces, which said only that it *cannot be undone from here once sent* — the two differ by one clause in the middle and are otherwise the same words, which is exactly the shape §7.7.1's key rule makes invisible to every test but the stale-key one — and a first draft of the countdown line, `Sending in five seconds. Press Undo to stop it.`, which was orphaned within the same change | §7.7, §7.7.1 |
+| 1a | **The duration is named in the paragraph and drawn by the bar, and the line beside the bar names neither.** The first countdown line promised a future — *sending in five seconds* — beside a bar that was already spending those seconds, and counted them from *now* while the paragraph above counts them from the press. The line now states the fact a visitor needs while the bar runs: nothing has gone yet, and this button is what keeps it that way. `five seconds` is still spelled in words in the consent sentence, deliberately, so it reads rather than scans; each catalogue follows its own convention there, and the CJK four use a numeral. **No catalogue may reintroduce a duration in the countdown line**, and `yet` is load-bearing in it: a rendering that reads as *not sent* loses the reason the Undo button is on screen, and one that reads as *will not be sent* is wrong | §7.7, §7.7.1 |
+| 2 | **`api/assets/locales/` is re-copied byte-for-byte and the four CJK subsets are *not* re-cut.** The two trees are compared by file list *and* SHA-256, so the embedded copies are copied, never re-serialised. Unlike v1.61 this landed inside the existing subsets: two candidate renderings were rejected for characters the faces do not carry — Korean 릴 (U+B9B4) and Traditional Chinese 點 (U+9EDE) — and reworded to 되돌리기를 할 수 있습니다 and 按 rather than re-cutting for two glyphs, so `PROVENANCE.md` is untouched and the counts still read jp 646, kr 558, sc 705, tc 705. The countdown line's replacement landed inside the subsets as well — 尚未 and 아직 are already carried | §6.2.3, §7.7 |
 ### v1.61 — 2026-09-19 (step 3's zoning reaches the twenty catalogues; affects C and D)
 
 Step 3 was re-laid as two tinted zones, each with its own heading and sub-line, and its four field names became tooltip terms. That is a front-end change with no wire in it, and it is recorded here only because it moves the **catalogue** contract: the English source string is the key (§7.7.1), so rewording a label orphans every translation of it silently.

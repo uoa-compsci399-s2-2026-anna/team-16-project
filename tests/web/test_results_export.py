@@ -38,6 +38,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -333,6 +334,59 @@ def build_state_with_item_basis(*bases: str) -> dict:
         item["response"] = dict(item["response"], item_basis=basis,
                                 food_item=foods[index])
     return state
+
+
+def test_the_results_sections_are_in_the_order_the_floating_nav_claims(tmp_path):
+    """**The nav is a list of jumps, so a wrong order is a wrong jump.**
+
+    It read summary / improvements / equivalents / breakdown while the
+    improvement panel was rendered below the downloads -- three sections further
+    down than its second slot claimed. Its one link that existed to save a
+    scroll was the one that jumped past everything else on the page.
+
+    Asserted against the rendered page rather than against the two source lists,
+    because reading both and comparing them would pass whenever they were
+    wrong in the same way, which is exactly how they came to disagree.
+    """
+    screen = screen_for(tmp_path, build_state())
+
+    markers = {
+        "#impact-summary": 'id="impact-summary"',
+        "#tangible-equivalents": 'id="tangible-equivalents"',
+        "#breakdown-section": 'id="breakdown-section"',
+        "#improvement-section": 'id="improvement-section"',
+    }
+    on_page = {}
+    for href, marker in markers.items():
+        at = screen.find(marker)
+        assert at != -1, f"{href} is not on the rendered results page at all"
+        on_page[href] = at
+
+    #: The nav's own hrefs, in the order it writes them.
+    import re as _re
+
+    nav = _re.search(r'class="results-floating-nav__links">(.*?)</ul>', screen, _re.S)
+    assert nav, "the floating nav rendered no link list"
+    claimed = _re.findall(r'href="(#[a-z-]+)"', nav.group(1))
+    assert len(claimed) == len(markers), f"the nav lists {claimed}, not the four sections"
+
+    actual = sorted(claimed, key=lambda href: on_page[href])
+    assert claimed == actual, (
+        f"the floating nav lists the sections as {claimed} but the page renders "
+        f"them as {actual}, so at least one link jumps somewhere the reader did "
+        f"not expect -- a nav in the wrong order is worse than no nav, because a "
+        f"reader who scrolls finds the sections in the order they are in"
+    )
+
+    #: The move this test was written for, stated as itself so a later reshuffle
+    #: that kept the two lists agreeing but put the panel back under the
+    #: downloads still fails here.
+    assert on_page["#improvement-section"] < screen.find('id="results-methodology"'), (
+        "the improvement panel renders below Methodology & Limitations again. It "
+        "was moved above both that and the download actions because a visitor "
+        "who has just read their result is being offered the next thing to do, "
+        "not a footnote"
+    )
 
 
 def test_the_results_page_renders_every_section_it_composes(tmp_path):
@@ -1842,6 +1896,36 @@ def _results_page(page_at, *, contribute_calls=None, reduced_motion=None):
     return page
 
 
+#: Round four's grace window, in milliseconds. Kept in step with
+#: `CONTRIBUTE_GRACE_MS` (`web/js/results.js`) and `--contribute-grace`
+#: (`web/css/styles.css`) - the timer, and the picture of the timer.
+CONTRIBUTE_GRACE_MS = 5000
+
+#: Headroom over the window before a test reads the result of it. Generous on
+#: purpose: an assertion that a request HAS arrived is allowed to wait; the
+#: assertions that a request has NOT arrived are the ones that must be tight,
+#: and those are written against a deliberately short wait instead.
+_GRACE_SLACK_MS = 1200
+
+
+def _press_submit(page):
+    """The second of the two steps. `#contribute-action` is one id worn by two
+    buttons in turn - Submit before the press, Undo during the window - because
+    `main.js` restores focus by id after a re-render (see `contributeBlock`'s
+    own note), so this is also what a keyboard visitor stays on."""
+    page.locator("#contribute-action").click()
+
+
+def _contribute(page, slack=_GRACE_SLACK_MS):
+    """Tick, press Submit, and let the five seconds run out - the whole of what
+    it now takes to send a `/contribute`. Every test below that needs the
+    contributed state goes through this rather than through `.check()` alone,
+    which is exactly the difference round four introduced."""
+    page.locator("#contribute").check()
+    _press_submit(page)
+    page.wait_for_timeout(CONTRIBUTE_GRACE_MS + slack)
+
+
 @pytest.mark.browser
 def test_the_results_page_offers_to_contribute_and_does_not_assume(page_at):
     """**Item ⑬ reverses a decision §2.3 wrote down deliberately**: "one
@@ -1866,27 +1950,189 @@ def test_the_results_page_offers_to_contribute_and_does_not_assume(page_at):
 
 
 @pytest.mark.browser
-def test_ticking_it_posts_the_token(page_at):
-    """The request the button exists to make - and, first, the half that is easy
-    to lose: that nothing is sent before the box is pressed. A control that
-    calls `contribute()` on page load would still make this request eventually
-    and could still pass a version of this test that only checked the request's
-    shape once it arrived; the count below is what actually distinguishes "sent
-    on the press" from "sent regardless, and the press did nothing new"."""
+def test_the_tick_alone_sends_nothing_and_submit_plus_the_window_sends_the_token(page_at):
+    """**Round four, and the test that defines it.** The control is two steps: a
+    tick on the left and a separate Submit button on the right, and pressing
+    Submit only *arms* a five-second window in which the visitor can still take
+    it back. So there are three distinct moments here and all three are checked
+    in order, because each one alone would pass against a wrong implementation:
+
+    * before anything is touched - the case that catches a `contribute()` on
+      page load, which would eventually make this request anyway and satisfy any
+      assertion written only about the request's shape;
+    * after the tick and nothing else - the case that catches the one-step
+      control this replaces, which sent on `change`;
+    * after Submit and the whole window - the case that catches a window that
+      never fires, i.e. a consent the visitor gave and the server never heard.
+
+    The middle assertion is the new one, and it is checked against a wait longer
+    than any plausible request latency rather than immediately, so "not sent
+    yet" cannot be mistaken for "not sent at all".
+    """
     early = []
     page = _results_page(page_at, contribute_calls=early)
     assert not early, "a request to /contribute was made before the box was ever pressed"
 
-    sent = {}
+    sent = []
     page.route(
         "**/api/v1/contribute",
-        lambda route: (sent.update(route.request.post_data_json), route.fulfill(status=204)),
+        lambda route: (sent.append(route.request.post_data_json), route.fulfill(status=204)),
     )
 
     page.locator("#contribute").check()
-    page.wait_for_timeout(400)
+    page.wait_for_timeout(1200)
+    assert not sent, (
+        "ticking the box on its own sent a /contribute - the tick is a statement "
+        "of intent and the Submit button beside it is what sends"
+    )
 
-    assert sent.get("token"), "no token was sent, so no row can be found to update"
+    _press_submit(page)
+    page.wait_for_timeout(CONTRIBUTE_GRACE_MS + _GRACE_SLACK_MS)
+
+    assert len(sent) == 1, f"Submit plus its five seconds sent {len(sent)} requests, not one"
+    assert sent[0].get("token"), "no token was sent, so no row can be found to update"
+
+
+@pytest.mark.browser
+def test_submit_is_disabled_until_the_box_is_ticked(page_at):
+    """"The tick alone must do nothing - no request. Submit is `disabled` until
+    the box is ticked." The second half is what makes the first half a *control*
+    rather than a trap: an enabled Submit over an unticked box either sends a
+    consent nobody gave or does nothing at all when pressed, and both are worse
+    than refusing the press in the markup.
+
+    Unticking again is asserted too, because a `disabled` attribute written once
+    at first render and then only ever removed would pass the two lines above it
+    and would leave Submit live over a box the visitor had just cleared.
+    """
+    page = _results_page(page_at)
+
+    action = page.locator("#contribute-action")
+    assert action.count() == 1, "the results page has no separate Submit button"
+    assert action.is_disabled() is True, (
+        "Submit is pressable before the visitor has ticked anything"
+    )
+
+    page.locator("#contribute").check()
+    page.wait_for_timeout(200)
+    assert action.is_disabled() is False, "Submit is still disabled over a ticked box"
+
+    page.locator("#contribute").uncheck()
+    page.wait_for_timeout(200)
+    assert action.is_disabled() is True, (
+        "Submit stayed pressable after the box was unticked again"
+    )
+
+
+@pytest.mark.browser
+def test_undo_cancels_the_send_and_leaves_the_box_ticked(page_at):
+    """**The five seconds, and what they are for.** `POST /contribute` is one-way
+    by construction - `set_public_contribution` only ever sets the flag TRUE and
+    §6.2.2 has no path that clears it - so the window is spent *before* the
+    request rather than after it: Undo cancels a `setTimeout`, and nothing needs
+    unsending because nothing was sent.
+
+    Two things are asserted, and the second is the one an implementation is
+    likely to get wrong. No request must ever arrive - checked well past the end
+    of the window the press armed, so a timer that was left running would have
+    fired by then. And the box must still be **ticked**, and pressable again:
+    the visitor's answer to "would you like to contribute" was yes, and only
+    their decision to send it now was undone. Clearing the tick would make Undo
+    a second, unasked-for reversal.
+    """
+    sent = []
+    page = _results_page(page_at, contribute_calls=sent)
+
+    page.locator("#contribute").check()
+    _press_submit(page)
+    page.wait_for_timeout(600)
+    assert page.locator(".contribute-countdown").count() == 1, (
+        "pressing Submit opened no visible window, so there is nothing to undo"
+    )
+
+    _press_submit(page)  # the same slot, now carrying Undo
+    page.wait_for_timeout(CONTRIBUTE_GRACE_MS + _GRACE_SLACK_MS)
+
+    assert not sent, "Undo did not stop the send; /contribute was called anyway"
+    assert page.locator(".contribute-countdown").count() == 0, (
+        "the countdown is still on screen after Undo"
+    )
+
+    control = page.locator("#contribute")
+    assert control.is_checked() is True, (
+        "Undo unticked the box as well - it cancels the send, not the choice"
+    )
+    assert control.is_disabled() is False, "the box is still locked after Undo"
+    assert page.locator("#contribute-action").is_disabled() is False, (
+        "Submit cannot be pressed again after an Undo, so the window was a trapdoor"
+    )
+
+    # And it really can be pressed again, on a fresh window.
+    _press_submit(page)
+    page.wait_for_timeout(CONTRIBUTE_GRACE_MS + _GRACE_SLACK_MS)
+    assert len(sent) == 1, f"the second Submit sent {len(sent)} requests, not one"
+
+
+@pytest.mark.browser
+def test_a_re_render_inside_the_window_does_not_grant_a_fresh_five_seconds(page_at):
+    """**Trap 1, measured.** `render()` (`calculator.js`) replaces
+    `main.innerHTML` on every `setState`, and the visitor is quite likely to be
+    typing in the improvement panel while the window runs. Two things could
+    reset and both are checked here, because each fails independently:
+
+    * the **timer**, if its handle lived anywhere inside `<main>`. It does not -
+      it is module scope in `results.js`, the same place `calculator.js` holds
+      `reloadTaxonomy` - and the assertion is that the request still arrives on
+      the original deadline. A re-render at ~2.5s into a 5s window would push it
+      to ~7.5s under an implementation that re-armed; the bound below is 6.5s,
+      which the honest one clears and the re-arming one cannot.
+    * the **picture of the timer**, which is a CSS animation, and a CSS
+      animation *does* restart when its element is recreated. `results.js`
+      writes a negative `animation-delay` from the absolute deadline on
+      `state.contributeArmedUntil` so the rebuilt bar resumes where the old one
+      was. Asserted on the bar's measured width rather than on the delay alone:
+      a delay attribute that is written but lands on an element with no
+      animation, or with the wrong duration, would satisfy the attribute check
+      and still show a visitor a full bar.
+    """
+    arrived = []
+    page = _results_page(page_at)
+    page.route(
+        "**/api/v1/contribute",
+        lambda route: (arrived.append(time.monotonic()), route.fulfill(status=204)),
+    )
+
+    page.locator("#contribute").check()
+    page.wait_for_timeout(200)
+    armed_at = time.monotonic()
+    _press_submit(page)
+    page.wait_for_timeout(250)
+
+    width = "() => document.querySelector('.contribute-countdown__bar').getBoundingClientRect().width"
+    full = page.evaluate(width)
+    assert full > 0, "the countdown bar has no width at the start of the window"
+
+    # ~2.5s in, force the re-render: a breakdown tab is `setState` and a full
+    # rebuild of the results page, the same thing a keystroke in the improvement
+    # panel does, and it needs no typing to be unambiguous.
+    page.wait_for_timeout(2300)
+    page.click('[data-action="breakdown-tab"] >> nth=1')
+    page.wait_for_timeout(150)
+
+    resumed = page.evaluate(width)
+    assert resumed < full * 0.75, (
+        "the countdown bar refilled after a re-render - it is showing the visitor "
+        f"a window they no longer have ({resumed:.1f}px of {full:.1f}px, about "
+        "2.5s into five)"
+    )
+
+    page.wait_for_timeout(CONTRIBUTE_GRACE_MS)
+    assert arrived, "the request never arrived at all, so nothing here was measured"
+    elapsed = arrived[0] - armed_at
+    assert elapsed < 6.5, (
+        "the re-render restarted the five-second window: the request went "
+        f"{elapsed:.2f}s after Submit was pressed, not about five"
+    )
 
 
 @pytest.mark.browser
@@ -1908,15 +2154,33 @@ def test_the_tick_does_not_visibly_undo_itself_while_the_request_is_in_flight(pa
     the box read back unchecked *and* disabled - a visitor ticks a consent box and
     watches it come back empty. The route below is held open rather than fulfilled,
     so this measures the box mid-flight rather than after an answer has arrived.
+
+    **Round four moved where "in flight" begins.** The request no longer leaves on
+    the `change` event, so reaching the in-flight state means ticking, pressing
+    Submit and letting the grace window run out first - and the rule this test was
+    written for now has to hold across a longer stretch than it did: from the press,
+    through the five seconds, and on through the request. All three are checked,
+    because `pending` and `armed` are separate flags in `contributeBlock` and a
+    version that locked only one of them would leave the box readable as unticked
+    for whichever half it forgot.
     """
     page = _results_page(page_at)
     held = {}
     page.route("**/api/v1/contribute", lambda route: held.setdefault("route", route))
 
     page.locator("#contribute").check()
-    page.wait_for_timeout(300)
+    _press_submit(page)
+    page.wait_for_timeout(600)
 
     control = page.locator("#contribute")
+    assert control.is_checked() is True, "the box is unticked while its window is open"
+    assert control.is_disabled() is True, (
+        "the box is still editable while the send it armed is counting down"
+    )
+
+    page.wait_for_timeout(CONTRIBUTE_GRACE_MS + _GRACE_SLACK_MS)
+    assert "route" in held, "the window closed and no request was made"
+
     assert control.is_checked() is True, (
         "the box is unticked while the request is still in flight"
     )
@@ -1939,8 +2203,7 @@ def test_the_confirmation_is_present_tense_and_names_no_past_success(page_at):
     page = _results_page(page_at)
     page.route("**/api/v1/contribute", lambda route: route.fulfill(status=204))
 
-    page.locator("#contribute").check()
-    page.wait_for_timeout(400)
+    _contribute(page)
 
     status = page.locator(".contribute-status").inner_text().lower()
     assert "has been added" not in status, (
@@ -2053,8 +2316,7 @@ def test_the_flower_blooms_only_when_motion_is_allowed(page_at):
     """
     ordinary = _results_page(page_at, reduced_motion="no-preference")
     ordinary.route("**/api/v1/contribute", lambda route: route.fulfill(status=204))
-    ordinary.locator("#contribute").check()
-    ordinary.wait_for_timeout(300)
+    _contribute(ordinary, slack=300)
     assert ordinary.locator(".contribute-flower").count() >= 1, (
         "no flower ever appears, even with motion allowed - the reduced-motion "
         "assertion below would prove nothing"
@@ -2062,8 +2324,7 @@ def test_the_flower_blooms_only_when_motion_is_allowed(page_at):
 
     reduced = _results_page(page_at, reduced_motion="reduce")
     reduced.route("**/api/v1/contribute", lambda route: route.fulfill(status=204))
-    reduced.locator("#contribute").check()
-    reduced.wait_for_timeout(300)
+    _contribute(reduced, slack=300)
     assert reduced.locator(".contribute-flower").count() == 0, (
         "the flower animation element is present in the DOM under "
         "prefers-reduced-motion: reduce"
@@ -2074,6 +2335,99 @@ def test_the_flower_blooms_only_when_motion_is_allowed(page_at):
     assert reduced.locator(".contribute-status").count() == 1, (
         "the contributed state is not fully conveyed without the animation"
     )
+
+
+@pytest.mark.browser
+def test_reduced_motion_still_shows_the_window_running_down(page_at):
+    """**The one animation in `styles.css` that reduced motion does not simply
+    switch off, and the reasoning is the opposite of the flower's.** The flower
+    is a flourish over a decision already made, so suppressing it costs nothing.
+    The countdown is a five-second deadline the visitor is being invited to beat:
+    removing it would leave someone who asked for no motion with an Undo button
+    and no way to tell how much of their window was left, which is worse for
+    them than the movement was. So the bar stays and its timing function becomes
+    `steps(5)` - it jumps once a second instead of sliding.
+
+    Both halves are asserted, for `test_the_flower_blooms_only_when_motion_is_
+    allowed`'s reason in reverse: that the bar is still animating at all, and
+    that it is animating in discrete steps rather than continuously. A stylesheet
+    that dropped the whole `@media` block would fail the second; one that set
+    `animation: none` would fail the first. And the sentence above the control
+    must say "five seconds" in words, so how long they have never depends on
+    seeing the bar at all.
+    """
+    page = _results_page(page_at, reduced_motion="reduce")
+    page.route("**/api/v1/contribute", lambda route: route.fulfill(status=204))
+
+    page.locator("#contribute").check()
+    _press_submit(page)
+    page.wait_for_timeout(400)
+
+    assert page.locator(".contribute-countdown").count() == 1, (
+        "there is no countdown at all under prefers-reduced-motion, so a visitor "
+        "who asked for no animation is given a deadline and no sight of it"
+    )
+    bar = page.evaluate(
+        "() => { const style = getComputedStyle(document.querySelector('.contribute-countdown__bar'));"
+        " return {name: style.animationName, timing: style.animationTimingFunction,"
+        " duration: style.animationDuration}; }"
+    )
+    assert bar["name"] not in ("none", ""), (
+        f"the countdown bar does not animate under reduced motion: {bar}"
+    )
+    assert bar["duration"] == "5s", f"the bar does not run for the window's own five seconds: {bar}"
+    assert "steps(5" in bar["timing"], (
+        "the countdown slides continuously under prefers-reduced-motion rather "
+        f"than stepping: {bar}"
+    )
+
+    said = page.locator(".contribute-block").inner_text().lower()
+    assert "five seconds" in said, (
+        "nothing on the page says how long the window is, so the bar is the only "
+        "source of a fact a visitor may not be able to watch"
+    )
+
+
+@pytest.mark.browser
+def test_a_recalculation_does_not_ask_again_or_offer_submit_again(page_at):
+    """**Consent survives a recalculation, and round four must not reopen it.**
+    `upsert_submission` revises the same row on the same token, and the flag this
+    control set is not touched by an update - so a visitor who contributes, goes
+    back to edit their data and recalculates is looking at the same contributed
+    row with new figures on it. Showing them a fresh, unticked Submit button
+    would be asking a question the server has already been told the answer to,
+    and pressing it would be a second `/contribute` for a row already flagged.
+
+    The Submit button specifically is what this asserts, because it is the new
+    surface: the tick's own survival was already covered, and an implementation
+    that reset only `contributeTicked` on the return trip would leave the box
+    correctly ticked and still hand back a live Submit beside it.
+    """
+    sent = []
+    page = _results_page(page_at, contribute_calls=sent)
+    _contribute(page)
+    assert len(sent) == 1, f"the first contribution sent {len(sent)} requests"
+    assert page.locator(".contribute-status").count() == 1, "nothing was contributed to begin with"
+
+    # Back to the review step and calculate again - the same token, revised.
+    page.click('.results-page .step-nav [data-action="go-step"]')
+    page.wait_for_selector('[data-action="calculate"]')
+    page.click('.step-nav [data-action="calculate"]')
+    page.wait_for_selector(".results-page", timeout=15000)
+    page.wait_for_timeout(300)
+
+    assert page.locator(".contribute-status").count() == 1, (
+        "the done state was lost on a recalculation, so the visitor is asked again "
+        "about a row that is already contributed"
+    )
+    assert page.locator("#contribute-action").count() == 0, (
+        "a recalculation put the Submit button back over an already-contributed row"
+    )
+    control = page.locator("#contribute")
+    assert control.is_checked() is True and control.is_disabled() is True, (
+        "the tick came back editable after a recalculation"
+    )
+    assert len(sent) == 1, "the recalculation sent a second /contribute on its own"
 
 
 @pytest.mark.browser
@@ -2098,9 +2452,12 @@ def test_the_flower_does_not_bloom_over_a_failed_contribute(page_at):
     # `.click()` rather than `.check()`: the box settles back to unticked once the
     # failure lands, so `.check()`'s own "ends up checked" postcondition would retry
     # the click forever and time out - the failure path is exactly what this test
-    # means to drive.
+    # means to drive. Round four: the click only ticks, so Submit and its five
+    # seconds are what actually reach the failing route.
     page.locator("#contribute").click()
-    page.wait_for_timeout(400)
+    page.wait_for_timeout(200)
+    _press_submit(page)
+    page.wait_for_timeout(CONTRIBUTE_GRACE_MS + _GRACE_SLACK_MS)
 
     assert page.locator("#contribute").is_checked() is False, (
         "the control still reads ticked after the contribute request failed"

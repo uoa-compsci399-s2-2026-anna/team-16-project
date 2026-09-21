@@ -183,3 +183,56 @@ def test_the_mass_tolerance_is_ten_grams_inclusive_in_both_directions(
         )
     )
     assert (entry_rule_problems(payload, prevention_codes=()) == []) is expected
+
+
+#: v1.67. The four states of the period, as the two payloads see them. The
+#: pair is fixed and in the past, so `PERIOD_CEILING_HOURS` cannot make these
+#: cases expire the way a hard-coded future date would.
+_PERIOD_STATES = [
+    (None, None, None, True),
+    ("custom", "2026-09-14T08:10", "2026-09-14T16:20", True),
+    ("one_week", "2026-09-14T08:10", "2026-09-14T16:20", True),
+    ("one_week", None, None, True),
+    ("custom", None, None, False),
+    (None, "2026-09-14T08:10", "2026-09-14T16:20", False),
+    ("custom", "2026-09-14T08:10", None, False),
+    ("custom", "2026-09-14T16:20", "2026-09-14T08:10", False),
+    ("custom", "1969-12-31T08:10", "1969-12-31T16:20", False),
+]
+
+
+def _accepts(model, time_frame, start, end, **extra):
+    body = dict(
+        _payload([{"destination": "landfill", "qty_kg": "1.250"}]),
+        time_frame=time_frame, period_start=start, period_end=end, **extra,
+    )
+    try:
+        model.model_validate(body)
+        return True
+    except ValidationError:
+        return False
+
+
+@pytest.mark.parametrize(("time_frame", "start", "end", "accepted"), _PERIOD_STATES)
+def test_calculate_and_export_agree_about_every_period_state(
+    time_frame, start, end, accepted
+):
+    """§6.2 and §6.2.3, v1.67. One rule, two routes, and no way to drift.
+
+    `ExportPayload` is deliberately not a subclass of `CalculatePayload`, so
+    before `PricingOptions` existed the two models restated each other's
+    checks and could come to disagree. A period accepted by `/calculate` and
+    refused by `/export/pdf` would mean a visitor whose figures were computed
+    and whose download then failed, with nothing on screen to say why; the
+    reverse would mean a document labelled with a period the calculation that
+    produced it could not have carried.
+
+    Asserted as one parametrisation over both models rather than two lists,
+    because two lists is precisely the shape that drifts.
+    """
+    from api.export import ExportPayload
+
+    assert _accepts(CalculatePayload, time_frame, start, end) is accepted
+    assert _accepts(
+        ExportPayload, time_frame, start, end, locale="en"
+    ) is accepted

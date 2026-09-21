@@ -276,6 +276,12 @@ def calculate(payload: CalculatePayload, request: Request) -> ContractJSONRespon
                 engine_request,
                 factor_set_id,
                 time_frame=payload.time_frame,
+                # v1.67, and passed beside `time_frame` rather than through
+                # `engine_request` for the same reason it is: the engine is
+                # never handed the period, and a pair of instants is what it
+                # would take to derive a duration the contract forbids.
+                period_start=payload.period_start,
+                period_end=payload.period_end,
             )
         except FactorSetNotFoundError as exc:
             raise _repository_problem(exc) from exc

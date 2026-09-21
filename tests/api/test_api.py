@@ -3,6 +3,7 @@ from httpx import ASGITransport, AsyncClient
 import io
 import json
 import zipfile
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -946,6 +947,237 @@ async def test_the_new_fields_are_optional_and_absent_is_not_zero(app):
         assert entry.total_input_kg is None
         assert entry.total_value_nzd is None
         assert entry.wasted_value_nzd is None
+
+
+#: v1.67. A shift, which is the case the client asked for by name, and it is
+#: in the past so the `PERIOD_CEILING_HOURS` bound can never make this pair
+#: expire the way a hard-coded future date would.
+_SHIFT_START = "2026-09-14T08:10:00"
+_SHIFT_END = "2026-09-14T16:20:00"
+
+
+def _period_body(**extra):
+    return _body([{"destination": "landfill", "qty_kg": "1200.500"}], **extra)
+
+
+async def _post(app, body):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as client:
+        return await client.post("/api/v1/calculate", json=body)
+
+
+@pytest.mark.asyncio
+async def test_a_custom_period_is_accepted_and_stored(app):
+    """§6.2, v1.67, end to end: sent, validated, persisted, verbatim.
+
+    Driven through the real endpoint rather than by constructing a payload,
+    for the reason the v1.48 test above gives: `extra="forbid"` and
+    `upsert_submission` are two separate places a new field can be accepted
+    and then quietly dropped, and only a round trip crosses both.
+
+    **Verbatim is the assertion.** The stored instants are the visitor's
+    local wall clock and carry no zone (§2.3); a response that came back
+    shifted by twelve hours would mean something on the path had decided
+    which zone this was, which is precisely what this field does not know.
+    """
+    response = await _post(app, _period_body(
+        time_frame="custom", period_start=_SHIFT_START, period_end=_SHIFT_END,
+    ))
+    assert response.status_code == 200, response.text
+
+    with app.state.session_factory() as session:
+        row = session.scalars(select(Submission).order_by(Submission.id.desc())).first()
+        assert row.time_frame == "custom"
+        assert row.period_start == datetime(2026, 9, 14, 8, 10)
+        assert row.period_end == datetime(2026, 9, 14, 16, 20)
+
+
+@pytest.mark.asyncio
+async def test_recalculating_on_the_same_token_replaces_the_whole_period(app):
+    """§5.3, v1.67. The upsert's **update** path, which is where a new column
+    is most easily written on insert and forgotten.
+
+    A visitor changing one number and pressing Calculate again is the
+    commonest thing that happens on this screen, and it reuses the token. A
+    period written only on insert would leave the row saying whatever the
+    first calculation said, forever.
+
+    **All three fields move together, and this asserts all three.** Carrying
+    `time_frame` across while leaving the interval behind would leave the row
+    in exactly the state `ck_submission_period` exists to forbid -- here,
+    `one_week` against a shift the visitor has since replaced.
+    """
+    first = await _post(app, _period_body(
+        time_frame="custom", period_start=_SHIFT_START, period_end=_SHIFT_END,
+    ))
+    assert first.status_code == 200, first.text
+    token = first.json()["token"]
+    assert token
+
+    second = await _post(app, _period_body(
+        token=token, time_frame="one_week",
+        period_start="2026-09-07T00:00:00", period_end="2026-09-14T00:00:00",
+    ))
+    assert second.status_code == 200, second.text
+    assert second.json()["token"] == token
+
+    with app.state.session_factory() as session:
+        rows = session.scalars(select(Submission)).all()
+        row = [r for r in rows if r.token == token][0]
+        assert row.time_frame == "one_week"
+        assert row.period_start == datetime(2026, 9, 7)
+        assert row.period_end == datetime(2026, 9, 14)
+
+
+@pytest.mark.asyncio
+async def test_recalculating_can_take_the_period_away_again(app):
+    """The other half of the update path, and the one a `if period_start:`
+    guard would quietly break.
+
+    A visitor who set a period and then moved step 5 back to "Not stated"
+    must end with a row carrying neither instant -- not with the old shift
+    still attached to a `time_frame` that no longer mentions it, which is
+    both wrong and a `ck_submission_period` violation waiting for the next
+    write.
+    """
+    first = await _post(app, _period_body(
+        time_frame="custom", period_start=_SHIFT_START, period_end=_SHIFT_END,
+    ))
+    token = first.json()["token"]
+
+    second = await _post(app, _period_body(token=token))
+    assert second.status_code == 200, second.text
+
+    with app.state.session_factory() as session:
+        rows = session.scalars(select(Submission)).all()
+        row = [r for r in rows if r.token == token][0]
+        assert row.time_frame is None
+        assert row.period_start is None and row.period_end is None
+
+
+@pytest.mark.asyncio
+async def test_a_preset_carries_its_interval_too(app):
+    """v1.67's designed normal case, and the reason `time_frame` was not
+    collapsed to `custom`.
+
+    The four presets are templates that fill the picker; `time_frame` goes on
+    recording which button was pressed. So a row can and should say both, and
+    the question *did they mean a standard week, or did they choose those
+    dates?* stays answerable -- which an interval on its own cannot answer.
+    """
+    response = await _post(app, _period_body(
+        time_frame="one_week", period_start=_SHIFT_START, period_end=_SHIFT_END,
+    ))
+    assert response.status_code == 200, response.text
+
+    with app.state.session_factory() as session:
+        row = session.scalars(select(Submission).order_by(Submission.id.desc())).first()
+        assert row.time_frame == "one_week"
+        assert row.period_start == datetime(2026, 9, 14, 8, 10)
+
+
+@pytest.mark.asyncio
+async def test_a_preset_with_no_interval_is_still_accepted(app):
+    """Every row written before v1.67 has this shape, and the form that
+    produced them is still the form until WP3 lands. A revision that made the
+    old shape a 400 would break the deployed front end on the day it shipped.
+    """
+    response = await _post(app, _period_body(time_frame="one_month"))
+    assert response.status_code == 200, response.text
+
+    with app.state.session_factory() as session:
+        row = session.scalars(select(Submission).order_by(Submission.id.desc())).first()
+        assert row.time_frame == "one_month"
+        assert row.period_start is None and row.period_end is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "extra, issue",
+    [
+        (dict(time_frame="custom", period_start=_SHIFT_START),
+         "period_half_interval"),
+        (dict(time_frame="custom", period_end=_SHIFT_END),
+         "period_half_interval"),
+        (dict(time_frame="custom"),
+         "period_custom_without_interval"),
+        (dict(period_start=_SHIFT_START, period_end=_SHIFT_END),
+         "period_without_time_frame"),
+        (dict(time_frame="custom", period_start=_SHIFT_END, period_end=_SHIFT_START),
+         "period_ends_before_it_starts"),
+        (dict(time_frame="custom", period_start="1969-12-31T08:10:00",
+              period_end="1969-12-31T16:20:00"),
+         "period_before_1970"),
+        (dict(time_frame="custom", period_start="2026-09-14T08:10:00+13:00",
+              period_end="2026-09-14T16:20:00+13:00"),
+         "period_carries_a_zone"),
+    ],
+)
+async def test_the_period_contradictions_and_bounds_are_refused(app, extra, issue):
+    """§6.2's v1.67 rules, on the wire, each with its own `issue`.
+
+    **`issue` and not just the status code**, because §9's `details[].issue`
+    is what the front end binds a message to. The four cross-field rules all
+    report `field: "body"` -- a `model_validator` reports against the
+    location of the model, which is this module's own standing complaint --
+    so `issue` is the only thing distinguishing them, and a validator that
+    refused the right payloads with one indistinguishable code would pass a
+    test that checked the status alone.
+    """
+    response = await _post(app, _period_body(**extra))
+
+    assert response.status_code == 400, response.text
+    body = response.json()
+    assert body["error"]["code"] == "VALIDATION_ERROR"
+    issues = {detail["issue"] for detail in body["error"]["details"]}
+    assert issue in issues, (
+        f"expected issue {issue!r} for {extra!r}; got {body['error']['details']}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_period_far_enough_ahead_is_refused_and_38_hours_is_not(app):
+    """The ceiling, and **why it is 38 hours rather than 24.**
+
+    The stored instants are zoneless local wall-clock time, so this server
+    cannot tell which side of the date line a value was typed on. A visitor
+    in New Zealand is at UTC+12 or +13, and the widest civil offset anywhere
+    is UTC+14; their honest "now + 24 hours" therefore reads up to 24 + 14 =
+    38 hours ahead of this server's UTC clock. The exact 24-hour rule lives
+    in the form, where "now" is the visitor's own now.
+
+    Both halves are asserted deliberately. A test that only proved the
+    refusal would pass just as happily against a bound tightened to 24 --
+    which would refuse a shift somebody in Auckland entered correctly, at the
+    time it actually happened, with nothing in the payload they could change
+    to make it pass.
+    """
+    now = datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0)
+
+    inside = await _post(app, _period_body(
+        time_frame="custom",
+        period_start=now.isoformat(),
+        period_end=(now + timedelta(hours=30)).isoformat(),
+    ))
+    assert inside.status_code == 200, (
+        "30 hours ahead is inside the window a UTC+13 visitor can honestly "
+        f"reach: {inside.text}"
+    )
+
+    outside = await _post(app, _period_body(
+        time_frame="custom",
+        period_start=now.isoformat(),
+        period_end=(now + timedelta(hours=40)).isoformat(),
+    ))
+    assert outside.status_code == 400, outside.text
+    details = outside.json()["error"]["details"]
+    assert {d["issue"] for d in details} == {"period_too_far_ahead"}
+    assert [d["field"] for d in details] == ["period_end"]
+    assert "38" in details[0]["message"], (
+        "the message must say the number out loud, so that a reader meeting "
+        "this text first does not read 38 as a typo for 24: "
+        f"{details[0]['message']!r}"
+    )
 
 
 @pytest.mark.asyncio

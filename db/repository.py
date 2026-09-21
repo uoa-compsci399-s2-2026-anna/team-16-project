@@ -1560,6 +1560,8 @@ def upsert_submission(
     factor_set_id: int,
     *,
     time_frame: str | None = None,
+    period_start: datetime | None = None,
+    period_end: datetime | None = None,
 ) -> tuple[int, str]:
     """Contract §5.3. One call, one submission, N entries.
 
@@ -1577,6 +1579,31 @@ def upsert_submission(
     required not to use. The three per-entry numbers, by contrast, are read
     straight off `req.entries[i]`: `EntryInput` carries them (v1.48), so there
     is no second, wire-shaped object to pair up by position any more.
+
+    `period_start` and `period_end` (v1.67) sit beside `time_frame` and are
+    kept off `req` for exactly the same reason, which is the more important
+    half of why they are written out here rather than folded into the request
+    object: the period is now a pair of *instants*, and two instants are what
+    it takes to write `(end - start)` against a metric total. The contract
+    forbids that outright (§2.3), and the cheapest way to keep forbidding it
+    is to make sure the engine never sees either value.
+
+    **What these two instants are.** The visitor's **local wall-clock time,
+    with no zone** -- what a person read off the clock on their own wall,
+    stored verbatim. Adequate as a label, printed back to the visitor who
+    typed it; **inadequate for comparison across submissions**, because two
+    rows both saying `08:10` may be two hours apart or twenty-two and nothing
+    on either row can say which (§2.3 stores no address and no user agent, so
+    no zone can be inferred, by design). `db/models.py` says this at the
+    column and `alembic/versions/0018_submission_period.py` says it at the
+    migration; it is repeated here because this is the function that writes
+    them.
+
+    They are validated on the wire and again by `ck_submission_period`
+    (§2.3): both or neither, running forwards, not before the epoch, `custom`
+    only with an interval and an interval only with a `time_frame`. This
+    function does not re-check them -- the CHECK is what makes that safe, and
+    a third copy of the rule would be a third thing to keep in step.
 
     Does **not** set `is_public_contributed`: it defaults false at the schema
     and only the opt-in route Task 6 owns may change it.
@@ -1602,6 +1629,8 @@ def upsert_submission(
             factor_set_id=factor_set_id,
             gwp_horizon=req.gwp_horizon,
             time_frame=time_frame,
+            period_start=period_start,
+            period_end=period_end,
         )
         session.add(submission)
         session.flush()
@@ -1611,7 +1640,13 @@ def upsert_submission(
         submission.gwp_horizon = req.gwp_horizon
         # Written on the update path too: a second calculation reusing the
         # same token would otherwise keep the first one's period forever.
+        # All three together, and never one without the others: leaving the
+        # interval behind while `time_frame` moved would leave the row in
+        # exactly the state `ck_submission_period` exists to forbid --
+        # `one_month` against last week's shift, or `custom` against nothing.
         submission.time_frame = time_frame
+        submission.period_start = period_start
+        submission.period_end = period_end
         # §5.3: the entry set is rebuilt, not patched -- the entries carry no
         # client-supplied identity to reconcile a removed one against an added
         # one. Cleared through the ORM relationship rather than by a bulk

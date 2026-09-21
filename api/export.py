@@ -36,15 +36,23 @@ route that persists nothing and always prices the published set, and
 inheriting them would invite a caller to believe one of them does something
 here.
 
-**But it no longer repeats that model's validators.** ``gwp_horizon`` and
-``time_frame`` — and the two closed-vocabulary checks over them — now live on
-``api.schemas.PricingOptions``, which both payloads inherit. Task 2's
-implementer flagged the duplication and was right to: duplicated validators
-drift, and a horizon this route accepted while ``/calculate`` refused it would
-mean two documents of one request disagreeing about methane, with nothing to
-say which was right. The shared base carries exactly the two fields the two
-models have in common and none of the four they do not, so the reason for not
-inheriting ``CalculatePayload`` is untouched.
+**But it no longer repeats that model's validators.** ``gwp_horizon``,
+``time_frame`` and — from v1.67 — ``period_start`` and ``period_end``, with
+every check over them, live on ``api.schemas.PricingOptions``, which both
+payloads inherit. Task 2's implementer flagged the duplication and was right
+to: duplicated validators drift, and a horizon this route accepted while
+``/calculate`` refused it would mean two documents of one request disagreeing
+about methane, with nothing to say which was right. v1.67's interval joined
+them there for the same reason — a download and the calculation it documents
+must not disagree about the period the figures cover either. The shared base
+carries exactly the fields the two models have in common and none of the four
+they do not, so the reason for not inheriting ``CalculatePayload`` is
+untouched.
+
+**This route persists nothing, so the interval is a label here and not even a
+stored one.** ``period_start`` and ``period_end`` reach ``ExportPayload`` so
+that the document can print the period its figures cover; no row is written,
+and ``upsert_submission`` is not called (see above).
 """
 
 from __future__ import annotations

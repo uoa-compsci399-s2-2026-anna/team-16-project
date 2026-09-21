@@ -23,6 +23,29 @@ would have been green throughout. What was wrong was two rectangles overlapping,
 so two rectangles are what is compared -- at five widths, in both writing
 directions, in the state a visitor gets without touching anything.
 
+**Three more defects landed here afterwards, and all three are geometry too.**
+
+*Press the second item and the third lights up.* A jump leaves its target at
+`top: 24` (`scroll-margin-top`, measured at all four sections), the reading band
+is 162-360 at a 900px viewport, and *Tangible equivalents* is 287px tall -- so it
+rested at 24-311 with the next section creeping to 347, 13px inside the band, and
+the rule "take the last section in the band" handed the mark to the successor. The
+rule is the first section in the band now, which is the one occupying the band's
+top edge, and a press additionally *pins* its own section until the reader scrolls:
+`html { scroll-behavior: smooth }` means the observer spends several hundred
+milliseconds answering honestly about a page still in transit.
+
+*The current item was a filled Pea block.* Pea measures 2.04:1 on the panel's
+frosted ground and 2.17:1 on the white actually painted behind it, so "the item's
+text in the accent" is not available at all; the mark is Kale at full weight
+against a list pushed back to `--muted`, lifted by a Pea-tinted shadow, with the
+accent on a rule in a green dark enough to carry it. The ratios are asserted, not
+the hex values.
+
+*The docked nav had a handle.* It is permanent in that regime, so there was nothing
+for the handle to expand -- and it was in the tab order. `display: none`, measured
+by `focus()` refusing it rather than by a class name.
+
 **The scroll-spy is asserted through the observer's own output**, not through the
 observer. `render()` (`web/js/calculator.js`) replaces `main.innerHTML` on every
 `setState`, so the four sections the `IntersectionObserver` watches are destroyed
@@ -52,6 +75,7 @@ Requires Playwright and the stack::
 from __future__ import annotations
 
 import os
+import re
 
 import pytest
 
@@ -115,9 +139,63 @@ GEOMETRY = """
     panelColor: panelStyle ? panelStyle.color : null,
     dataOpen: nav ? nav.getAttribute('data-open') : null,
     ariaExpanded: handle ? handle.getAttribute('aria-expanded') : null,
+    handleDisplay: handle ? getComputedStyle(handle).display : null,
   };
 }
 """
+
+#: Can the handle be reached at all? `display: none` is what takes it out of the
+#: accessibility tree and the tab order together, and the honest question to ask of
+#: the tab order is whether focus will land on the element -- `focus()` is refused by
+#: a `display: none` button and accepted by every other way of hiding one, which is
+#: why this is asked rather than the computed `display` alone.
+FOCUS_HANDLE = """
+() => {
+  const handle = document.querySelector('.results-floating-nav__handle');
+  if (!handle) return {present: false, focused: false};
+  handle.focus();
+  return {present: true, focused: document.activeElement === handle};
+}
+"""
+
+#: Put a section's top on the line a *click* would leave it on. `24` is
+#: `scroll-margin-top` (`styles.css`) and `SECTION_REST_TOP` (`results.js`), and it
+#: is the position the tie-break is decided at -- see
+#: `test_the_band_marks_the_section_at_its_top_edge_not_the_one_creeping_in_below`.
+SCROLL_TO_REST = """
+id => {
+  const target = document.getElementById(id);
+  window.scrollTo({top: target.getBoundingClientRect().top + window.scrollY - 24, behavior: 'instant'});
+}
+"""
+
+#: Every section's box, so an assertion about which one the spy picked can print the
+#: geometry that made that the right or the wrong answer.
+SECTION_BOXES = """
+() => ['impact-summary','tangible-equivalents','breakdown-section','improvement-section'].map(id => {
+  const r = document.getElementById(id).getBoundingClientRect();
+  return {id, top: Math.round(r.top), bottom: Math.round(r.bottom), height: Math.round(r.height)};
+})
+"""
+
+
+def _luminance(colour):
+    """WCAG relative luminance of an `rgb(r, g, b)` string or a `#rrggbb` literal."""
+    if colour.startswith("#"):
+        parts = [int(colour[i:i + 2], 16) for i in (1, 3, 5)]
+    else:
+        parts = [int(part) for part in re.findall(r"\d+", colour)[:3]]
+    channels = []
+    for part in parts:
+        value = part / 255.0
+        channels.append(value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4)
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+
+
+def _contrast(first, second):
+    """The WCAG 2.x ratio between two colours, in the range 1.0 - 21.0."""
+    high, low = sorted((_luminance(first), _luminance(second)), reverse=True)
+    return (high + 0.05) / (low + 0.05)
 
 #: Which link carries the reader's position, and how many claim to.
 MARK = """
@@ -192,7 +270,7 @@ def _overlap(first, second):
     return max(0.0, min(first["right"], second["right"]) - max(first["left"], second["left"]))
 
 
-def _open(browser, width, height=900, lang="en", init_script=None):
+def _open(browser, width, height=900, lang="en", init_script=None, force_auto_scroll=True):
     #: `bypass_csp` is instrumentation and nothing more, exactly as it is in
     #: `test_step_three_zones_browser.py`: `style-src 'self'` correctly refuses the
     #: `<style>` element `add_style_tag` creates, and `FORCE_AUTO` is the only
@@ -209,7 +287,11 @@ def _open(browser, width, height=900, lang="en", init_script=None):
         context.close()
         pytest.skip(f"the front end is not being served at {BASE}: {error}")
     page.wait_for_selector('[data-action="start"]', timeout=10000)
-    page.add_style_tag(content=FORCE_AUTO)
+    #: One test wants the smooth scroll left ON, because what it measures is the
+    #: mark's behaviour *during* the travel a press starts. Everything else wants it
+    #: off, for the reason `FORCE_AUTO` gives.
+    if force_auto_scroll:
+        page.add_style_tag(content=FORCE_AUTO)
     return context, page
 
 
@@ -371,38 +453,145 @@ def test_the_panel_is_open_where_it_fits_beside_the_column_and_closed_where_it_w
     assert measured["ariaExpanded"] is None, measured["ariaExpanded"]
 
 
-@pytest.mark.parametrize("width,opens", [(1280, True), (1600, False)])
-def test_the_first_press_of_the_handle_inverts_whichever_default_is_on_screen(browser, width, opens):
-    """**One control, two defaults, and the first press has to know which.**
+@pytest.mark.parametrize("width", [1100, 1280, 1440])
+def test_the_first_press_of_the_handle_opens_the_list_it_is_the_only_way_into(browser, width):
+    """**The handle now belongs to one regime, and in that regime the default is
+    closed - so the first press opens.**
 
-    `state.resultsNavOpen` is `undefined` until the visitor touches the handle -
-    that is what lets the stylesheet decide - so the first press has nothing on
-    `state` to invert. It used to assume the default was "open" and set `false`,
-    which is correct docked and a dead button everywhere else: press, and the
-    already-closed panel is closed again.
+    `state.resultsNavOpen` is `undefined` until the visitor touches the handle, and
+    the first press has nothing on `state` to invert. It used to assume the default
+    was "open" and set `false`, which was a dead button here: press, and the
+    already-closed panel is closed again. It then asked `resultsNavIsDocked()` which
+    of two defaults was on screen. There is only one default a press can be made
+    against now, because the docked regime draws no handle at all (the test below),
+    but the expression is unchanged and the behaviour it has to produce is this.
 
     Mutation: `state.resultsNavOpen === undefined ? false : ...` back in
-    `calculator.js` leaves the 1280 case pressing a button that does nothing.
+    `calculator.js` leaves every width here pressing a button that does nothing.
     """
     context, page = _open(browser, width)
     try:
         _to_results(page)
         before = page.evaluate(GEOMETRY)
-        assert before["panelVisible"] is not opens, "the fixture is not in the state this test is about"
+        assert not before["panelVisible"], "the fixture is not in the closed regime this test is about"
         page.click(".results-floating-nav__handle")
         page.wait_for_timeout(300)
         after = page.evaluate(GEOMETRY)
     finally:
         context.close()
 
-    assert after["panelVisible"] is opens, (
-        f"at {width}px the panel was {'closed' if not before['panelVisible'] else 'open'} and the "
-        f"first press left it {'open' if after['panelVisible'] else 'closed'}: the press has to "
-        f"invert what is on screen, not a default that only holds in one regime"
+    assert after["panelVisible"], (
+        f"at {width}px the panel was closed and the first press left it closed. This is "
+        f"the only regime with a handle in it, and the only thing its first press can "
+        f"sensibly do is show the list"
     )
     #: And now the markup says so, in both places, agreeing with each other.
-    assert after["dataOpen"] == ("true" if opens else "false"), after["dataOpen"]
-    assert after["ariaExpanded"] == ("true" if opens else "false"), after["ariaExpanded"]
+    assert after["dataOpen"] == "true", after["dataOpen"]
+    assert after["ariaExpanded"] == "true", after["ariaExpanded"]
+
+
+@pytest.mark.parametrize("width", [w for w in WIDTHS if w >= DOCKED_FROM])
+def test_the_docked_nav_is_simply_there_and_has_no_handle_to_press(browser, width):
+    """**Docked, the panel is not "open": it IS the nav.**
+
+    The list is permanent in this regime, so a control that expands and collapses
+    it has nothing to do - and it was drawn anyway, 52px of orange disc above a
+    list it could not affect, reachable by Tab, carrying an `aria-expanded` about
+    a panel whose state it no longer decided.
+
+    **`display: none` and not a class name is what is measured**, in two ways that
+    fail differently: the computed `display`, and whether `focus()` can put the
+    document's focus on the button. The second is the one about the tab order, and
+    it is the one `visibility: hidden` or a zero-size box would not satisfy - both
+    of those leave a button that a *reader* cannot see and a keyboard visitor still
+    has to Tab through.
+
+    The comparison at 1280 in the same test is what stops this passing against a
+    nav with no handle anywhere: it asserts the handle is focusable where it is
+    supposed to exist.
+
+    Mutations, both measured: deleting `.results-floating-nav__handle
+    { display: none }` from the `min-width: 1600px` block fails both docked widths
+    on a handle that still takes focus. Replacing it with `opacity: 0;
+    pointer-events: none` - a handle no reader can see - fails on the same
+    assertion, which is the one this test exists for: that is a 52px button still
+    sitting in a keyboard visitor's path.
+    """
+    context, page = _open(browser, width)
+    try:
+        _to_results(page)
+        measured = _at(page, width)
+        docked_focus = page.evaluate(FOCUS_HANDLE)
+        #: The control for the assertion above, on the same page: a resize is not a
+        #: re-render, so the button below is the same button, in the regime that
+        #: still has a use for it.
+        _at(page, 1280)
+        narrow_focus = page.evaluate(FOCUS_HANDLE)
+    finally:
+        context.close()
+
+    assert measured["panelVisible"], "the docked list is not on screen, so there is nothing to be permanent"
+    #: The tab order first, because it is the assertion with the most ways to be
+    #: wrong: `opacity: 0` hides the handle from a reader and leaves it here.
+    assert docked_focus["focused"] is False, (
+        f"at {width}px `focus()` still lands on the handle, so it is in the tab order: a "
+        f"keyboard visitor Tabs onto a control that is not on screen and cannot change "
+        f"anything. `opacity: 0` and a clipped box both leave it here; `display: none` "
+        f"is what removes it"
+    )
+    assert measured["handle"]["width"] == 0 and measured["handle"]["height"] == 0, (
+        f"at {width}px the handle still occupies {measured['handle']['width']:.0f}x"
+        f"{measured['handle']['height']:.0f}px of the gutter"
+    )
+    assert measured["handleDisplay"] == "none", (
+        f"at {width}px the handle is still drawn (`display: {measured['handleDisplay']}`). The "
+        f"list is permanent here, so the handle is a control with nothing to expand"
+    )
+    assert narrow_focus["focused"] is True, (
+        "the handle cannot be focused at 1280px either, so the assertion above is about a "
+        "handle that does not exist anywhere rather than about the docked regime"
+    )
+
+
+def test_a_nav_the_visitor_closed_while_narrow_still_docks_open_when_the_window_grows(browser):
+    """**The other half of removing the handle**, and the reason the docked panel
+    carries no `:not([data-open="false"])` guard any more.
+
+    `data-open="false"` can only be written by a press, a press can only happen in
+    the narrow regime, and the attribute survives a resize into the docked one -
+    nothing re-renders on a resize. With the guard in place that visitor arrived in
+    the docked regime with no list and no handle to bring one back: a nav that is
+    not there at all.
+
+    Mutation: putting `.results-floating-nav:not([data-open="false"])` back in front
+    of the docked panel rule fails here with `panelVisible` false at 1920 - and
+    every other test in this file stays green, because none of them close the panel
+    before they measure the docked one.
+    """
+    context, page = _open(browser, 1280)
+    try:
+        _to_results(page)
+        page.click(".results-floating-nav__handle")
+        page.wait_for_timeout(250)
+        page.click(".results-floating-nav__handle")
+        page.wait_for_timeout(250)
+        closed = page.evaluate(GEOMETRY)
+        docked = _at(page, 1920)
+    finally:
+        context.close()
+
+    assert closed["dataOpen"] == "false", (
+        f"the two presses did not leave the nav explicitly closed ({closed['dataOpen']}), so "
+        f"the resize below is not carrying the state this test is about"
+    )
+    assert docked["dataOpen"] == "false", (
+        "the resize cleared `data-open`, so nothing here proves the docked rules ignore it"
+    )
+    assert docked["panelVisible"], (
+        "a visitor who closed the overlay at 1280 and widened their window to 1920 was docked "
+        "into a nav with neither a list nor a handle to bring one back"
+    )
+    assert docked["handleDisplay"] == "none", docked["handleDisplay"]
 
 
 def test_opening_the_undocked_nav_is_the_one_way_the_panel_ends_up_over_the_text(browser):
@@ -470,8 +659,324 @@ def test_the_link_for_the_section_in_view_is_marked_as_the_reader_scrolls(browse
         )
         #: Pea ground, Kale text - the brand's pairing for a light ground, and the
         #: reason the panel's own text is Kale rather than the white it used to be.
-        assert mark["background"] == "rgb(40, 200, 130)", f"the current item is {mark['background']}, not Pea"
+        #: What the mark *looks* like is
+        #: `test_the_current_item_is_lifted_and_the_others_are_pushed_back` below,
+        #: with the ratios. All this one needs is that the marked link is drawn
+        #: differently from an unmarked one at all.
         assert mark["colour"] == "rgb(0, 50, 35)", f"the current item's text is {mark['colour']}, not Kale"
+
+
+@pytest.mark.parametrize("section,height", [("tangible-equivalents", 287), ("impact-summary", 762)])
+def test_a_press_on_a_link_marks_that_link_and_not_the_one_after_it(browser, section, height):
+    """**The reported defect: press the second item, and the third lights up.**
+
+    Measured on the running stack at 1600x900 before the fix, with the old rule in
+    force. `scroll-margin-top: 24px` and no sticky element at the top of this page,
+    so a press leaves its target's border box at exactly `top: 24` - all four were
+    measured doing it (scrollY 427 / 1225 / 1548 / 1986). *Tangible equivalents* is
+    287px tall, so it came to rest at 24-311; the 36px gap after it put *Breakdown
+    by category* at 347, and the reading band ends at 360. Two sections in the band,
+    the rule took the last, and the mark landed one link past the press.
+
+    **A short section and a tall one**, because the two are not the same case: at
+    762px *Impact summary* fills the band on its own and no tie-break is involved,
+    which is why three of the four links always appeared to work.
+
+    The rest position is asserted as well as the mark. If a jump stops landing at
+    24 - a sticky header added above `<main>`, or a `scroll-margin-top` changed
+    without this file - the geometry every number here was derived from has moved,
+    and this says so rather than failing somewhere less legible later.
+
+    Mutation: taking the LAST section in band again (`next = id` with no `break` in
+    `onSectionsCrossed`) leaves **both** cases green here, and that is correct rather
+    than a weak test: the pin answers the press before the observer is consulted at
+    all, which is the whole reason the request asked for two separate things. What
+    fails this is the two together - the old tie-break *and* `pinSection` made a
+    no-op - and it fails the short case with the mark on `#breakdown-section` while
+    the tall one stays green. `test_the_band_marks_the_section_at_its_top_edge_not_
+    the_one_creeping_in_below` is what holds the tie-break on its own, and
+    `test_the_mark_is_on_the_pressed_link_before_the_page_has_finished_moving` the
+    pin. This one is the defect as the owner reported it: press the second item, and
+    the third lights up.
+    """
+    context, page = _open(browser, 1600)
+    try:
+        _to_results(page)
+        page.click(f'.results-floating-nav__links a[href="#{section}"]')
+        page.wait_for_timeout(450)
+        mark = page.evaluate(MARK)
+        boxes = page.evaluate(SECTION_BOXES)
+    finally:
+        context.close()
+
+    box = next(entry for entry in boxes if entry["id"] == section)
+    assert box["top"] == 24, (
+        f"a press on #{section} left it at top {box['top']}, not the 24px "
+        f"`scroll-margin-top` every measurement in this test was taken against"
+    )
+    assert abs(box["height"] - height) <= 60, (
+        f"#{section} now measures {box['height']}px tall, not the ~{height}px this case "
+        f"was written to cover. The short/tall pair is the point of the parametrisation"
+    )
+    assert mark["count"] == 1, f"{mark['count']} links claim the reader's position: {mark}"
+    assert mark["href"] == f"#{section}", (
+        f"pressed #{section} and the nav marks {mark['href']}. Sections: "
+        f"{[(b['id'], b['top'], b['bottom']) for b in boxes]}"
+    )
+
+
+def test_the_mark_is_on_the_pressed_link_before_the_page_has_finished_moving(browser):
+    """**A press is an instruction, and the answer to it is not an inference.**
+
+    This is the one test that leaves `html { scroll-behavior: smooth }` switched on,
+    because what it measures only exists while the page is travelling. From the top
+    of the page, a press on the last link starts several hundred milliseconds of
+    scrolling - measured: scrollY 0, 45, 285, 1212, 1816 at 0, 60, 120, 200 and
+    400ms - during which the observer's honest answer is wherever the page happens
+    to be, which is still *Impact summary*.
+
+    So the pin is not decoration over a tie-break that now works. It is what makes
+    the press answer the press.
+
+    Mutation: making `pinSection` a no-op (`return` on its first line) leaves the
+    mark on `#impact-summary` at 0ms and 60ms here, and leaves every other test in
+    this file green - the tie-break alone gets the *settled* answer right.
+    """
+    context, page = _open(browser, 1600, force_auto_scroll=False)
+    try:
+        _to_results(page)
+        page.evaluate("() => window.scrollTo(0, 0)")
+        page.wait_for_timeout(400)
+        before = page.evaluate(MARK)
+        page.click('.results-floating-nav__links a[href="#improvement-section"]')
+        at_once = page.evaluate(MARK)
+        travelled_at_once = page.evaluate("() => Math.round(window.scrollY)")
+        page.wait_for_timeout(60)
+        early = page.evaluate(MARK)
+        travelled_early = page.evaluate("() => Math.round(window.scrollY)")
+        page.wait_for_timeout(600)
+        settled = page.evaluate(MARK)
+    finally:
+        context.close()
+
+    assert before["href"] == "#impact-summary", (
+        f"the page did not start at the top ({before['href']}), so the press below is not "
+        f"the long travel this test is about"
+    )
+    assert travelled_early < 900, (
+        f"the page had already moved {travelled_early}px 60ms after the press, so the smooth "
+        f"scroll is not running and this test measures nothing. `FORCE_AUTO` leaking in?"
+    )
+    assert at_once["href"] == "#improvement-section", (
+        f"the instant the link was pressed the nav marked {at_once['href']} with the page "
+        f"still at scrollY {travelled_at_once}: the mark is waiting for the page to arrive "
+        f"instead of answering the press"
+    )
+    assert early["href"] == "#improvement-section", (
+        f"60ms after the press, with the page at scrollY {travelled_early} of ~1986, the nav "
+        f"marks {early['href']}"
+    )
+    assert settled["href"] == "#improvement-section", settled
+
+
+def test_the_readers_own_scroll_takes_the_pin_back_off(browser):
+    """**Pinned until the reader scrolls of their own accord - and then not.**
+
+    A pin that outlived the press would be worse than the defect it fixes: the mark
+    would sit on whatever was last pressed for the rest of the session. `wheel` is
+    a real gesture and is dispatched by `page.mouse.wheel`, which is why it is used
+    here rather than `window.scrollTo` - a programmatic scroll is exactly what the
+    pin is meant to ignore while the browser performs the jump.
+
+    Measured: pinned to *Impact summary* at the top, then 1300px of wheel leaves
+    *Breakdown by category* at -155 to 247, which is the section across the band's
+    162px top edge, and the mark follows.
+
+    Mutation: dropping the `wheel` listener alone leaves this **green**, and the
+    reason is measured rather than guessed - a wheel produces `scroll` events too,
+    the pinned section had already arrived at its rest position, and the `scroll`
+    path released the pin on the same gesture. The mutation was incomplete, not the
+    test weak. Removing all four release paths (`wheel`, `touchmove`, the scrolling
+    keys and the settled-`scroll` branch) fails here with the mark still on
+    `#impact-summary` after 1300px of scrolling. `bindNavGestures` records what the
+    gesture listeners cover that the scroll path does not, and why it could not be
+    reproduced through Playwright.
+    """
+    context, page = _open(browser, 1600)
+    try:
+        _to_results(page)
+        page.click('.results-floating-nav__links a[href="#impact-summary"]')
+        page.wait_for_timeout(400)
+        pinned = page.evaluate(MARK)
+        page.mouse.move(700, 500)
+        page.mouse.wheel(0, 1300)
+        page.wait_for_timeout(500)
+        released = page.evaluate(MARK)
+        boxes = page.evaluate(SECTION_BOXES)
+    finally:
+        context.close()
+
+    assert pinned["href"] == "#impact-summary", pinned
+    assert released["href"] != "#impact-summary", (
+        "the mark is still on the section that was pressed after the reader scrolled 1300px "
+        "away from it: the pin never comes off, so the nav now reports the last button "
+        "pressed rather than where the reader is"
+    )
+    in_band = [b["id"] for b in boxes if b["top"] <= 162 <= b["bottom"]]
+    assert released["href"] == f"#{in_band[0]}", (
+        f"after the scroll the nav marks {released['href']}, and the section across the band's "
+        f"top edge is #{in_band[0]}. Sections: {[(b['id'], b['top'], b['bottom']) for b in boxes]}"
+    )
+
+
+def test_the_band_marks_the_section_at_its_top_edge_not_the_one_creeping_in_below(browser):
+    """**The tie-break itself, with no press involved, so the pin cannot mask it.**
+
+    Two sections are inside the reading band whenever a boundary falls in it, and
+    which of them is "where the reader is" is the whole question. The rule was the
+    *last* in page order - described as "the one the reader has most recently come
+    to", which is the right description of a section whose top has just appeared at
+    the bottom of the band and the wrong one for the reader, who is still looking at
+    the section above it.
+
+    The page is put at each section's *click* rest position by `window.scrollTo`,
+    because that is the position where the tie actually occurs: at 1600x900 the band
+    is 162-360, and *Tangible equivalents* resting at 24-311 leaves 13px of
+    *Breakdown by category* (347-749) inside it. `SCROLL_TO`'s own -40px offset,
+    which the older test above uses, puts *Breakdown* at 363 - three pixels clear of
+    the band - which is exactly why that test was green throughout the defect.
+
+    Mutation: `next = id` with no `break` (the last-in-band rule) fails on
+    `tangible-equivalents` with the mark on `#breakdown-section`, and passes on the
+    other three, whose successors are out of the band at their rest positions.
+    """
+    context, page = _open(browser, 1600)
+    try:
+        _to_results(page)
+        seen = {}
+        for target in ("tangible-equivalents", "breakdown-section", "improvement-section", "impact-summary"):
+            page.evaluate(SCROLL_TO_REST, target)
+            page.wait_for_timeout(400)
+            seen[target] = (page.evaluate(MARK), page.evaluate(SECTION_BOXES))
+    finally:
+        context.close()
+
+    for target, (mark, boxes) in seen.items():
+        below = [b for b in boxes if 162 <= b["top"] <= 360]
+        assert mark["href"] == f"#{target}", (
+            f"with #{target} resting at the top of the reading band the nav marks "
+            f"{mark['href']}. Sections: {[(b['id'], b['top'], b['bottom']) for b in boxes]}"
+            + (f"; #{below[0]['id']} has crept {360 - below[0]['top']}px into the bottom of "
+               f"the band and taken the mark with it" if below else "")
+        )
+    #: And the tie is really there to be got wrong. Without this the test could pass
+    #: against a page whose sections never share the band at all.
+    _, tangible_boxes = seen["tangible-equivalents"]
+    successor = next(b for b in tangible_boxes if b["id"] == "breakdown-section")
+    assert 162 <= successor["top"] <= 360, (
+        f"#breakdown-section is at {successor['top']}, outside the 162-360 band, so nothing "
+        f"here is a tie and the assertion above would hold under either rule"
+    )
+
+
+def test_the_current_item_is_lifted_and_the_others_are_pushed_back(browser):
+    """**An elevation and a colour, and the colour cannot be the accent.**
+
+    The current item was a filled Pea block. The obvious replacement - the item's
+    own text in Pea - is unavailable, and the numbers are the reason. Measured
+    against the panel's frosted ground:
+
+        Pea    #28c882    2.04:1 on #f2faf6, 2.17:1 on white
+        Kale   #003223   13.36:1 on #f2faf6, 14.18:1 on white
+        muted  #465f56    6.52:1 on #f2faf6, 6.93:1 on white
+
+    Body text needs 4.5:1. So the mark is carried by Kale at full weight against a
+    list pushed back to `--muted` at regular weight, lifted by a Pea-tinted shadow,
+    with the accent itself on a 3px inline-start rule in `--green-rule` #147d52 -
+    Pea composited 50% over Kale, 4.84:1 on #f2faf6, past the 3:1 WCAG 1.4.11 asks
+    of a non-text state indicator.
+
+    **Both grounds are asserted.** The panel is `rgba(255, 255, 255, 0.72)` over the
+    body, and the pixel actually painted behind these links was measured at
+    `#ffffff`; #f2faf6 is the darker ground the request quoted, and a ratio is
+    asserted against both so that neither a lighter nor a slightly tinted backdrop
+    can carry this below the bar.
+
+    Mutation: `color: var(--kai-pea)` on the current item fails on the ratio, at
+    2.04:1 against a 4.5 floor, with the measured number in the message. Dropping the
+    `box-shadow` fails on the elevation; dropping `--muted` back to Kale fails on the
+    two items being drawn identically apart from weight.
+    """
+    context, page = _open(browser, 1600)
+    try:
+        _to_results(page)
+        drawn = page.evaluate(
+            """() => {
+              const links = [...document.querySelectorAll('.results-floating-nav__links a')];
+              const read = el => { const s = getComputedStyle(el); return {
+                colour: s.color, background: s.backgroundColor, weight: s.fontWeight,
+                shadow: s.boxShadow, rule: s.borderInlineStartColor,
+                ruleWidth: s.borderInlineStartWidth}; };
+              return {
+                current: read(links.find(a => a.getAttribute('aria-current'))),
+                other: read(links.find(a => !a.getAttribute('aria-current'))),
+                panel: getComputedStyle(document.querySelector('.results-floating-nav__panel')).backgroundColor,
+              };
+            }""")
+    finally:
+        context.close()
+
+    current, other = drawn["current"], drawn["other"]
+    for ground in ("#ffffff", "#f2faf6"):
+        assert _contrast(current["colour"], ground) >= 4.5, (
+            f"the current item's text is {current['colour']}, which measures "
+            f"{_contrast(current['colour'], ground):.2f}:1 on {ground} - under the 4.5:1 body "
+            f"text needs. Pea is 2.04:1 here, which is why the accent is not on the glyphs"
+        )
+        assert _contrast(other["colour"], ground) >= 4.5, (
+            f"the items pushed back are {other['colour']}, {_contrast(other['colour'], ground):.2f}:1 "
+            f"on {ground}. 'Pushed back' is a recession in emphasis, not in legibility"
+        )
+        assert _contrast(current["rule"], ground) >= 3.0, (
+            f"the accent rule is {current['rule']}, {_contrast(current['rule'], ground):.2f}:1 on "
+            f"{ground} - under the 3:1 WCAG 1.4.11 asks of a non-text state indicator. Pea "
+            f"itself is 2.04:1, which is the whole reason --green-rule exists"
+        )
+
+    #: The current item has to be MORE readable than the list it stands out from,
+    #: which is the assertion a readable accent green would still have failed:
+    #: --green-rule is 4.84:1 and --muted is 6.52:1, so accent glyphs would have
+    #: made the reader's own section the faintest line in the panel.
+    assert _contrast(current["colour"], "#f2faf6") > _contrast(other["colour"], "#f2faf6"), (
+        f"the current item ({_contrast(current['colour'], '#f2faf6'):.2f}:1) is no more readable "
+        f"than the items it is meant to stand out from ({_contrast(other['colour'], '#f2faf6'):.2f}:1)"
+    )
+    assert current["weight"] == "700" and other["weight"] == "400", (
+        f"weights are current={current['weight']} other={other['weight']}: the mark is meant to "
+        f"be carried by weight as well as colour, and 400/700 are the only two faces this "
+        f"stylesheet has files for"
+    )
+    #: The elevation, and the accent inside it. A shadow carries no contrast
+    #: requirement because it carries no information the rule and the weight do not,
+    #: but it is what makes this read as lifted rather than as a repaint.
+    assert "40, 200, 130" in current["shadow"], (
+        f"the current item's shadow is {current['shadow']}: the accent was supposed to be "
+        f"carried in it"
+    )
+    assert other["shadow"] == "none", f"an unmarked item is lifted too ({other['shadow']})"
+    assert current["ruleWidth"] == other["ruleWidth"], (
+        f"the rule is {current['ruleWidth']} on the current item and {other['ruleWidth']} on the "
+        f"others, so the mark moving down the list shifts every label sideways"
+    )
+    assert other["rule"] in ("rgba(0, 0, 0, 0)", "transparent"), (
+        f"the unmarked items carry a visible rule ({other['rule']}), so the accent no longer "
+        f"distinguishes anything"
+    )
+    #: And it is not a painted chip in the accent any more, which is the thing the
+    #: request asked to be rid of.
+    assert current["background"] != "rgb(40, 200, 130)", (
+        "the current item is still a filled Pea block"
+    )
 
 
 def test_the_spy_survives_the_page_being_rebuilt_and_never_makes_a_second_observer(browser):

@@ -17,6 +17,14 @@ and two of these rules have inputs the form cannot currently reach:
   and the claim that a half-typed date leaves no stale instant behind is about
   a return value, not about a rendered field.
 
+It also covers the pure functions behind the typed box's own
+punctuation — `parseTimeText`'s widening, `maskPeriodText` and
+`maskPeriodStep` — for the same reason. The mask's traps are behaviours of an
+event handler and are asserted in a real browser in
+`tests/web/test_period_typing_browser.py`; what is asserted here is the
+*decision*, over the input shapes and the typed sequences a browser test cannot
+enumerate one page load at a time.
+
 Run under Node for `tests/web/test_results_export.py`'s reason: executing the
 module that ships beats reading its source with a regular expression, and this
 project has lost defects to exactly that substitution.
@@ -49,10 +57,32 @@ globalThis.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {}
 import { readFileSync, writeFileSync } from 'node:fs'
 const period = await import(process.argv[2])
 const cases = JSON.parse(readFileSync(process.argv[3], 'utf8'))
-const out = cases.map(({ call, fields, timeFrame }) =>
-  (call === 'problem'
-    ? period.periodProblem(fields, timeFrame)
-    : period.periodValues(fields)))
+const out = cases.map(entry => {
+  if (entry.call === 'problem') return period.periodProblem(entry.fields, entry.timeFrame)
+  if (entry.call === 'values') return period.periodValues(entry.fields)
+  if (entry.call === 'time') return period.parseTimeText(entry.text)
+  if (entry.call === 'date') return period.parseDateText(entry.text)
+  if (entry.call === 'mask') return period.maskPeriodText(entry.text, entry.field)
+  if (entry.call === 'typing') {
+    // One box, typed one character at a time, exactly as `applyPeriodMask`
+    // drives it: the value before the keystroke, the value the browser leaves
+    // behind, what was inserted, and whether the separators already in the box
+    // are the mask's own.
+    let value = ''
+    let masked = false
+    for (const character of entry.keys) {
+      const step = period.maskPeriodStep(
+        { before: value, typed: value + character, inserted: character, masked },
+        entry.field,
+      )
+      value = step.value
+      masked = step.masked
+    }
+    return value
+  }
+  if (entry.call === 'step') return period.maskPeriodStep(entry.step, entry.field)
+  throw new Error(`unknown call ${entry.call}`)
+})
 writeFileSync(process.argv[4], JSON.stringify(out), 'utf8')
 """
 
@@ -159,3 +189,291 @@ def test_a_half_typed_date_leaves_no_stale_instant_behind(tmp_path):
         assert result == {"periodStart": "", "periodEnd": ""}, (
             f"{name}: an illegal period left an instant in the state: {result}"
         )
+
+
+# ---------------------------------------------------------------------------
+# What the box punctuates for itself
+# ---------------------------------------------------------------------------
+
+
+@node
+def test_the_time_parser_widened_and_narrowed_nothing(tmp_path):
+    """**Every shape the parser accepted before this change still parses to the same
+    value**, and two more do.
+
+    The widening exists so that `8` and `8:5` can be tidied into `08:00` and
+    `08:05` when the caret leaves the box. It is done *in the parser* rather
+    than in a blur-only second parser, so the same list has to hold for the
+    typed path, the blur path and `chooseDay`'s "is there a time here already?"
+    fallback — which is exactly why it is enumerated rather than spot-checked.
+
+    `810` stays refused: it is five past eight to one reader and ten past eight
+    to another, and this field guesses at nothing.
+    """
+    shapes = [
+        # Accepted before this change, and unchanged. A regression here is a
+        # narrowing, which the plan forbids outright.
+        ("08:10", "08:10"), ("8:10", "08:10"), ("08.10", "08:10"),
+        ("0810", "08:10"), ("00:00", "00:00"), ("23:59", "23:59"),
+        (" 08:10 ", "08:10"),
+        # The two new shapes.
+        ("8:5", "08:05"), ("8", "08:00"), ("08", "08:00"), ("0", "00:00"),
+        ("23", "23:00"), ("8.5", "08:05"),
+        # Refused before and refused now.
+        ("", None), ("810", None), ("25:00", None), ("08:60", None),
+        ("24", None), ("abc", None), ("08:1a", None), ("-8", None),
+    ]
+    results = run(tmp_path, [{"call": "time", "text": text} for text, _ in shapes])
+    wrong = [
+        (text, expected, got)
+        for (text, expected), got in zip(shapes, results)
+        if got != expected
+    ]
+    assert not wrong, f"parseTimeText disagrees on {wrong}"
+
+
+@node
+def test_the_date_parser_still_accepts_every_shape_it_did(tmp_path):
+    """Nothing in this change touches `parseDateText`, and this is the assertion that
+    says so out loud.
+
+    It is here because the mask's third trap is *about* these shapes: `-`, `.`,
+    a space and year-first order are all accepted, which is why a mask that
+    forced `dd/mm/yyyy` onto every keystroke would be a regression dressed as a
+    feature. If this list ever shrinks, `ownedDigits` is refusing to keep its
+    hands off something it should.
+    """
+    shapes = [
+        ("14/09/2026", "2026-09-14"), ("1/1/2026", "2026-01-01"),
+        ("14-09-2026", "2026-09-14"), ("14.09.2026", "2026-09-14"),
+        ("14 09 2026", "2026-09-14"), ("2026-09-14", "2026-09-14"),
+        ("2026/09/14", "2026-09-14"),
+        ("31/02/2026", None), ("14/09/26", None), ("", None),
+    ]
+    results = run(tmp_path, [{"call": "date", "text": text} for text, _ in shapes])
+    wrong = [
+        (text, expected, got)
+        for (text, expected), got in zip(shapes, results)
+        if got != expected
+    ]
+    assert not wrong, f"parseDateText disagrees on {wrong}"
+
+
+@node
+def test_the_mask_places_a_separator_after_the_group_it_closes(tmp_path):
+    """`maskPeriodText`, which is the placement half and nothing else.
+
+    The separator goes in **when the next group opens**, never eagerly after the
+    last digit of a group: `14` stays `14` and becomes `14/0` on the third
+    digit. An eager trailing `/` would put the caret on the wrong side of a
+    character that is not there yet.
+
+    Nothing is truncated either. A ninth digit spills visibly into the year
+    rather than being eaten, because a box that silently drops a keystroke is
+    worse than one showing a value the visitor can see is wrong.
+    """
+    cases = [
+        ("date", "", ""), ("date", "1", "1"), ("date", "14", "14"),
+        ("date", "140", "14/0"), ("date", "1409", "14/09"),
+        ("date", "14092", "14/09/2"), ("date", "14092026", "14/09/2026"),
+        ("date", "14/09/2026", "14/09/2026"),
+        ("date", "140920261", "14/09/20261"),
+        ("time", "0", "0"), ("time", "08", "08"), ("time", "081", "08:1"),
+        ("time", "0810", "08:10"), ("time", "08:10", "08:10"),
+        ("time", "08101", "08:101"),
+    ]
+    results = run(
+        tmp_path,
+        [
+            {"call": "mask", "text": text, "field": f"start{kind.capitalize()}"}
+            for kind, text, _ in cases
+        ],
+    )
+    wrong = [
+        (kind, text, expected, got)
+        for (kind, text, expected), got in zip(cases, results)
+        if got != expected
+    ]
+    assert not wrong, f"maskPeriodText disagrees on {wrong}"
+
+
+@node
+def test_typing_a_separator_of_your_own_switches_the_mask_off_for_that_value(tmp_path):
+    """**The third trap, driven key by key, which is the only way it shows.**
+
+    `parseDateText` accepts `-`, `.`, a space and year-first order and
+    `parseTimeText` accepts a full stop, so a mask that forced `dd/mm/yyyy` onto
+    every keystroke would refuse input shapes this field takes today — a
+    regression dressed as a feature.
+
+    **`2026-09-14` is the case that switching off alone cannot get right**, and
+    it is why `maskPeriodStep` also takes back out what it had already put in.
+    The visitor types four digits before they type the `-`, and four bare digits
+    are indistinguishable from `dd/mm`: by the time the character that says
+    "year-first" arrives, the box already reads `20/26`. Measured in Chromium at
+    one key per event — `page.fill` never shows it, because a fill is one event
+    with the `-` already in the string.
+    """
+    cases = [
+        # Bare digits: the mask's own, and punctuated.
+        ("date", "14092026", "14/09/2026"),
+        ("date", "01012026", "01/01/2026"),
+        ("time", "0810", "08:10"),
+        ("time", "1620", "16:20"),
+        # A separator of the visitor's own: hands off from that keystroke on.
+        ("date", "1/1/2026", "1/1/2026"),
+        ("date", "14-09-2026", "14-09-2026"),
+        ("date", "14.09.2026", "14.09.2026"),
+        ("date", "14 09 2026", "14 09 2026"),
+        ("date", "14/09/2026", "14/09/2026"),
+        ("time", "8:10", "8:10"),
+        ("time", "08.10", "08.10"),
+        ("time", "08:10", "08:10"),
+        # Four digits first, then the character that says year-first: what the
+        # mask had already put in comes back out.
+        ("date", "2026-09-14", "2026-09-14"),
+        ("date", "2026/09/14", "2026/09/14"),
+        # Mixed separators parse today, so the `/` the visitor typed is theirs
+        # and stays: only a separator at one of the mask's own break points and
+        # put there by the mask is taken back out.
+        ("date", "14/09-2026", "14/09-2026"),
+    ]
+    results = run(
+        tmp_path,
+        [
+            {"call": "typing", "keys": keys, "field": f"start{kind.capitalize()}"}
+            for kind, keys, _ in cases
+        ],
+    )
+    wrong = [
+        (kind, keys, expected, got)
+        for (kind, keys, expected), got in zip(cases, results)
+        if got != expected
+    ]
+    assert not wrong, f"typing produced the wrong text: {wrong}"
+
+
+@node
+def test_the_mask_stays_on_through_an_edit_in_the_middle(tmp_path):
+    """**`masked`, and why it is a flag rather than a reading of the text.**
+
+    A visitor editing the middle of `14/09/2026` leaves the separators one place
+    out of position — `154/09/2026` — so the value after the edit looks like
+    somebody else's punctuation. A rule read off the characters alone would
+    switch the mask off on the first correction and never turn it back on, and
+    the box would quietly stop punctuating after one fix.
+
+    The second case is the same shape in a box the mask never owned, which must
+    stay hands off: the flag is what tells the two apart, and without it they
+    are the same string.
+
+    The value the first case produces is nonsense — it is a 40th month — and
+    that is deliberate: the mask punctuates, the parser judges, and the error
+    line says so. What is asserted is which of the two answers the mask gave.
+    """
+    edit, foreign = run(
+        tmp_path,
+        [
+            {
+                "call": "step",
+                "field": "startDate",
+                "step": {
+                    "before": "14/09/2026",
+                    "typed": "154/09/2026",
+                    "inserted": "5",
+                    "masked": True,
+                },
+            },
+            # The same shape in a box the mask never owned: hands off, and it
+            # stays hands off.
+            {
+                "call": "step",
+                "field": "startDate",
+                "step": {
+                    "before": "1/1/2026",
+                    "typed": "15/1/2026",
+                    "inserted": "5",
+                    "masked": False,
+                },
+            },
+        ],
+    )
+    assert edit == {"value": "15/40/92026", "masked": True}, edit
+    assert foreign == {"value": "15/1/2026", "masked": False}, foreign
+
+
+@node
+def test_a_paste_the_browser_will_not_describe_is_left_alone(tmp_path):
+    """`event.data` is `null` for a paste whose content is only on
+    `dataTransfer`. It is read as "not digits" rather than guessed at.
+
+    Guessing is what would hurt. `2026-09-14` pasted into an empty box has no
+    keystroke history to switch the mask off, so a mask that took a null `data`
+    for digits would reformat it to `20/26/0914` — a well-formed string naming a
+    different day, which the visitor never typed and would have no reason to
+    re-read.
+    """
+    (result,) = run(
+        tmp_path,
+        [
+            {
+                "call": "step",
+                "field": "startDate",
+                "step": {
+                    "before": "",
+                    "typed": "2026-09-14",
+                    "inserted": None,
+                    "masked": False,
+                },
+            }
+        ],
+    )
+    assert result == {"value": "2026-09-14", "masked": False}, result
+
+
+@node
+def test_typing_never_changes_what_a_value_means(tmp_path):
+    """**The claim the whole feature rests on: this is punctuation, not
+    meaning.**
+
+    For every shape either box already accepts, typing it one key at a time and
+    then parsing the result gives what parsing the typed characters gives. The
+    failure it guards is a mask that quietly reinterprets a value the field
+    accepts today — `2026-09-14` read as the 20th of the 26th month is a
+    well-formed string that says a different day, and it would reach the wire
+    without a word.
+
+    Bare digits are the one case where the mask *creates* a meaning rather than
+    preserving one — `14092026` parses to nothing at all until the separators go
+    in — so those are asserted by name, in `dd/mm/yyyy` order, which is what the
+    field's placeholder and its hint both promise.
+    """
+    dates = ["14092026", "14/09/2026", "1/1/2026", "2026-09-14", "14-09-2026", "01012026"]
+    times = ["0810", "08:10", "8:10", "08.10", "8", "8:5", "1620"]
+    typed = run(
+        tmp_path,
+        [{"call": "typing", "keys": text, "field": "startDate"} for text in dates]
+        + [{"call": "typing", "keys": text, "field": "startTime"} for text in times],
+    )
+    date_typed, time_typed = typed[: len(dates)], typed[len(dates):]
+    parsed = run(
+        tmp_path,
+        [{"call": "date", "text": text} for text in dates + list(date_typed)]
+        + [{"call": "time", "text": text} for text in times + list(time_typed)],
+    )
+    date_source = parsed[: len(dates)]
+    date_result = parsed[len(dates): 2 * len(dates)]
+    rest = parsed[2 * len(dates):]
+    time_source, time_result = rest[: len(times)], rest[len(times):]
+
+    reinterpreted = [
+        (text, source, result)
+        for text, source, result in zip(dates + times, date_source + time_source, date_result + time_result)
+        if source is not None and source != result
+    ]
+    assert not reinterpreted, (
+        f"typing changed what an already-valid value means: {reinterpreted}"
+    )
+    assert dict(zip(dates, date_result))["14092026"] == "2026-09-14"
+    assert dict(zip(dates, date_result))["01012026"] == "2026-01-01"
+    assert dict(zip(times, time_result))["0810"] == "08:10"

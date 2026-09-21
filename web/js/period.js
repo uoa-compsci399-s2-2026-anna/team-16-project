@@ -120,6 +120,47 @@
  * flags and the Calculate button by hand — `applyPeriodProblem` is the single
  * function the render path and the typing path both go through, so the two
  * cannot come to different conclusions about the same four strings.
+ *
+ * ## The boxes punctuate themselves, and tidy up when the caret leaves
+ *
+ * **Both are appearance and neither is correctness.** `parseDateText` already
+ * accepted `1/1/2026` and `parseTimeText` already returned a padded `08:10` for
+ * `0810`, so a visitor who typed the untidy form submitted the right instant and
+ * was left looking at an untidy box. `tests/web/test_period_submission_browser.
+ * py` types the untidy form, blurs, and asserts the request body is byte-for-byte
+ * the one the tidy form produces; if that test ever needs relaxing, something
+ * here has started changing what is sent and is wrong.
+ *
+ * *While typing*, `maskPeriodStep` decides and `maskPeriodText` places the `/`
+ * and the `:`. Four things would each break it on their own, and each is closed
+ * where it is implemented rather than here:
+ *
+ *   * the mask runs on `insertText` and `insertFromPaste` only, so backspace can
+ *     delete a separator instead of watching it reappear (`handlePeriodInput`);
+ *   * the caret is restored by **counting digits**, not characters, so editing
+ *     the middle of `01/09/2026` does not throw it to the end (`caretAfterDigits`);
+ *   * the mask switches itself off for a value the moment a character that is
+ *     not a digit is typed into it, and takes back out anything it had already
+ *     put in, so `1/1/2026`, `2026-09-14`, `14.09.2026` and `08.10` — all of
+ *     which the parsers accept — are never fought (`maskPeriodStep`);
+ *   * an IME's composition is left alone between `compositionstart` and
+ *     `compositionend`, or the composed text is destroyed as it is being made
+ *     — `inputmode="numeric"` makes that unlikely, not impossible
+ *     (`handlePeriodComposition`).
+ *
+ * Whether the separators in a box are the mask's own is kept on the element, in
+ * `data-period-masked`. It has to be kept somewhere: a mid-value edit moves them
+ * out of position, so the text alone cannot answer it, and a mask that read the
+ * text would switch itself off on a visitor's first correction.
+ *
+ * *On `focusout`*, a value that parses is rewritten to the shape the rest of this
+ * module writes — `DATE_DISPLAY`'s `dd/mm/yyyy`, `parseTimeText`'s `HH:MM` — and
+ * a value that does **not** parse is left exactly as it was typed, because
+ * somebody who wrote a wrong date needs to see what they wrote. `8` → `08:00`
+ * and `8:5` → `08:05` are a widening of `parseTimeText` itself and not a second,
+ * looser parser used only on blur: the typed path, the blur path and
+ * `chooseDay`'s fallback all ask the same function, and two rules for one field
+ * is how a box comes to show a value the form then refuses.
  */
 
 import { state, setState } from './state.js'
@@ -258,22 +299,42 @@ export function parseDateText(text) {
 }
 
 /**
- * `08:10`, `8:10`, `08.10` and `0810`.
+ * `08:10`, `8:10`, `08.10`, `0810`, `8:5` and a bare `8`.
  *
  * The bare four digits are the fast path the plan asks for — somebody entering
  * a shift types the number they read off a roster. 24-hour only: an `am`/`pm`
  * suffix would be a second format to parse, to print and to translate, on a
  * field whose whole point is that it is quicker than opening anything.
+ *
+ * **The last two shapes are the second pass's widening, and they are widened
+ * rather than on blur.** `8` means eight o'clock and `8:5` means five past
+ * eight to everybody who types them, and the box now tidies both into `08:00`
+ * and `08:05` when the caret leaves it. A second, looser parser used only by
+ * the blur path would be two rules for one field: the typed path, the blur path
+ * and `chooseDay`'s "is there already a time here?" fallback all ask this
+ * function, and a shape one of them accepted and another did not is how a box
+ * comes to show a value the form then refuses.
+ *
+ * A bare **three** digits is still refused. `810` is five past eight to one
+ * reader and ten past eight to another, and this form has a floor at 1970 for
+ * exactly the reason that guessing is not a thing it does.
+ *
+ * Nothing here narrows: every string the earlier patterns accepted still
+ * parses to the same `HH:MM`.
  */
-const TIME_PATTERN = /^(\d{1,2})[:.](\d{2})$/
+const TIME_PATTERN = /^(\d{1,2})[:.](\d{1,2})$/
 const COMPACT_TIME_PATTERN = /^(\d{2})(\d{2})$/
+const BARE_HOUR_PATTERN = /^(\d{1,2})$/
 
 export function parseTimeText(text) {
   const trimmed = String(text ?? '').trim()
-  const match = TIME_PATTERN.exec(trimmed) || COMPACT_TIME_PATTERN.exec(trimmed)
+  const match = TIME_PATTERN.exec(trimmed) || COMPACT_TIME_PATTERN.exec(trimmed) || BARE_HOUR_PATTERN.exec(trimmed)
   if (!match) return null
   const hours = Number(match[1])
-  const minutes = Number(match[2])
+  // `undefined` for the bare hour, and midnight is the only minute a bare hour
+  // can mean. `Number(undefined)` is `NaN`, which would pass `> 59` and print
+  // `NaN` into the box, so the default is written rather than left to coercion.
+  const minutes = Number(match[2] ?? 0)
   if (hours > 23 || minutes > 59) return null
   return `${pad(hours)}:${pad(minutes)}`
 }
@@ -312,6 +373,214 @@ const dateOfInstant = instant => {
 export function formatInstant(instant) {
   if (!instant) return ''
   return `${DATE_DISPLAY.format(dateOfInstant(instant))} ${String(instant).split('T')[1].slice(0, 5)}`
+}
+
+// ---------------------------------------------------------------------------
+// The separators the four boxes insert while they are being typed
+// ---------------------------------------------------------------------------
+
+/**
+ * Where a separator belongs, **counted in digits rather than in characters**.
+ *
+ * `dd/mm/yyyy` breaks after the 2nd and the 4th digit; `HH:MM` breaks after the
+ * 2nd. Every function below is written in digit counts for the same reason the
+ * caret is restored by one: a character offset into `01/09/2026` means a
+ * different thing before and after the mask has run, and a digit offset means
+ * the same thing in both.
+ */
+const MASKS = {
+  date: { separator: '/', breaks: [2, 4] },
+  time: { separator: ':', breaks: [2] },
+}
+
+const maskFor = field => (field.endsWith('Date') ? MASKS.date : MASKS.time)
+
+const isDigit = character => character >= '0' && character <= '9'
+
+/**
+ * Digits, separated.
+ *
+ * **Nothing is truncated.** A ninth digit in a date spills into the year group
+ * rather than being swallowed, so `140920261` reads back as `14/09/20261` — a
+ * value the parser refuses and the visitor can see is wrong. A mask that ate
+ * the keystroke would leave a box showing `14/09/2026` that the visitor is sure
+ * they typed a 1 into, which is the worse of the two failures by a distance.
+ *
+ * The separator is inserted **when the next group opens**, never eagerly after
+ * the last digit of a group: `14` stays `14` and becomes `14/0` on the third
+ * digit. An eager trailing `/` would put the caret on the wrong side of a
+ * character that is not there yet.
+ */
+function maskDigits(digits, mask) {
+  const groups = []
+  let cut = 0
+  for (const breakAt of mask.breaks) {
+    if (digits.length <= breakAt) break
+    groups.push(digits.slice(cut, breakAt))
+    cut = breakAt
+  }
+  groups.push(digits.slice(cut))
+  return groups.join(mask.separator)
+}
+
+/**
+ * The separators this mask put in, taken back out.
+ *
+ * Needed because of what the third trap looks like when it is typed rather than
+ * pasted. A visitor entering `2026-09-14` by hand types four digits *before*
+ * they type the `-`, and four bare digits are indistinguishable from `dd/mm`:
+ * the mask has already written `20/26` by the time the character that says
+ * "this is year-first" arrives. Leaving it there reads back `20/26-09-14`,
+ * which parses to nothing and which no visitor would recognise as a refusal.
+ *
+ * **Measured, in Chromium, typed one key at a time** — `page.fill` never shows
+ * this, because a fill is one event carrying the whole string and the `-` is in
+ * it from the start.
+ *
+ * Only a separator of this mask's own, at one of this mask's own break points,
+ * is removed. Anything else the visitor put there stays: `14/09-2026` mixes
+ * separators, `parseDateText` accepts it, and stripping the `/` out of it would
+ * delete a character somebody typed on purpose.
+ *
+ * **`keepFrom`/`keepTo` fence off the characters this very keystroke added**,
+ * and they are not a refinement. `2026/09/14` also parses, and the `/` the
+ * visitor types after `2026` lands at the fourth digit — which is one of this
+ * mask's own break points, so without the fence it would be read as the mask's
+ * and deleted on the keystroke that typed it. Measured: the box read
+ * `202609/14` at the end.
+ *
+ * @param {string} value the text to strip.
+ * @param {object} mask the separator and break points for this box.
+ * @param {number} [keepFrom] first index of the characters this event inserted.
+ * @param {number} [keepTo] one past the last of them.
+ */
+function unmaskOwn(value, mask, keepFrom = -1, keepTo = -1) {
+  let out = ''
+  let digits = 0
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index]
+    if (isDigit(character)) { digits += 1; out += character; continue }
+    const justTyped = index >= keepFrom && index < keepTo
+    if (!justTyped && character === mask.separator && mask.breaks.includes(digits)) continue
+    out += character
+  }
+  return out
+}
+
+/** How many characters two strings share from the start. Used to find where in
+ *  the new value this event's own insertion landed. */
+function sharedPrefix(before, after) {
+  let index = 0
+  while (index < before.length && index < after.length && before[index] === after[index]) index += 1
+  return index
+}
+
+/**
+ * One box's digits, separated.
+ *
+ * @param {string} value the box's text.
+ * @param {string} field one of `startDate`, `startTime`, `endDate`, `endTime`.
+ * @returns {string} the same digits, with this field's separators in place.
+ */
+export function maskPeriodText(value, field) {
+  const mask = maskFor(field)
+  return maskDigits([...String(value ?? '')].filter(isDigit).join(''), mask)
+}
+
+/** Whether a string is digits and nothing else. `''` counts. */
+const DIGITS_ONLY = /^\d*$/
+
+/**
+ * **One keystroke's worth of punctuation, as a pure function** — the whole of
+ * the mask's decision, with no DOM in it, so that
+ * `tests/web/test_period_rules.py` can drive it over sequences a page load per
+ * case could never afford.
+ *
+ * Three questions, in this order.
+ *
+ *  1. **Was a non-digit typed?** Then the mask is off for this value, and
+ *     anything it had already put in comes back out (`unmaskOwn`). This is the
+ *     third trap: the field accepts `-`, `.`, a space and year-first order, and
+ *     a mask that reformatted those would refuse input shapes this field takes
+ *     today — a regression dressed as a feature.
+ *  2. **Were the separators already in the box the mask's own?** `masked` says
+ *     so, and a box of bare digits is trivially the mask's to punctuate. If
+ *     neither, hands off: `1/1/2026` is the visitor's and stays theirs.
+ *  3. Otherwise re-derive the whole value from its digits.
+ *
+ * **`masked`, and not the shape of the value, is what carries question two
+ * across a mid-value edit.** A visitor editing the middle of `14/09/2026`
+ * leaves the separators one place out of position — `154/09/2026` — so the
+ * value *after* the edit looks like somebody else's punctuation, and a rule
+ * read off the text alone would switch the mask off on the first correction and
+ * never turn it back on. The flag is a fact about the box, not about the
+ * characters currently in it, which is why it survives that.
+ *
+ * **`before` is used by the first branch only, and that is measured rather than
+ * assumed.** The obvious reading is that question two should ask about the text
+ * as it stood before the keystroke; it makes no difference, because a digit
+ * insertion cannot add or remove a non-digit and so `before` and `typed` are
+ * digits-only together or not at all. Both variants were run over 92,912
+ * combinations of value, insertion point, insertion, `masked` and field: zero
+ * divergences. `typed` is used because it is also right for the one edit that
+ * is *not* an insertion — a paste over a selected value, where `before` is the
+ * text that has just been replaced and answers about a box that no longer
+ * exists.
+ *
+ * @param {object} step
+ * @param {string} step.before the box's text before this insertion. Used to
+ *   locate this event's own characters inside `typed`, so the first branch can
+ *   fence them off; see `unmaskOwn`.
+ * @param {string} step.typed the box's text as the browser has left it.
+ * @param {string|null} step.inserted the characters this event added, or `null`
+ *   when the browser did not say — a paste whose content is only on
+ *   `dataTransfer`, which is treated as "not digits" rather than guessed at.
+ * @param {boolean} step.masked whether the separators in `before` are the
+ *   mask's own.
+ * @param {string} field one of `startDate`, `startTime`, `endDate`, `endTime`.
+ * @returns {{ value: string, masked: boolean }}
+ */
+export function maskPeriodStep(step, field) {
+  const mask = maskFor(field)
+  const typed = String(step.typed ?? '')
+  if (typeof step.inserted !== 'string' || step.inserted === '' || !DIGITS_ONLY.test(step.inserted)) {
+    if (!step.masked) return { value: typed, masked: false }
+    const at = sharedPrefix(String(step.before ?? ''), typed)
+    const length = typeof step.inserted === 'string' ? step.inserted.length : 0
+    return { value: unmaskOwn(typed, mask, at, at + length), masked: false }
+  }
+  if (!step.masked && !DIGITS_ONLY.test(typed)) return { value: typed, masked: false }
+  const value = maskPeriodText(typed, field)
+  return { value, masked: value.includes(mask.separator) }
+}
+
+/** How many digits sit before the caret. The first half of the second trap. */
+const digitsBefore = (value, caret) => [...String(value).slice(0, caret)].filter(isDigit).length
+
+/**
+ * Where the caret goes once the mask has run: **after the same number of
+ * digits**, not at the same character offset.
+ *
+ * The second trap. Editing the middle of `01/09/2026` and restoring a character
+ * offset throws the caret to the end of the box, because the mask may have added
+ * a character in front of it. Counting digits is stable across the rewrite.
+ *
+ * A separator immediately after that digit is stepped over, so the caret lands
+ * where the next digit will go rather than in front of a `/` the visitor would
+ * then have to arrow past.
+ */
+function caretAfterDigits(value, count) {
+  if (count <= 0) return 0
+  let seen = 0
+  for (let index = 0; index < value.length; index += 1) {
+    if (!isDigit(value[index])) continue
+    seen += 1
+    if (seen < count) continue
+    let after = index + 1
+    while (after < value.length && !isDigit(value[after])) after += 1
+    return after
+  }
+  return value.length
 }
 
 // ---------------------------------------------------------------------------
@@ -622,6 +891,25 @@ function pickerDialog() {
   </div>`
 }
 
+/**
+ * The calendar button's icon, **drawn rather than typed**.
+ *
+ * It was `🗓` (U+1F5D3) and it rendered as an empty rectangle on Windows. That
+ * is not a missing font: **U+1F5D3 defaults to text presentation**, so a browser
+ * draws it monochrome out of a symbol font at text weight. Measured in the
+ * page's own stack it is 16.0px wide — the same as a capital M at 15.6px —
+ * where an emoji-presentation code point such as `📅` (U+1F4C5) is 22.0px. A
+ * variation selector would ask for the emoji form and would still be one font's
+ * decision away from a box.
+ *
+ * §7.6 rule 7 forbids fetching an icon font, and `calculator.js` already carries
+ * hand-written inline SVG for the hero pattern, so the icon is written out here.
+ * `aria-hidden="true"`: the button's own `aria-label` is the accessible name and
+ * a second one would be read twice. `stroke="currentColor"` so it inherits the
+ * button's Kale and needs no colour of its own in either theme.
+ */
+const CALENDAR_ICON = '<svg class="period-open-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.25" y="5.25" width="17.5" height="15.5" rx="2.5"/><path d="M3.25 10.25h17.5M8 3v4M16 3v4"/></svg>'
+
 const boundLabel = bound => (bound === 'start' ? t('Period start') : t('Period end'))
 const boundOpenLabel = bound => (bound === 'start' ? t('Choose the start date') : t('Choose the end date'))
 
@@ -636,7 +924,7 @@ function boundFields(bound, fields, problem) {
         <label for="${dateId}">${escapeHtml(t('Date'))}</label>
         <div class="period-date-control">
           <input id="${dateId}" type="text" inputmode="numeric" autocomplete="off" class="period-input" data-period-field="${bound}Date" value="${escapeHtml(fields[`${bound}Date`])}" placeholder="dd/mm/yyyy" aria-describedby="period-format-hint"${invalid(dateId)}>
-          <button class="period-open" type="button" id="period-open-${bound}" data-action="period-open" data-bound="${bound}" aria-haspopup="dialog" aria-label="${escapeHtml(boundOpenLabel(bound))}"><span aria-hidden="true">🗓</span></button>
+          <button class="period-open" type="button" id="period-open-${bound}" data-action="period-open" data-bound="${bound}" aria-haspopup="dialog" aria-label="${escapeHtml(boundOpenLabel(bound))}">${CALENDAR_ICON}</button>
         </div>
       </div>
       <div class="form-field period-time-field">
@@ -732,21 +1020,18 @@ function applyPeriodProblem(problem, otherwiseDisabled) {
 }
 
 /**
- * A keystroke in one of the four text boxes.
+ * Everything both hand-patching paths do once one of the four strings has
+ * changed: demote, ask, store, keep the select honest, put the answer on screen.
  *
- * **No `setState`.** `render()` replaces `main.innerHTML`, so a re-render per
- * keystroke destroys the caret, and `change` on a text input fires while focus
- * is already leaving it, so a re-render there can drag focus back out of the
- * control the visitor just tabbed to. `state` is mutated directly and the three
- * things a render would have changed are patched by hand, which is the exception
- * §7.3a documents for `updateLine` and for the same reason.
+ * **One function, because there are now two of these paths** — a keystroke and a
+ * blur — and §7.3a's whole argument for the exception is that the typing path
+ * and the render path cannot come to different conclusions about the same four
+ * strings. Two hand-patchers written separately would be a third and a fourth
+ * conclusion.
  *
- * @returns {boolean} whether this module owned the event.
+ * @returns {boolean} always `true`: the caller owned the event.
  */
-export function handlePeriodInput(event, otherwiseDisabled = false) {
-  const field = event.target.dataset.periodField
-  if (!field) return false
-  const fields = { ...periodFields(), [field]: event.target.value }
+function commitPeriodFields(fields, otherwiseDisabled) {
   // **The demotion is decided before the problem is asked, and the answer this
   // keystroke leaves behind is what is asked about** (v1.68). `periodProblem`'s
   // `custom` clause is a question about `time_frame`, and this is the one
@@ -778,6 +1063,146 @@ export function handlePeriodInput(event, otherwiseDisabled = false) {
   if (select && select.value !== state.timeFrame) select.value = state.timeFrame
   applyPeriodProblem(problem, otherwiseDisabled)
   return true
+}
+
+/**
+ * A keystroke in one of the four text boxes.
+ *
+ * **No `setState`.** `render()` replaces `main.innerHTML`, so a re-render per
+ * keystroke destroys the caret, and `change` on a text input fires while focus
+ * is already leaving it, so a re-render there can drag focus back out of the
+ * control the visitor just tabbed to. `state` is mutated directly and the three
+ * things a render would have changed are patched by hand, which is the exception
+ * §7.3a documents for `updateLine` and for the same reason. The separator this
+ * handler inserts is written straight onto `event.target.value`, which is
+ * precisely what that exception exists to allow.
+ *
+ * **The mask runs on an insertion and never on a deletion**, which is the first
+ * of the three traps. Re-applying it on every `input` event makes the `/`
+ * undeletable: the visitor backspaces it away, the next event puts it straight
+ * back, and the caret sits still while nothing appears to happen. `inputType`
+ * is what tells the two apart — `insertText` and `insertFromPaste` are the two
+ * that add characters, and every `delete*` and `history*` is left alone.
+ *
+ * @returns {boolean} whether this module owned the event.
+ */
+export function handlePeriodInput(event, otherwiseDisabled = false) {
+  const field = event.target.dataset.periodField
+  if (!field) return false
+  if (INSERTIONS.has(event.inputType)) applyPeriodMask(event, field)
+  return commitPeriodFields({ ...periodFields(), [field]: event.target.value }, otherwiseDisabled)
+}
+
+/** The two `inputType`s that add characters. See `handlePeriodInput`. */
+const INSERTIONS = new Set(['insertText', 'insertFromPaste'])
+
+/**
+ * `true` between `compositionstart` and `compositionend` in one of these boxes.
+ *
+ * **An IME's composition must not be reformatted while it is being composed**,
+ * or the composed text is destroyed as it is being typed. `inputmode="numeric"`
+ * makes this unlikely rather than impossible: a physical keyboard with an IME
+ * active reaches these boxes like any other. The `inputType` branch above
+ * already skips `insertCompositionText`; this flag covers the final event a
+ * composition commits, which some engines report as an ordinary insertion.
+ */
+let composing = false
+
+/** `compositionstart` / `compositionend` on one of the four boxes. */
+export function handlePeriodComposition(event) {
+  if (!event.target?.dataset?.periodField) return false
+  composing = event.type === 'compositionstart'
+  return true
+}
+
+/**
+ * `maskPeriodStep`'s answer, written into the box, with the caret kept where the
+ * visitor left it.
+ *
+ * The caret is read **before** the value is rewritten, because assigning to
+ * `.value` moves it to the end of the box, and it is read and restored as a
+ * count of digits rather than of characters — the second of the three traps.
+ *
+ * **`data-period-masked` is where "are these separators mine?" is kept**, on the
+ * element rather than in `state`. On the element deliberately: it is a fact
+ * about a typing session and not about the answer being given, and a render —
+ * a preset, the calendar, a step change — replaces the element and so clears it,
+ * which is exactly right. A value the calendar wrote is already canonical and is
+ * nobody's to re-punctuate.
+ */
+function applyPeriodMask(event, field) {
+  if (composing) return
+  const target = event.target
+  const typed = target.value
+  const step = maskPeriodStep({
+    before: String(periodFields()[field] ?? ''),
+    typed,
+    // `event.data` is the characters this event added. A paste can leave it
+    // null, with the content only on `dataTransfer`; that is read as "not
+    // digits" rather than guessed at, so an unreadable paste is left alone
+    // instead of being reformatted on an assumption.
+    inserted: typeof event.data === 'string' ? event.data : null,
+    masked: target.dataset.periodMasked === 'true',
+  }, field)
+  target.dataset.periodMasked = String(step.masked)
+  if (step.value === typed) return
+  const digits = digitsBefore(typed, target.selectionStart ?? typed.length)
+  target.value = step.value
+  const caret = caretAfterDigits(step.value, digits)
+  // `setSelectionRange` throws on an input whose type does not support a
+  // selection. These four are `type="text"` and do, but a throw here would stop
+  // the whole handler — including the error line it has not written yet — so the
+  // caret is the one part of this that is allowed to fail quietly.
+  try { target.setSelectionRange(caret, caret) } catch { /* no selection to place */ }
+}
+
+/**
+ * The caret has left one of the four boxes: tidy what is in it.
+ *
+ * `1/1/2026` becomes `01/01/2026`, `8` becomes `08:00` and `8:5` becomes
+ * `08:05`. **The values were already correct before this existed** — the parsers
+ * accepted every one of those shapes and the right instant reached the wire —
+ * so this changes appearance and nothing else, and the test that guards it
+ * compares two request bodies byte for byte.
+ *
+ * **A value that does not parse is left exactly as it was typed.** Somebody who
+ * wrote a wrong date needs to see what they wrote in order to fix it, and
+ * rewriting a value the visitor did not choose is worse than showing them one
+ * that is wrong.
+ *
+ * The rewrite goes through `commitPeriodFields` rather than `setState` for the
+ * reason blur is the worst possible moment for a render: focus is already
+ * moving, and `render()` replacing `main.innerHTML` underneath a focus
+ * transition drags it back out of the control the visitor tabbed to.
+ *
+ * @returns {boolean} whether this module owned the event.
+ */
+export function handlePeriodBlur(event, otherwiseDisabled = false) {
+  const field = event.target?.dataset?.periodField
+  if (!field) return false
+  composing = false
+  const typed = event.target.value
+  const tidy = canonicalPeriodText(field, typed)
+  if (tidy === null || tidy === typed) return true
+  event.target.value = tidy
+  return commitPeriodFields({ ...periodFields(), [field]: tidy }, otherwiseDisabled)
+}
+
+/**
+ * One box's text in the shape the field itself would have written it, or `null`
+ * when the text does not parse.
+ *
+ * `DATE_DISPLAY` and `parseTimeText`, and not a second formatter: these are the
+ * two the presets, the calendar and `formatInstant` already fill these boxes
+ * from, so what a blur writes is character-for-character what the rest of the
+ * feature writes.
+ */
+function canonicalPeriodText(field, text) {
+  if (field.endsWith('Date')) {
+    const iso = parseDateText(text)
+    return iso === null ? null : DATE_DISPLAY.format(dayOf(iso))
+  }
+  return parseTimeText(text)
 }
 
 /**

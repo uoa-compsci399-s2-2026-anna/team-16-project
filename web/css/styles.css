@@ -3131,8 +3131,14 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 .period-date-control { display: flex; gap: 6px; align-items: stretch; }
 .period-date-control .period-input { flex: 1 1 auto; min-inline-size: 0; }
 .period-input[aria-invalid="true"] { border-color: var(--error); }
-.period-open { flex: 0 0 auto; padding-inline: 12px; font-size: 1.1rem; line-height: 1; color: var(--kai-kale); cursor: pointer; background: var(--mint); border: 1px solid rgba(0, 50, 35, 0.2); border-radius: 8px; }
+/* The icon inside is inline SVG, not a code point: U+1F5D3 defaults to text
+   presentation and Windows drew it as an empty rectangle. `display: flex` is
+   what centres a drawn glyph in a box that used to centre a character by its
+   line box, and `stroke: currentColor` in the markup is why no colour is set
+   here for either theme. */
+.period-open { display: flex; flex: 0 0 auto; align-items: center; justify-content: center; padding-inline: 12px; line-height: 1; color: var(--kai-kale); cursor: pointer; background: var(--mint); border: 1px solid rgba(0, 50, 35, 0.2); border-radius: 8px; }
 .period-open:hover { background: var(--kai-pea); }
+.period-open-icon { display: block; inline-size: 18px; block-size: 18px; }
 .period-error { margin-block-start: 4px; }
 
 .period-dialog-backdrop { position: fixed; z-index: 1000; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(0, 32, 24, 0.72); }

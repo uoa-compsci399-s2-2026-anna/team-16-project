@@ -1086,6 +1086,12 @@ export async function downloadPdf(state) {
  * `aria-hidden`: the flower adds nothing a screen reader needs. Every fact it stands for
  * — ticked, and now contributed — is already on the accessible checkbox itself and in
  * `.contribute-status`'s own text.
+ *
+ * **Where it blooms is now a slot rather than an overlay.** It used to be
+ * `position: absolute` hung off `.contribute-choice`'s inline-end, which put it beside
+ * the tick without occupying the row. `.contribute-slot` puts it in normal flow in
+ * that same place, because Submit and Undo now share the position with it — see
+ * `contributeBlock`.
  */
 function contributeFlower() {
   // Each half-disc is drawn at the origin, same as before, then pushed outward by 7 units
@@ -1186,6 +1192,24 @@ function contributeBlock(state) {
   // Three states for one slot, and `done` has none: trap 4 in the brief — a visitor who
   // returns through the wizard after contributing must not be offered Submit again, so
   // the slot is empty and `.contribute-status` speaks for it.
+  //
+  // **Round five: the action and the flower are the same slot, in the same place.**
+  // The row used to read tick — flower — (a gap the width of the row) — Submit, with
+  // `.contribute-action { margin-inline-start: auto }` throwing the button to the far
+  // end, so the thing the visitor pressed and the thing that answered the press were at
+  // opposite sides of the block and nothing connected them. `.contribute-slot` sits
+  // immediately after the tick, which is where the flower already was, and holds one
+  // occupant at a time: **Submit → Undo → the flower, each replacing the last in the
+  // position the eye is already on.** The handover is exact — `done` empties `action`
+  // and turns `celebrate` on in the same `setState` (`contributeCalculation`), so the
+  // one render that removes Undo is the one that plants the flower.
+  //
+  // The flower is unchanged in every other respect: still gated on
+  // `state.contributeCelebrating` so an unrelated re-render cannot replay it, and still
+  // gated on `prefersReducedMotion()` so a visitor who asked for no motion is given
+  // none — both reasons are in `contributeFlower`'s own note above and in `state.js`.
+  // In that case the slot simply ends up empty, which is the state it was already in
+  // for every reduced-motion visitor before this change.
   const action = done
     ? ''
     : armed
@@ -1197,9 +1221,8 @@ function contributeBlock(state) {
       <span class="contribute-choice">
         <input type="checkbox" id="contribute" aria-describedby="contribute-sentence" aria-checked="${ticked ? 'true' : 'false'}" ${ticked ? 'checked' : ''} ${locked ? 'disabled' : ''}>
         <label for="contribute" class="contribute-toggle"><span class="contribute-toggle__mark" aria-hidden="true"></span><span class="contribute-toggle__text">${escapeHtml(t('I would like to contribute to the Kai Commitment'))}</span></label>
-        ${celebrate ? contributeFlower() : ''}
       </span>
-      ${action}
+      <span class="contribute-slot">${action}${celebrate ? contributeFlower() : ''}</span>
     </div>
     ${armed ? contributeCountdown(state) : ''}
     ${done ? `<p class="contribute-status" role="status">${escapeHtml(t("Your latest figures are in this calculator's public statistics."))}</p>` : ''}
@@ -1423,6 +1446,13 @@ const RESULTS_NAV_SECTIONS = [
  * It answers one question -- which way the FIRST press of the handle goes. See
  * `resultsFloatingNavigation`'s note on `state.resultsNavOpen`.
  *
+ * **It now has one live answer.** The docked regime draws no handle at all
+ * (`styles.css`, `.results-floating-nav__handle { display: none }` inside the
+ * `min-width: 1600px` block), so a press can only reach `calculator.js` from the
+ * undocked regime, where this returns `false` and the first press therefore always
+ * opens. The function is kept rather than deleted because `docs/interfaces.md`
+ * §7.3a publishes it, and a contract change is three steps and a notification.
+ *
  * @param {Document|Element} [root] Where to look for the nav; the document by default.
  * @returns {boolean} `false` when there is no nav, no DOM, or no docked regime.
  */
@@ -1445,6 +1475,49 @@ export function resultsNavIsDocked(root = typeof document === 'undefined' ? null
 let currentSection = null
 
 /**
+ * The section a **click on a nav link** has claimed, until the reader scrolls away.
+ *
+ * `null` means the observer decides, which is every moment the visitor has not just
+ * pressed a link. While it is set, `onSectionsCrossed` stands down entirely.
+ *
+ * **This exists because the observer could not be trusted to settle on the right
+ * answer, and the fix to the tie-break does not make it redundant.** A jump is an
+ * instruction, not an inference: the reader said "take me to *Tangible equivalents*",
+ * and for as long as they have not moved again the honest answer to "where am I" is
+ * the one they gave. The band is 162-360 at a 900px viewport and a jump lands its
+ * target at 24, so a section under 138px tall would sit entirely above the band on
+ * arrival and the spy would mark the one after it -- the same class of defect as the
+ * one this round fixes, waiting on a shorter section being added to the four. The
+ * pin takes the click path off the geometry altogether rather than depending on it
+ * staying favourable; see `SECTION_BAND` for why the band is not simply moved up to
+ * meet the rest line.
+ *
+ * **It is also what puts the mark on the link at the moment of the press.**
+ * `html { scroll-behavior: smooth }`, so a click is followed by several hundred
+ * milliseconds of travel during which the observer's honest answer is wherever the
+ * page currently is -- the section the reader is leaving, then whatever it passes on
+ * the way. Measured from the top of the page: 60ms after a press on *Explore
+ * Improvements* the observer still says *Impact summary*. The pin answers the press,
+ * not the animation.
+ */
+let pinnedSection = null
+
+/**
+ * Whether the pinned section has actually arrived where the jump was sending it.
+ *
+ * `html { scroll-behavior: smooth }` (styles.css), so a click is followed by a burst
+ * of `scroll` events that are the *browser's* and not the reader's. Releasing the pin
+ * on the first of them would undo the pin before the page had finished moving. So the
+ * pin is released by a scroll only once the target has reached its rest position and
+ * then left it -- and by a wheel, a touch drag or a scrolling key immediately, since
+ * those are the reader's hand on the page whatever the animation is doing.
+ */
+let pinnedSettled = false
+
+/** Installed once, on `document`, and never by a render. See `bindNavGestures`. */
+let navGesturesBound = false
+
+/**
  * **The one `IntersectionObserver` for the life of the page.**
  *
  * `render()` replaces `main.innerHTML` on every `setState` -- a keystroke in the
@@ -1465,6 +1538,23 @@ let sectionSpy = null
 const sectionsInBand = new Set()
 
 /**
+ * Where a clicked section comes to rest, in CSS pixels.
+ *
+ * **Measured on the running stack, not assumed.** `styles.css` gives all four
+ * sections `scroll-margin-top: 24px`, and there is no sticky element at the top of
+ * this page to clear -- `.step-nav` is `position: sticky; bottom: 0` and sits at
+ * 824-900 of a 900px viewport, and `.site-header` does not stick at all. So a jump
+ * lands the target's border box at exactly `top: 24`, which all four were measured
+ * doing (scrollY 427 / 1225 / 1548 / 1986 at 1600x900).
+ *
+ * It is the same 24 as the stylesheet's and the two must move together. It is what
+ * tells a scroll the browser is performing from a scroll the reader is performing:
+ * see `bindNavGestures`. It is also the number that decides whether the reading band
+ * could be relied on for a click at all -- see `SECTION_BAND`, where it is not.
+ */
+const SECTION_REST_TOP = 24
+
+/**
  * The band the reader is taken to be reading, as a `rootMargin`.
  *
  * Top 18% to 40% of the viewport: below the header, above the middle. A section is
@@ -1472,6 +1562,20 @@ const sectionsInBand = new Set()
  * the largest visible area -- cannot mark the short ones at all: *Tangible
  * equivalents* is a third of the height of *Breakdown by category* and would never
  * win a contest it is measured by area.
+ *
+ * **Left where it is, and that is a decision taken from the measurement rather than
+ * in spite of it.** A jump lands its target at `SECTION_REST_TOP`, 24px, which is
+ * 138px above this band's top edge at a 900px viewport -- so a section shorter than
+ * 138px would sit entirely above the band after a jump to it and the spy would mark
+ * its successor. Today the shortest of the four is 220px, with 82px to spare. The
+ * obvious repair is to drop the band's top edge onto the 24px rest line, and it was
+ * measured and rejected: the top of the band is the line at which the mark hands
+ * over, and at 24px it hands over only once a section has left the viewport
+ * altogether. A reader looking at 87px of *Tangible equivalents* above 800px of
+ * *Breakdown by category* would be told they are in *Tangible equivalents*, which
+ * trades a defect that needs a 138px section to appear for one that appears on every
+ * scroll. The click path is made correct by pinning it (`pinnedSection`) instead,
+ * which is the mechanism that does not depend on how tall anybody's sections are.
  */
 const SECTION_BAND = '-18% 0px -60% 0px'
 
@@ -1490,18 +1594,117 @@ function markCurrentSection(nav) {
 }
 
 function onSectionsCrossed() {
-  //: The LAST section in page order that is in the band -- the one the reader has
-  //: most recently come to. Two of them intersect whenever a boundary is inside
-  //: the strip, and taking the first would hold the mark on the section the reader
-  //: has just left until it cleared the band entirely.
+  //: A pinned section is the reader's own answer to this question and outranks the
+  //: observer's. See `pinnedSection`.
+  if (pinnedSection) return
+  //: **The FIRST section in page order that is in the band**, which -- the sections
+  //: being contiguous and in order -- is the one occupying the band's top edge. That
+  //: edge is the reading line, and the section under it is the heading the reader
+  //: most recently passed. It used to take the LAST, on the reasoning that the last
+  //: is "the one the reader has most recently come to"; that is the right description
+  //: of a section whose *top* has just crossed into the band from below, and the
+  //: wrong one for the reader, who is still looking at the section above it. Measured
+  //: at a 900px viewport, where the band is 162-360: a jump to *Tangible equivalents*
+  //: rests it at 24-311, so 149px of it is in the band -- and the 36px gap after it
+  //: puts *Breakdown by category* at 347-360, 13px of it also in the band. Taking the
+  //: last marked *Breakdown*, which is the reported defect, one link out of step,
+  //: exactly.
   let next = null
-  for (const [id] of RESULTS_NAV_SECTIONS) if (sectionsInBand.has(id)) next = id
+  for (const [id] of RESULTS_NAV_SECTIONS) {
+    if (sectionsInBand.has(id)) { next = id; break }
+  }
   //: Nothing in the band keeps the previous answer rather than clearing it: the
   //: gap between two sections is wider than the band at the top of the page and
   //: under the fold, and a nav that blanks out there reads as broken.
   if (!next || next === currentSection) return
   currentSection = next
   markCurrentSection(document.querySelector('.results-floating-nav'))
+}
+
+/**
+ * A press on a nav link claims that section until the reader moves the page.
+ *
+ * Called from the one delegated listener in `bindNavGestures`, not from a handler
+ * attached per render: `render()` replaces `main.innerHTML` on every `setState`, so
+ * a listener on the `<a>` would be thrown away with the element that carried it, and
+ * re-attaching one per render is the same leak `sectionSpy` exists to avoid.
+ */
+function pinSection(id) {
+  if (!RESULTS_NAV_SECTIONS.some(([section]) => section === id)) return
+  pinnedSection = id
+  pinnedSettled = false
+  currentSection = id
+  markCurrentSection(document.querySelector('.results-floating-nav'))
+}
+
+/** Hand the question back to the observer, and answer it again from what it holds. */
+function releasePin() {
+  if (!pinnedSection) return
+  pinnedSection = null
+  pinnedSettled = false
+  onSectionsCrossed()
+}
+
+/**
+ * The keys that scroll a document. Anything else the reader presses is not a scroll,
+ * and `Enter` on a nav link is emphatically not one -- `keydown` precedes `click`, so
+ * an unfiltered key listener would have released the pin the keyboard press was in
+ * the act of setting.
+ */
+const SCROLL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ', 'Spacebar'])
+
+/**
+ * The three listeners the pin needs, installed **once on `document`** for the life of
+ * the page.
+ *
+ * Wired here rather than at module load because this module is imported by a Node
+ * harness for the text export, where there is no `document` at all.
+ *
+ * * **click** sets the pin. Delegated, because the links are rebuilt by every render.
+ * * **wheel / touchmove / a scrolling key** release it at once: that is the reader's
+ *   hand on the page, and it is allowed to interrupt a smooth scroll that is still
+ *   running. Keys pressed inside a form control are excluded -- an arrow key in the
+ *   improvement panel's `<select>` moves the select, not the page.
+ * * **scroll** releases it only after the target has arrived and then left, which is
+ *   what makes a dragged scrollbar -- which fires no wheel and no key -- release the
+ *   pin without the smooth scroll released it on its own first frame.
+ *
+ * **The gesture listeners overlap the scroll listener almost completely, and the
+ * sliver they do not is why they are here.** Removing the `wheel` listener alone was
+ * mutation-tested and left `test_the_readers_own_scroll_takes_the_pin_back_off`
+ * green: a wheel produces scroll events too, the target had already arrived, and the
+ * scroll path released the pin on the same gesture. The case that is theirs alone is
+ * a gesture that arrives *before* the jump has landed and cancels it -- Chromium
+ * abandons a programmatic smooth scroll on real user scroll input -- because
+ * `pinnedSettled` would then never be set and the scroll path would never fire
+ * again. The pin would be stuck on that section for the rest of the session. It could
+ * not be reproduced through Playwright, whose synthesised wheel does not cancel the
+ * animation (measured: the page still arrived at scrollY 1986), so these three are
+ * kept on the reasoning rather than on a test, and the test that does hold is
+ * `test_the_readers_own_scroll_takes_the_pin_back_off` against all four paths removed.
+ */
+function bindNavGestures() {
+  if (navGesturesBound || typeof document === 'undefined') return
+  navGesturesBound = true
+  document.addEventListener('click', event => {
+    const link = event.target?.closest?.('.results-floating-nav__links a[href^="#"]')
+    if (link) pinSection(link.getAttribute('href').slice(1))
+  })
+  document.addEventListener('wheel', releasePin, { passive: true })
+  document.addEventListener('touchmove', releasePin, { passive: true })
+  document.addEventListener('keydown', event => {
+    if (!SCROLL_KEYS.has(event.key)) return
+    if (event.target?.closest?.('input, textarea, select, [contenteditable]')) return
+    releasePin()
+  })
+  document.addEventListener('scroll', () => {
+    if (!pinnedSection) return
+    const target = document.getElementById(pinnedSection)
+    if (!target) return
+    const arrived = Math.abs(target.getBoundingClientRect().top - SECTION_REST_TOP) <= 2
+    if (arrived) pinnedSettled = true
+    else if (pinnedSettled) releasePin()
+  }, { passive: true })
 }
 
 /**
@@ -1528,8 +1731,13 @@ export function bindResultsSectionSpy(root) {
     sectionSpy?.disconnect()
     sectionsInBand.clear()
     currentSection = null
+    //: A pin is a claim about a page that no longer exists. Left standing, it would
+    //: silence the observer for the whole of the next visit to the results page.
+    pinnedSection = null
+    pinnedSettled = false
     return
   }
+  bindNavGestures()
   if (!sectionSpy) {
     //: Absent in the Node harness that runs this module for the text export, and
     //: in any browser old enough not to have it. The nav still jumps; only the

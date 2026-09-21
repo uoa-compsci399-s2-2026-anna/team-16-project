@@ -1868,7 +1868,7 @@ def test_the_text_export_and_the_comparison_screen_agree_about_an_incomplete_sav
 # test in this file already drives.
 
 
-def _results_page(page_at, *, contribute_calls=None, reduced_motion=None):
+def _results_page(page_at, *, contribute_calls=None, reduced_motion=None, width=None):
     """The results page, reached with `calculate_response.json` - the fixture that
     carries a real `token` (§6.2), which is what the control this section tests
     actually sends.
@@ -1885,8 +1885,14 @@ def _results_page(page_at, *, contribute_calls=None, reduced_motion=None):
     `reduced_motion`, when given, is forwarded to `page_at`'s own context - see
     `test_the_flower_blooms_only_when_motion_is_allowed` below for the one
     place this actually varies.
+
+    `width` likewise. The default 390 is where every other test here belongs -
+    `.contribute-control` wraps at that width and the tick and the action are on
+    two lines - but `test_submit_undo_and_the_flower_take_one_position_in_turn`
+    is about where they sit *in a row*, so it asks for a viewport that has one.
     """
-    page = page_at(_fixture("calculate_response.json"), reduced_motion=reduced_motion)
+    kwargs = {} if width is None else {"width": width}
+    page = page_at(_fixture("calculate_response.json"), reduced_motion=reduced_motion, **kwargs)
     if contribute_calls is not None:
         page.route(
             "**/api/v1/contribute",
@@ -2428,6 +2434,117 @@ def test_a_recalculation_does_not_ask_again_or_offer_submit_again(page_at):
         "the tick came back editable after a recalculation"
     )
     assert len(sent) == 1, "the recalculation sent a second /contribute on its own"
+
+
+#: Every box the position assertions below ask about, in one round trip. `null` for
+#: an absent element is the answer, not an error: the whole point of the slot is that
+#: it holds one occupant at a time and is sometimes empty.
+_CONTRIBUTE_BOXES = """
+() => {
+  const box = selector => {
+    const element = document.querySelector(selector);
+    if (!element) return null;
+    const r = element.getBoundingClientRect();
+    return {left: Math.round(r.left), right: Math.round(r.right), top: Math.round(r.top),
+            bottom: Math.round(r.bottom), width: Math.round(r.width), height: Math.round(r.height)};
+  };
+  const action = document.querySelector('#contribute-action');
+  return {
+    choice: box('.contribute-choice'), slot: box('.contribute-slot'),
+    action: box('#contribute-action'), flower: box('.contribute-flower'),
+    control: box('.contribute-control'),
+    label: action ? action.textContent.trim() : null,
+  };
+}
+"""
+
+
+@pytest.mark.browser
+def test_submit_undo_and_the_flower_take_one_position_in_turn(page_at):
+    """**The action and the flower share one place, and that place is beside the
+    tick.**
+
+    Round four put the tick on the left and threw the action to the far right with
+    `.contribute-action { margin-inline-start: auto }`, while the flower bloomed
+    back at the tick's inline-end - so the button the visitor pressed and the thing
+    that answered the press were at opposite edges of a 947px row with nothing
+    joining them. `.contribute-slot` is the one position, immediately after the
+    tick, and Submit, then Undo, then the flower occupy it in turn.
+
+    **Boxes, not class names.** Every class here was present and correct while the
+    two were at opposite ends of the row; what was wrong was two rectangles 340px
+    apart. So three rectangles are compared, at the three moments, and the
+    assertion is that they are the same rectangle.
+
+    The handover is exact by construction rather than by timing: `done` empties the
+    action and `contributeCelebrating` renders the flower, and
+    `contributeCalculation` sets both in one `setState`, so the render that removes
+    Undo is the render that plants the flower. That is what the third measurement
+    below asserts - a flower present *and* `#contribute-action` gone, in the same
+    observation.
+
+    Mutations, both measured: restoring `margin-inline-start: auto` on the action
+    puts Submit 393px after the tick in a 947px row and fails the first assertion.
+    Putting the flower back where it was - `position: absolute` off
+    `.contribute-choice`, rendered inside the tick's wrapper - blooms it at 622 where
+    Undo stood at 630, and fails the handover assertion by those 8px. The second one
+    matters: the flower was *already* beside the tick, so a test that only moved the
+    button would have been satisfied by the two being roughly near each other.
+    """
+    page = _results_page(page_at, width=1280)
+    page.route("**/api/v1/contribute", lambda route: route.fulfill(status=204))
+    page.locator(".contribute-block").scroll_into_view_if_needed()
+    page.wait_for_timeout(200)
+
+    submit = page.evaluate(_CONTRIBUTE_BOXES)
+    assert submit["label"] == "Submit", f"the control is not in its resting state ({submit['label']})"
+    #: Beside the tick means beside the tick: one `.contribute-control` gap (14px)
+    #: and no more. The failure this replaces measured 393.
+    gap = submit["action"]["left"] - submit["choice"]["right"]
+    assert 0 <= gap <= 24, (
+        f"Submit sits {gap}px after the tick, in a row {submit['control']['width']}px wide. The "
+        f"action is supposed to be brought to the flower's position, not left at the far edge"
+    )
+
+    page.locator("#contribute").check()
+    _press_submit(page)
+    page.wait_for_timeout(400)
+    undo = page.evaluate(_CONTRIBUTE_BOXES)
+    assert undo["label"] == "Undo", f"the grace window did not open ({undo['label']})"
+    assert undo["action"]["left"] == submit["action"]["left"], (
+        f"Undo appeared at {undo['action']['left']} where Submit was at "
+        f"{submit['action']['left']}: the two are meant to be one slot, so the second must not "
+        f"move under the press that produced it"
+    )
+    assert undo["action"]["top"] == submit["action"]["top"], (
+        f"Undo is at {undo['action']['top']} and Submit was at {submit['action']['top']}"
+    )
+
+    page.wait_for_timeout(CONTRIBUTE_GRACE_MS + 300)
+    bloom = page.evaluate(_CONTRIBUTE_BOXES)
+    assert bloom["action"] is None, (
+        "Undo is still on screen once the request has gone, so there is no handover to measure"
+    )
+    assert bloom["flower"] is not None, (
+        "no flower at the moment Undo disappeared. It is gated on `contributeCelebrating` and on "
+        "motion being allowed, and this context allows motion"
+    )
+    assert bloom["flower"]["left"] == undo["action"]["left"], (
+        f"the flower blooms at {bloom['flower']['left']} and Undo was at "
+        f"{undo['action']['left']}: the sequence is meant to happen in one position"
+    )
+    assert undo["action"]["top"] <= bloom["flower"]["top"] <= undo["action"]["bottom"], (
+        f"the flower is at {bloom['flower']['top']}-{bloom['flower']['bottom']} and Undo occupied "
+        f"{undo['action']['top']}-{undo['action']['bottom']}"
+    )
+    #: The row must not jump as the slot's occupant changes size - 96px of Submit,
+    #: 83px of Undo, 44px of flower and then nothing at all.
+    for moment, measured in (("Undo", undo), ("the bloom", bloom)):
+        assert measured["control"]["height"] == submit["control"]["height"], (
+            f"the contribute row changed height at {moment} "
+            f"({submit['control']['height']} -> {measured['control']['height']}px), so the block "
+            f"twitches under the visitor at every step of a sequence they are watching"
+        )
 
 
 @pytest.mark.browser

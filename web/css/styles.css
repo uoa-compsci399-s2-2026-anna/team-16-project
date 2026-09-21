@@ -53,6 +53,13 @@
   --muted: #465f56;
   --green: var(--kai-pea);
   --green-dark: var(--kai-kale);
+  /* **The green that is legible on a light ground**, for the places where a green
+     has to carry contrast rather than decorate. Pea composited 50% over Kale — a
+     shade of the brand's own green, mixed from two palette colours rather than
+     invented — because Pea itself measures 2.04:1 on #f2faf6 and 2.17:1 on white,
+     which is under the 3:1 a non-text indicator needs and less than half the 4.5:1
+     text needs. This measures 4.84:1 on #f2faf6 and 5.14:1 on white. */
+  --green-rule: #147d52;
   --mint: #dff8ed;
   /* Step 3's zone fill and its hairline. **One step lighter than `--mint`, and
      that is the whole reason it is a second pair of values rather than `--mint`
@@ -1177,15 +1184,33 @@ tbody th { font-weight: 700; }
    too, and every press of Submit would have landed on the checkbox sitting over it. The
    wrapper is what the input is sized against now, and it wraps the tick alone. */
 .contribute-control { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
-/* The tick, and the flower that blooms beside it. `min-inline-size: 0` because a flex
-   item's automatic minimum is its content, and a long German label would otherwise
-   refuse to shrink and push the row past 320px. */
+/* The tick. `min-inline-size: 0` because a flex item's automatic minimum is its
+   content, and a long German label would otherwise refuse to shrink and push the row
+   past 320px. `position: relative` is load-bearing and must stay: the real checkbox
+   below is `position: absolute; inset: 0` and this is the box it is sized against —
+   the tick alone, never the row, or the invisible input would lie over the action
+   button as well and swallow every press of it. */
 .contribute-choice { position: relative; display: inline-flex; flex: 0 1 auto; min-inline-size: 0; max-inline-size: 100%; }
-/* Submit / Undo: the same slot, at the row's end. The client's own words - "a tick on
-   the left, a separate Submit button on the right". `margin-inline-start: auto` rather
-   than `justify-content: space-between`, so the pair still reads as tick-then-action
-   when the row wraps at a narrow width instead of the two being flung apart. */
-.contribute-action { margin-inline-start: auto; }
+/* **ONE POSITION, THREE OCCUPANTS: Submit, then Undo, then the flower.**
+   `.contribute-action { margin-inline-start: auto }` used to throw the button to the
+   far end of the block while the flower bloomed back beside the tick, so the press and
+   its answer happened at opposite edges of a 900px row with nothing joining them. The
+   slot sits immediately after the tick — the flower's own place, kept — and the action
+   is brought to it. `contributeCalculation` empties the action and sets
+   `contributeCelebrating` in one `setState`, so the render that takes Undo away is the
+   render that plants the flower, in the pixels Undo was occupying.
+
+   `min-block-size` holds the row's height steady across the handover: the buttons are
+   50px and the flower is 44, and without it the block would shrink by six pixels at
+   the moment of the bloom and again when the bloom is cleared. The slot is allowed to
+   be empty — reduced motion, and the resting contributed state, both leave it so. */
+.contribute-slot {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 50px;
+}
 .contribute-control input[type="checkbox"] {
   position: absolute;
   inset: 0;
@@ -1266,28 +1291,27 @@ tbody th { font-weight: 700; }
   transform: rotate(40deg);
 }
 /* The flower - inline SVG only, built in `results.js`'s `contributeFlower()` from five
-   half-circles, the brand's own supporting graphic. `contribute-choice`'s own
-   `position: relative` is what this positions against - the tick's wrapper, not the
-   whole row, so it blooms beside the pill rather than beyond the action button that now
-   shares the row (and in the done state there is no action button there at all, which is
-   the only state this ever renders in); `pointer-events: none` keeps it
-   from ever intercepting the click that is about to lock the button anyway. It exists in
-   the DOM only while `state.contributeCelebrating` is true and motion is allowed - see
-   that flag's note in `state.js` - so the `@media (prefers-reduced-motion: reduce)` rule
-   at the foot of this file, which mutes every *other* animation in this stylesheet, has
-   nothing to mute here: there is nothing to find. */
+   half-circles, the brand's own supporting graphic. **It is in normal flow inside
+   `.contribute-slot` now, not absolutely positioned against the tick's wrapper**: the
+   place it occupied is the place Submit and Undo have been brought to, and the point of
+   the change is that the three take that position in turn. Losing `position: absolute`
+   loses the `translateY(-50%)` the keyframes carried with it - the slot's own
+   `align-items: center` does that job, and a transform that also has to re-centre the
+   element cannot be written as a clean scale-and-rotate. `pointer-events: none` keeps
+   it from ever intercepting a click, though in the only state it renders in there is no
+   button under it. It exists in the DOM only while `state.contributeCelebrating` is
+   true and motion is allowed - see that flag's note in `state.js` - so the
+   `@media (prefers-reduced-motion: reduce)` rule at the foot of this file, which mutes
+   every *other* animation in this stylesheet, has nothing to mute here: there is
+   nothing to find. */
 .contribute-flower {
-  position: absolute;
-  inset-inline-start: 100%;
-  inset-block-start: 50%;
-  margin-inline-start: 6px;
-  transform: translateY(-50%);
+  flex: 0 0 auto;
   pointer-events: none;
   animation: kc-flower-bloom 600ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 @keyframes kc-flower-bloom {
-  from { opacity: 0; transform: translateY(-50%) scale(0.15) rotate(-35deg); }
-  to { opacity: 1; transform: translateY(-50%) scale(1) rotate(0deg); }
+  from { opacity: 0; transform: scale(0.15) rotate(-35deg); }
+  to { opacity: 1; transform: scale(1) rotate(0deg); }
 }
 /* THE FIVE-SECOND GRACE WINDOW.
    =============================
@@ -1418,7 +1442,9 @@ tbody th { font-weight: 700; }
    things fit in that, and they want different amounts of room.
 
    * **Docked, from 1600px up.** The panel itself goes in the gutter and is
-     open by default. It needs 24px of clearance from the column, its own
+     simply there — permanent, with **no handle drawn at all** (the rule in the
+     `min-width: 1600px` block below), because there is nothing for a handle to
+     expand. It needs 24px of clearance from the column, its own
      252px, and 16px before the viewport's inner edge: 292px, so
      `C/2 - 490 >= 292` and `C >= 1564`. A media query is matched against the
      window width INCLUDING the classic scrollbar — measured: this nav's own
@@ -1441,10 +1467,12 @@ tbody th { font-weight: 700; }
    `--results-floating-nav-docked` is where the two regimes are told apart,
    once. The stylesheet knows the viewport and `results.js` does not, so
    `resultsNavIsDocked()` reads this property off the nav instead of repeating
-   1600 in JavaScript where the two would drift. It decides exactly one thing:
-   which way the FIRST press of the handle goes, because `state.resultsNavOpen`
-   is `undefined` until the visitor toggles it and the default that press has
-   to invert is now two different defaults. */
+   1600 in JavaScript where the two would drift. It was read for exactly one
+   thing — which way the FIRST press of the handle goes — and now that the
+   docked regime draws no handle, a first press can only ever happen undocked,
+   where the default is closed and the answer is always "open". The property
+   and its reader are kept because `docs/interfaces.md` §7.3a publishes them,
+   but the branch they feed has one live arm. */
 .results-floating-nav { display: none; }
 
 @media (min-width: 1100px) {
@@ -1565,8 +1593,32 @@ tbody th { font-weight: 700; }
     inline-size: var(--results-floating-nav-panel-size);
     margin-inline-start: calc(490px + 24px);
   }
-  .results-floating-nav__panel { position: static; inline-size: 100%; }
-  .results-floating-nav:not([data-open="false"]) .results-floating-nav__panel {
+  /* **DOCKED, THERE IS NO HANDLE.** The list is permanent here; a control that
+     expands and collapses something already permanent is a control with nothing
+     to do, and it was drawn anyway — 52px of orange disc above a list it could
+     not affect, in the tab order, announcing `aria-expanded` about a panel whose
+     state it no longer decided. The handle, and the whole expand/collapse idea,
+     belong to the narrow regime, where the panel would otherwise cover the text.
+
+     `display: none` rather than withholding the button from `results.js`: this is
+     a fact about the viewport, and the viewport is what the stylesheet knows.
+     `resultsFloatingNavigation` runs once per render and a resize is not a render,
+     so a button omitted in markup at 1920 would still be missing after a drag down
+     to 1280. `display: none` is also the removal that takes the button out of the
+     accessibility tree and out of the tab order in the same stroke — `visibility:
+     hidden` would do that too, `opacity: 0` would not, and neither of those would
+     reclaim the 52px. */
+  .results-floating-nav__handle { display: none; }
+  /* **Unconditionally open, with no `:not([data-open="false"])` guard, and that is
+     the other half of removing the handle.** `data-open="false"` can only have been
+     written by a press, a press can only happen in the narrow regime, and the
+     attribute survives a resize into this one — so the guard that used to stand
+     here would dock a visitor who had closed the overlay at 1280 into a nav with
+     neither a list nor a handle to bring one back. Docked, the panel is not "open":
+     it IS the nav. */
+  .results-floating-nav__panel {
+    position: static;
+    inline-size: 100%;
     opacity: 1;
     visibility: visible;
     pointer-events: auto;
@@ -1576,29 +1628,76 @@ tbody th { font-weight: 700; }
   .results-floating-nav__panel { --results-floating-nav-panel-nudge: 0px; transition: none; }
 }
 .results-floating-nav__links { display: grid; gap: 3px; margin: 0; padding: 0; list-style: none; }
+/* **The rest of the list is pushed back, so that the reader's own section can be
+   lifted rather than painted.** Muted rather than Kale, and Kumbh Sans Regular
+   rather than Bold: `--muted` measures **6.52:1** on the panel's frosted ground
+   (#f2faf6), comfortably past the 4.5:1 body-text bar, so "pushed back" is a
+   recession in emphasis and not in legibility. 400 and 700 are the only two
+   weights this stylesheet may ask for — see `font-synthesis: none` at the top —
+   and they are exactly the two this pair needs.
+
+   The transparent border reserves the 3px the current item's rule occupies, so
+   the mark moving down the list moves nothing sideways. */
 .results-floating-nav__links a {
   min-block-size: 44px;
   display: flex;
   align-items: center;
   padding-inline: 12px;
+  border-inline-start: 3px solid transparent;
   border-radius: 10px;
-  color: var(--kai-kale);
-  font-weight: 700;
+  color: var(--muted);
+  font-weight: 400;
   line-height: 1.3;
   overflow-wrap: anywhere;
   text-decoration: none;
 }
-.results-floating-nav__links a:hover { background: rgba(40, 200, 130, 0.32); }
+/* Hover darkens to Kale as well as tinting: **10.51:1** on the composited hover
+   ground (Pea at 32% over #f2faf6 = #b1ead1), against 5.13:1 if the muted resting
+   colour were left on it. Both pass; the darker one says "this is reachable". */
+.results-floating-nav__links a:hover { color: var(--kai-kale); background: rgba(40, 200, 130, 0.32); }
 /* WHERE THE READER IS, not which page they are on. `aria-current="location"`
    is the value for a nav item marking a position *within* the current page;
    `"page"` is what the site drawer's own marker means and would be a different
-   claim. `results.js`'s one IntersectionObserver writes the attribute straight
-   onto the link — it is not on `state`, because a scroll must not re-render
-   the results page. Pea ground, Kale text; hover is a pale tint of the same
-   Pea, so the two readings cannot be mistaken for each other. */
+   claim. `results.js` writes the attribute straight onto the link — it is not on
+   `state`, because a scroll must not re-render the results page.
+
+   **AN ELEVATION AND A COLOUR, NOT A CHIP — AND THE COLOUR CANNOT BE PEA.**
+   This was `background: var(--kai-pea)`, a filled block. The obvious replacement
+   is the one the request opens with, the item's own text in the accent, and it is
+   unavailable: measured against the panel's frosted ground #f2faf6,
+
+       Pea     #28c882   2.04:1     (4.5:1 needed for body text, 3:1 for large)
+       Kale    #003223  13.36:1
+       muted   #465f56   6.52:1
+
+   so Pea glyphs would be the *least* readable item in a list whose other items
+   are at 6.52:1 — the mark would recede rather than lift. The accent is carried
+   where a colour can be that light and still do its job:
+
+   * **the rule**, `--green-rule` #147d52 — Pea composited 50% over Kale, a shade
+     of the brand's own green rather than a new hue. **4.84:1** on #f2faf6 and
+     5.14:1 on the white surface below: past 3:1, which is what WCAG 1.4.11 asks
+     of a non-text state indicator, and past 4.5:1 as well, so it would be legible
+     as text if it were ever wanted as text. That is the readable green the request
+     asked to be shown a number for; it is on the rule and not on the glyphs
+     because at 4.84:1 it would still sit *below* the 6.52:1 of the items it has
+     to stand out from.
+   * **the shadow**, tinted Pea. A shadow carries no contrast requirement because
+     it carries no information on its own — the rule, the Kale, and the weight
+     each say the same thing, and `aria-current` says it to a screen reader.
+
+   The surface is white rather than transparent because a shadow needs something
+   to be cast by; over a 72%-white frosted panel the fill itself is all but
+   invisible and the elevation is what reads. Kale on it: **14.18:1**.
+
+   Written after `:hover`, which it ties with on specificity (0,2,1 each): the
+   reader's own section keeps its lift when the pointer crosses it. */
 .results-floating-nav__links a[aria-current="location"] {
   color: var(--kai-kale);
-  background: var(--kai-pea);
+  font-weight: 700;
+  background: var(--kai-white);
+  border-inline-start-color: var(--green-rule);
+  box-shadow: 0 5px 16px rgba(40, 200, 130, 0.45), 0 1px 3px rgba(0, 50, 35, 0.16);
 }
 .improvement-mode-field { max-width: 220px; margin: 20px auto 0; }
 /* **The list column's own minimum has to cover what the row inside it actually needs,

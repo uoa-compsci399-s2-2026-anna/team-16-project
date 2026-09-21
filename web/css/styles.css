@@ -1379,38 +1379,93 @@ tbody th { font-weight: 700; }
    Verified by mutation, and by the control (`min-inline-size: 2000px` on
    `.results-grid`) which does report 1665px.
 
-   So it is positioned against the COLUMN instead. `.main-content` is 900px
-   centred and `.wide` opens to 1000px at >=960px, so the results column is
-   ~960px wide: half of it is 480px, and the handle needs 52 + 18 beyond that.
-   `inset-inline-start: 50%` plus `margin-inline-start` is the pair that does
-   this in both directions -- `translate` is physical and would put the panel
-   on the wrong side in Arabic and Urdu.
+   THE COLUMN'S FAR EDGE IS 490px FROM THE 50% ANCHOR, AND THAT IS MEASURED.
+   `.main-content` is a 900px box centred with 20px of inline padding, so its
+   content box is 860px; `.results-page` is `.wide` (`max-width: 1000px`) with
+   `margin-inline: -80px` from 1020px up. 860 + 160 = 1020 is past the
+   max-width, so the width clamps to 1000 and the over-constrained margin
+   resolves on the INLINE-END side — the inline-start edge keeps its whole
+   -80px, and the far edge lands at `C/2 + 490`, where C is the initial
+   containing block (`clientWidth`). Measured on the running stack in English:
+   1032.5 at C=1085, 1122.5 at 1265, 1202.5 at 1425, 1282.5 at 1585 and
+   1442.5 at 1905 — +490 from the centre at all five. In Arabic the same three
+   rules put that edge at `C/2 - 490` (measured: 222 at C=1425, 302 at 1585),
+   because the over-constrained margin resolves on the inline-end side there
+   too. So `inset-inline-start: 50%` plus `margin-inline-start: 490px` lands
+   on the column's far edge in BOTH directions, which is the pair to use here:
+   `translate` is physical and would put the nav on the wrong side in Arabic
+   and Urdu.
+
+   The offset this replaces was `calc(480px + 18px)`, taken from an estimate
+   of the column as "~960px". Being 8px past the true edge was harmless for
+   the handle and fatal for the panel, which hangs off the handle's
+   inline-start (`inset-inline-end: <handle>`) and therefore opened BACKWARDS,
+   over the column. Measured before the fix, English, column at 32–1032:
+   panel 788–1040 at a 1100px window, 878–1130 at 1280, 958–1210 at 1440,
+   1038–1290 at 1600 and 1198–1450 at 1920 — 244 of its 252px on the text at
+   every width it was drawn at, in the state a visitor gets without touching
+   anything. Arabic mirrored it exactly: panel 214–466 against a column
+   starting at 222.
 
    **50%, never 100vw.** For a fixed box, percentages resolve against the
    initial containing block, which excludes the scrollbar; `100vw` includes it,
    and that is the single most common cause of overflow in this stylesheet
    (see the note above `test_horizontal_overflow.py`'s PATHS).
 
-   The gate is 1100px: 960 of column plus 70 either side. Below it there is no
-   gutter, so there is nowhere to float that is not on top of the page, and
-   the nav is not rendered at all rather than shrunk into the content. */
+   TWO REGIMES, AND NEITHER DEFAULT STATE TOUCHES THE TEXT.
+   The gutter on one side is `C/2 - 490`: 52.5px at C=1085, 142.5 at 1265,
+   222.5 at 1425, 302.5 at 1585, 462.5 at 1905, all measured. Two different
+   things fit in that, and they want different amounts of room.
+
+   * **Docked, from 1600px up.** The panel itself goes in the gutter and is
+     open by default. It needs 24px of clearance from the column, its own
+     252px, and 16px before the viewport's inner edge: 292px, so
+     `C/2 - 490 >= 292` and `C >= 1564`. A media query is matched against the
+     window width INCLUDING the classic scrollbar — measured: this nav's own
+     1100px gate fires at a 1100px window whose `clientWidth` is 1085 — so the
+     gate has to carry a scrollbar as well: 1564 + 17 = 1581, rounded up to
+     **1600**. Below that the panel cannot be docked without either shrinking
+     it or putting it back on the text, and both were rejected.
+   * **Handle only, 1100px to 1599px.** The panel is CLOSED by default here
+     and opens over the page when the visitor asks for it: a reader who never
+     touches the handle is never covered, and one who presses it has asked for
+     the list. The handle is 52px and the gutter at the bottom of this band is
+     52.5px, so flush against the column — `margin-inline-start: 490px`, no
+     gap — is the only placement that fits. 0.5px of slack at 1100, growing
+     with the viewport.
+   * **Below 1100px, not rendered at all**, which is the original gate and its
+     reasoning is untouched: 960 of column plus 70 either side, and below it
+     there is no gutter to float in, so the nav is withheld rather than shrunk
+     into the content.
+
+   `--results-floating-nav-docked` is where the two regimes are told apart,
+   once. The stylesheet knows the viewport and `results.js` does not, so
+   `resultsNavIsDocked()` reads this property off the nav instead of repeating
+   1600 in JavaScript where the two would drift. It decides exactly one thing:
+   which way the FIRST press of the handle goes, because `state.resultsNavOpen`
+   is `undefined` until the visitor toggles it and the default that press has
+   to invert is now two different defaults. */
 .results-floating-nav { display: none; }
 
 @media (min-width: 1100px) {
   .results-floating-nav {
     --results-floating-nav-handle-size: 52px;
+    --results-floating-nav-panel-size: 252px;
+    --results-floating-nav-docked: 0;
     display: block;
     position: fixed;
     z-index: 30;
     inset-inline-start: 50%;
-    margin-inline-start: calc(480px + 18px);
+    margin-inline-start: 490px;
     top: 50%;
     translate: 0 -50%;
   }
 }
+
 .results-floating-nav__handle {
   inline-size: var(--results-floating-nav-handle-size);
   block-size: var(--results-floating-nav-handle-size);
+  flex: none;
   display: grid;
   place-items: center;
   border: 0;
@@ -1422,38 +1477,103 @@ tbody th { font-weight: 700; }
   line-height: 1;
   cursor: pointer;
 }
-.results-floating-nav__handle:hover { translate: -2px 0; }
+/* The hover state was `translate: -2px 0`, and a physical translate is a
+   direction: in Arabic this handle sits on the left of the column, so that
+   nudge moved it INTO the column instead of away from it. A shadow says the
+   same thing on both sides, and it is not motion, so `prefers-reduced-motion`
+   has nothing to switch off. */
+.results-floating-nav__handle:hover { box-shadow: 0 7px 22px rgba(0, 50, 35, 0.4); }
 .results-floating-nav[data-open="true"] .results-floating-nav__handle { background: var(--kai-kale); }
+/* LIGHT FROSTED GLASS, KALE TEXT. This was a solid Kale card with white links.
+   It floats over a white page, and a translucent light ground reads as sitting
+   above the page rather than as a hole punched in it. The brand pairs a light
+   ground with Kale text (CLAUDE.md), so every string in here is Kale and the
+   reader's own section is Pea — also a light ground, also Kale text.
+
+   **The `@supports` fallback is not decoration.** Without `backdrop-filter`
+   the translucent white is simply transparent, and the links would be read
+   against whatever paragraph happened to be behind them, so the fallback has
+   to be OPAQUE rather than merely darker. `not (A or B)` covers the prefixed
+   spelling as well: Safari shipped only `-webkit-backdrop-filter` for years,
+   and treating that as unsupported would hand a working browser the fallback. */
 .results-floating-nav__panel {
   position: absolute;
   inset-inline-end: var(--results-floating-nav-handle-size);
   top: 50%;
-  inline-size: min(252px, calc(100vw - 86px));
+  inline-size: var(--results-floating-nav-panel-size);
   min-inline-size: 0;
   padding: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(0, 50, 35, 0.14);
   border-radius: 16px;
-  background: var(--kai-kale);
-  box-shadow: 0 14px 36px rgba(0, 50, 35, 0.28);
+  color: var(--kai-kale);
+  background: rgba(255, 255, 255, 0.72);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  backdrop-filter: blur(14px) saturate(1.4);
+  box-shadow: 0 14px 36px rgba(0, 50, 35, 0.18);
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  translate: 8px -50%;
+  translate: var(--results-floating-nav-panel-nudge, 8px) var(--results-floating-nav-panel-rise, -50%);
   transition: opacity 140ms ease, visibility 140ms ease, translate 140ms ease;
 }
-/* Open by default where the nav exists at all: the request was that the list
-   is *there* when there is room for it, not that it has to be summoned. A
-   visitor who closes it gets `data-open="false"`, which wins over this.
-   `:hover` no longer opens it -- the panel could be visible while the button
-   still reported `aria-expanded="false"`, and a state a screen reader
-   contradicts is worse than one that needs a click. */
-.results-floating-nav:not([data-open="false"]) .results-floating-nav__panel,
-.results-floating-nav:focus-within .results-floating-nav__panel,
-.results-floating-nav[data-open="true"] .results-floating-nav__panel {
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .results-floating-nav__panel { background: var(--kai-white); }
+}
+/* **Closed is the default, and only the docked regime above overrides it.**
+   It used to be open wherever the nav was drawn at all — `:not([data-open="false"])`
+   with no media query — which is why the overlay covered the column for a
+   visitor who had touched nothing. The request stands where it can be met: the
+   list is *there* when there is room for it, and summoned where there is not.
+
+   `:focus-within` opens it too, and that is what makes the closed default
+   reachable from a keyboard: `visibility: hidden` takes the links out of the
+   tab order, so without this rule the handle would be a button whose menu
+   could never be entered. It carries the same `:not([data-open="false"])`
+   guard as the docked default, because the handle keeps focus after a press —
+   without the guard the panel would reopen under the visitor's own close.
+   `:hover` does not open it: the panel could be visible while the button still
+   reported `aria-expanded="false"`, and a state a screen reader contradicts is
+   worse than one that needs a click. */
+.results-floating-nav[data-open="true"] .results-floating-nav__panel,
+.results-floating-nav:not([data-open="false"]):focus-within .results-floating-nav__panel {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
-  translate: 0 -50%;
+  translate: 0 var(--results-floating-nav-panel-rise, -50%);
+}
+/* **Below the panel's own rules, not above them, and a media query does not fix
+   that.** `@media` adds no specificity, so `.results-floating-nav__panel` in here
+   and `.results-floating-nav__panel` up there are (0,1,0) against (0,1,0) and
+   source order is the whole of the difference. Written above them first: the
+   panel stayed `position: absolute`, kept hanging off the handle's inline-start,
+   and the docked panel measured 1254-1506 against a nav that starts at 1306 - the
+   same 252px over the column this whole block exists to stop. */
+@media (min-width: 1600px) {
+  .results-floating-nav {
+    --results-floating-nav-docked: 1;
+    /* Docked, the panel is in normal flow under the handle rather than hung
+       off its side, so the nav's own box IS the docked column and both
+       children start at its inline edge. The two offsets the overlay slides
+       the panel in with are zeroed here: there is nothing to slide out of, and
+       a -50% rise on a flow child would lift it over the handle. */
+    --results-floating-nav-panel-nudge: 0px;
+    --results-floating-nav-panel-rise: 0px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    inline-size: var(--results-floating-nav-panel-size);
+    margin-inline-start: calc(490px + 24px);
+  }
+  .results-floating-nav__panel { position: static; inline-size: 100%; }
+  .results-floating-nav:not([data-open="false"]) .results-floating-nav__panel {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .results-floating-nav__panel { --results-floating-nav-panel-nudge: 0px; transition: none; }
 }
 .results-floating-nav__links { display: grid; gap: 3px; margin: 0; padding: 0; list-style: none; }
 .results-floating-nav__links a {
@@ -1462,13 +1582,24 @@ tbody th { font-weight: 700; }
   align-items: center;
   padding-inline: 12px;
   border-radius: 10px;
-  color: var(--kai-white);
+  color: var(--kai-kale);
   font-weight: 700;
   line-height: 1.3;
   overflow-wrap: anywhere;
   text-decoration: none;
 }
-.results-floating-nav__links a:hover { color: var(--kai-kale); background: var(--kai-pea); }
+.results-floating-nav__links a:hover { background: rgba(40, 200, 130, 0.32); }
+/* WHERE THE READER IS, not which page they are on. `aria-current="location"`
+   is the value for a nav item marking a position *within* the current page;
+   `"page"` is what the site drawer's own marker means and would be a different
+   claim. `results.js`'s one IntersectionObserver writes the attribute straight
+   onto the link — it is not on `state`, because a scroll must not re-render
+   the results page. Pea ground, Kale text; hover is a pale tint of the same
+   Pea, so the two readings cannot be mistaken for each other. */
+.results-floating-nav__links a[aria-current="location"] {
+  color: var(--kai-kale);
+  background: var(--kai-pea);
+}
 .improvement-mode-field { max-width: 220px; margin: 20px auto 0; }
 /* **The list column's own minimum has to cover what the row inside it actually needs,
    not merely look plausible on its own.** The row's `:has()` floor below reserves 260px

@@ -1340,9 +1340,180 @@ function categoryAverageLines(state, prefix) {
     `${prefix}${t('%(food)s is priced at the %(category)s average. The published factor set carries no factors for this food, so the figures here are its category\'s rather than its own.', { food, category })}`)
 }
 /**
+ * The four sections the floating nav indexes, **in the page's order**.
+ *
+ * One list, read twice: `resultsFloatingNavigation` writes the links from it and
+ * `bindResultsSectionSpy` observes the same four elements. Two lists would be two
+ * lists to keep in step, and the order is the whole of this nav's correctness --
+ * `test_the_results_sections_are_in_the_order_the_floating_nav_claims` asserts it
+ * against the rendered page for exactly that reason.
+ *
+ * The label is a function because `t()` has to run at render time: changing language
+ * re-renders in place rather than reloading (`main.js`), so a label evaluated once at
+ * module load would stay in the language the page was opened in. Each one is still a
+ * plain literal `t('...')` call, which is what the extractor's regex can see.
+ */
+const RESULTS_NAV_SECTIONS = [
+  //: **This list is in the page's order, and that is the whole of its
+  //: correctness.** It read summary / improvements / equivalents / breakdown
+  //: while the improvement panel sat below the downloads, three sections
+  //: further down than the second slot claimed -- so its one link that was
+  //: meant to save a scroll was the one that jumped past everything.
+  ['impact-summary', () => t('Impact summary')],
+  ['tangible-equivalents', () => t('Tangible equivalents')],
+  ['breakdown-section', () => t('Breakdown by category')],
+  ['improvement-section', () => t('Explore Improvements')],
+]
+
+/**
+ * Whether the stylesheet currently has the nav **docked in the gutter**.
+ *
+ * The breakpoint is 1600px and it is written down once, in `styles.css`, which is
+ * the file that knows the viewport. This reads it back off the custom property
+ * rather than repeating the number here: a media query in JavaScript and a media
+ * query in CSS are two statements of one fact, and they drift.
+ *
+ * It answers one question -- which way the FIRST press of the handle goes. See
+ * `resultsFloatingNavigation`'s note on `state.resultsNavOpen`.
+ *
+ * @param {Document|Element} [root] Where to look for the nav; the document by default.
+ * @returns {boolean} `false` when there is no nav, no DOM, or no docked regime.
+ */
+export function resultsNavIsDocked(root = typeof document === 'undefined' ? null : document) {
+  const nav = root?.querySelector?.('.results-floating-nav')
+  if (!nav || typeof getComputedStyle !== 'function') return false
+  return getComputedStyle(nav).getPropertyValue('--results-floating-nav-docked').trim() === '1'
+}
+
+/**
+ * Which section the reader is standing in, and the one observer that decides it.
+ *
+ * **Neither of these may go on `state`.** `setState` re-renders the whole results
+ * page, so a scroll position kept there would rebuild several hundred elements per
+ * scroll event -- and rebuild the nav under the reader's cursor while they were
+ * reaching for it. The highlight is written straight onto the `<a>` instead, and
+ * this module remembers which one so the mark can be re-applied after a render
+ * that had nothing to do with scrolling.
+ */
+let currentSection = null
+
+/**
+ * **The one `IntersectionObserver` for the life of the page.**
+ *
+ * `render()` replaces `main.innerHTML` on every `setState` -- a keystroke in the
+ * improvement panel is a full rebuild -- so the four `<section>` elements this
+ * watches are destroyed and recreated constantly. An observer wired once at
+ * start-up is left holding four detached nodes and reports nothing ever again; a
+ * fresh `new IntersectionObserver` per render is one live observer per keystroke,
+ * each still holding its own detached nodes.
+ *
+ * So: one observer object, created lazily, `disconnect()`ed and re-pointed at the
+ * new elements on every bind. `tests/web/test_results_floating_nav_browser.py`
+ * counts the constructions from a page init script and holds that count at one
+ * across a whole page's worth of re-renders.
+ */
+let sectionSpy = null
+
+/** Which of the four are inside the reading band right now, by element id. */
+const sectionsInBand = new Set()
+
+/**
+ * The band the reader is taken to be reading, as a `rootMargin`.
+ *
+ * Top 18% to 40% of the viewport: below the header, above the middle. A section is
+ * "current" while it crosses that strip. The alternative -- whichever section has
+ * the largest visible area -- cannot mark the short ones at all: *Tangible
+ * equivalents* is a third of the height of *Breakdown by category* and would never
+ * win a contest it is measured by area.
+ */
+const SECTION_BAND = '-18% 0px -60% 0px'
+
+/** Write `aria-current="location"` onto the reader's section and onto nothing else. */
+function markCurrentSection(nav) {
+  if (!nav) return
+  for (const link of nav.querySelectorAll('.results-floating-nav__links a')) {
+    const id = (link.getAttribute('href') || '').slice(1)
+    //: `"location"` and not `"page"`: this marks a position WITHIN the page the
+    //: reader is on. `"page"` is the claim the site drawer's own marker makes
+    //: about which page of the site is open, and two different claims sharing one
+    //: value is how a screen reader ends up announcing both as the same thing.
+    if (id && id === currentSection) link.setAttribute('aria-current', 'location')
+    else link.removeAttribute('aria-current')
+  }
+}
+
+function onSectionsCrossed() {
+  //: The LAST section in page order that is in the band -- the one the reader has
+  //: most recently come to. Two of them intersect whenever a boundary is inside
+  //: the strip, and taking the first would hold the mark on the section the reader
+  //: has just left until it cleared the band entirely.
+  let next = null
+  for (const [id] of RESULTS_NAV_SECTIONS) if (sectionsInBand.has(id)) next = id
+  //: Nothing in the band keeps the previous answer rather than clearing it: the
+  //: gap between two sections is wider than the band at the top of the page and
+  //: under the fold, and a nav that blanks out there reads as broken.
+  if (!next || next === currentSection) return
+  currentSection = next
+  markCurrentSection(document.querySelector('.results-floating-nav'))
+}
+
+/**
+ * Point the section spy at whatever `render()` has just written into `<main>`.
+ *
+ * Called at the end of every `render()`, including the renders that are not the
+ * results page: no nav means disconnect, so the observer is never left holding
+ * elements that have left the document.
+ *
+ * The mark is re-applied synchronously here, before the observer's own first
+ * callback arrives, because the nav the render just wrote carries no
+ * `aria-current` at all -- it is written by this module and not by the template.
+ * Without that line the highlight blinks off on every keystroke in the
+ * improvement panel and comes back a frame later.
+ *
+ * @param {Element} root The container `render()` wrote into.
+ */
+export function bindResultsSectionSpy(root) {
+  const nav = root?.querySelector?.('.results-floating-nav')
+  const sections = nav
+    ? RESULTS_NAV_SECTIONS.map(([id]) => root.querySelector(`#${id}`)).filter(Boolean)
+    : []
+  if (!sections.length) {
+    sectionSpy?.disconnect()
+    sectionsInBand.clear()
+    currentSection = null
+    return
+  }
+  if (!sectionSpy) {
+    //: Absent in the Node harness that runs this module for the text export, and
+    //: in any browser old enough not to have it. The nav still jumps; only the
+    //: highlight is missing, which is what a progressive enhancement is.
+    if (typeof IntersectionObserver !== 'function') return
+    sectionSpy = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) sectionsInBand.add(entry.target.id)
+        else sectionsInBand.delete(entry.target.id)
+      }
+      onSectionsCrossed()
+    }, { rootMargin: SECTION_BAND, threshold: 0 })
+  } else {
+    //: The elements are new; the observer is not. `disconnect()` drops the four
+    //: detached ones and keeps the object, which is what holds the count at one.
+    sectionSpy.disconnect()
+    sectionsInBand.clear()
+  }
+  //: At the top of the page nothing is in the band yet -- the first section's own
+  //: heading is below it -- and a nav with no mark on it at the moment it appears
+  //: reads as a nav whose mark is broken. The first section is where the reader is
+  //: about to be, so it holds the mark until a real crossing moves it.
+  if (currentSection === null) currentSection = RESULTS_NAV_SECTIONS[0][0]
+  markCurrentSection(nav)
+  for (const section of sections) sectionSpy.observe(section)
+}
+
+/**
  * The results page's section jump list, which lives in the page's **gutter**.
  *
- * The request behind it: at a wide viewport this page is still a ~960px column, so
+ * The request behind it: at a wide viewport this page is still a ~1000px column, so
  * there is a band of empty page either side of it, and the page itself is long enough
  * that reaching a section means scrolling for a while. The list goes in that band.
  *
@@ -1353,30 +1524,29 @@ function categoryAverageLines(state, prefix) {
  *
  * **Where it is and when it exists are decided in CSS, not here**, because both depend
  * on the viewport and this function runs once per render with no idea of it. The
- * stylesheet shows it only where the gutter is wide enough to hold it without covering
- * the column, and opens it by default there. `data-open` is written **only** once the
- * visitor has toggled it, so the attribute's absence means "the stylesheet decides".
+ * stylesheet draws it only where there is a gutter to draw it in, and has two defaults
+ * there: docked and open from 1600px up, a closed handle between 1100 and 1599.
+ * `data-open` is written **only** once the visitor has toggled it, so the attribute's
+ * absence still means "the stylesheet decides" -- it now means it about two defaults
+ * instead of one, which is why the first press asks `resultsNavIsDocked()` what it is
+ * inverting rather than assuming "open".
  */
 function resultsFloatingNavigation(state) {
   const label = t('Sections on this page')
-  const links = [
-    //: **This list is in the page's order, and that is the whole of its
-    //: correctness.** It read summary / improvements / equivalents / breakdown
-    //: while the improvement panel sat below the downloads, three sections
-    //: further down than the second slot claimed -- so its one link that was
-    //: meant to save a scroll was the one that jumped past everything.
-    ['#impact-summary', t('Impact summary')],
-    ['#tangible-equivalents', t('Tangible equivalents')],
-    ['#breakdown-section', t('Breakdown by category')],
-    ['#improvement-section', t('Explore Improvements')],
-  ].map(([href, text]) => `<li><a href="${href}">${escapeHtml(text)}</a></li>`).join('')
+  const links = RESULTS_NAV_SECTIONS
+    .map(([id, text]) => `<li><a href="#${id}">${escapeHtml(text())}</a></li>`)
+    .join('')
   //: Absent until the visitor decides, so the CSS default stands. `aria-expanded`
   //: follows the same value: stating `false` while the stylesheet has the panel open
   //: is the contradiction a screen-reader user meets first.
   const toggled = state?.resultsNavOpen
   const openAttribute = toggled === undefined ? '' : ` data-open="${toggled}"`
   const expanded = toggled === undefined ? '' : ` aria-expanded="${toggled}"`
-  return `<nav class="results-floating-nav"${openAttribute} aria-label="${escapeHtml(label)}"><button class="results-floating-nav__handle" type="button" data-action="toggle-results-nav" aria-controls="results-floating-nav-menu"${expanded} aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"><span aria-hidden="true">⋮</span></button><div class="results-floating-nav__panel" id="results-floating-nav-menu"><ul class="results-floating-nav__links">${links}</ul></div></nav>`
+  //: The handle carries an `id` so that `main.js` can put focus back on it after the
+  //: re-render its own press causes. Without one, `document.activeElement.id` is `''`,
+  //: focus lands on `<main>`, and a keyboard visitor who opens the list is thrown to
+  //: the top of the page instead of into it.
+  return `<nav class="results-floating-nav"${openAttribute} aria-label="${escapeHtml(label)}"><button class="results-floating-nav__handle" id="results-floating-nav-handle" type="button" data-action="toggle-results-nav" aria-controls="results-floating-nav-menu"${expanded} aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"><span aria-hidden="true">⋮</span></button><div class="results-floating-nav__panel" id="results-floating-nav-menu"><ul class="results-floating-nav__links">${links}</ul></div></nav>`
 }
 
 export function renderResults(state) {

@@ -2997,3 +2997,62 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
     --amount-unit-gap: 10px;
 }
 
+
+/* ---------------------------------------------------------------------------
+   Step 5's reporting period: two typable bounds and the calendar dialog behind
+   them (`web/js/period.js`, v1.67).
+
+   **Logical properties only, and the grid is the reason the rule is not
+   optional here.** `tests/web/test_i18n_web.py` forbids a physical direction in
+   this file because Arabic and Urdu render the calculator with `<html dir=rtl>`
+   and a half-mirrored page is worse than an unmirrored one. A seven-column
+   table does not mirror from `dir` alone the way a paragraph does — the column
+   ORDER does mirror, because that is table layout, but every offset written
+   here would not, and a `padding-left` on a day cell would draw the numbers
+   against the wrong edge of a grid that had already flipped underneath them.
+   Measured in Chromium under `?lang=ar`; see the test file.
+   ------------------------------------------------------------------------ */
+
+.period-field { margin: 18px 0 0; padding: 16px; border: 1px solid rgba(0, 50, 35, 0.14); border-radius: 12px; background: var(--kai-white); }
+.period-field > .field-hint { margin-block: 0 12px; }
+.period-bound { margin: 0 0 12px; padding: 12px; border: 1px solid rgba(0, 50, 35, 0.12); border-radius: 10px; }
+.period-bound legend { padding-inline: 6px; font-family: var(--font-heading); font-size: 0.95rem; }
+.period-bound-row { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
+.period-bound-row .form-field { flex: 1 1 200px; margin: 0; }
+.period-bound-row .period-time-field { flex: 0 1 140px; }
+.period-date-control { display: flex; gap: 6px; align-items: stretch; }
+.period-date-control .period-input { flex: 1 1 auto; min-inline-size: 0; }
+.period-input[aria-invalid="true"] { border-color: var(--error); }
+.period-open { flex: 0 0 auto; padding-inline: 12px; font-size: 1.1rem; line-height: 1; color: var(--kai-kale); cursor: pointer; background: var(--mint); border: 1px solid rgba(0, 50, 35, 0.2); border-radius: 8px; }
+.period-open:hover { background: var(--kai-pea); }
+.period-error { margin-block-start: 4px; }
+
+.period-dialog-backdrop { position: fixed; z-index: 1000; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(0, 32, 24, 0.72); }
+.period-dialog { inline-size: min(360px, 100%); max-block-size: 90vh; overflow: auto; padding: 16px; color: var(--kai-kale); background: var(--kai-white); border-radius: 14px; }
+.period-dialog-head { display: flex; gap: var(--space-sm); align-items: center; justify-content: space-between; }
+.period-dialog-head h3 { margin: 0; font-size: 1.05rem; }
+.period-dialog-close { padding: 2px 10px; font-size: 1.4rem; line-height: 1.2; color: var(--kai-kale); cursor: pointer; background: none; border: 1px solid transparent; border-radius: 8px; }
+.period-dialog-close:hover { border-color: rgba(0, 50, 35, 0.25); }
+.period-dialog-hint { margin-block: 8px 12px; font-size: 0.85rem; color: var(--muted); }
+.period-dialog-months { display: flex; gap: var(--space-sm); align-items: center; justify-content: space-between; margin-block-end: 8px; }
+.period-dialog-month { flex: 1 1 auto; margin: 0; font-family: var(--font-heading); text-align: center; }
+.period-month-step { padding: 4px 12px; font-size: 1.2rem; line-height: 1.2; color: var(--kai-kale); cursor: pointer; background: var(--mint); border: 1px solid rgba(0, 50, 35, 0.2); border-radius: 8px; }
+.period-month-step[disabled] { color: var(--muted); cursor: not-allowed; opacity: 0.45; }
+
+.period-grid { inline-size: 100%; border-collapse: collapse; table-layout: fixed; }
+.period-grid th { padding: 6px 0; font-size: 0.78rem; font-weight: 400; color: var(--muted); }
+.period-day { padding: 0; text-align: center; }
+td.period-day { block-size: 38px; border-radius: 8px; }
+td.period-day[data-day] { cursor: pointer; }
+td.period-day[data-day]:hover { background: var(--mint); }
+/* Genuinely disabled, not merely grey: the cell carries no `data-day`, no
+   `tabindex` and no click target, so it cannot be chosen by pointer, keyboard
+   or assistive technology. The colour is the last of the four signals, not the
+   only one. */
+td.period-day.is-disabled { color: var(--muted); cursor: not-allowed; opacity: 0.4; }
+td.period-day.is-selected { font-weight: 700; color: var(--kai-white); background: var(--kai-kale); }
+td.period-day:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+
+@media (max-width: 480px) {
+  .period-bound-row .period-time-field { flex: 1 1 100%; }
+}

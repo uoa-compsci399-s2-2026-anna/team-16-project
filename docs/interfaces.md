@@ -4684,6 +4684,88 @@ No exports. Uses top-level `await` to call `getFactors()`, then writes the facto
 
 > **The downstream table carries a `Sector` column (v1.31)**, rendering `All sectors` where `downstream[].sector` is `null`, beside the `All food categories` the food column already renders. It is not optional: with a set that prices by sector, omitting it prints rows that are identical in every visible column and differ only in the number — the figure published without its basis that §2.2's provenance columns exist to prevent. The sentence above the table states §4.1's order as well, because the two columns each show a scope and neither can say which one gives way.
 
+### `period.js` — step 5's reporting period (v1.67, written by C)
+
+**The control behind §6.2's `period_start` / `period_end`.** Step 5's `#time-frame` select
+gains a fifth option, `custom`, and any stated answer reveals two typable bounds — a date box
+and a time box each — with a hand-built calendar dialog behind each date box. The field stays
+optional and "Not stated" stays the default, which is the whole of what a visitor who never
+opens it sees.
+
+| Export | What it is |
+| --- | --- |
+| `PeriodField()` | The whole field as HTML, rendered by `reviewStep` inside `.time-frame-field`. Returns `''` when `time_frame` is unstated |
+| `periodProblem(fields?)` | `{ message, field }` — the form's own rules, asked by the render path and by the typing path so the two cannot disagree |
+| `periodValues(fields?)` | `{ periodStart, periodEnd }` in the wire's shape, `YYYY-MM-DDTHH:MM`, or `''` when the period is not legal |
+| `timeFrameChanged(value)` | The `setState` patch the select produces: a preset fills the interval, `custom` keeps it, "Not stated" clears it |
+| `handlePeriodClick` / `handlePeriodInput` / `handlePeriodKeydown` | Delegated from `calculator.js`; each answers whether it owned the event |
+| `MAX_HOURS_AHEAD` | **24**, and see below |
+
+**No library, no build step.** §7.6 rule 7 forbids a runtime asset from a third-party host —
+the reason Chart.js is vendored — so a date-picker package is not available either. Neither
+is `<input type="date">` or `<input type="time">`: owner decision 2 refused the native
+controls because the client's team is on Apple hardware and Safari's rendering of them cannot
+be relied on to match the browser the rest of the team uses. Both boxes are `type="text"` with
+`inputmode="numeric"`.
+
+**The time is typed, not dialled.** `HH:MM`, 24-hour, no stepper and no clock face: at minute
+precision a shift is *entered* — `0810` is accepted as well as `08:10` — and a dial resolving
+1,440 positions is slower than four keystrokes in every case. Two `<select>`s lose on the same
+ground and double the tab stops per bound.
+
+**The dialog is a real one.** `role="dialog"`, `aria-modal="true"`, focus moved in on open and
+**returned to the control that opened it** on close, `Esc` to dismiss, `Tab` cycled inside it —
+`aria-modal` tells a screen reader the rest of the page is inert and does not stop Tab walking
+out of it. The grid is `role="grid"` with one tab stop (a roving `tabindex`), each cell named
+by its whole date rather than by its number, `aria-selected` on the chosen day, and days
+outside the allowed range carrying no `data-day` and no `tabindex` at all — genuinely
+unreachable rather than greyed. The keyboard is arrows by day, `PageUp`/`PageDown` by month
+(`Shift` for a year), `Home`/`End` to the ends of the displayed week, `Enter`/`Space` to
+choose. **The horizontal arrows mirror under `dir="rtl"`**, because a `<table>`'s columns
+mirror with the document and an unmirrored `ArrowRight` would move the focus ring leftwards
+across the screen.
+
+**`render()` replaces `main.innerHTML` on every `setState`**, so whether the dialog is open,
+which day the roving `tabindex` sits on and what is typed in the four boxes all live in
+`state` (`periodPicker`, `periodFields`) and are re-derived on every render. The roving cell
+carries `id="period-grid-focus"` — **an id that names its role, not its date** — so
+`main.js`'s generic "re-focus the id that had focus" lands on the day the cursor moved *to*;
+a date-shaped id would survive the render intact and pull focus back to the day just left.
+Opening and closing are the two moves `main.js` cannot make on its own and are done in a
+`requestAnimationFrame` after the render, the same way `calculator.js` moves focus between the
+results breakdown tabs.
+
+**The four text boxes do not call `setState`** — §7.3a's documented exception, here because a
+re-render per keystroke destroys the caret and because `change` on a text input fires while
+focus is already leaving it. They mutate `state.periodFields` and patch the error line, the
+`aria-invalid` flags and the Calculate button by hand, all through the one `periodProblem`
+the render path uses.
+
+**Dates, month names and weekday names are `en-NZ` in every language, and the first day of the
+week follows from that pin.** `stats.js` and `home.js` pin the same locale for the same
+reason: a date *format* is O-4, which is open and promises nothing. Passing the active
+language to `Intl` would translate the month names for free and with no catalogue entries,
+which is exactly why it is tempting — and it would settle O-4 on one screen while the rest of
+the site pinned `en-NZ` two pages away. **The alternative exists and belongs to O-4**; when
+O-4 is decided these three modules change together or not at all.
+`tests/web/test_period_picker_browser.py` asserts the pin from a German page.
+
+> **The 24-hour rule lives in the form and the 38-hour rule lives in the API, and neither
+> number may be copied onto the other side.** `MAX_HOURS_AHEAD` is 24 because this is the one
+> place where "now" is the visitor's own now and the two clocks being compared are the same
+> clock. `api/schemas.PERIOD_CEILING_HOURS` is 38 because the stored instants carry no zone,
+> so the server cannot tell which side of the date line a value was typed on and has to allow
+> 24 plus the widest civil UTC offset in use (+14). Tightening the server to 24 refuses a
+> shift somebody in Auckland entered correctly; loosening the form to 38 lets a period a day
+> and a half in the future through. `tests/web/test_period_form_bounds.py` reads both numbers
+> out of both files, asserts the arithmetic between them, and greps the browser module for a
+> stray `38`.
+
+> **What this leaves for later (WP3 and WP4).** Nothing under `web/` sends `period_start` or
+> `period_end` yet — this module writes `state.periodStart` / `state.periodEnd` and touches
+> nothing downstream of them — and the nineteen new `t()` keys are not in the twenty
+> catalogues, so they render in English there until they are.
+
 ## 7.3c The fallback disclosure (v1.59, written by C and D; mirrored by B in the PDF)
 
 **One sentence, three surfaces, one field.** The results page, its plain-text export and §6.2.3's PDF each render the same caveat when a visitor named a food the published set does not price: *"%(food)s is priced at the %(category)s average. The published factor set carries no factors for this food, so the figures here are its category's rather than its own."*

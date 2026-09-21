@@ -4,6 +4,10 @@ import { entryTotal, isPresetUnit, kgToTonnes, presetUnitCode, rowKgString } fro
 import { ComparisonResults, ImprovementScenario } from './improvement.js'
 import { contribute, exportPdf } from './api.js'
 import { exportPayload } from './submission.js'
+// v1.68. The `en-NZ` date pin lives in one place for this feature — see
+// `formatInstant`'s own note: what is printed back has to be what the field
+// that collected it would accept, character for character.
+import { formatInstant } from './period.js'
 // `state as liveState`: the grace window's `setTimeout` fires long after the click that
 // armed it, and the snapshot that click was handed may by then describe a calculator the
 // visitor has cleared or recalculated. `setState` mutates this object in place, so the
@@ -104,6 +108,13 @@ const metricUnit = (metric, definition) => metric?.unit || definition?.unit || '
 // never reach a visitor as the raw identifier. The four phrases are the ones
 // `calculator.js`'s own step-4 `<select>` already offers, reused rather than
 // reworded so the word a visitor chose is the word they see reflected back.
+//
+// **`custom` is the fifth member and it is deliberately not in here (v1.68).**
+// Not an omission: "Custom period" is the name of a *control*, and read back to
+// somebody looking at their own results it says nothing they did not already
+// know. What they chose was two instants, so two instants are what the line
+// says. `periodPhrase` below is where that decision lives, and the map keeps
+// its original job — a value with no phrase and no interval renders nothing.
 const TIME_FRAME_LABELS = {
   one_week: 'One week',
   one_month: 'One month',
@@ -111,22 +122,58 @@ const TIME_FRAME_LABELS = {
   one_year: 'One year',
 }
 
+// v1.68. What the period reads back as, in the three shapes §6.2 accepts.
+//
+// | What was sent | What this says |
+// | --- | --- |
+// | a preset alone (every row before v1.67) | `One week` |
+// | a preset **and** an interval — the designed normal case | `One week · 14/09/2026 08:10 – 21/09/2026 08:10` |
+// | `custom` and an interval | `14/09/2026 08:10 – 21/09/2026 08:10` |
+//
+// **A preset beside an interval prints both, and that is the whole point of the
+// second row.** From v1.67 a preset is a button that *fills* the picker, so the
+// interval is what the figures actually cover and `time_frame` is the record of
+// which shortcut produced it. A line that printed only "One week" over dates the
+// visitor may since have moved would be telling half the truth, and the half it
+// dropped is the one the client asks for first — *did they mean a standard week,
+// or did they choose those dates?* Printing the phrase alone cannot answer it;
+// printing the dates alone cannot either.
+//
+// **The dash and the separator are notation, not prose, and they carry no `t()`
+// key.** `api/pdf_render.py` prints this identical sentence onto the PDF through
+// `Catalogue.gettext`, which *raises* rather than falling back to English for a
+// key a catalogue does not carry — so a newly coined sentence here would mean
+// every non-English download 500ing until twenty catalogues caught up. The same
+// reasoning that document already applies to `GWP100` and to its own
+// `·`-separated cover line applies here: a range written `A – B` is the same
+// notation in every language this calculator ships in, and the sentence around
+// it is translated by the key that already exists.
+const periodPhrase = (timeFrame, periodStart, periodEnd) => {
+  const interval = periodStart && periodEnd
+    ? `${formatInstant(periodStart)} – ${formatInstant(periodEnd)}`
+    : ''
+  if (timeFrame === 'custom') return interval
+  const phrase = TIME_FRAME_LABELS[timeFrame]
+  if (!phrase) return ''
+  return interval ? `${t(phrase)} · ${interval}` : t(phrase)
+}
+
 // A label, never a computation (contract v1.48, §6.2): nothing on this page is scaled
 // by the period, so it renders as one plain line rather than beside any figure it might
 // be misread as multiplying. `''` - "not stated" - renders nothing, the same way an
 // unstated money figure renders nothing rather than a placeholder.
-function resultsPeriod(timeFrame) {
-  const phrase = TIME_FRAME_LABELS[timeFrame]
-  if (!phrase) return ''
-  return `<p class="results-period">${escapeHtml(t('These figures cover: %(period)s', { period: t(phrase) }))}</p>`
+function resultsPeriod(state) {
+  const period = periodPhrase(state.timeFrame, state.periodStart, state.periodEnd)
+  if (!period) return ''
+  return `<p class="results-period">${escapeHtml(t('These figures cover: %(period)s', { period }))}</p>`
 }
 
 // The export's own line for the same fact, worded identically to `resultsPeriod`
 // above so a visitor reading the page and the file they downloaded from it sees
 // the same sentence rather than two different ways of saying the same thing.
-const periodLine = timeFrame => {
-  const phrase = TIME_FRAME_LABELS[timeFrame]
-  return phrase ? t('These figures cover: %(period)s', { period: t(phrase) }) : ''
+const periodLine = state => {
+  const period = periodPhrase(state.timeFrame, state.periodStart, state.periodEnd)
+  return period ? t('These figures cover: %(period)s', { period }) : ''
 }
 
 // Display-only coercion of a two-decimal-place NZD string (§4.5, §1.2): the money
@@ -875,7 +922,7 @@ export function buildResultsReport(state) {
   const translationNotice = isMachineTranslated() ? ['', MACHINE_TRANSLATION_NOTICE] : []
   // Item ⑦: a label, printed once near the top of the file, same as on screen — no
   // figure below it is scaled by the period (contract v1.48).
-  const period = periodLine(state.timeFrame)
+  const period = periodLine(state)
   // §4.6: the same three states `summaryCards` renders as the card, worded the same way,
   // so a visitor reading the page and the file downloaded from it sees the same sentence.
   const share = productionShareText(totals)
@@ -1585,7 +1632,7 @@ export function renderResults(state) {
       // entries" — was a claim about the visitor's own submission that stopped being
       // true. The noun is dropped rather than replaced with a second count nobody asked
       // for; the review step is where the two numbers are reconciled.
-      : t('Results returned by the calculation service for %(count)s entries.', { count: entryResults.length }))}</p>${resultsPeriod(state.timeFrame)}${warning}${averagedNotice}
+      : t('Results returned by the calculation service for %(count)s entries.', { count: entryResults.length }))}</p>${resultsPeriod(state)}${warning}${averagedNotice}
     <section class="results-section" id="impact-summary" aria-labelledby="summary-title"><div class="result-section-heading"><span class="section-number">01</span><div><h2 id="summary-title">${escapeHtml(t('Impact summary'))}</h2><p>${escapeHtml(t('A high-level view of the recorded food waste.'))}</p></div></div><div class="results-grid">${summaryCards(totals, state.taxonomy)}</div>${moneySummary(totals)}</section>
     <section class="results-section" id="tangible-equivalents" aria-labelledby="equivalents-title"><div class="result-section-heading"><span class="section-number">02</span><div><h2 id="equivalents-title">${escapeHtml(t('Tangible equivalents'))}</h2><p>${escapeHtml(t('Plain-language comparisons appear when supplied by the calculation service.'))}</p></div></div>${equivalences(totals, mock)}</section>
     ${breakdownSection(state, entryResults)}

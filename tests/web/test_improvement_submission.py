@@ -34,6 +34,7 @@ than fails: an unavailable container means this is unverified, not broken.
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import os
 import shutil
@@ -103,6 +104,25 @@ def stored_entry(token: str) -> dict[str, str | None]:
         "total_value_nzd": none(total_value),
         "wasted_value_nzd": none(wasted_value),
     }
+
+
+def stored_period(token: str) -> tuple[str | None, str | None]:
+    """The submission's two v1.67 instants, as MySQL prints them.
+
+    Read separately from `stored_entry` above because they cannot be compared
+    against a constant: from v1.67 a preset is a *template* anchored on now, so
+    pressing *One year* stores the year ending at the moment it was pressed.
+    What is fixed is the relationship between the two, and that is what the
+    tests below assert.
+    """
+    rows = query(
+        "SELECT period_start, period_end FROM submission "
+        f"WHERE token = '{token}'"
+    )
+    assert rows, f"no submission was stored under token {token!r}"
+    start, end = rows[0]
+    none = lambda value: None if value == "NULL" else value  # noqa: E731
+    return none(start), none(end)
 
 
 def stored_current_kg(token: str) -> list[str]:
@@ -381,4 +401,65 @@ def test_matching_the_current_allocation_also_satisfies_the_mass_rule_in_unit_mo
         "Compare Impact stayed disabled in unit mode on an allocation that is "
         "valid in percentage mode - the stored allocation is unit-dependent, which "
         "it must not be"
+    )
+
+
+# --------------------------------------------------------- the period (v1.67, v1.68)
+#
+# The same defect class this whole file exists for, one revision later. `time_frame`
+# was one of the four fields `compareImprovement` dropped; v1.67 gave the period two
+# more columns beside it, and a builder that sent them on Calculate and not on Compare
+# would blank them a moment after the visitor pressed a button on the next screen —
+# exactly as before, and again invisible from the first request's own body.
+#
+# `web/js/submission.js` sends all three through one builder for that reason, and
+# these read the row rather than the request.
+
+
+def test_calculate_stores_the_interval_the_preset_filled(page):
+    """v1.67's designed normal case, in the database: `one_year` **and** the
+    twelve months it stands for.
+
+    Not compared against a constant, because a template is anchored on now.
+    Three facts are, and together they pin it: both columns are written, the
+    end is the moment the button was pressed, and the start is the same
+    wall-clock instant a year earlier — which is what "the year ending now"
+    means and what a forward-anchored or zero-length template would fail.
+    """
+    token = calculate(page)
+    start, end = stored_period(token)
+    assert start and end, (
+        f"the preset filled no interval: {start!r} -> {end!r}. From v1.67 a "
+        "preset is a button that fills the picker, not a word on its own"
+    )
+    started = dt.datetime.strptime(start, "%Y-%m-%d %H:%M:%S")
+    ended = dt.datetime.strptime(end, "%Y-%m-%d %H:%M:%S")
+    assert started.replace(year=started.year + 1) == ended, f"{started} -> {ended}"
+    assert abs(ended - dt.datetime.now()) < dt.timedelta(minutes=10), (
+        f"the period does not end at the moment the preset was pressed: {ended}"
+    )
+    #: The stored instants carry **no zone** (§2.3) and are the visitor's own
+    #: wall clock, so `DATETIME` holds them verbatim. Seconds are zero because
+    #: the form collects minutes; a value with seconds in it would mean
+    #: something between the box and the column invented precision.
+    assert started.second == 0 and ended.second == 0
+
+
+def test_compare_impact_does_not_erase_the_interval(page):
+    """Defect 1's shape, applied to v1.67's two new columns.
+
+    `compareImprovement` re-sends the whole submission under the same token, so
+    a field it omits is a field the visitor loses — and losing one of these two
+    would leave the row in the state `ck_submission_period` exists to forbid:
+    `one_year` beside a half-interval, or `custom` beside nothing.
+    """
+    token = calculate(page)
+    before = stored_period(token)
+    assert all(before), before
+
+    compare(page)
+
+    after = stored_period(token)
+    assert after == before, (
+        f"Compare Impact rewrote the stored period: {before} -> {after}"
     )

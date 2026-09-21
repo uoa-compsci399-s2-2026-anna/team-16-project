@@ -315,6 +315,18 @@ p { margin: 0 0 2mm 0; }
   color: #4A6660;
 }
 
+/* THE REPORTING PERIOD (v1.68). A sentence, not a tile: it is a label and
+ * nothing below it is scaled by it (§2.3), so it must not be set like the
+ * figures in `.summary` beside it. Logical properties only, like everything
+ * else here - the document mirrors from `<html dir>` alone and no rule in this
+ * file names a physical side (`tests/api/test_pdf_render.py::
+ * test_the_stylesheet_names_no_physical_side`). */
+.period {
+  margin-block: 0 4mm;
+  font-size: 9pt;
+  color: #4A6660;
+}
+
 /* ---------------------------------------------------------- mock warning */
 /* DEFECT-PROOFING, NOT DECORATION. Section 2.2 makes the placeholder banner
  * mandatory and non-dismissible on every results view and export while the

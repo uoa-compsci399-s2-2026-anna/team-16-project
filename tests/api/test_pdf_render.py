@@ -39,6 +39,8 @@ from api.pdf_render import (
     MOCK_WARNING_FLAG,
     _CATEGORY_AVERAGE_BODY,
     _CATEGORY_AVERAGE_FLAG,
+    _PERIOD_SENTENCE,
+    _TIME_FRAME_LABELS,
     MockWarningMissingError,
     build_context,
     render_html,
@@ -315,11 +317,14 @@ def test_the_warning_cannot_be_switched_off_by_a_caller():
 
     `generated_at` (Task 5) is on the allow-list: it decides a date in the
     title block, never whether the warning is drawn - `is_mock` is still read
-    unconditionally off `result`, asserted on the line below."""
+    unconditionally off `result`, asserted on the line below. `period` (v1.68)
+    joins it on the same terms: it decides one sentence above the figures and
+    is read for nothing else, and the assertion below - `is_mock` true for a
+    context built with no period at all - is what says so."""
     import inspect
 
     names = set(inspect.signature(render_results_pdf).parameters)
-    assert names == {"result", "taxonomy", "locale", "generated_at"}
+    assert names == {"result", "taxonomy", "locale", "generated_at", "period"}
     assert build_context(_result(), _taxonomy(), "en")["is_mock"] is True
 
 
@@ -1393,6 +1398,56 @@ def test_the_pdf_and_the_screen_word_the_fallback_disclosure_identically():
         )
 
 
+def test_the_period_strings_are_the_screens_own_and_every_catalogue_has_them():
+    """Contract v1.68. The period line is printed on three surfaces with no
+    code in common — `web/js/results.js` renders it on the results page and
+    writes it into the text download, and `api/pdf_render.py` prints it onto
+    the PDF — and it reaches all three through the **same five catalogue
+    keys**, coined nowhere.
+
+    **Two things are asserted here and the second is why the feature works at
+    all today.**
+
+    *They are the screen's own keys.* Same rule as the fallback disclosure
+    above: a sentence this document invents is a sentence the PDF says and the
+    page does not, and `test_no_catalogue_carries_a_key_the_front_end_never_
+    asks_for` would refuse the catalogue entry for it anyway.
+
+    *They are already in every catalogue.* `api/i18n.Catalogue.gettext` raises
+    rather than falling back to English, so a period key missing from Urdu is
+    not an English word in an Urdu report — it is a 500 on a download. These
+    five predate this revision (v1.48 shipped four of them as step 5's own
+    `<select>` options and one as the results line), which is exactly what lets
+    v1.68 print a period in twenty languages without waiting on a catalogue
+    pass. **A reworded key would land here**, as twenty failures naming the
+    locale, rather than in a bug report from somebody whose download broke.
+
+    Not folded into `DOCUMENT_STRINGS`: that tuple is asserted to appear
+    verbatim in a rendered document, and `_PERIOD_SENTENCE` carries a
+    `%(period)s` placeholder and is printed only when a period was stated.
+    """
+    from tests.web import i18n_keys
+
+    rendered = i18n_keys.source_strings()
+    period_strings = (_PERIOD_SENTENCE, *_TIME_FRAME_LABELS.values())
+    for key in period_strings:
+        assert key in rendered, (
+            f"{key!r} is a string this document prints and nothing in web/js "
+            "or web/*.html renders, so the PDF says something the screen does not"
+        )
+    # English excluded for the reason `test_every_document_string_is_in_every_
+    # catalogue` excludes it: `Catalogue.gettext` is the identity function for
+    # the source language, so its catalogue is empty by construction and
+    # carries no key at all.
+    for locale in (code for code in ALL_LOCALES if code != "en"):
+        catalogue = i18n.catalogue(locale)
+        missing = [key for key in period_strings if key not in catalogue.strings]
+        assert not missing, (
+            f"{locale} has no translation for {missing} — a download in that "
+            "language raises MissingTranslationError rather than printing English"
+        )
+
+
 def test_the_embedded_catalogues_match_the_public_ones():
     """`api/assets/locales/` is a copy of `web/locales/` and has to be -
     package-data cannot cross a package boundary and `web/` is not in the API
@@ -1777,3 +1832,187 @@ def test_the_money_block_carries_its_unit_per_field():
     assert "NZ$3,600.00" in text  # wasted_value_nzd
     assert "20.00%" in text  # wasted_share_percent
     assert "NZ$2,400.00" in text  # saving_nzd
+
+
+# --------------------------------------------------------------------------
+# Part C: the reporting period (contract v1.68).
+# --------------------------------------------------------------------------
+#
+# `time_frame` reached `ExportPayload` at v1.48 and this document printed it
+# nowhere; v1.67 added the interval beside it and this document printed that
+# nowhere either. Every assertion below reads the LAID-OUT DOCUMENT, not the
+# context and not the function that builds the sentence: a period that reaches
+# `build_context` and is dropped by the template is exactly the shape of defect
+# this file exists for, and `doc.period` sitting behind a `{% if %}` is one
+# deleted line away from it.
+
+
+class _Period:
+    """Anything carrying the three fields a period is.
+
+    `api/export.py` passes the `ExportPayload` itself, which is a Pydantic
+    model; the renderer reads the three by name, the same duck-typing it
+    already applies to `result` and `taxonomy`. This is the smallest object
+    that satisfies it, so these tests do not need the API layer to exist.
+    """
+
+    def __init__(self, time_frame=None, start=None, end=None):
+        self.time_frame = time_frame
+        self.period_start = start
+        self.period_end = end
+
+
+def context_period(period):
+    """The exact sentence `build_context` hands the template for this period."""
+    return build_context(_result(), _taxonomy(), "en", period=period)["period"]
+
+
+#: The client's own example, and the whole reason the interval exists: a shift.
+SHIFT = _Period("custom", datetime(2026, 9, 14, 8, 10), datetime(2026, 9, 14, 16, 20))
+
+#: v1.67's designed normal case - a preset that *filled* the picker, so the row
+#: carries `one_week` AND the seven days it stands for.
+PRESET_WITH_INTERVAL = _Period(
+    "one_week", datetime(2026, 9, 14, 8, 10), datetime(2026, 9, 21, 8, 10)
+)
+
+
+@requires_weasyprint
+def test_a_custom_period_prints_its_two_instants_on_the_document():
+    """The shift, on paper. Both ends, to the minute, in the sentence the
+    screen uses.
+
+    **The dates are asserted, not the sentence alone.** A document that
+    printed "These figures cover:" and nothing after it would satisfy a test
+    that looked for the label, and would tell the reader less than printing
+    nothing at all.
+    """
+    text = extract_text(render_results_pdf(_result(), _taxonomy(), "en", period=SHIFT))
+    assert "These figures cover: 14/09/2026 08:10 – 14/09/2026 16:20" in text
+
+
+@requires_weasyprint
+def test_a_custom_period_never_prints_the_word_custom():
+    """`custom` is the name of a control, not a period. A reader holding
+    their own report learns nothing from "Custom period" that they did not
+    know before they opened it, and `TIME_FRAME_LABELS` deliberately has no
+    phrase for it on either surface."""
+    text = extract_text(render_results_pdf(_result(), _taxonomy(), "en", period=SHIFT))
+    assert "custom" not in text.lower(), (
+        "the document printed the vocabulary word instead of the dates"
+    )
+
+
+@requires_weasyprint
+def test_a_preset_beside_an_interval_prints_both_and_not_half_of_it():
+    """**The case the whole v1.67 ruling turns on.** From that revision a
+    preset is a button that fills the picker, so `one_week` beside seven days
+    of dates is the ordinary shape rather than a contradiction.
+
+    Printing only "One week" would be telling half the truth, and the half
+    dropped is the one the client asks for first — *did they mean a standard
+    week, or did they choose those dates?* Printing only the dates drops the
+    other half of the same answer. Both, or the line does not answer it.
+    """
+    text = extract_text(
+        render_results_pdf(_result(), _taxonomy(), "en", period=PRESET_WITH_INTERVAL)
+    )
+    assert "One week" in text
+    assert "14/09/2026 08:10" in text and "21/09/2026 08:10" in text
+
+
+@requires_weasyprint
+def test_a_preset_with_no_interval_still_prints_its_phrase_alone():
+    """Every row in the database before v1.67 is this shape, and every
+    request from a client that predates the picker still is. It must go on
+    reading as what it always read as, with no empty brackets and no dangling
+    separator where the dates would have been."""
+    text = extract_text(
+        render_results_pdf(_result(), _taxonomy(), "en", period=_Period("one_year"))
+    )
+    assert "These figures cover: One year" in text
+    assert "These figures cover: One year ·" not in text
+
+
+@requires_weasyprint
+def test_a_document_with_no_period_prints_no_period_line():
+    """"Not stated" is the default answer to step 5 and the absent case is
+    the common one. It renders nothing — never the label with nothing after
+    it, and never a phrase implying that "not stated" is itself a period,
+    which is the same rule `web/js/results.js::resultsPeriod` follows and the
+    same one the money block follows for a figure nobody supplied."""
+    for period in (None, _Period(), _Period(None, None, None)):
+        text = extract_text(
+            render_results_pdf(_result(), _taxonomy(), "en", period=period)
+        )
+        assert "These figures cover" not in text, f"{period} drew a period line"
+
+
+@requires_weasyprint
+@pytest.mark.parametrize("locale", ["de", "fr", "ja", "ar"])
+def test_the_period_is_formatted_en_nz_in_every_language(locale):
+    """**O-4 is open and a download is the worst place to settle it.**
+
+    `web/js/stats.js` and `web/js/home.js` both pin
+    `Intl.DateTimeFormat('en-NZ', …)` with the reason written beside them, and
+    `web/js/period.js` pins the same for the boxes this date was typed into. A
+    document that reformatted it to `14.09.2026` for German would be deciding
+    O-4 for one surface, in a file that outlives the argument — and it would
+    print a date back in a shape the field that collected it would refuse.
+
+    The sentence around it is translated; that is what
+    `test_no_locale_falls_back_to_english` is for. This is about the digits
+    between the punctuation.
+
+    **`ar` is here and its text extracts mirrored, which is correct.**
+    Measured, not assumed: the extracted run is `16:20 14/09/2026 – 08:10
+    14/09/2026`, because each date and each time is a European-number run at
+    an even embedding level while the spaces and the dash between them take
+    the paragraph's own odd level (UAX #9, N1). Read right-to-left — which is
+    how the reader of that document reads — it is `14/09/2026 08:10 – …` in
+    the order it was written. That is Pango running the bidi algorithm, and it
+    is the same thing the browser does to the same string on the results page,
+    so the screen and the paper agree. **Nothing here inserts an LRM or any
+    other invisible control to "fix" it**: this module reorders no character,
+    and a bidi override buried in a date would be exactly that.
+    """
+    text = extract_text(render_results_pdf(_result(), _taxonomy(), locale, period=SHIFT))
+    # The four runs the algorithm may reorder but may not rewrite.
+    for run in ("14/09/2026", "08:10", "16:20"):
+        assert run in text, f"{locale} did not print {run}"
+    for foreign in ("14.09.2026", "09/14/2026", "2026-09-14", "2026/09/14"):
+        assert foreign not in text, f"{locale} printed the period as {foreign}"
+    if locale != "ar":
+        assert "14/09/2026 08:10 – 14/09/2026 16:20" in text, (
+            f"{locale} runs left-to-right and its period did not stay in order"
+        )
+
+
+@requires_weasyprint
+def test_the_period_line_is_not_beside_a_figure_it_could_be_read_as_scaling():
+    """§2.3: the period is a label and **nothing is scaled by it**. It is
+    printed on its own line above the summary rather than inside the summary
+    grid, for the same reason `web/js/results.js` puts it above the cards: a
+    period set beside a total invites the reader to do the one piece of
+    arithmetic this contract forbids anyone to do with it.
+
+    Asserted on the markup, because this is a claim about where the sentence
+    sits and the laid-out text carries no structure.
+    """
+    html = render_html(_result(), _taxonomy(), "en", period=SHIFT)
+    opened = html.find('<p class="period">')
+    assert opened != -1, (
+        "the period is not a paragraph of its own any more; if it moved into a "
+        "tile or a table cell it is now set like the figures beside it"
+    )
+    summary = html.find('<div class="summary">')
+    assert summary != -1, "the summary grid moved; this test's landmark is gone"
+    assert opened < summary, (
+        "the period was printed below the figures it must not be read as scaling"
+    )
+    assert "summary__value" not in html[opened : html.find("</p>", opened)]
+    # And it is not *also* in the grid: a copy inside a tile would satisfy every
+    # assertion above while putting the period beside a total anyway.
+    assert html.count(context_period(SHIFT)) == 1, (
+        "the period is printed more than once; one of them is beside a figure"
+    )

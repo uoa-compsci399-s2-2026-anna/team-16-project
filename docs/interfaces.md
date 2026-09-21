@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-09-21 (v1.67 draft)"
+date: "2026-09-21 (v1.68 draft)"
 ---
 
 # 0. How to Use This Document
@@ -25,6 +25,26 @@ This document defines **what every person's code receives and what it returns.**
 
 ## 0.1 Change Log
 
+### v1.68 — 2026-09-21 (the period reaches the payload, the page and both downloads; affects C and D, and B as the owner of the document renderer)
+
+v1.67 gave the wire and the store two instants and said, in as many words, what it was leaving behind: *"`web/js/results.js`'s `TIME_FRAME_LABELS` has no phrase for `custom` and needs one; nothing under `web/` sends either new field yet; `api/pdf_render.py` prints no period at all."* This revision is those three sentences, closed.
+
+**What does not change.** No request or response *shape* — §6.2 and §6.2.3 already declare both fields and every validator over them is v1.67's, untouched. No column, no migration, no CHECK. No engine input: the period is still absent from §3's `CalculationRequest` and `tests/test_period_is_not_an_engine_input.py` still holds it, and **no duration is derived anywhere** — the two instants are printed side by side and never subtracted. No public statistic.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **The front end sends the two fields.** `web/js/submission.js` puts `period_start` and `period_end` beside `time_frame` in **both** payloads it builds, through one helper. Both, because `improvement.js`'s Compare Impact upserts on the same token as Calculate (§5.3) — a period sent by one and not the other is two `NULL`s a moment after the visitor presses the button on the next screen, which is the v1.48 defect `submission.js` was created to end. **The state's own strings are sent as they are held** (`"2026-09-14T08:10"`), never a `Date` and never an epoch millisecond: `toISOString()` produces a well-formed value the validator would refuse, and a value that had been *converted* to UTC would be a well-formed value saying a different time | §7.3a |
+| 2 | **`custom` gets no phrase, and that is the answer to v1.67's open item rather than a deferral of it.** "Custom period" is the name of a *control*; read back to somebody looking at their own results it says nothing they did not know before they pressed it. What they chose was two instants, so **two instants are what the line says**. `TIME_FRAME_LABELS` therefore keeps its four entries and goes on being the guard v1.48 made it — a `time_frame` with neither a phrase nor an interval still renders nothing rather than a raw identifier | §7.3a |
+| 3 | **A preset beside an interval prints both halves**: `These figures cover: One week · 14/09/2026 08:10 – 21/09/2026 08:10`. From v1.67 a preset is a button that *fills* the picker, so the phrase records which shortcut was pressed and the interval records what it filled. Printing only the phrase is a claim about a period the visitor may since have moved; printing only the dates drops the record of the button. The client's first question of this column — *did they mean a standard week, or did they choose those dates?* — is answerable only with both | §7.3a, §6.2.3 |
+| 4 | **The PDF prints the period**, in the same sentence and the same three shapes, from the same five catalogue keys. `render_export_pdf` hands the `ExportPayload` itself to the renderer as its `period`, because the payload already *is* the three fields a period is; `api/pdf_render._period_text` turns it into one phrase and the template prints it above the summary and below the masthead — on its own line, never inside the summary grid, because nothing is scaled by it (§2.3) and a period set beside a total invites exactly the arithmetic this contract forbids | §6.2.3 |
+| 5 | **Not one new catalogue key, deliberately.** The sentence is v1.48's own `These figures cover: %(period)s` and the four phrases are step 5's own `<select>` options. `api/i18n.Catalogue.gettext` **raises** rather than falling back to English, so a sentence coined here would mean every non-English download failing until twenty catalogues caught up — and the interval's `–` and the `·` between phrase and dates are notation rather than prose, the same ruling this document already applies to `GWP100` and to the cover line's own separators | §6.2.3, §11 |
+| 6 | **Dates are printed `en-NZ` in every language, on the page, in the text download and on the PDF** — `dd/mm/yyyy hh:mm`, character-for-character the shape `web/js/period.js`'s own boxes accept. A date *format* is O-4, which is open; a download is the worst place to settle it, because the file outlives the argument. Under a right-to-left locale the run reorders (`16:20 14/09/2026 – 08:10 …`) and that is the bidi algorithm, read correctly in that paragraph's own direction; **no invisible control character is inserted to "fix" it** | §7.3a, §6.2.3 |
+| 7 | **The form now refuses `custom` with no interval**, which it could previously build and §6.2 answers 422 to (`period_custom_without_interval`). Two routes reached it: choosing *Custom period* and typing nothing, and pressing a preset and then emptying all four boxes — which demotes the answer to `custom` and leaves nothing under it. Refused rather than normalised to "not stated", the same ruling §6.2 takes, and worded with the message the half-interval case already uses — so this revision adds **no catalogue key at all**. `periodProblem` takes the `time_frame` as an argument so that `handlePeriodInput` can ask about the answer a keystroke leaves behind rather than the one it replaces | §7.3a |
+
+> **`tests/fixtures/*.json` does not move, and that was checked rather than assumed.** The contract-change process's third step applies to every revision; here it is already satisfied by v1.67, which put an interval beside `one_year` in `calculate_request.json` and `custom` with a shift in `export_pdf_request.json`, and left two request fixtures carrying a preset alone. Those are exactly the three legal shapes this revision renders — the preset-with-interval line, the `custom` line and the phrase-alone line — so the executable contract already exercises all three and no field is added to any file.
+
+> **What this leaves for later.** The nineteen `t()` keys v1.67's picker introduced are still not in the twenty catalogues; WP4 owns them, and **this revision adds none of its own** — the extracted key set is byte-identical to v1.67's, which was measured against the committed tree rather than reasoned about. Nothing else from the v1.67 note remains open.
+
 ### v1.67 — 2026-09-21 (the reporting period gains a start and an end; affects B, C and D, and A only as advance notice)
 
 Step 5 asks *"What period do these figures cover?"* and has offered four presets since v1.48. The client wants to say **a shift** — 08:10 to 16:20 — so the period needs a start and an end, each with a date and a time, to the minute.
@@ -47,7 +67,7 @@ Step 5 asks *"What period do these figures cover?"* and has offered four presets
 | 8 | **`tests/fixtures/*.json` moves.** `calculate_request.json` carries `one_year` **with** an interval (the preset-as-template case) and `export_pdf_request.json` carries `custom` with a shift (the new vocabulary member); `calculate_request_partial_coverage.json` and `calculate_request_zero_totals.json` keep a preset and no interval, which is the pre-v1.67 shape and must go on being accepted. All three legal shapes are therefore exercised, and a consistency test asserts that they still are | §11 |
 | 9 | **§9 gains a sentence, not a rule: a Pydantic-raised failure can carry a chosen `issue` slug.** `raise ValueError` arrives as `issue: "value_error"` whatever went wrong — the defect v1.22 fixed for `prevention_in_current` by moving that rule out of Pydantic altogether. Where the rule genuinely belongs in Pydantic, `PydanticCustomError(slug, message)` sets the error's `type`, so `issue` carries this API's name instead. The seven `period_*` slugs are the first to use it; the envelope is unchanged | §9 |
 
-> **What this leaves for later, stated so nobody reads it as finished.** `web/js/results.js`'s `TIME_FRAME_LABELS` has no phrase for `custom` and needs one; nothing under `web/` sends either new field yet; `api/pdf_render.py` prints no period at all and the plain-text export prints only the preset's phrase. That is deliberate sequencing — this revision is the wire and the store, and the picker, the wiring of step 5 and the twenty catalogues follow it — but until they land, `custom` is a value only a non-browser caller can send, and a front end that sent it today would render an empty period line rather than a wrong one.
+> **What this leaves for later, stated so nobody reads it as finished.** `web/js/results.js`'s `TIME_FRAME_LABELS` has no phrase for `custom` and needs one; nothing under `web/` sends either new field yet; `api/pdf_render.py` prints no period at all and the plain-text export prints only the preset's phrase. That is deliberate sequencing — this revision is the wire and the store, and the picker, the wiring of step 5 and the twenty catalogues follow it — but until they land, `custom` is a value only a non-browser caller can send, and a front end that sent it today would render an empty period line rather than a wrong one. **All three are closed by v1.68**, and the phrase `custom` needed turned out to be no phrase at all — see change 2 there.
 
 ### v1.66 — 2026-09-21 (the results page's section nav stops covering the page; affects C and D)
 
@@ -3586,6 +3606,14 @@ No `token`, no `dry_run`: both are refused by `extra="forbid"` if sent, rather t
 
 > **No new catalogue string is involved, and that is a constraint rather than a convenience.** The obvious rendering is a translated sentence such as "not broken down by type", which is what the screen shows. It cannot be used here: `Catalogue.gettext` raises rather than falling back to English (above), so a key added on this path would make the whole document fail to render in every language whose catalogue had not yet caught up — and a catalogue pass always lands after the code that needs it. `ABSENT` is a glyph, carries no language, and is already on four other paths in the same document.
 
+**The reporting period is printed on the document (v1.68).** One line, below the masthead and above the summary grid, in the same sentence and the same three shapes the results page and the plain-text download carry — `These figures cover: One week · 14/09/2026 08:10 – 21/09/2026 08:10` for v1.67's preset-with-interval case, the two instants alone for `custom`, the phrase alone for a preset that filled nothing, and **nothing at all** when no period was stated. `render_export_pdf` passes the `ExportPayload` itself as the renderer's `period`, because the payload already carries exactly the three fields a period is.
+
+> **On its own line, and never inside the summary grid.** §2.3 makes the period a label that nothing is scaled by; a period set beside a total is an invitation to derive the one thing this contract forbids anyone to derive from it. The renderer subtracts nothing either — the two instants are printed side by side.
+>
+> **No new catalogue string, on exactly the reasoning the `ABSENT` note above gives.** The sentence is v1.48's own `These figures cover: %(period)s` and the four phrases are step 5's own `<select>` options; the `–` between the instants and the `·` between the phrase and them are notation, like `GWP100` and like the cover line's own separators. `tests/api/test_pdf_render.py` asserts all five are strings the front end renders **and** that every catalogue already carries them, so the strict lookup cannot fire in earnest on this path.
+>
+> **`en-NZ` in every language**, `dd/mm/yyyy hh:mm`, formatted by hand rather than through a locale table for the same reason the generated stamp above is: digits read the same everywhere and this renderer owns no calendar dictionary. It is also character-for-character the shape `web/js/period.js`'s own boxes accept, so the document prints back a date the form that collected it would take. Under a right-to-left locale the run reorders — the extracted text reads `16:20 14/09/2026 – 08:10 14/09/2026` — because each date and each time is a European-number run at an even embedding level while the neutrals between them take the paragraph's odd one (UAX #9, N1). Read right-to-left it is the period as written, it is the same thing a browser does to the same string on the screen, and **nothing inserts an LRM or any other invisible control to "correct" it**: this module reorders no character.
+
 **The fallback disclosure travels with the document (v1.59).** When an entry's `item_basis` is `category` the PDF carries the same caveat the screen and the plain-text export carry, in the same words, from §7.3c's two catalogue keys — because this is the copy most likely to be read months later by somebody who was not in the room, and a figure that is not as specific as the question it answers has to say so on its face. It sits beside the placeholder warning and is independent of it: a real factor set can still price a food only at its category. `_CATEGORY_AVERAGE_FLAG` and `_CATEGORY_AVERAGE_BODY` are this module's own constants and `tests/api/test_pdf_render.py` asserts they are strings the front end also renders, so a reword on one surface fails rather than producing two accounts of one submission.
 
 **The placeholder-data warning is mandatory here on the same terms as everywhere else (§2.2).** `render_export_pdf` reads `result.is_mock` unconditionally — there is no parameter, keyword or locale that suppresses it — and the renderer re-reads its own rendered output and refuses to produce a document that is missing the banner, rather than shipping one silently without it.
@@ -4586,6 +4614,19 @@ export function bindResultsSectionSpy(root);
 export function resultsNavIsDocked(root);
 ```
 
+> **The reporting period reads back as what the visitor chose (v1.68).** One line, above every figure on the page and near the top of the text download, worded identically on both because `resultsPeriod` and `periodLine` go through one `periodPhrase` rather than each formatting the period themselves. Three shapes, because §6.2 accepts three:
+>
+> | What `state` holds | What the line says |
+> | --- | --- |
+> | `timeFrame: ''` | nothing at all — never the label with nothing after it, and never a phrase implying "not stated" is itself a period |
+> | a preset and no interval (every submission before v1.67) | `These figures cover: One week` |
+> | a preset **and** an interval — v1.67's designed normal case | `These figures cover: One week · 14/09/2026 08:10 – 21/09/2026 08:10` |
+> | `custom` and an interval | `These figures cover: 14/09/2026 08:10 – 14/09/2026 16:20` |
+>
+> **`custom` has no phrase and `TIME_FRAME_LABELS` deliberately does not gain one.** "Custom period" names a control, not a period; a reader holding their own results learns nothing from it. The map keeps the job v1.48 gave it — a `time_frame` it has no phrase for, with no interval beside it, renders nothing rather than a raw identifier.
+>
+> **A preset beside an interval prints both halves**, because the phrase records which shortcut was pressed and the interval records what it filled, and the client's first question of this column needs both. **The dash and the `·` are notation and carry no `t()` key**: `api/pdf_render.py` prints the identical sentence from the same catalogue keys through a lookup that *raises* rather than falling back, so a sentence coined here would break every non-English download until twenty catalogues caught up. The instants are formatted by `period.js`'s own `formatInstant`, imported rather than re-derived, so the page prints them back in the shape the box that collected them accepts — `en-NZ`, in every language, which is O-4 and is not this module's to settle.
+
 > **"Per entry" on this screen means per LEAF, not per chain (v1.55).** A supply-chain chain that names three food categories is three `entries[]` elements and therefore three breakdown sections and three rows in the text report, each named by `leafDisplayName` (§7.2) rather than by a label this module decides. That is what closed two defects at once here: a leaf carried one name on step 3, another on step 4 and a third on the review step, and `Standard mix / not specified` was returned both for a NULL `food_category` and for the `standard_mix` category — two answers step 2 offers as two separate boxes, rendering byte-identically on a page whose rows carry different numbers. The pairing itself is `entryResultsFrom`'s (§7.2), which must be handed the leaves the request was built from; handed chains it pairs by index against a longer response and attaches every figure to the wrong entry, silently.
 >
 > **The export used to contain no results.** It printed the total mass, the entries, their destinations and quantities, the factor version and the placeholder warning, and not one output number — under a file name that says "results". `buildResultsReport` exists as a separate export because that is the half a test can assert on: `tests/web/test_results_export.py` runs this module under Node against the §10 fixtures and matches whole anchored lines, so a report that printed the label without the figure, or the figure without its unit, fails. A test that greps this file for a heading would have passed on the broken version.
@@ -4761,10 +4802,26 @@ O-4 is decided these three modules change together or not at all.
 > out of both files, asserts the arithmetic between them, and greps the browser module for a
 > stray `38`.
 
-> **What this leaves for later (WP3 and WP4).** Nothing under `web/` sends `period_start` or
-> `period_end` yet — this module writes `state.periodStart` / `state.periodEnd` and touches
-> nothing downstream of them — and the nineteen new `t()` keys are not in the twenty
-> catalogues, so they render in English there until they are.
+> **What this leaves for later (WP4).** The nineteen new `t()` keys are not in the twenty
+> catalogues, so they render in English there until they are. Everything downstream of
+> `state.periodStart` / `state.periodEnd` landed at v1.68: `web/js/submission.js` sends both
+> fields on both payloads, `results.js` reads them back on the page and into the text
+> download, and `api/pdf_render.py` prints them on the document.
+
+> **`periodProblem` refuses `custom` with no interval (v1.68), and it takes the `time_frame`
+> as an argument so that it can.** §6.2 answers `period_custom_without_interval` to that
+> payload, and this form could build it two ways — choosing *Custom period* and typing
+> nothing, and pressing a preset and then emptying all four boxes, which demotes the answer
+> to `custom` and leaves nothing under it. `handlePeriodInput` decides the demotion first and
+> asks the question against the *demoted* answer — **and that ordering is deliberately not
+> claimed to be load-bearing today.** Swapping it back leaves every browser test green, and
+> that was measured rather than assumed: emptying a preset-filled interval takes four edits
+> and the demotion lands on the first of them, so by the last edit `state.timeFrame` already
+> reads `custom`. It is written that way because the agreement is an accident of there being
+> four boxes — a control that cleared the interval in one event would demote and empty on
+> the same keystroke, and a default read would then answer about `one_week`, which with no
+> interval is perfectly legal. The clause and the argument are asserted directly, in
+> `tests/web/test_period_rules.py`, where both time frames can actually be passed.
 
 ## 7.3c The fallback disclosure (v1.59, written by C and D; mirrored by B in the PDF)
 
@@ -4785,6 +4842,8 @@ The decision is `entries[].item_basis` and nothing else. **No surface may work i
 **The privacy copy names the food too (v1.59).** Both enumerating sentences on `home.html`, `index.html`, `methodology.html` and `stats.html` read *the sector, food category, the specific food where you name one, and the quantities entered*. `submission_entry.food_item_id` has been written since v1.58, so the old enumeration was already incomplete; the clause is worded *where you name one* so that it is true before landing step 8 as well as after it. `tests/web/test_consent_copy.py`'s predicate is over the copy rather than over a list of sentences, so the reworded pair is still selected by it.
 
 ## 7.3b `submission.js` — the one builder of the calculate request (written by C)
+
+> **It sends `period_start` and `period_end` from v1.68**, on **both** payloads, through one helper — and the paragraph below is exactly why it is both. `time_frame` was one of the four fields Compare Impact used to drop; v1.67 put two more columns beside it, and a period sent by Calculate and not by Compare is two `NULL`s a moment after the next click, in a row `ck_submission_period` would then have to be lenient about. **`state.periodStart` and `state.periodEnd` are sent as they are held** — `"2026-09-14T08:10"`, the wire's own shape — and nothing here builds a `Date`, calls `toISOString()` or takes an epoch millisecond: the first produces a zone-carrying value §6.2 refuses outright, and the second is worse, because a value *converted* to UTC is well-formed and says a different time. `''` in the state becomes `null` on the wire, because §2.3 records absence rather than a sentinel.
 
 > **It sends `food_item` from v1.60.** `foodItem` has travelled on every leaf since the fork, so the review step, the results page and the duplicate notice could label one, and it stopped at the payload boundary because `EntryPayload` was `extra="forbid"` with no such field -- sending it was a 400. v1.58 gave the model that field, which turned the withholding into the front end standing one revision behind the API. `entry.foodItem || null`, for the reason `food_category` beside it uses one: §6.2 reads absent and null the same way, and only the explicit null is distinguishable from a client written before the field existed.
 
@@ -4906,6 +4965,13 @@ export function submissionPayload(state, chains, alternativeFor);
  * folded into the frozen record `entryResultsFrom` (§7.2) built at Calculate time,
  * and this reads the same entries the visitor is looking at rather than a second
  * copy of the wizard's working state.
+ *
+ * **Carries the same `period_start` / `period_end` `submissionPayload` does (v1.68)**,
+ * from the same state through the same helper. `ExportPayload` inherits
+ * `PricingOptions` precisely so the two routes cannot disagree about a period one
+ * accepts and the other refuses, and two builders here would put that disagreement
+ * back one layer up. The route persists nothing, so this body is the only way the
+ * document learns which period its figures cover.
  *
  * @param {object} state
  * @param {string} locale  the interface language the visitor is reading — `i18n.js`'s

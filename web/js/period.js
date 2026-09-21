@@ -289,6 +289,31 @@ const dateOfInstant = instant => {
   return new Date(year, month - 1, day, hours, minutes)
 }
 
+/**
+ * One stored instant, as a person reads it: `14/09/2026 08:10` (v1.68).
+ *
+ * **Exported from here rather than written again where it is read.**
+ * `results.js` prints the period on the results page and into the text
+ * download, and `api/pdf_render.py` prints the same sentence onto the PDF; a
+ * second `Intl.DateTimeFormat` beside either of them would be a second place
+ * the `en-NZ` pin has to be changed when O-4 is decided, and — worse — a second
+ * chance for the period to be *printed* in a shape the field that collected it
+ * would not *accept*. `DATE_DISPLAY` is the formatter the four text boxes are
+ * filled from, so what is read back is character-for-character what was typed.
+ *
+ * The time is taken verbatim off the wire shape rather than run through a
+ * formatter: it is already `HH:MM` on a 24-hour clock, which is what
+ * `parseTimeText` produced and what the box shows. `slice(0, 5)` because §6.2
+ * appends `:00` seconds and a reporting period has no seconds to print.
+ *
+ * @param {string} instant `YYYY-MM-DDTHH:MM`, or `''`.
+ * @returns {string} `dd/mm/yyyy hh:mm`, or `''` for an absent instant.
+ */
+export function formatInstant(instant) {
+  if (!instant) return ''
+  return `${DATE_DISPLAY.format(dateOfInstant(instant))} ${String(instant).split('T')[1].slice(0, 5)}`
+}
+
 // ---------------------------------------------------------------------------
 // The rules the form holds
 // ---------------------------------------------------------------------------
@@ -326,10 +351,17 @@ function readBound(fields, bound) {
  * to disagree about whether one screen is valid.
  *
  * The order is the order a reader fixes them in — each bound on its own first,
- * then the two rules that need both. The ceiling and the floor are checked per
+ * then the three rules that need both. The ceiling and the floor are checked per
  * bound because that is where the message can point at a field.
+ *
+ * **`timeFrame` is a parameter and not a read of `state` (v1.68).** It has to
+ * be, because `handlePeriodInput` demotes a preset to `custom` in the same
+ * breath as it asks this question, and a default read here would answer about
+ * the answer the visitor has just stopped giving. `state.timeFrame` is the
+ * default for the two callers — the render path and `calculator.js`'s button —
+ * that ask after the state has settled.
  */
-export function periodProblem(fields = periodFields()) {
+export function periodProblem(fields = periodFields(), timeFrame = state.timeFrame) {
   const bounds = { start: readBound(fields, 'start'), end: readBound(fields, 'end') }
   for (const bound of BOUNDS) {
     const read = bounds[bound]
@@ -346,6 +378,25 @@ export function periodProblem(fields = periodFields()) {
   if (bounds.start.empty !== bounds.end.empty) {
     const missing = bounds.start.empty ? 'start' : 'end'
     return { message: t('Enter both a start and an end, or leave the period unstated.'), field: `period-${missing}-date` }
+  }
+  // §6.2's `period_custom_without_interval`, held here for the reason every
+  // other clause in this function is held here: **the form must not be able to
+  // build a request the API refuses.** Without it, choosing *Custom period* and
+  // typing nothing left Calculate live over a payload of `time_frame: "custom"`
+  // with two nulls, which is a 422 the visitor meets after the request rather
+  // than a sentence they meet before it. It is reachable the other way round
+  // too, and less obviously: pressing *One week* and then emptying all four
+  // boxes demotes the answer to `custom` and leaves no interval behind it.
+  //
+  // Refused rather than normalised to "not stated", which is the same ruling
+  // §6.2 takes and for the same reason — dropping the answer on the visitor's
+  // behalf discards a selection they made and records a fact they did not
+  // state. The message is the one the half-interval case above already uses,
+  // word for word: *enter both, or say you are not stating a period* is exactly
+  // what is being asked, and a second sentence saying it differently would be a
+  // twenty-first catalogue entry that adds nothing.
+  if (timeFrame === 'custom' && bounds.start.empty) {
+    return { message: t('Enter both a start and an end, or leave the period unstated.'), field: 'period-start-date' }
   }
   if (!bounds.start.empty && dateOfInstant(bounds.end.instant) < dateOfInstant(bounds.start.instant)) {
     // Equal ends are allowed, here and in §6.2: a zero-length period is odd, it
@@ -696,8 +747,30 @@ export function handlePeriodInput(event, otherwiseDisabled = false) {
   const field = event.target.dataset.periodField
   if (!field) return false
   const fields = { ...periodFields(), [field]: event.target.value }
-  const problem = periodProblem(fields)
-  Object.assign(state, { periodFields: fields, ...periodValues(fields), ...demotion() })
+  // **The demotion is decided before the problem is asked, and the answer this
+  // keystroke leaves behind is what is asked about** (v1.68). `periodProblem`'s
+  // `custom` clause is a question about `time_frame`, and this is the one
+  // handler that can change `time_frame` in the same breath as the fields.
+  //
+  // **Measured, because the obvious claim about this line is not true.**
+  // Swapping these two back — ask first, demote after — leaves every test in
+  // `tests/web/test_period_submission_browser.py` green, and that is an
+  // equivalent mutation rather than a weak test: emptying a preset-filled
+  // interval takes four edits and the demotion lands on the *first* of them,
+  // so by the edit that empties the last box `state.timeFrame` already reads
+  // `custom` and a default read reaches the same answer. The select's own
+  // value was read after each of the four to confirm it.
+  //
+  // It is written this way regardless, because that agreement is an accident
+  // of how many boxes there are: a control that cleared the whole interval in
+  // one event would demote and empty on the same keystroke, and the version
+  // that reads `state` would then answer about `one_week` — which with no
+  // interval is perfectly legal — and leave Calculate live over a 422. The
+  // clause itself, and the parameter, are asserted directly in
+  // `tests/web/test_period_rules.py`.
+  const patch = demotion()
+  const problem = periodProblem(fields, patch.timeFrame ?? state.timeFrame)
+  Object.assign(state, { periodFields: fields, ...periodValues(fields), ...patch })
   // The select is the only part of the step this path may not leave stale: it is
   // on screen beside the fields, and a demoted `time_frame` that still read "One
   // week" would be the form telling the visitor something the state does not say.

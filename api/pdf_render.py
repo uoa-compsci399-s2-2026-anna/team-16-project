@@ -438,6 +438,26 @@ _CATEGORY_AVERAGE_BODY = (
 
 _EQUIVALENCE_BASIS_MISSING = "The basis for this conversion is not recorded yet."
 
+#: v1.68. The reporting period the figures cover, printed on the document
+#: because a figure somebody keeps for months has to carry the period it
+#: describes (§2.3) - and because `time_frame` reached `ExportPayload` from
+#: v1.48 and this document printed it nowhere.
+#:
+#: **Every string here is already a key the front end asks for**, and that is a
+#: constraint rather than a coincidence - see `_LABELS["production_share"]`. The
+#: sentence is `web/js/results.js`'s own `resultsPeriod` line, word for word, so
+#: the screen, the text download and this document say the same thing about the
+#: same submission; the four phrases are `TIME_FRAME_LABELS`', which are in turn
+#: step 5's own `<select>` options, so the word a visitor chose is the word they
+#: are given back.
+_PERIOD_SENTENCE = "These figures cover: %(period)s"
+_TIME_FRAME_LABELS = {
+    "one_week": "One week",
+    "one_month": "One month",
+    "one_quarter": "One quarter",
+    "one_year": "One year",
+}
+
 #: The standing caveat `web/js/results.js::equivalenceBasis` prints beside
 #: every basis note on the page (Task 6). It was missing from both exports
 #: until a review of this task found it - a fourth fact the three surfaces
@@ -520,6 +540,17 @@ def _money_figure(value: Any, kind: str) -> str:
 #: test can assert all twenty catalogues carry all of them **without rendering
 #: anything**. A per-locale render proves the document came out; this proves
 #: there is no locale in which one heading would quietly have to be English.
+#:
+#: **The conditional and the interpolated strings are deliberately not in
+#: here**, because `test_no_locale_falls_back_to_english` asserts every entry
+#: below appears *verbatim* in a rendered document, and neither kind can:
+#: `_CATEGORY_AVERAGE_BODY` carries `%(food)s`, and v1.68's `_PERIOD_SENTENCE`
+#: carries `%(period)s` and appears only when a period was stated. Their
+#: coverage is asserted by name instead - see
+#: `test_the_pdf_and_the_screen_word_the_fallback_disclosure_identically` and
+#: `test_the_period_strings_are_the_screens_own_and_every_catalogue_has_them`,
+#: which check the stronger property for them: that they are keys the front end
+#: itself renders, so the three surfaces cannot come to word one fact two ways.
 DOCUMENT_STRINGS: tuple[str, ...] = (
     _TITLE,
     _SUBTITLE,
@@ -540,6 +571,85 @@ DOCUMENT_STRINGS: tuple[str, ...] = (
     *_LABELS.values(),
     *(key for _attribute, key, _kind in _MONEY_LABELS),
 )
+
+
+def _instant_text(moment: Any) -> str:
+    """One period bound, as a person reads it: `14/09/2026 08:10`.
+
+    **`en-NZ`, in every language, and that is `web/js/period.js`'s decision
+    rather than one taken here.** `stats.js`'s timestamp and `home.js`'s news
+    date both pin `Intl.DateTimeFormat('en-NZ', …)` with the reason written
+    beside them: a date *format* is O-4 (localisation beyond language), which
+    is open and promises nothing. The sentence around the period is translated;
+    the period inside it is not reformatted. A download is a particularly bad
+    place to settle O-4, because the file outlives the argument.
+
+    Formatted by hand rather than through `babel` or a locale table for the
+    reason `_generated_at_text` gives about its own stamp: digits read the same
+    in every language, and this module owns no calendar dictionary. `dd/mm/yyyy
+    hh:mm` is character-for-character what `web/js/period.js`'s `DATE_DISPLAY`
+    put in the box the visitor typed into, so the document prints back exactly
+    what the form accepted - a document that reformatted it to `09/14/2026`
+    would be showing a date that field would refuse.
+
+    Seconds are not printed because the requirement is minutes and
+    `submission.period_start` is a `DATETIME` with no fractional precision
+    (§2.3).
+    """
+    return f"{moment:%d/%m/%Y %H:%M}"
+
+
+def _period_text(period: Any, translate: Any) -> str:
+    """The reporting period as one phrase, in the three shapes §6.2 accepts,
+    or `""` when no period was stated.
+
+    | What the request carried | What this returns |
+    | --- | --- |
+    | nothing | `""` |
+    | a preset alone | `One week` |
+    | a preset **and** an interval - the designed normal case from v1.67 | `One week · 14/09/2026 08:10 – 21/09/2026 08:10` |
+    | `custom` and an interval | `14/09/2026 08:10 – 21/09/2026 08:10` |
+
+    **A preset beside an interval prints both**, because from v1.67 a preset is
+    a button that *fills* the picker: the interval is what the figures cover
+    and `time_frame` is the record of which shortcut produced it. Printing only
+    the phrase over dates the visitor may since have moved tells half the
+    truth, and the half it drops is the one the client asks for first - *did
+    they mean a standard week, or did they choose those dates?*
+
+    **`custom` has no phrase of its own and is not in `_TIME_FRAME_LABELS`.**
+    "Custom period" is the name of a control; read back to somebody holding
+    their own report it says nothing they did not already know. What they chose
+    was two instants, so two instants are what this prints.
+
+    **The dash and the separator are notation and carry no catalogue key.**
+    Same ruling as `GWP100` in the summary tile and the `·` already joining the
+    cover line's three facts: `A – B` is the same notation in every language
+    this calculator ships in, the sentence around it is translated by a key
+    that has existed since v1.48, and a sentence coined here instead would mean
+    every non-English download raising `MissingTranslationError` until twenty
+    catalogues caught up.
+
+    `period` is anything carrying `time_frame`, `period_start` and
+    `period_end` - `api/export.py`'s `ExportPayload` is exactly that, and is
+    what the route passes. Duck-typed like `result` and `taxonomy` above for
+    the same reason: this module lays out values and does not own their types.
+    This function computes nothing; §6.2 forbids deriving a duration from the
+    pair and none is derived.
+    """
+    if period is None:
+        return ""
+    start = getattr(period, "period_start", None)
+    end = getattr(period, "period_end", None)
+    interval = f"{_instant_text(start)} – {_instant_text(end)}" if start and end else ""
+    time_frame = getattr(period, "time_frame", None)
+    if time_frame == "custom":
+        return interval
+    phrase = _TIME_FRAME_LABELS.get(time_frame)
+    if phrase is None:
+        return ""
+    phrase = translate(phrase)
+    return f"{phrase} · {interval}" if interval else phrase
 
 
 def _metric_rows(
@@ -759,7 +869,12 @@ def _generated_at_text(generated_at: Any) -> str:
 
 
 def build_context(
-    result: Any, taxonomy: Any, locale: str, generated_at: Any = None
+    result: Any,
+    taxonomy: Any,
+    locale: str,
+    generated_at: Any = None,
+    *,
+    period: Any = None,
 ) -> dict[str, Any]:
     """The template's whole input, in the language that was asked for.
 
@@ -796,6 +911,9 @@ def build_context(
     translate = catalogue.gettext
     names = _Taxonomy(taxonomy)
     totals = result.totals
+    #: v1.68. Read once: it decides both whether the line is printed and what
+    #: it says, and two calls would be two chances for those to disagree.
+    period_text = _period_text(period, translate)
 
     #: v1.59, and the same list the screen shows, built from the same
     #: field. `EntryResult.item_basis` is rolled up in `engine/calculate.py`
@@ -866,6 +984,16 @@ def build_context(
         # only in the summary grid below it).
         "produced_by": translate(_PRODUCED_BY),
         "generated_at": _generated_at_text(generated_at),
+        #: v1.68. The whole sentence, already translated and already
+        #: interpolated, or `""` when no period was stated - so the template's
+        #: `{% if %}` is the only place the decision is made, exactly as
+        #: `category_averages` above. A label and never a computation (§2.3):
+        #: no figure below it is scaled by it and no duration is derived.
+        "period": (
+            translate(_PERIOD_SENTENCE) % {"period": period_text}
+            if period_text
+            else ""
+        ),
         "production_share": _production_share_context(totals, translate),
         "totals": _metric_rows(
             totals.current,
@@ -1057,12 +1185,17 @@ def _assert_mock_warning_present(
 
 
 def render_html(
-    result: Any, taxonomy: Any, locale: str, generated_at: Any = None
+    result: Any,
+    taxonomy: Any,
+    locale: str,
+    generated_at: Any = None,
+    *,
+    period: Any = None,
 ) -> str:
     """The document as HTML, warning already verified. Separated from the PDF
     call so that a test - and a developer debugging a layout - can look at what
     WeasyPrint was given without needing WeasyPrint installed."""
-    return _html(build_context(result, taxonomy, locale, generated_at))
+    return _html(build_context(result, taxonomy, locale, generated_at, period=period))
 
 
 def _html(context: dict[str, Any]) -> str:
@@ -1197,7 +1330,12 @@ def assert_every_character_is_drawable(context: Any) -> None:
 
 
 def render_document(
-    result: Any, taxonomy: Any, locale: str, generated_at: Any = None
+    result: Any,
+    taxonomy: Any,
+    locale: str,
+    generated_at: Any = None,
+    *,
+    period: Any = None,
 ) -> Any:
     """The laid-out document, one step before it becomes bytes.
 
@@ -1216,7 +1354,7 @@ def render_document(
     from weasyprint import CSS, HTML
     from weasyprint.text.fonts import FontConfiguration
 
-    context = build_context(result, taxonomy, locale, generated_at)
+    context = build_context(result, taxonomy, locale, generated_at, period=period)
     html = _html(context)
     # Checked here rather than in `render_html` because it is a question about
     # glyphs, and because `fontTools` is WeasyPrint's own dependency: a host
@@ -1242,7 +1380,12 @@ def render_document(
 
 
 def render_results_pdf(
-    result: Any, taxonomy: Any, locale: str, generated_at: Any = None
+    result: Any,
+    taxonomy: Any,
+    locale: str,
+    generated_at: Any = None,
+    *,
+    period: Any = None,
 ) -> bytes:
     """`CalculationResult` -> a PDF, in the brand's type, at A4.
 
@@ -1259,4 +1402,6 @@ def render_results_pdf(
     is the only module that may do the last of those, and the caller has
     already loaded everything else this needs.
     """
-    return render_document(result, taxonomy, locale, generated_at).write_pdf()
+    return render_document(
+        result, taxonomy, locale, generated_at, period=period
+    ).write_pdf()

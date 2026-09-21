@@ -4,7 +4,7 @@ import { containerKg, countLimit, entryTotal, isPlainDecimal, isPresetUnit, kgTo
 import { requestLines, submissionLeaves, submissionPayload } from './submission.js'
 import { escapeHtml, formatNumber, slug, stepNav } from './view.js'
 import { t } from './i18n.js'
-import { armContribute, cancelContribute, downloadPdf, downloadResults, renderResults } from './results.js'
+import { armContribute, bindResultsSectionSpy, cancelContribute, downloadPdf, downloadResults, renderResults, resultsNavIsDocked } from './results.js'
 import { compareImprovement, openImprovement, resetImprovement, updateImprovementInput } from './improvement.js'
 
 const decimalPattern = /^\d+(\.\d{1,2})?$/
@@ -2328,12 +2328,14 @@ export function render(main) {
   main.className = `main-content${state.step === -1 ? ' introduction-main' : ''}`
   if (state.loading && !state.taxonomy) {
     main.innerHTML = `<section class="content-section"><p class="loading-state" role="status">${escapeHtml(t('Loading calculator options…'))}</p></section>`
+    bindResultsSectionSpy(main)
     return
   }
   if (!state.taxonomy) {
     // §9.2: `BLOCKED` is the one failure here that a retry can never clear, so the button
     // is withheld rather than disabled — the message is the whole of the response.
     main.innerHTML = `<section class="content-section error-state"><h1>${escapeHtml(t('Calculator unavailable'))}</h1><p>${escapeHtml(state.error || t('The taxonomy could not be loaded.'))}</p>${blocked() ? '' : `<button class="button button-primary" type="button" data-action="retry">${escapeHtml(t('Try again'))}</button>`}</section>`
+    bindResultsSectionSpy(main)
     return
   }
   // Step 1 is two panels, not two steps -- see `itemStep`. `foodStage` picks
@@ -2344,6 +2346,13 @@ export function render(main) {
     (state.foodStage === 'items' && itemStepOffered() ? itemStep : foodStep)()
   const screens = [sectorStep, foodPanel, amountStep, destinationStep, reviewStep]
   main.innerHTML = state.step === -1 ? introduction() : state.step === 5 ? renderResults(state) : screens[state.step]()
+  // **Called at every exit from this function, including the two above that are not
+  // the results page.** The floating nav's scroll-spy watches four `<section>`
+  // elements that this line has just destroyed and recreated, so it is re-pointed
+  // after every render rather than wired once at start-up; off the results page there
+  // is no nav, and the call disconnects instead. One observer object either way --
+  // see `bindResultsSectionSpy` in `results.js` for why that has to be true.
+  bindResultsSectionSpy(main)
 }
 
 /**
@@ -2694,10 +2703,16 @@ export function bindCalculator(main, retryTaxonomy) {
     // then switching a breakdown tab closed it again.
     //
     // `undefined` means the stylesheet's viewport-dependent default is still
-    // in force, and the first toggle has to invert *that*: where the nav is
-    // shown at all the default is open, so the first press closes it.
+    // in force, and the first toggle has to invert *that*. **There are now two
+    // such defaults**: docked in the gutter and open from 1600px up, a closed
+    // handle from 1100 to 1599 (`styles.css`, the block over
+    // `.results-floating-nav`). So the first press cannot assume "open" any
+    // more -- it asks the stylesheet which regime is on screen, through the
+    // custom property `resultsNavIsDocked()` reads, and inverts that. Hard-coding
+    // `false` here is what made the first press a no-op at every width below
+    // 1600 once the narrow band's default became closed.
     if (action === 'toggle-results-nav') {
-      setState({ resultsNavOpen: state.resultsNavOpen === undefined ? false : !state.resultsNavOpen })
+      setState({ resultsNavOpen: state.resultsNavOpen === undefined ? !resultsNavIsDocked() : !state.resultsNavOpen })
     }
     if (action === 'explore-improvements') openImprovement(state)
     if (action === 'reset-improvement') resetImprovement(state)

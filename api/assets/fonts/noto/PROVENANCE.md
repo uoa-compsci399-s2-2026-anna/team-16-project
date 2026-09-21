@@ -277,3 +277,46 @@ happens when something is *missing*. This entry is the first to say so; the
 2026-09-11 table's "Lost: 0" column was true of that re-cut and is recorded
 here in its own terms instead, because "lost" and "no longer required" are
 different facts and only the first is a defect.
+
+## Re-cut, 2026-09-21 (the reporting period's picker, v1.68)
+
+Step 5's custom reporting period arrived with a hand-built calendar dialog, and
+its nineteen `t()` keys reached the twenty catalogues in one batch
+(`docs/interfaces.md` v1.68, change 8). Most of them are control furniture the
+CJK catalogues had never had to say before — *close the calendar*, *next
+month*, *previous month*, the arrow-key instruction a screen reader reads
+aloud, and the two format sentences — so
+`test_no_character_in_any_catalogue_would_print_as_a_box` named **twenty-six**
+code points across `ja`, `ko`, `zh` and `zh-Hant`: among them 閉/闭 ("close",
+in the calendar's own close control), 鍵/键 and 키 ("key", in the keyboard
+instruction), 曆/历 ("calendar"), 矢 (`ja`'s 矢印キー, "arrow key") and 끝
+(`ko`'s "end").
+
+Re-cut the same way as every entry above: `recut_cjk_subsets.py`, run inside
+the `api` container with `fonts-noto-cjk` (1:20240730+repack1-1, the same
+package version the table at the top of this file names) installed fresh.
+
+| Face | Characters before | Characters after | Bytes before | Bytes after |
+| --- | --- | --- | --- | --- |
+| `NotoSansCJKjp-Regular.woff2` | 646 | 657 | 232,416 | 237,032 |
+| `NotoSansCJKkr-Regular.woff2` | 558 | 564 | 80,568 | 80,948 |
+| `NotoSansCJKsc-Regular.woff2` | 705 | 713 | 204,096 | 205,572 |
+| `NotoSansCJKtc-Regular.woff2` | 705 | 711 | 267,240 | 269,312 |
+
+**One character present in the old faces is absent from the new ones, and it is
+not a loss.** `sc` and `tc` both drop 旦 (`U+65E6`). Checked the way the
+2026-09-19 entry requires, against the catalogue it would have to come from at
+`HEAD` as well as in the working tree: **it appears in no string of `zh.json`
+or `zh-Hant.json` in either**, and in no metadata field of either. It is
+residue from a cut taken before some earlier catalogue edit removed the string
+that needed it, carried forward because a re-cut only ever happens when
+something is *missing*. Nothing else was lost from any of the four faces.
+
+**`sc` regains 「」, which the 2026-09-19 entry recorded as dropped**, and that
+is the same mechanism read the other way: the brackets are in `zh.json`'s
+*current* strings (`点按「撤销」即可取消发送。`) and this cut reads fresh, so
+they come back. They were never undrawable in the meantime — the `tc` face
+carries them, and `_is_drawable` asks every embedded face rather than the one
+matching the locale — which is exactly why nothing failed while `sc` lacked
+them, and why a per-face gap is worth recording here even when no test can see
+it.

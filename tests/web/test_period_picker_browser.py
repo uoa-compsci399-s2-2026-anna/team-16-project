@@ -66,12 +66,12 @@ def review(browser):
     """
     contexts = []
 
-    def open_page(lang="en"):
+    def open_page(lang="en", width=1278, height=983):
         # `locale` and `?lang=` both pinned, for `test_step_navigation.py`'s own
         # reason: since v1.25 the calculator negotiates from
         # `navigator.languages`, so a machine whose browser prefers another
         # language renders a page none of the English assertions below match.
-        context = browser.new_context(viewport={"width": 1278, "height": 983}, locale="en-NZ")
+        context = browser.new_context(viewport={"width": width, "height": height}, locale="en-NZ")
         contexts.append(context)
         page = context.new_page()
         failures = []
@@ -631,3 +631,68 @@ def test_the_grid_mirrors_under_rtl_and_the_arrow_keys_follow_the_screen(review)
         "the dialog pushed the page sideways under dir=rtl"
     )
     assert not page.uncaught, page.uncaught
+
+
+@pytest.mark.parametrize("lang", ["en", "de", "ar"])
+def test_all_seven_columns_fit_inside_the_calendar_on_a_phone(review, lang):
+    """**Every day of the week has to be on screen, and one measurement says so.**
+
+    A table box's `min-inline-size` is `auto`, which resolves to its min-content
+    width and then wins over the specified width — `table-layout: fixed` does not
+    change that. At a 390px viewport the grid computed 760px inside a 358px
+    dialog, seven columns of 109px, so a visitor saw Monday to a clipped Thursday
+    and reached the rest only by scrolling the dialog sideways. Arrow keys still
+    worked, so keyboard use was unaffected and touch use was not.
+
+    **Nothing caught it for the life of the feature.** `test_horizontal_overflow.py`
+    walks static pages and never opens the calendar, and the dialog's own
+    `overflow: auto` kept the overflow off the document, so the page-level check
+    every other screen relies on was satisfied while three columns were
+    unreachable.
+
+    Parametrised over three languages because the column headers are the widest
+    thing in a cell and a longer word is the obvious way this comes back — though
+    the defect itself was never a translation problem: English measured the same
+    760px.
+    """
+    page = review(lang=lang, width=390, height=844)
+    page.select_option("#time-frame", "custom")
+    page.wait_for_timeout(200)
+    page.locator('[data-action="period-open"]').first.click()
+    page.wait_for_selector(".period-grid")
+    page.wait_for_timeout(150)
+
+    measured = page.evaluate(
+        """() => {
+          const grid = document.querySelector('.period-grid');
+          const dialog = grid.closest('.period-dialog');
+          const cells = [...grid.querySelectorAll('thead th')];
+          const box = dialog.getBoundingClientRect();
+          return {
+            grid: Math.round(grid.getBoundingClientRect().width),
+            content: Math.round(dialog.clientWidth),
+            columns: cells.length,
+            outside: cells.filter(cell => {
+              const rect = cell.getBoundingClientRect();
+              return rect.left < box.left - 1 || rect.right > box.right + 1;
+            }).length,
+            sideways: Math.round(dialog.scrollWidth - dialog.clientWidth),
+          };
+        }"""
+    )
+
+    assert measured["columns"] == 7, measured
+    assert measured["grid"] <= measured["content"], (
+        f"{lang}: the calendar grid is {measured['grid']}px inside a "
+        f"{measured['content']}px dialog, so it does not fit the phone it is "
+        f"being read on"
+    )
+    assert measured["outside"] == 0, (
+        f"{lang}: {measured['outside']} of the seven weekday columns are drawn "
+        f"outside the dialog's own box — those days cannot be reached by touch"
+    )
+    assert measured["sideways"] == 0, (
+        f"{lang}: the dialog scrolls sideways by {measured['sideways']}px, which "
+        f"is how the missing columns were reachable at all and is not a way "
+        f"anybody finds them"
+    )

@@ -47,7 +47,12 @@ NEVER_TRANSLATED = ("Kai Commitment", "CO2e", "NZD")
 IDENTICAL_BY_DESIGN = {
     "de": {"Code", "Name"},
     "es": {"No", "Sector"},
-    "fr": {"Code", "Destination", "Documentation"},
+    #: `Date` joins the list for v1.68's period fields. French for a date is
+    #: `Date`, and the alternative a translator would reach for -- `Jour` --
+    #: names a day rather than a date, beside a box that wants `dd/mm/yyyy`.
+    #: Preferring a wrong word to an identical one is exactly what this list
+    #: exists to prevent.
+    "fr": {"Code", "Date", "Destination", "Documentation"},
     "nl": {"Code", "Sector"},
 }
 

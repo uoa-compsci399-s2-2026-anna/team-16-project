@@ -6,17 +6,21 @@ which is the failure mode `tests/admin/test_i18n.py` was written against and
 the same one applies on this side. The catalogues are generated from what this
 returns and asserted complete against it.
 
-Four sources, because the front end has four ways of naming a string:
+Four mechanisms, because the front end has four ways of naming a string:
 
 * ``t('...')`` in the ES modules - the ordinary case.
 * ``data-i18n`` in ``index.html`` and ``methodology.html``, where the element's
-  own trimmed text is the key, and ``data-i18n-attr``, where the named
-  attributes' current values are.
-* Four **indirect** constants: strings held in a module-level array or object
-  and passed to ``t()`` by reference. They are enumerated by name below rather
-  than guessed at, and `test_i18n_web.py` asserts each one still exists - a
-  renamed constant has to fail loudly here, not silently drop its strings out
-  of every catalogue.
+  own trimmed text is the key.
+* ``data-i18n-attr`` in the same two files, where the named attributes' current
+  values are.
+* The **indirect** constants in ``_INDIRECT``: strings held in a module-level
+  array or object and passed to ``t()`` by reference. They are enumerated by
+  name below rather than guessed at, and `test_i18n_web.py` asserts each one
+  still exists - a renamed constant has to fail loudly here, not silently drop
+  its strings out of every catalogue. **How many there are is deliberately not
+  written down here**: this paragraph used to say "four indirect constants"
+  above a tuple that had since grown past four, because a count in prose beside
+  a list that grows is a comment that goes quietly wrong. Read ``_INDIRECT``.
 """
 
 from __future__ import annotations

@@ -230,6 +230,14 @@ admin = [
     # templates/ cannot leave the same way.
     "templates/brand/guidance/*.html",
     "templates/sqladmin/*.html",
+    # One level deeper again, and the same failure shape a third time.
+    # `templates/sqladmin/modals/import.html` shadows sqladmin's own import
+    # modal to add this panel's CSRF token (admin/importing.py). A wheel built
+    # without this line falls back to sqladmin's unshadowed copy, which carries
+    # no token - so all fourteen importable screens render an Import button
+    # whose every upload the server then refuses, and nothing about it is
+    # reproducible from a checkout.
+    "templates/sqladmin/modals/*.html",
     "static/*.css",
     # The security screen's dialogs are a plain ES module, and a wheel built
     # without this line ships a page whose Add, Remove and Change-password

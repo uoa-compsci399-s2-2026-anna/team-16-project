@@ -17,6 +17,15 @@ FactorSetAdmin for the set-level version of the same invariant.
 The two high-volume tables carry roughly 270 and 600 rows per factor set, so
 every list here filters by factor_set. A staff member editing the wrong
 version's number is the failure this prevents, and it is silent.
+
+**The five child screens accept a bulk CSV import; FactorSetAdmin does not.**
+A factor set is created by cloning and its `status` is moved by the four
+lifecycle actions alone, each of which takes a lock, revalidates and stamps
+`published_at` - a file that could write those columns would walk past all of
+it. The children carry the same draft-only rule the edit and delete paths
+already state, enforced against the uploaded file's own rows rather than
+against the page the visitor is on: see `import_draft_only_through` on each
+and `resolve_foreign_keys` in admin/importing.py.
 """
 
 import contextvars
@@ -42,6 +51,7 @@ from admin.factor_models import (
     Constant, Equivalence, FactorDownstream, FactorSet, FactorSetStatus,
     FactorUpstream, Formula,
 )
+from admin.importing import AuditedImport
 from admin.models import AuditLog, StaffRole
 from admin.modelviews import AuditedModelView, described
 from admin.taxonomy_models import Sector
@@ -268,7 +278,7 @@ def _refuse_deleting_the_last_item_row(view: AuditedModelView, pk: str) -> None:
     )
 
 
-class FactorUpstreamAdmin(AuditedModelView, model=FactorUpstream):
+class FactorUpstreamAdmin(AuditedImport, AuditedModelView, model=FactorUpstream):
     """`destination` may be left empty, and almost always should be.
 
     Empty means "every destination for this sector, food category and metric"
@@ -334,6 +344,14 @@ class FactorUpstreamAdmin(AuditedModelView, model=FactorUpstream):
                     FactorUpstream.metric,
                     FactorUpstream.value_per_kg, FactorUpstream.data_quality,
                     FactorUpstream.source_note]
+    # BULK CSV IMPORT, DRAFT-ONLY. The import accepts exactly what the create
+    # form accepts, because every imported row is validated through that form;
+    # `factor_set` names the draft by its version_label and every row of the
+    # file is checked against it. See AuditedImport (admin/importing.py) for
+    # both, and `_refuse_if_factor_set_not_draft` above for the same rule on
+    # the edit and delete paths.
+    column_import_list = form_columns
+    import_draft_only_through = "factor_set"
     #: Rendered by sqladmin's `_macros.html` under the field. Without it the
     #: blank option reads as an unfinished form rather than as the answer.
     form_args = {
@@ -426,7 +444,7 @@ class FactorUpstreamAdmin(AuditedModelView, model=FactorUpstream):
         _require_draft_factor_set(session, FactorUpstream)
 
 
-class FactorDownstreamAdmin(AuditedModelView, model=FactorDownstream):
+class FactorDownstreamAdmin(AuditedImport, AuditedModelView, model=FactorDownstream):
     """The largest table, and the one with the three traps.
 
     `food_category` may be empty, meaning "every category for this
@@ -466,6 +484,14 @@ class FactorDownstreamAdmin(AuditedModelView, model=FactorDownstream):
                     FactorDownstream.metric,
                     FactorDownstream.value_per_kg, FactorDownstream.data_quality,
                     FactorDownstream.source_note]
+    # BULK CSV IMPORT, DRAFT-ONLY. The import accepts exactly what the create
+    # form accepts, because every imported row is validated through that form;
+    # `factor_set` names the draft by its version_label and every row of the
+    # file is checked against it. See AuditedImport (admin/importing.py) for
+    # both, and `_refuse_if_factor_set_not_draft` above for the same rule on
+    # the edit and delete paths.
+    column_import_list = form_columns
+    import_draft_only_through = "factor_set"
     form_args = {
         "factor_set": {"description": _FACTOR_SET_HELP},
         "destination": {"description": (
@@ -544,7 +570,7 @@ _pending_deleted_constant_factor_set: contextvars.ContextVar[int | None] = (
 )
 
 
-class ConstantAdmin(AuditedModelView, model=Constant):
+class ConstantAdmin(AuditedImport, AuditedModelView, model=Constant):
     name = "Constant"
     name_plural = "Constants"
     category = _CATEGORY
@@ -555,6 +581,14 @@ class ConstantAdmin(AuditedModelView, model=Constant):
                            Constant.unit, Constant.note]
     form_columns = [Constant.factor_set, Constant.code, Constant.value,
                     Constant.unit, Constant.note]
+    # BULK CSV IMPORT, DRAFT-ONLY. The import accepts exactly what the create
+    # form accepts, because every imported row is validated through that form;
+    # `factor_set` names the draft by its version_label and every row of the
+    # file is checked against it. See AuditedImport (admin/importing.py) for
+    # both, and `_refuse_if_factor_set_not_draft` above for the same rule on
+    # the edit and delete paths.
+    column_import_list = form_columns
+    import_draft_only_through = "factor_set"
     form_args = {
         "factor_set": {"description": _FACTOR_SET_HELP},
         "code": {"description": (
@@ -694,7 +728,7 @@ class ConstantAdmin(AuditedModelView, model=Constant):
             revalidate_formulas(session, factor_set_id)
 
 
-class EquivalenceAdmin(AuditedModelView, model=Equivalence):
+class EquivalenceAdmin(AuditedImport, AuditedModelView, model=Equivalence):
     """`label_template` is what the public sees, e.g.
     "Equivalent to driving {value} km" — the `{value}` placeholder is
     substituted by the front end, so a template without it renders a sentence
@@ -717,6 +751,14 @@ class EquivalenceAdmin(AuditedModelView, model=Equivalence):
                     Equivalence.source_metric, Equivalence.value_per_unit,
                     Equivalence.label_template, Equivalence.source_note,
                     Equivalence.sort_order, Equivalence.active]
+    # BULK CSV IMPORT, DRAFT-ONLY. The import accepts exactly what the create
+    # form accepts, because every imported row is validated through that form;
+    # `factor_set` names the draft by its version_label and every row of the
+    # file is checked against it. See AuditedImport (admin/importing.py) for
+    # both, and `_refuse_if_factor_set_not_draft` above for the same rule on
+    # the edit and delete paths.
+    column_import_list = form_columns
+    import_draft_only_through = "factor_set"
     form_args = {
         "factor_set": {"description": _FACTOR_SET_HELP},
         "code": {"description": (
@@ -794,7 +836,7 @@ class EquivalenceAdmin(AuditedModelView, model=Equivalence):
         _require_draft_factor_set(session, Equivalence)
 
 
-class FormulaAdmin(AuditedModelView, model=Formula):
+class FormulaAdmin(AuditedImport, AuditedModelView, model=Formula):
     name = "Formula"
     name_plural = "Formulas"
     category = _CATEGORY
@@ -810,6 +852,14 @@ class FormulaAdmin(AuditedModelView, model=Formula):
                            Formula.notes]
     form_columns = [Formula.factor_set, Formula.metric, Formula.expression,
                     Formula.notes]
+    # BULK CSV IMPORT, DRAFT-ONLY. The import accepts exactly what the create
+    # form accepts, because every imported row is validated through that form;
+    # `factor_set` names the draft by its version_label and every row of the
+    # file is checked against it. See AuditedImport (admin/importing.py) for
+    # both, and `_refuse_if_factor_set_not_draft` above for the same rule on
+    # the edit and delete paths.
+    column_import_list = form_columns
+    import_draft_only_through = "factor_set"
     form_args = {
         "factor_set": {"description": _FACTOR_SET_HELP},
         "metric": {"description": (
@@ -1032,6 +1082,19 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
     name_plural = "Factor sets"
     category = _CATEGORY
     icon = "fa-solid fa-layer-group"
+
+    # NO IMPORT, AND THAT IS WHY `AuditedImport` IS NOT IN THE BASES. The five
+    # child screens have one; this one is the parent and is not among the
+    # fourteen. A set is brought into being by cloning and its `status` is
+    # moved by the four actions below, each of which takes `_lock_factor_sets`,
+    # revalidates the formulas and stamps `published_at`/`published_by`. A file
+    # that could write those columns would walk past every one of those steps,
+    # and could leave two rows claiming to be published at once — the state
+    # `check_single_published_set` exists to make unreachable. It is not one of
+    # the four tables refused on principle (admin/modelviews.py's
+    # AuditLogAdmin, accounts_view.py's StaffAdmin, submission_views.py's
+    # SubmissionAdmin, blocklist_views.py's IpBlockAdmin); it is a table whose
+    # writes have a route of their own.
 
     #: The two sequences this screen is the whole of: clone-edit-publish
     #: (and what rollback and archive do), and how the placeholder-data

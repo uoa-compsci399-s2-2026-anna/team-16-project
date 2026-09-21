@@ -139,6 +139,28 @@ class StaffAdmin(AdministratorOnly, AuditedModelView, model=Staff):
     # more code for a field nobody needs to edit here.
     can_edit = False
 
+    # NO IMPORT, EVER, AND THAT IS WHY `AuditedImport` IS NOT IN THE BASES.
+    #
+    # Fourteen tables accept a bulk CSV import (admin/importing.py). This is
+    # one of the four that never will, and this is the one where the cost is
+    # immediate: **a row of this table carries a password hash and, since
+    # v1.15, a reversibly encrypted password; the device table beside it
+    # carries TOTP secrets.** Anyone who could import one row could mint an
+    # administrator — set `role`, set `is_active`, set a `password_hash` they
+    # generated themselves — from a file upload, on a screen whose every other
+    # control routes through admin/accounts.py's floors, proofs and
+    # session_generation bumps. That is privilege escalation with a
+    # spreadsheet, and it would bypass the same service layer `can_create` and
+    # `can_edit` above are already off for.
+    #
+    # It also puts the whole table on the wrong side of §8.3's own sentence:
+    # "this must be enforced in the service layer, not only in the form".
+    # sqladmin's import reaches no service function at all — `Query.
+    # _get_model_object` is `self.model_view.model(**data)`.
+    #
+    # tests/admin/test_import_tables.py fails if this view ever acquires
+    # `can_import`, by any route including inheritance.
+
     # password_hash, mfa_secret_enc and mfa_last_counter are absent by
     # design. They are in write_audit's REDACTED_FIELDS for the trail; the
     # same reasoning applies to the screen the trail sits beside.

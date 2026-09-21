@@ -15,12 +15,20 @@ taxonomy row or a published factor set's own factor rows, both of which a
 submission or another factor_set may still point at. Do not "fix" this by
 copying the taxonomy screens' `can_delete = False` - the two situations are
 not the same.
+
+**Both accept a bulk CSV import** (`AuditedImport`, admin/importing.py). A
+scenario's `sector` and `food_category`, and a line's `scenario` and
+`destination`, are written in the file as the referenced row's `code` — never
+as its id, which differs between deployments — and a code nothing answers to
+refuses the whole file. Neither screen carries the draft-only rule: a
+comparison scenario belongs to no factor set, which is the point of it.
 """
 
 from sqladmin.filters import BooleanFilter, ForeignKeyFilter
 from wtforms import SelectField
 
 from admin.comparison_models import ComparisonScenario, ComparisonScenarioLine
+from admin.importing import AuditedImport
 from admin.modelviews import AuditedModelView
 
 _CATEGORY = "Comparison"
@@ -29,7 +37,8 @@ _CATEGORY = "Comparison"
 _GWP_HORIZON_CHOICES = [(20, "20 years"), (100, "100 years")]
 
 
-class ComparisonScenarioAdmin(AuditedModelView, model=ComparisonScenario):
+class ComparisonScenarioAdmin(AuditedImport, AuditedModelView,
+                              model=ComparisonScenario):
     name = "Comparison scenario"
     name_plural = "Comparison scenarios"
     category = _CATEGORY
@@ -51,6 +60,10 @@ class ComparisonScenarioAdmin(AuditedModelView, model=ComparisonScenario):
         ComparisonScenario.food_category, ComparisonScenario.gwp_horizon,
         ComparisonScenario.sort_order, ComparisonScenario.active,
     ]
+    # The import accepts exactly what the create form accepts, because every
+    # imported row is validated through that form. See AuditedImport's own
+    # docstring (admin/importing.py) for why the two cannot differ.
+    column_import_list = form_columns
     column_searchable_list = [ComparisonScenario.code, ComparisonScenario.name]
     column_filters = [BooleanFilter(ComparisonScenario.active)]
     column_default_sort = ("sort_order", False)
@@ -108,7 +121,8 @@ class ComparisonScenarioAdmin(AuditedModelView, model=ComparisonScenario):
     }
 
 
-class ComparisonScenarioLineAdmin(AuditedModelView, model=ComparisonScenarioLine):
+class ComparisonScenarioLineAdmin(AuditedImport, AuditedModelView,
+                                  model=ComparisonScenarioLine):
     name = "Comparison scenario line"
     name_plural = "Comparison scenario lines"
     category = _CATEGORY
@@ -126,6 +140,10 @@ class ComparisonScenarioLineAdmin(AuditedModelView, model=ComparisonScenarioLine
         ComparisonScenarioLine.scenario, ComparisonScenarioLine.destination,
         ComparisonScenarioLine.qty_kg,
     ]
+    # The import accepts exactly what the create form accepts, because every
+    # imported row is validated through that form. See AuditedImport's own
+    # docstring (admin/importing.py) for why the two cannot differ.
+    column_import_list = form_columns
     form_args = {
         "scenario": {"description": (
             "Which saved test case this line belongs to. Deleting a scenario "

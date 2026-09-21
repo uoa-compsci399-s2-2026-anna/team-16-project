@@ -4,6 +4,12 @@ Each inherits AuditedModelView, so every write is audited without any of
 them saying so. Two of them override validate_before_commit to hold an
 invariant that spans rows; see admin/taxonomy_rules.py.
 
+**All seven accept a bulk CSV import**, through the `AuditedImport` mixin
+(admin/importing.py), which is where the auditing, the CSRF token, the
+administrator floor, the numeric cleaning pass and the translation of a
+foreign key from a `code` into an id all live. Nothing about the import is
+specified here beyond `column_import_list` on each screen.
+
 None of them allows delete. Every one of these tables carries `active`, and
 a row a historical submission refers to has to stay resolvable - a deleted
 destination turns a stored result into a dangling reference. Deactivating is
@@ -30,6 +36,7 @@ from starlette.responses import RedirectResponse
 
 from admin.audit import row_to_dict, write_audit
 from admin.auth import SESSION_KEY
+from admin.importing import AuditedImport
 from admin.modelviews import described, AuditedModelView
 from admin.taxonomy_models import (
     Destination, DestinationGroup, FoodCategory, FoodItem, Metric, Sector,
@@ -241,7 +248,7 @@ class _TaxonomyAdmin(AuditedModelView):
         return await self._bulk_set_active(request, active=True)
 
 
-class DestinationGroupAdmin(_TaxonomyAdmin, model=DestinationGroup):
+class DestinationGroupAdmin(AuditedImport, _TaxonomyAdmin, model=DestinationGroup):
     name = "Destination group"
     name_plural = "Destination groups"
     category = _CATEGORY
@@ -258,6 +265,10 @@ class DestinationGroupAdmin(_TaxonomyAdmin, model=DestinationGroup):
         DestinationGroup.code, DestinationGroup.name, DestinationGroup.is_waste,
         DestinationGroup.sort_order, DestinationGroup.active,
     ]
+    # The import accepts exactly what the create form accepts, because every
+    # imported row is validated through that form. See AuditedImport's own
+    # docstring (admin/importing.py) for why the two cannot differ.
+    column_import_list = form_columns
     form_args = {
         "code": {"description": (
             "The short name the API and the front end use for this group — "
@@ -301,7 +312,7 @@ class DestinationGroupAdmin(_TaxonomyAdmin, model=DestinationGroup):
         check_prevention_destination(session)
 
 
-class DestinationAdmin(_TaxonomyAdmin, model=Destination):
+class DestinationAdmin(AuditedImport, _TaxonomyAdmin, model=Destination):
     name = "Destination"
     name_plural = "Destinations"
     category = _CATEGORY
@@ -323,6 +334,10 @@ class DestinationAdmin(_TaxonomyAdmin, model=Destination):
         Destination.description, Destination.is_prevention,
         Destination.sort_order, Destination.active,
     ]
+    # The import accepts exactly what the create form accepts, because every
+    # imported row is validated through that form. See AuditedImport's own
+    # docstring (admin/importing.py) for why the two cannot differ.
+    column_import_list = form_columns
     form_args = {
         "group": {"description": (
             "Which grouping this destination belongs to, and so whether it "
@@ -376,7 +391,25 @@ class DestinationAdmin(_TaxonomyAdmin, model=Destination):
         check_prevention_destination(session)
 
 
-class SectorAdmin(_TaxonomyAdmin, model=Sector):
+class SectorAdmin(AuditedImport, _TaxonomyAdmin, model=Sector):
+    """The screen the bulk CSV import was proved on first.
+
+    `AuditedImport` ahead of `_TaxonomyAdmin` so that `check_can_import`
+    resolves to the administrator floor rather than to sqladmin's "return
+    `can_import`". admin/importing.py carries the whole argument - what
+    sqladmin's import does and does not do, why the floor is here on a screen
+    contract §8.3 otherwise opens to both roles, and why `continue_on_error`
+    is pinned false.
+
+    **This screen first because it is the least interesting one.** `sector`
+    is a dozen rows of vocabulary, carries no foreign key, no `DECIMAL` and
+    no `factor_set_id`, and nothing about a sector can be published. Every
+    other candidate brings a second question with it - a decimal that has been
+    through Excel, or a draft-only rule - and the point of a pilot is to
+    settle the auditing, the token and the role floor with none of those in
+    the frame. The other thirteen followed once those were proved.
+    """
+
     name = "Sector"
     name_plural = "Sectors"
     category = _CATEGORY
@@ -391,6 +424,12 @@ class SectorAdmin(_TaxonomyAdmin, model=Sector):
     form_columns = [
         Sector.code, Sector.name, Sector.description, Sector.sort_order, Sector.active,
     ]
+    # The import accepts exactly what the create form accepts, because every
+    # imported row is validated through that form. See AuditedImport's own
+    # docstring (admin/importing.py) for why the two cannot differ. WP1 left
+    # this at sqladmin's fallback, `column_list`, which made `description` the
+    # one field a staff member could type on this screen and not import.
+    column_import_list = form_columns
     form_args = {
         "code": {"description": (
             "The short name the API and the front end use for this stage of "
@@ -417,7 +456,7 @@ class SectorAdmin(_TaxonomyAdmin, model=Sector):
     column_default_sort = ("sort_order", False)
 
 
-class FoodCategoryAdmin(_TaxonomyAdmin, model=FoodCategory):
+class FoodCategoryAdmin(AuditedImport, _TaxonomyAdmin, model=FoodCategory):
     name = "Food category"
     name_plural = "Food categories"
     category = _CATEGORY
@@ -434,6 +473,10 @@ class FoodCategoryAdmin(_TaxonomyAdmin, model=FoodCategory):
         FoodCategory.code, FoodCategory.name, FoodCategory.is_standard_mix,
         FoodCategory.sort_order, FoodCategory.active,
     ]
+    # The import accepts exactly what the create form accepts, because every
+    # imported row is validated through that form. See AuditedImport's own
+    # docstring (admin/importing.py) for why the two cannot differ.
+    column_import_list = form_columns
     form_args = {
         "code": {"description": (
             "The short name the API and the front end use for this category "
@@ -473,7 +516,7 @@ class FoodCategoryAdmin(_TaxonomyAdmin, model=FoodCategory):
         check_single_standard_mix(session)
 
 
-class FoodItemAdmin(_TaxonomyAdmin, model=FoodItem):
+class FoodItemAdmin(AuditedImport, _TaxonomyAdmin, model=FoodItem):
     """Contract §2.1 (v1.54). The named foods *within* a category — "cheese",
     not "dairy" — and the vocabulary step 2.5 of the calculator offers.
 
@@ -518,6 +561,10 @@ class FoodItemAdmin(_TaxonomyAdmin, model=FoodItem):
         FoodItem.food_category, FoodItem.code, FoodItem.name,
         FoodItem.sort_order, FoodItem.active,
     ]
+    # The import accepts exactly what the create form accepts, because every
+    # imported row is validated through that form. See AuditedImport's own
+    # docstring (admin/importing.py) for why the two cannot differ.
+    column_import_list = form_columns
     form_args = {
         "food_category": {"description": (
             "Which category this food belongs to. Required, and it is not "
@@ -547,7 +594,7 @@ class FoodItemAdmin(_TaxonomyAdmin, model=FoodItem):
     column_default_sort = ("sort_order", False)
 
 
-class MetricAdmin(_TaxonomyAdmin, model=Metric):
+class MetricAdmin(AuditedImport, _TaxonomyAdmin, model=Metric):
     name = "Metric"
     name_plural = "Metrics"
     category = _CATEGORY
@@ -564,6 +611,10 @@ class MetricAdmin(_TaxonomyAdmin, model=Metric):
         Metric.code, Metric.name, Metric.unit, Metric.display_unit,
         Metric.display_precision, Metric.sort_order, Metric.active,
     ]
+    # The import accepts exactly what the create form accepts, because every
+    # imported row is validated through that form. See AuditedImport's own
+    # docstring (admin/importing.py) for why the two cannot differ.
+    column_import_list = form_columns
     form_args = {
         "code": {"description": (
             "The short name everything else refers to this metric by — "
@@ -607,7 +658,39 @@ class MetricAdmin(_TaxonomyAdmin, model=Metric):
     column_default_sort = ("sort_order", False)
 
 
-class UnitPresetAdmin(_TaxonomyAdmin, model=UnitPreset):
+class UnitPresetAdmin(AuditedImport, _TaxonomyAdmin, model=UnitPreset):
+    """The screen the numeric cleaning pass was proved on: the first with a
+    ``DECIMAL`` column.
+
+    `SectorAdmin` above is the pilot and was chosen for having nothing
+    interesting in it — no foreign key, no decimal, no `factor_set_id`. That
+    is what settled the auditing, the token and the role floor, and it is
+    also why it could not settle the other half: **`sector` has no `DECIMAL`
+    column at all**, so nothing about it exercises what a spreadsheet does to
+    a number.
+
+    `unit_preset.kg_per_unit` is `DECIMAL(12, 4)`. It is one of the fourteen
+    tables the import is meant for, it carries no draft-only rule — nothing
+    about a unit preset is published or archived — and the figure in it is
+    multiplied by a count the visitor types (web/units.js), so a digit
+    silently rounded on the way in is a wrong answer on the calculator with
+    nothing on screen to say so. That makes it the right place to prove the
+    cleaning pass in admin/importing.py.
+
+    **`food_category` is importable, and it is the column that settled how
+    every foreign key in every imported file is written.** WP2 left it out:
+    it is a *relationship* rather than a mapper column, so
+    `merge_import_row_data` has nothing to coerce against and falls through to
+    the scaffolded form's `QuerySelectField`, which matches the referenced
+    row's primary key as text and refuses a code with "Not a valid choice".
+    The answer is that **a foreign key is written as the referenced row's
+    `code`** and translated into the id before sqladmin sees the file — see
+    `resolve_foreign_keys` in admin/importing.py, which carries the reasoning
+    and the refusal. Blank is still what it has always been on this table:
+    the preset applies to every food category (see the model's own
+    docstring).
+    """
+
     name = "Unit preset"
     name_plural = "Unit presets"
     category = _CATEGORY
@@ -627,6 +710,10 @@ class UnitPresetAdmin(_TaxonomyAdmin, model=UnitPreset):
         UnitPreset.code, UnitPreset.label, UnitPreset.food_category,
         UnitPreset.kg_per_unit, UnitPreset.source_note, UnitPreset.active,
     ]
+    # The import accepts exactly what the create form accepts, because every
+    # imported row is validated through that form. See AuditedImport's own
+    # docstring (admin/importing.py) for why the two cannot differ.
+    column_import_list = form_columns
     form_args = {
         "code": {"description": (
             "The short name the front end uses for this container — "

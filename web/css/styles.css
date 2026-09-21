@@ -48,7 +48,16 @@
   --space-md: 20px;
   --space-lg: 32px;
   --space-xl: 48px;
-  --hero-food-image: url('../assets/hero-food-image.png');
+  /* **2560px wide, not the 6000px the camera produced.** The band this fills is at
+     most the 1180px measure and 190px tall, and the photograph is only seen through
+     the holes in `.food-arch-mask`, so 2560 is already double what a 2x display can
+     resolve here. The source frame arrived as a 26.5 MB PNG - 99.3% of the whole
+     homepage - and gzip cannot touch a PNG, so every visitor paid all of it to look
+     at a strip. Re-encoding the same photograph at the same crop costs 286 KB.
+     WebP unconditionally, as `kai-commitment-logo-white.webp` already is; the band
+     keeps `background-color: var(--kai-white)` underneath, so a browser that cannot
+     decode it shows the arches on white rather than a hole in the page. */
+  --hero-food-image: url('../assets/hero-food-image.webp');
   --ink: var(--kai-kale);
   --muted: #465f56;
   --green: var(--kai-pea);
@@ -2719,7 +2728,7 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
    it: the arches are cut OUT of a Kale band so the photograph shows through the holes
    (see home.html's own note), and without the image the mask reveals white. Restyling
    this to a flat band is a defensible choice, but it is one that also deletes
-   `--hero-food-image` and `web/assets/hero-food-image.png`, and it is not made here. */
+   `--hero-food-image` and `web/assets/hero-food-image.webp`, and it is not made here. */
 .home-page .hero-food-pattern { margin-top: -22px; border-end-end-radius: 22px; border-end-start-radius: 22px; }
 
 .home-page .home-needs { margin-top: 48px; }

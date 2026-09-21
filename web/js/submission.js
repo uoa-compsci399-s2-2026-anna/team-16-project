@@ -146,10 +146,37 @@ export function entryPayload(entry, presets, alternative = null) {
 }
 
 /**
+ * The reporting period's two instants, as §6.2 wants them (v1.67's fields, sent from v1.68).
+ *
+ * **The state's own strings, sent as they are held.** `state.periodStart` is already
+ * `"2026-09-14T08:10"` — the wire's shape, local wall-clock time carrying no zone — and
+ * §6.2 appends the seconds itself. Nothing here builds a `Date`, reads `toISOString()` or
+ * takes an epoch millisecond: `toISOString()` converts to UTC, so a shift typed as 08:10
+ * in Auckland would be sent as the previous day's 20:10 and printed back to the visitor
+ * on their own download; the validator refuses a zone-carrying value for that reason and
+ * would not catch this one, because the converted string is perfectly well-formed and
+ * simply says a different time. A number would be refused outright.
+ *
+ * `''` means "no period was given" in the state and `null` means it on the wire (§2.3:
+ * absence, never a sentinel), and the two are always both or neither — `period.js`'s
+ * `periodValues` empties both the moment the period stops being legal, so there is no
+ * keystroke at which this can send half an interval.
+ */
+const periodPayload = state => ({
+  period_start: state.periodStart || null,
+  period_end: state.periodEnd || null,
+})
+
+/**
  * The whole request body.
  *
  * `time_frame` sits beside `gwp_horizon` rather than inside the entries because it is one
- * period for the whole submission (§6.2) — asked once, on the review step.
+ * period for the whole submission (§6.2) — asked once, on the review step. `period_start`
+ * and `period_end` (v1.68) sit beside it for the same reason and are sent by the same
+ * builder for the reason this module exists at all: `improvement.js`'s Compare Impact
+ * upserts on the same token, so a period sent by Calculate and not by Compare would be
+ * two `NULL`s in the row the moment the visitor pressed the button on the next screen —
+ * exactly the defect `time_frame` itself was found in.
  *
  * @param {object} state
  * @param {Array<object>} chains  every supply-chain entry, in submission order. They
@@ -174,6 +201,7 @@ export function submissionPayload(state, chains, alternativeFor = () => null) {
     token: state.token || null,
     gwp_horizon: state.gwpHorizon,
     time_frame: state.timeFrame || null,
+    ...periodPayload(state),
     entries: leaves.map((leaf, index) => entryPayload(leaf, presets, alternativeFor(leaf, index))),
   }
 }
@@ -203,6 +231,12 @@ export function exportPayload(state, locale) {
   return {
     gwp_horizon: state.gwpHorizon,
     time_frame: state.timeFrame || null,
+    // The same two fields `submissionPayload` sends, from the same state and through the
+    // same builder: `ExportPayload` inherits `PricingOptions` precisely so that a period
+    // one route accepted and the other refused cannot happen, and two builders here would
+    // put the disagreement back one layer up. The document has to name the period its
+    // figures cover, and this route persists nothing, so this is the only way it learns it.
+    ...periodPayload(state),
     entries: entries.map(entry => entryPayload(entry, presets)),
     locale,
   }

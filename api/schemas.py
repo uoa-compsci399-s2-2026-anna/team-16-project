@@ -21,6 +21,7 @@ validator has no session to reach. It keeps the `entries[i].current` path the
 from __future__ import annotations
 
 from collections.abc import Collection
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Annotated, Any
 
@@ -32,6 +33,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from pydantic_core import PydanticCustomError
 
 #: §6.2's amount ceilings, and **they are deliberately the same number.**
 #:
@@ -192,11 +194,60 @@ class DryRunPayload(BaseModel):
 #: closed to 20 and 100: the results page renders a phrase per value, and a
 #: value it has no phrase for reaches a visitor as a raw identifier.
 #:
-#: These are periods somebody picks from a list, not a date range. The client
-#: ruled that nothing computes with the period - it is carried to the results
-#: page and into the download and no figure is scaled by it - and a pair of
-#: dates would invite exactly that arithmetic.
-TIME_FRAMES = frozenset({"one_week", "one_month", "one_quarter", "one_year"})
+#: Nothing computes with the period. It is carried to the results page and
+#: into the download and no figure is scaled by it; the engine is not given it
+#: at all. That ruling is unchanged by `custom` below - an interval on the
+#: request is still a label, and `(period_end - period_start)` is still
+#: arithmetic this contract forbids anyone to do with it.
+#:
+#: **`custom` is a fifth member and not a replacement for the other four
+#: (v1.67).** From v1.67 the four presets are *templates*: pressing *One week*
+#: fills the interval with the seven days ending now, and `time_frame` goes on
+#: recording **which shortcut was pressed**. Collapsing every new row to
+#: `custom` was considered and rejected twice over: the rows already in the
+#: database say `one_week` with no interval, so the four preset values would
+#: become a dialect only historical rows speak and the column would stop being
+#: comparable across the table; and an interval alone cannot answer the
+#: question the client will ask first - *did they mean a standard week, or did
+#: they choose those dates?*
+TIME_FRAMES = frozenset({"one_week", "one_month", "one_quarter", "one_year", "custom"})
+
+#: v1.67. The floor under `period_start` and `period_end` (§6.2). The only one
+#: worth having: a period before the epoch is a typo, not a reporting period.
+PERIOD_FLOOR = datetime(1970, 1, 1)
+
+#: v1.67. How far past **this server's own UTC clock** either period instant
+#: may sit, and **38 is arithmetic rather than slack.** Read the whole of this
+#: before changing it.
+#:
+#: The stored instants are the visitor's **local wall-clock time and they
+#: carry no zone** (§2.3). So the real rule - *a reporting period may not end
+#: more than 24 hours from now* - lives in the form, where "now" is the
+#: visitor's own now and the two clocks being compared are the same clock.
+#:
+#: Here they are not. Handed `2026-09-22T17:55` with no offset, this server
+#: cannot tell which side of the date line it was typed on. A visitor in New
+#: Zealand sits at UTC+12 or UTC+13, and the widest civil offset in use
+#: anywhere is UTC+14 (Kiritimati). Their honest "now + 24 hours", written
+#: down with no zone, therefore reads as much as
+#:
+#:     24 (what the form allows) + 14 (the widest offset east of UTC) = 38
+#:
+#: hours ahead of this server's UTC clock.
+#:
+#: **Do not tighten this to 24.** It is not a fudge, a rounding or a margin
+#: for clock drift, and tightening it does not make the check stricter in any
+#: useful sense - it makes the API refuse a shift that somebody in Auckland
+#: entered correctly, at the time it actually happened, with nothing in the
+#: payload they could change to make it pass. A loose server bound is the
+#: price of a zoneless value, and it is a price this field can afford
+#: precisely because the value is a label that enters no calculation.
+#:
+#: The exact alternative - carrying a UTC offset on the wire - was considered
+#: and rejected in planning: it would turn the stored value from a label into
+#: a real instant, which is a larger decision than this field needs and is
+#: `architecture.md` O-4's neighbour.
+PERIOD_CEILING_HOURS = 38
 
 
 class EntryPayload(BaseModel):
@@ -244,8 +295,12 @@ class EntryPayload(BaseModel):
 
 
 class PricingOptions(BaseModel):
-    """The two request options that decide **how** a calculation is priced,
-    and the two closed-vocabulary checks over them.
+    """The request options that decide **how** a calculation is priced and
+    **what period it is labelled with**, and every check over them.
+
+    `gwp_horizon` is the only one of the four that reaches the engine.
+    `time_frame`, `period_start` and `period_end` are labels: they are
+    persisted, printed and never computed with (§2.3).
 
     **Why this class exists.** `CalculatePayload` and `api/export.py`'s
     `ExportPayload` both carry `gwp_horizon` and `time_frame` and both check
@@ -258,9 +313,11 @@ class PricingOptions(BaseModel):
     endpoint is that its figures are the server's rather than the client's: a
     horizon accepted on one route and refused on the other would mean two
     documents of the same request disagreeing about methane, with nothing to
-    say which was right. Sharing the pair here is the narrowest fix that
-    cannot drift -- it moves the two fields the two models genuinely have in
-    common, and nothing else.
+    say which was right. Sharing them here is the narrowest fix that cannot
+    drift -- it carries the fields the two models genuinely have in common,
+    and nothing else. v1.67's two period columns joined them here for the
+    same reason: a download and the calculation it documents must not
+    disagree about which period the figures cover either.
 
     `extra="forbid"` is set here and inherited, so neither payload can be
     handed a field it does not declare -- which is what stops a client
@@ -271,6 +328,18 @@ class PricingOptions(BaseModel):
 
     gwp_horizon: int = 100
     time_frame: str | None = None
+    #: v1.67. The interval the period covers, to the minute - a shift, 08:10
+    #: to 16:20. **Local wall-clock time, with no zone**, which is adequate
+    #: for a label and inadequate for comparing one submission against
+    #: another; `submission.period_start` in §2.3 says so where the column is
+    #: defined, and `db/repository.upsert_submission` says it again where the
+    #: value is written.
+    #:
+    #: A zone-carrying value is refused rather than converted: silently
+    #: normalising `…T08:10+13:00` to UTC would store an instant two hours
+    #: before the one the visitor typed and print it on their own download.
+    period_start: datetime | None = None
+    period_end: datetime | None = None
 
     @field_validator("gwp_horizon")
     @classmethod
@@ -285,6 +354,121 @@ class PricingOptions(BaseModel):
         if value is not None and value not in TIME_FRAMES:
             raise ValueError(f"must be one of {sorted(TIME_FRAMES)}")
         return value
+
+    @field_validator("period_start", "period_end")
+    @classmethod
+    def validate_period_instant(cls, value: datetime | None) -> datetime | None:
+        """The two bounds each instant answers on its own, and the one
+        normalisation.
+
+        Raised as `PydanticCustomError` rather than `ValueError` so that
+        `details[].issue` carries a code a front end can branch on (§9); a
+        plain `ValueError` arrives as `value_error` for every cause alike.
+        These three land on `period_start` / `period_end` by name, because a
+        `field_validator` reports against the field. The cross-field rules
+        below cannot, and say so there.
+        """
+        if value is None:
+            return None
+        if value.tzinfo is not None:
+            raise PydanticCustomError(
+                "period_carries_a_zone",
+                "must be a local wall-clock time with no timezone offset",
+            )
+        #: The column is `DATETIME` with no fractional-seconds precision
+        #: (§2.3), so a value carrying microseconds would be a value that
+        #: changes when it is stored - and the download prints what was
+        #: stored. Dropped here, where the caller can be told it happened,
+        #: rather than in MySQL, where nobody is.
+        value = value.replace(microsecond=0)
+        if value < PERIOD_FLOOR:
+            raise PydanticCustomError(
+                "period_before_1970",
+                "must not be earlier than {floor}",
+                {"floor": PERIOD_FLOOR.isoformat()},
+            )
+        ceiling = (
+            datetime.now(timezone.utc).replace(tzinfo=None)
+            + timedelta(hours=PERIOD_CEILING_HOURS)
+        )
+        if value > ceiling:
+            raise PydanticCustomError(
+                "period_too_far_ahead",
+                #: The message says the number out loud for the same reason
+                #: `PERIOD_CEILING_HOURS` explains itself: a reader who meets
+                #: this text first must not read 38 as a typo for 24.
+                "must not be more than {hours} hours past the server's UTC clock "
+                "({hours} = the form's 24-hour allowance plus the widest civil "
+                "UTC offset, because the value carries no zone)",
+                {"hours": PERIOD_CEILING_HOURS},
+            )
+        return value
+
+    @model_validator(mode="after")
+    def validate_period(self) -> "PricingOptions":
+        """The contradiction rule (v1.67), and it **refuses** rather than
+        normalising.
+
+        Four states, three of them refused:
+
+        1. one instant without the other - half an interval is not a period;
+        2. `time_frame == "custom"` with no interval - `custom` *means* "the
+           visitor chose these dates", and there are none;
+        3. an interval with no `time_frame` at all - "Not stated" is the
+           default answer to §7's step 5 and it cannot carry dates;
+        4. an interval beside one of the four presets - **allowed, and the
+           designed normal case.** From v1.67 a preset is a button that fills
+           the picker, so `one_week` plus the seven days ending now is what
+           pressing *One week* produces.
+
+        Plus the ordering rule: `period_end >= period_start`. Equal ends are
+        allowed - a zero-length period is odd, but it enters no calculation,
+        so refusing it buys exactly what refusing a ten-year span would buy,
+        which is nothing.
+
+        **Refusing rather than normalising, because every normalisation on
+        offer invents an answer.** Turning state 3 into `custom` claims the
+        visitor pressed nothing when a client bug dropping the field looks
+        identical; dropping the interval in state 2 or 3 throws away the only
+        record of the dates; and state 2 cannot be normalised at all, because
+        there is nothing to fill it with. A refusal is the one outcome that
+        puts no fact in the database that nobody stated.
+
+        **The same rule is a CHECK constraint on `submission`**
+        (`ck_submission_period`, §2.3), so it also holds against a write that
+        does not come through this API. The one bound that is *not* in the
+        CHECK is `PERIOD_CEILING_HOURS`, which moves with the clock and is
+        therefore not something a CHECK can express; §2.3 records that.
+
+        `details[].field` is `body` for all four, not `period_start` or
+        `period_end`: a `model_validator` reports against the location of the
+        model, which is this module's docstring's own standing complaint.
+        `issue` is what a front end binds to instead, and each of the four
+        carries its own.
+        """
+        start, end = self.period_start, self.period_end
+        if (start is None) != (end is None):
+            raise PydanticCustomError(
+                "period_half_interval",
+                "period_start and period_end must be given together",
+            )
+        if self.time_frame == "custom" and start is None:
+            raise PydanticCustomError(
+                "period_custom_without_interval",
+                'time_frame "custom" requires period_start and period_end',
+            )
+        if start is not None and self.time_frame is None:
+            raise PydanticCustomError(
+                "period_without_time_frame",
+                "period_start and period_end require a time_frame "
+                '("custom", or the preset the visitor pressed)',
+            )
+        if start is not None and end < start:
+            raise PydanticCustomError(
+                "period_ends_before_it_starts",
+                "period_end must not be earlier than period_start",
+            )
+        return self
 
 
 class CalculatePayload(PricingOptions):

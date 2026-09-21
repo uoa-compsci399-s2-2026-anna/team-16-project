@@ -143,6 +143,38 @@ class Submission(Base):
         #: behaviourally by tests/db/test_submissions.py and against
         #: information_schema by tests/test_migrations.py.
         CheckConstraint("gwp_horizon IN (20, 100)", name="ck_submission_horizon"),
+        #: v1.67's contradiction rule, in the schema as well as in the
+        #: validator (`api.schemas.PricingOptions.validate_period`). Both
+        #: halves, deliberately: a rule the API holds and the schema does not
+        #: is a rule that lasts until the first write that does not go
+        #: through the API -- the panel, a CLI, a fix-up by hand.
+        #:
+        #: Clause by clause:
+        #:   1. both instants or neither -- half an interval is not a period;
+        #:   2. the interval runs forwards (equal ends allowed: a zero-length
+        #:      period enters no calculation, so refusing it buys nothing);
+        #:   3. not before the epoch;
+        #:   4. `time_frame = 'custom'` requires the interval -- `custom`
+        #:      *means* "the visitor chose these dates";
+        #:   5. the interval requires a `time_frame` -- "Not stated" is the
+        #:      default answer and it cannot carry dates.
+        #:
+        #: A preset **with** an interval is allowed by all five, which is the
+        #: designed normal case from v1.67: pressing *One week* fills the
+        #: picker and `time_frame` records which button it was.
+        #:
+        #: `PERIOD_CEILING_HOURS` is the one bound that is **not** here. It
+        #: moves with the clock, so it is not a thing a CHECK can express,
+        #: and §2.3 says so rather than leaving the gap to be discovered.
+        CheckConstraint(
+            "(period_start IS NULL) = (period_end IS NULL)"
+            " AND (period_start IS NULL OR period_end >= period_start)"
+            " AND (period_start IS NULL OR period_start >= '1970-01-01 00:00:00')"
+            " AND (period_start IS NOT NULL OR time_frame IS NULL"
+            " OR time_frame <> 'custom')"
+            " AND (period_start IS NULL OR time_frame IS NOT NULL)",
+            name="ck_submission_period",
+        ),
     )
 
     id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
@@ -174,10 +206,51 @@ class Submission(Base):
     #: results page and into the download so that a figure somebody keeps has
     #: a period attached to it, which is the whole of what it is for.
     #:
-    #: A string rather than a pair of dates because a period chosen from a
-    #: list is what was asked for, and two dates would invite arithmetic that
-    #: the ruling above says must not happen.
+    #: v1.67 adds a fifth value, `custom`, and the pair of columns below.
+    #: `time_frame` still records **which shortcut was pressed** rather than
+    #: collapsing to `custom` for every new row: the rows written before
+    #: v1.67 say `one_week` with no interval, and if new rows only ever said
+    #: `custom` the four preset values would become a dialect only historical
+    #: rows speak.
     time_frame: Mapped[str | None] = mapped_column(String(32))
+
+    #: v1.67. The interval the visitor's figures cover, to the minute -- a
+    #: shift, 08:10 to 16:20. Nullable, so that the rows written before this
+    #: revision need no backfill and **absence means "no period was given"**
+    #: rather than some sentinel instant standing in for it.
+    #:
+    #: **These are the visitor's LOCAL WALL-CLOCK TIME AND THEY CARRY NO
+    #: ZONE.** Read that before writing a query over them. The value is what
+    #: a person read off the clock on their own wall, stored verbatim: it is
+    #: *adequate as a label* -- printed back to the visitor who typed it, on
+    #: the screen and in the download, which is the whole of what it is for
+    #: -- and it is **inadequate for comparison across submissions.** Two
+    #: rows both saying `08:10` may be two hours apart, or twenty-two; this
+    #: column cannot say which, and nothing else on the row can either,
+    #: because §2.3 stores no address, no user agent and nothing else that
+    #: could imply a zone. An analyst who sorts these, buckets them by hour,
+    #: differences them against `created_at`, or treats them as UTC will get
+    #: an answer, and the answer will be wrong with nothing to show for it.
+    #:
+    #: Carrying a UTC offset alongside them was considered in planning and
+    #: rejected: it would make the value a real instant rather than a label,
+    #: which is a larger decision than this field needs (O-4's neighbour).
+    #: If that is ever wanted, it is a new column and a migration, not a
+    #: reinterpretation of these two.
+    #:
+    #: **Nothing computes with them**, exactly as nothing computes with
+    #: `time_frame`: they are not on §3's `CalculationRequest`, the engine is
+    #: never handed them, and `(period_end - period_start)` is arithmetic
+    #: this contract forbids. `tests/test_period_is_not_an_engine_input.py`
+    #: holds that.
+    #:
+    #: **And nothing may bucket a public statistic by them** (§5.4). `custom`
+    #: as one bucket of `time_frame` is fine. Grouping by an exact instant
+    #: puts every row in a bucket of one, at which point the suppression
+    #: threshold merges the lot into `other` -- a statistic that says
+    #: nothing, arrived at honestly.
+    period_start: Mapped[datetime | None] = mapped_column(DateTime)
+    period_end: Mapped[datetime | None] = mapped_column(DateTime)
 
     #: v1.48, and it reverses §2.3's "there is no consent checkbox".
     #:

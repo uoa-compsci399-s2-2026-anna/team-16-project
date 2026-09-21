@@ -133,3 +133,63 @@ async def test_an_unknown_locale_shape_is_refused(app):
         response = await client.post("/api/v1/export/pdf", json=body)
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+@requires_weasyprint
+async def test_the_period_in_the_request_reaches_the_document(app):
+    """**Contract v1.68, and the one assertion `tests/api/test_pdf_render.py`
+    cannot make.** That file calls the renderer directly; this posts the
+    contract's own §6.2.3 fixture to the real route and reads the PDF that
+    comes back, so what is proved is that the period travelled the whole way —
+    request body, `ExportPayload`, `render_export_pdf`, `build_context`, the
+    template — rather than that a function returns a string.
+
+    `export_pdf_request.json` carries `custom` with the client's own example, a
+    shift from 08:10 to 16:20 on 14 September 2026 (v1.67), and it is posted as
+    it sits on disk rather than reshaped here: a field this file gets wrong has
+    to fail a test rather than be quietly corrected at test time.
+
+    **Its `locale` is `ar`**, which is the fixture's own doing and is left
+    alone. The extracted run is mirrored — `16:20 14/09/2026 – 08:10
+    14/09/2026` — because Pango runs the bidi algorithm over four
+    European-number runs in a right-to-left paragraph, and read in that
+    paragraph's own direction it is the period as written. The three runs
+    below are what the algorithm may reorder and may not rewrite; the ordered
+    form is asserted for left-to-right locales in `tests/api/
+    test_pdf_render.py`.
+    """
+    payload = _valid_payload()
+    assert payload["time_frame"] == "custom", "the fixture no longer carries a period"
+
+    async with await _client(app) as client:
+        response = await client.post("/api/v1/export/pdf", json=payload)
+    assert response.status_code == 200, response.text
+
+    text = extract_text(response.content)
+    for run in ("14/09/2026", "08:10", "16:20"):
+        assert run in text, (
+            f"{run} is in the request body and not in the document: the period "
+            "was dropped somewhere between the payload and the paper"
+        )
+    assert "custom" not in text.lower(), (
+        "the document printed the vocabulary word rather than the dates"
+    )
+
+
+@requires_weasyprint
+async def test_a_request_with_no_period_produces_a_document_with_none(app):
+    """The absent case, end to end. "Not stated" is step 5's default and the
+    common answer; the document must simply not carry the line — never the
+    label with nothing after it.
+
+    The English translation is asserted rather than the Arabic, so this reads
+    as what it is; `locale` is dropped to `en` for that reason alone.
+    """
+    payload = _valid_payload() | {"locale": "en"}
+    for field in ("time_frame", "period_start", "period_end"):
+        payload.pop(field, None)
+
+    async with await _client(app) as client:
+        response = await client.post("/api/v1/export/pdf", json=payload)
+    assert response.status_code == 200, response.text
+    assert "These figures cover" not in extract_text(response.content)

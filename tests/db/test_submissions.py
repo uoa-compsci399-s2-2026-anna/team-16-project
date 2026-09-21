@@ -556,6 +556,154 @@ def test_the_submission_carries_its_time_frame_and_consent(session):
     )
 
 
+#: v1.67's interval, against MySQL and against the CHECK the models declare.
+#: A shift: 08:10 to 16:20 on the same day, which is the case the client asked
+#: for by name.
+_SHIFT_START = datetime(2026, 9, 14, 8, 10)
+_SHIFT_END = datetime(2026, 9, 14, 16, 20)
+
+
+def _period_row(session, factor_set, **fields):
+    """A `submission` carrying whatever period `fields` names, flushed."""
+    now = utcnow()
+    row = Submission(
+        token=None, created_at=now, updated_at=now,
+        factor_set_id=factor_set.id, gwp_horizon=100,
+        **fields,
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
+@pytest.mark.db
+def test_the_submission_carries_a_custom_period(session):
+    """§2.3, v1.67. The two instants, stored exactly as they were given.
+
+    To the minute, because a shift is 08:10 to 16:20 and that is the
+    requirement rather than an accident of the control.
+
+    **Stored verbatim and with no zone.** The value is the visitor's own
+    wall clock; nothing here converts it, and nothing may. A test that
+    asserted anything other than equality with what went in would be
+    asserting a conversion this column must not perform.
+    """
+    factor_set, _, _, _ = _prereqs(session)
+    row = _period_row(
+        session, factor_set,
+        time_frame="custom", period_start=_SHIFT_START, period_end=_SHIFT_END,
+    )
+
+    session.expire(row)
+    assert row.period_start == _SHIFT_START
+    assert row.period_end == _SHIFT_END
+    assert row.period_start.tzinfo is None, (
+        "the column is a zoneless local wall clock (§2.3); a value that came "
+        "back aware would mean something had decided which zone it was in"
+    )
+
+
+@pytest.mark.db
+def test_a_submission_with_no_period_is_still_legal(session):
+    """The default answer to step 5 is "Not stated", and every row written
+    before v1.67 gave it. Absence, not a sentinel."""
+    factor_set, _, _, _ = _prereqs(session)
+    row = _period_row(session, factor_set)
+    assert row.period_start is None and row.period_end is None
+    assert row.time_frame is None
+
+
+@pytest.mark.db
+def test_a_preset_with_an_interval_is_legal(session):
+    """v1.67's designed normal case, and the one clause of
+    `ck_submission_period` that is easiest to write backwards.
+
+    The four presets became *templates* that fill the picker, and
+    `time_frame` goes on recording which button was pressed. So `one_week`
+    beside the seven days ending now is an ordinary row -- and a constraint
+    written as "an interval implies `custom`" would refuse every row the new
+    form produces, which is why this test exists beside the four refusals
+    below rather than being left implied by them.
+    """
+    factor_set, _, _, _ = _prereqs(session)
+    row = _period_row(
+        session, factor_set,
+        time_frame="one_week", period_start=_SHIFT_START, period_end=_SHIFT_END,
+    )
+    assert row.time_frame == "one_week"
+    assert row.period_start == _SHIFT_START
+
+
+@pytest.mark.db
+@pytest.mark.parametrize(
+    "fields, why",
+    [
+        (
+            dict(time_frame="custom", period_start=_SHIFT_START),
+            "half an interval is not a period",
+        ),
+        (
+            dict(time_frame="custom", period_end=_SHIFT_END),
+            "half an interval is not a period, from the other end",
+        ),
+        (
+            dict(time_frame="custom"),
+            "`custom` means *the visitor chose these dates* and there are none",
+        ),
+        (
+            dict(period_start=_SHIFT_START, period_end=_SHIFT_END),
+            "'Not stated' is step 5's default answer and cannot carry dates",
+        ),
+        (
+            dict(time_frame="custom", period_start=_SHIFT_END,
+                 period_end=_SHIFT_START),
+            "a period that runs backwards is not a period",
+        ),
+        (
+            dict(time_frame="custom", period_start=datetime(1969, 12, 31, 8, 10),
+                 period_end=datetime(1969, 12, 31, 16, 20)),
+            "before the epoch is a typo, not a reporting period",
+        ),
+    ],
+)
+def test_the_period_contradictions_are_refused_by_the_schema(session, fields, why):
+    """`ck_submission_period` (§2.3, v1.67), proven behaviourally.
+
+    **The point of this test is that the API is not the only writer.**
+    `api.schemas.PricingOptions.validate_period` refuses every one of these on
+    the wire; this proves the database refuses them too, for the panel, a CLI
+    and a correction made by hand. A rule only the API holds is a rule that
+    lasts until the first write that does not go through it.
+
+    `OperationalError`, *not* `IntegrityError`: MySQL reports a CHECK
+    violation as errno 3819, which SQLAlchemy maps to `OperationalError` --
+    only uniqueness and foreign keys land on `IntegrityError`, which is why
+    the rest of this file catches that one.
+    """
+    factor_set, _, _, _ = _prereqs(session)
+    with pytest.raises(OperationalError) as excinfo:
+        _period_row(session, factor_set, **fields)
+    assert "ck_submission_period" in str(excinfo.value), why
+    session.rollback()
+
+
+@pytest.mark.db
+def test_a_zero_length_period_is_allowed(session):
+    """The mirror of the refusals above, and it is deliberate.
+
+    `period_end == period_start` is odd and it is not a contradiction. The
+    interval enters no calculation, so refusing it buys exactly what refusing
+    a ten-year span would buy, which is nothing -- and a constraint written
+    `>` rather than `>=` would refuse it silently.
+    """
+    factor_set, _, _, _ = _prereqs(session)
+    row = _period_row(
+        session, factor_set,
+        time_frame="custom", period_start=_SHIFT_START, period_end=_SHIFT_START,
+    )
+    assert row.period_start == row.period_end
+
+
 @pytest.mark.db
 def test_an_entry_carries_its_input_total_and_its_money(session):
     """§2.3, v1.48. Three optional numbers per (sector, food category).

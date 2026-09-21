@@ -1,6 +1,8 @@
 {
   "gwp_horizon": 100,
-  "time_frame": "one_year",
+  "time_frame": "custom",
+  "period_start": "2026-09-14T08:10:00",
+  "period_end": "2026-09-14T16:20:00",
   "entries": [
     {
       "sector": "processing",

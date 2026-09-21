@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-09-21 (v1.66 draft)"
+date: "2026-09-21 (v1.68 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,52 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.68 — 2026-09-21 (the period reaches the payload, the page and both downloads; affects C and D, and B as the owner of the document renderer)
+
+v1.67 gave the wire and the store two instants and said, in as many words, what it was leaving behind: *"`web/js/results.js`'s `TIME_FRAME_LABELS` has no phrase for `custom` and needs one; nothing under `web/` sends either new field yet; `api/pdf_render.py` prints no period at all."* This revision is those three sentences, closed.
+
+**What does not change.** No request or response *shape* — §6.2 and §6.2.3 already declare both fields and every validator over them is v1.67's, untouched. No column, no migration, no CHECK. No engine input: the period is still absent from §3's `CalculationRequest` and `tests/test_period_is_not_an_engine_input.py` still holds it, and **no duration is derived anywhere** — the two instants are printed side by side and never subtracted. No public statistic.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **The front end sends the two fields.** `web/js/submission.js` puts `period_start` and `period_end` beside `time_frame` in **both** payloads it builds, through one helper. Both, because `improvement.js`'s Compare Impact upserts on the same token as Calculate (§5.3) — a period sent by one and not the other is two `NULL`s a moment after the visitor presses the button on the next screen, which is the v1.48 defect `submission.js` was created to end. **The state's own strings are sent as they are held** (`"2026-09-14T08:10"`), never a `Date` and never an epoch millisecond: `toISOString()` produces a well-formed value the validator would refuse, and a value that had been *converted* to UTC would be a well-formed value saying a different time | §7.3a |
+| 2 | **`custom` gets no phrase, and that is the answer to v1.67's open item rather than a deferral of it.** "Custom period" is the name of a *control*; read back to somebody looking at their own results it says nothing they did not know before they pressed it. What they chose was two instants, so **two instants are what the line says**. `TIME_FRAME_LABELS` therefore keeps its four entries and goes on being the guard v1.48 made it — a `time_frame` with neither a phrase nor an interval still renders nothing rather than a raw identifier | §7.3a |
+| 3 | **A preset beside an interval prints both halves**: `These figures cover: One week · 14/09/2026 08:10 – 21/09/2026 08:10`. From v1.67 a preset is a button that *fills* the picker, so the phrase records which shortcut was pressed and the interval records what it filled. Printing only the phrase is a claim about a period the visitor may since have moved; printing only the dates drops the record of the button. The client's first question of this column — *did they mean a standard week, or did they choose those dates?* — is answerable only with both | §7.3a, §6.2.3 |
+| 4 | **The PDF prints the period**, in the same sentence and the same three shapes, from the same five catalogue keys. `render_export_pdf` hands the `ExportPayload` itself to the renderer as its `period`, because the payload already *is* the three fields a period is; `api/pdf_render._period_text` turns it into one phrase and the template prints it above the summary and below the masthead — on its own line, never inside the summary grid, because nothing is scaled by it (§2.3) and a period set beside a total invites exactly the arithmetic this contract forbids | §6.2.3 |
+| 5 | **Not one new catalogue key, deliberately.** The sentence is v1.48's own `These figures cover: %(period)s` and the four phrases are step 5's own `<select>` options. `api/i18n.Catalogue.gettext` **raises** rather than falling back to English, so a sentence coined here would mean every non-English download failing until twenty catalogues caught up — and the interval's `–` and the `·` between phrase and dates are notation rather than prose, the same ruling this document already applies to `GWP100` and to the cover line's own separators | §6.2.3, §11 |
+| 6 | **Dates are printed `en-NZ` in every language, on the page, in the text download and on the PDF** — `dd/mm/yyyy hh:mm`, character-for-character the shape `web/js/period.js`'s own boxes accept. A date *format* is O-4, which is open; a download is the worst place to settle it, because the file outlives the argument. Under a right-to-left locale the run reorders (`16:20 14/09/2026 – 08:10 …`) and that is the bidi algorithm, read correctly in that paragraph's own direction; **no invisible control character is inserted to "fix" it** | §7.3a, §6.2.3 |
+| 7 | **The form now refuses `custom` with no interval**, which it could previously build and §6.2 answers 422 to (`period_custom_without_interval`). Two routes reached it: choosing *Custom period* and typing nothing, and pressing a preset and then emptying all four boxes — which demotes the answer to `custom` and leaves nothing under it. Refused rather than normalised to "not stated", the same ruling §6.2 takes, and worded with the message the half-interval case already uses — so this revision adds **no catalogue key at all**. `periodProblem` takes the `time_frame` as an argument so that `handlePeriodInput` can ask about the answer a keystroke leaves behind rather than the one it replaces | §7.3a |
+
+| 8 | **The nineteen picker keys reach all twenty catalogues, and the three format-describing sentences keep their pattern verbatim.** *Enter the date as dd/mm/yyyy.*, *Enter the time as hh:mm on the 24-hour clock.* and the field's own *Dates are dd/mm/yyyy and times are on the 24-hour clock, so a shift is 08:10 to 16:20.* each **describe a format the input enforces**, so `dd/mm/yyyy`, `hh:mm`, `08:10` and `16:20` are translated **around** and never **through**: a French catalogue reading `jj/mm/aaaa` would describe a box that refuses it, and the visitor would have no way to discover the truth. The sentence is prose and is translated; the pattern is the accepted shape and is notation, which is §7.7.7's ruling and the same reason every date on this site is `en-NZ` — a date *format* is **O-4**, which is open and promises nothing. The four CJK subsets were re-cut for the new characters (`api/assets/fonts/noto/PROVENANCE.md`, 2026-09-21) | §7.7, §7.7.7 |
+
+> **`tests/fixtures/*.json` does not move, and that was checked rather than assumed.** The contract-change process's third step applies to every revision; here it is already satisfied by v1.67, which put an interval beside `one_year` in `calculate_request.json` and `custom` with a shift in `export_pdf_request.json`, and left two request fixtures carrying a preset alone. Those are exactly the three legal shapes this revision renders — the preset-with-interval line, the `custom` line and the phrase-alone line — so the executable contract already exercises all three and no field is added to any file.
+
+> **What this leaves for later.** The nineteen `t()` keys v1.67's picker introduced reached the twenty catalogues in change 8 above, and **the payload, page and download changes added none of their own** — the extracted key set was byte-identical to v1.67's, which was measured against the committed tree rather than reasoned about. **One thing is open and is a test-side change, not a catalogue one:** the French for `Date` is `Date`, so `fr` needs it declared in `tests/web/test_i18n_web.py::IDENTICAL_BY_DESIGN` beside the `Code`, `Destination` and `Documentation` already there, exactly as §7.7.1 requires — until it is, `test_no_entry_is_blank_or_still_english[fr]` fails. Forcing a French synonym onto a date box is the outcome that allowlist exists to prevent. Nothing else from the v1.67 note remains open.
+
+### v1.67 — 2026-09-21 (the reporting period gains a start and an end; affects B, C and D, and A only as advance notice)
+
+Step 5 asks *"What period do these figures cover?"* and has offered four presets since v1.48. The client wants to say **a shift** — 08:10 to 16:20 — so the period needs a start and an end, each with a date and a time, to the minute.
+
+> **This one genuinely moves the wire.** The last four revisions changed no request or response shape and said so; this one adds two request fields to two routes, a fifth member to a closed vocabulary, two columns and a CHECK constraint, and `tests/fixtures/*.json` moves with it. The contract-change process's third step is not a no-op here.
+
+**What does not change.** No response shape: `POST /calculate`'s body is byte-identical, and neither new field is echoed. No engine input: §3's `CalculationRequest` does not learn the period, `calculate(request, bundle)` is not given it, §10.2's bundle shape is untouched and **all thirteen golden cases are byte-identical**. No public statistic: §5.4's aggregation does not read either column, and may not — see change 6. No existing request becomes invalid: a preset with no interval, which is every request the deployed front end sends today and every row already in the database, is still accepted.
+
+**This reverses v1.48's "a pair of dates was rejected", and only the storage half of it.** v1.48 refused two dates on the grounds that they *"would invite exactly the arithmetic the ruling forbids"* — that nothing is annualised, nothing is divided, no figure is scaled by the period. **That ruling is unchanged and is now enforced structurally rather than by absence**: the period is not on the object the engine consumes, so no formula can reach it (change 5), and `tests/test_period_is_not_an_engine_input.py` holds it. What v1.48 got right was the risk; what it got wrong was the remedy, because the client's own requirement — a shift — cannot be said with a word from a list.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **§6.2 and §6.2.3 gain `period_start` and `period_end`.** Optional, nullable, ISO-8601 **local date-time with no zone** (`"2026-09-14T08:10:00"`). Both live on `api.schemas.PricingOptions`, which `CalculatePayload` and `ExportPayload` both inherit, so the two routes cannot come to disagree about a period one accepts and the other refuses — the reason `gwp_horizon` and `time_frame` moved there in v1.49. A zone-carrying value is **refused, not converted**: silently normalising `…T08:10+13:00` to UTC would store an instant two hours before the one the visitor typed and print it back on their own download. Sub-second precision is dropped, because the column keeps none | §6.2, §6.2.3 |
+| 2 | **`time_frame` gains a fifth member, `custom`, and still records which shortcut was pressed.** The four presets become *templates* that fill the picker, so `one_week` **beside an interval** is the designed normal case rather than a contradiction. Collapsing every new row to `custom` was rejected twice over: the rows already in the database say `one_week` with no interval, so the four preset values would become a dialect only historical rows speak and the column would stop being comparable across the table; and an interval alone cannot answer the first question the client will ask, *did they mean a standard week, or did they choose those dates?* | §2.3, §6.2 |
+| 3 | **The contradiction rule is a refusal, and it is written twice on purpose.** `api.schemas.PricingOptions.validate_period` refuses it on the wire and `ck_submission_period` refuses it in the schema, because a rule the API holds and the schema does not is a rule that lasts until the first write that does not go through the API. Three states are refused — half an interval; `custom` with no interval; an interval with no `time_frame` at all — and a fourth, a preset beside an interval, is **allowed**. Refused rather than normalised: every normalisation on offer invents an answer, and a refusal is the one outcome that puts no fact in the database that nobody stated | §2.3, §6.2 |
+| 4 | **Two columns in migration `0018`, `down_revision = "0017"`**: `submission.period_start` and `.period_end`, `DATETIME` and nullable. Safe on a populated database — the deployed stack carries 1,667 submissions, every one of them passes the new CHECK because both columns are NULL on all of them, and nullable is the *meaning*: absence says "no period was given" rather than a sentinel instant nobody supplied. **The stored instants are local wall-clock time and carry no zone**, which is adequate as a label and inadequate for comparison across submissions; that sentence is written at the column, at the migration and at `upsert_submission`, because the first person to analyse these fields would otherwise do it wrongly and have no way to know | §2.3 |
+| 5 | **`upsert_submission` gains `period_start` and `period_end` as keyword arguments of their own**, beside `time_frame` and off `req` for the same reason — and the reason matters more now than it did in v1.48. A pair of instants is exactly what it takes to write `(period_end − period_start)` against a metric total; the cheapest way to go on forbidding that is to make sure the engine never sees either value | §5.3 |
+| 6 | **Nothing may bucket a public statistic by an exact instant**, written down now rather than discovered later. `custom` as one bucket of `time_frame` is fine. Grouping by `period_start` would put every row in a bucket of one, at which point §5.4's suppression threshold merges the lot into `other` — a statistic that says nothing, arrived at honestly | §5.4 |
+| 7 | **The server's ceiling is `now (UTC) + 38 hours`, and 38 is arithmetic rather than slack.** The exact rule the client wants — a period may not end more than 24 hours from now — lives in the form, where "now" is the visitor's own now. The server cannot enforce it: handed a zoneless `2026-09-22T17:55` it cannot tell which side of the date line it was typed on, and a visitor at UTC+13 has an honest "now + 24 hours" that reads 37 hours ahead of server UTC. 24 + 14 (the widest civil offset) = 38. **Tightening it to 24 would refuse a shift somebody in Auckland entered correctly**, with nothing in the payload they could change. Carrying a UTC offset on the wire was considered and rejected: it makes the stored value a real instant rather than a label, which is O-4's neighbour and a bigger decision than this field needs | §6.2 |
+| 8 | **`tests/fixtures/*.json` moves.** `calculate_request.json` carries `one_year` **with** an interval (the preset-as-template case) and `export_pdf_request.json` carries `custom` with a shift (the new vocabulary member); `calculate_request_partial_coverage.json` and `calculate_request_zero_totals.json` keep a preset and no interval, which is the pre-v1.67 shape and must go on being accepted. All three legal shapes are therefore exercised, and a consistency test asserts that they still are | §11 |
+| 9 | **§9 gains a sentence, not a rule: a Pydantic-raised failure can carry a chosen `issue` slug.** `raise ValueError` arrives as `issue: "value_error"` whatever went wrong — the defect v1.22 fixed for `prevention_in_current` by moving that rule out of Pydantic altogether. Where the rule genuinely belongs in Pydantic, `PydanticCustomError(slug, message)` sets the error's `type`, so `issue` carries this API's name instead. The seven `period_*` slugs are the first to use it; the envelope is unchanged | §9 |
+
+> **What this leaves for later, stated so nobody reads it as finished.** `web/js/results.js`'s `TIME_FRAME_LABELS` has no phrase for `custom` and needs one; nothing under `web/` sends either new field yet; `api/pdf_render.py` prints no period at all and the plain-text export prints only the preset's phrase. That is deliberate sequencing — this revision is the wire and the store, and the picker, the wiring of step 5 and the twenty catalogues follow it — but until they land, `custom` is a value only a non-browser caller can send, and a front end that sent it today would render an empty period line rather than a wrong one. **All three are closed by v1.68**, and the phrase `custom` needed turned out to be no phrase at all — see change 2 there.
 
 ### v1.66 — 2026-09-21 (the results page's section nav stops covering the page; affects C and D)
 
@@ -1658,9 +1704,40 @@ Three tables, written together by one `POST /api/v1/calculate` (§5.3). They are
 | `gwp_horizon` | SMALLINT | NOT NULL, DEFAULT 100 | Applies to the whole submission |
 | `excluded_from_public` | BOOLEAN | NOT NULL, DEFAULT FALSE | **Staff moderation, not user consent** |
 | `exclusion_reason` | VARCHAR(255) | NULL | |
-| `time_frame` | VARCHAR(32) | NULL | v1.48. The period the visitor says their figures cover: `one_week`, `one_month`, `one_quarter`, `one_year`. **A label, never a multiplier** — see below |
+| `time_frame` | VARCHAR(32) | NULL | v1.48; `custom` added in v1.67. Which answer the visitor gave to *"What period do these figures cover?"*: `one_week`, `one_month`, `one_quarter`, `one_year`, `custom`. **A label, never a multiplier** — see below |
+| `period_start` | DATETIME | NULL | **v1.67.** The interval's start. **Local wall-clock time, no zone** — see below before querying it |
+| `period_end` | DATETIME | NULL | **v1.67.** The interval's end. `>= period_start`; both columns or neither |
 | `is_public_contributed` | BOOLEAN | NOT NULL, DEFAULT FALSE | v1.48. **The visitor's own consent, and a second axis rather than a replacement for the row above.** Written only by `POST /api/v1/contribute` (§6.2.2) |
 
+**`ck_submission_period`** (v1.67), five clauses, one constraint:
+
+1. `(period_start IS NULL) = (period_end IS NULL)` — both or neither. Half an interval is not a period.
+2. `period_end >= period_start` — it runs forwards. **Equal ends are allowed**: a zero-length period is odd, enters no calculation, and refusing it buys exactly what refusing a ten-year span would buy, which is nothing.
+3. `period_start >= '1970-01-01'` — the only floor worth having.
+4. `time_frame = 'custom'` requires the interval — `custom` *means* "the visitor chose these dates".
+5. The interval requires a `time_frame` — "Not stated" is step 5's default answer and cannot be carrying dates.
+
+**A preset beside an interval passes all five, and that is the designed normal case.** Clause 5 is deliberately not "an interval implies `custom`": written that way it would refuse every row the v1.67 form produces.
+
+> **The two v1.67 columns arrive in migration `0018`, `down_revision = "0017"`**, and the CHECK above comes with them. Both are nullable, so the 1,667 submissions already in the deployed stack need no backfill and none was performed: **absence means "no period was given"** — the answer of every visitor who left step 5 at "Not stated", and of every visitor who used the calculator before this revision. A sentinel instant standing in for "unstated" would be a fact nobody supplied, and the first query that filtered on it would count those rows as having reported something.
+>
+> ---
+>
+> **READ THIS BEFORE QUERYING `period_start` OR `period_end`.**
+>
+> **The instants stored in these two columns are the visitor's LOCAL WALL-CLOCK TIME AND THEY CARRY NO ZONE.** What is stored is what a person read off the clock on their own wall, written down verbatim. That makes the value:
+>
+> - **adequate as a label** — printed back to the visitor who typed it, on the results screen and in the download they keep, which is the whole of what the field is for; and
+> - **inadequate for comparison across submissions.** Two rows that both say `08:10` may be two hours apart, or twenty-two. Neither column can say which, and nothing else on the row can either: §2.3 stores no IP address, no user agent and no fingerprint of any kind, so there is nothing on a submission from which a zone could be inferred — by design, and permanently.
+>
+> An analyst who sorts these across rows, buckets them by hour of day, differences them against `created_at` (which *is* UTC, §1.3), or reads them as UTC will get an answer, the answer will be wrong, and nothing in the data will show that it is wrong. **That is why this is stated here, at the column, and again in `db/models.py`, in `alembic/versions/0018_submission_period.py` and in `upsert_submission`** — four places, because the first person to analyse these fields will reach one of them and not necessarily this one.
+>
+> Carrying a UTC offset alongside them was considered in planning and **rejected**: it would make the stored value a real instant rather than a label, which is a larger decision than this field needs and is a neighbour of `architecture.md` O-4. If it is ever wanted it is a third column and another migration — never a reinterpretation of these two.
+>
+> **Two instants, and no duration.** Nothing derives a length from them; `(period_end − period_start)` is arithmetic this contract forbids (below). That is fortunate as well as correct, because a duration in a column is exactly where a `FLOAT` gets in and §1.2 prohibits `FLOAT` and `DOUBLE` outright.
+>
+> ---
+>
 > **The five v1.48 columns arrive in migration `0016`, `down_revision = "0015"`** — two here and three on `submission_entry` below. Every one of them is nullable or defaulted, because the deployed stack has real submissions in it: a NOT NULL column with no default fails on the first existing row, and **there is no value that could be back-filled honestly.** Nobody asked those visitors what period their figures covered, or whether they wanted to be counted.
 
 **No IP address, no user agent, no fingerprint of any kind is stored.**
@@ -1718,7 +1795,11 @@ Three tables, written together by one `POST /api/v1/calculate` (§5.3). They are
 
 > **`time_frame` is a label and nothing computes with it (v1.48).** The client ruled explicitly that no figure is scaled by the period — nothing is annualised, nothing is divided — and **the engine is not given it at all.** `upsert_submission` (§5.3) takes it as a keyword argument of its own rather than off the `CalculationRequest`, because §3's request is the object the engine also consumes and the engine must not be handed a value it is required not to use. The period travels to the results page and into the download so that a figure somebody keeps has a period attached to it, which is the whole of what it is for.
 >
-> **A pair of dates was rejected, and not for storage reasons.** What the client asked for is a period picked from a list; two dates would invite exactly the arithmetic the ruling forbids, and the first person to write `(end − start)` against a metric total would be doing something this contract says must not happen. The vocabulary is closed for the same reason `gwp_horizon` is closed to 20 and 100: the results page renders a phrase per value, and a value it has no phrase for reaches a visitor as a raw identifier.
+> **A pair of dates was rejected in v1.48, and v1.67 reverses the rejection while keeping the ruling.** v1.48 read: *"What the client asked for is a period picked from a list; two dates would invite exactly the arithmetic the ruling forbids, and the first person to write `(end − start)` against a metric total would be doing something this contract says must not happen."* The risk was real and it has not gone away. The remedy was wrong, because **the client's own requirement — a shift, 08:10 to 16:20 — cannot be said with a word from a list.**
+>
+> So the interval exists from v1.67 and the ruling is now enforced **structurally rather than by absence**: `period_start` and `period_end` are not fields of §3's `CalculationRequest`, not keys of §10.2's bundle, and not arguments to `calculate` — the engine is never handed them, so no formula can read them, and no reviewer has to check that nobody looked. `tests/test_period_is_not_an_engine_input.py` asserts all three, plus that no module under `engine/` mentions either name and that no golden case carries one.
+>
+> **The vocabulary stays closed**, for the same reason `gwp_horizon` is closed to 20 and 100: the results page renders a phrase per value, and a value it has no phrase for reaches a visitor as a raw identifier. `custom` is a fifth member of it, not a replacement for the other four — from v1.67 the presets are templates that *fill* the interval, and `time_frame` goes on recording which button was pressed, so a row saying `one_week` beside seven days of dates is ordinary rather than contradictory.
 
 > **`is_public_contributed` reverses "one calculation equals one submission, and nothing asks" (v1.48).** Until this revision a calculation was public the moment it was recorded, and this document said so deliberately: there was no consent checkbox and no separate "contribute" button, because a checkbox nobody ticks is a statistics page with nothing on it. **The client asked for the opposite**, and this is what the reversal has to mean: the calculation is still recorded in the same call, the panel still sees it, and the **public aggregate does not count it until the visitor offers it** — `POST /api/v1/contribute` (§6.2.2).
 >
@@ -2776,7 +2857,9 @@ def clone_factor_set(session, source_id: int, new_label: str, actor: str) -> int
 ```python
 def upsert_submission(session, token: str | None, req: CalculationRequest,
                       factor_set_id: int, *,
-                      time_frame: str | None = None) -> tuple[int, str]:
+                      time_frame: str | None = None,
+                      period_start: datetime | None = None,
+                      period_end: datetime | None = None) -> tuple[int, str]:
     """
     Upsert keyed by token. One call, one submission, N entries.
 
@@ -2823,6 +2906,23 @@ def upsert_submission(session, token: str | None, req: CalculationRequest,
     not to look. It is written on the update path as well as the insert path:
     a second calculation reusing the same token would otherwise keep the first
     one's period forever.
+
+    `period_start` and `period_end` (v1.67) sit beside it and are kept off
+    `req` for the same reason, which matters more here than it did for
+    `time_frame`: a pair of instants is exactly what it takes to write
+    `(period_end - period_start)` against a metric total, and the cheapest way
+    to go on forbidding that is to make sure the engine never sees either
+    value. They are written on both paths too, and always all three together:
+    leaving the interval behind while `time_frame` moved would leave the row
+    in exactly the state `ck_submission_period` (§2.3) exists to forbid --
+    `one_month` against last week's shift, or `custom` against nothing.
+
+    THE TWO INSTANTS ARE THE VISITOR'S LOCAL WALL CLOCK AND CARRY NO ZONE.
+    Adequate as a label, inadequate for comparing one submission against
+    another; §2.3 says why at length, and this function does not convert
+    them. This function also does not re-check the contradiction rule: the
+    wire checks it and `ck_submission_period` checks it, and a third copy
+    would be a third thing to keep in step.
 
     Does NOT set is_public_contributed. It defaults false at the schema and
     set_public_contribution below is the only writer in the tree.
@@ -2945,6 +3045,10 @@ class PublicStats:
 > **The deployed public statistics drop to zero when migration `0016` lands, and recover as visitors opt in (v1.48).** `is_public_contributed` defaults FALSE, so **every submission recorded before that migration counts towards nothing** — `total_calculations` and all three breakdowns included. That is the correct reading of a consent flag applied retrospectively: those visitors were never asked, and there is no value that could be back-filled honestly. It is written here, in §6.4 and in the change log because it is a **data change wearing a schema change's clothes**, and the person who notices it first will be looking at a statistics page that read 1,247 yesterday and reads 0 today.
 >
 > **The administrators' figures are unchanged.** §8.2's submissions screen reads the rows themselves, not this aggregate, so every historical calculation is still there, still searchable and still moderatable. Nothing was deleted; the public denominator was re-derived from a question that had not been asked before.
+
+> **Nothing may bucket a public statistic by an exact instant, and v1.67 writes that down before anyone tries it.** `submission.period_start` and `.period_end` exist from that revision, so a `by_period` breakdown is a query away — and it would produce nothing worth having. Grouping by an exact instant puts **every row in a bucket of one**, at which point the suppression rule above merges the lot into `other`, `other` is itself below the threshold, and step 3 publishes an empty array. A statistic that says nothing, arrived at honestly. It is also the re-identification shape the threshold exists for: a bucket of one whose label is a timestamp names a single business's single afternoon.
+>
+> **`time_frame` remains the only period-shaped thing a breakdown could legitimately group by**, and it is not in any breakdown today either. `custom` as one bucket of it would be fine; the two instants never are. If a period breakdown is ever wanted, it is a coarsening decided by the client — a month, a quarter — and it is a client decision about the statistics page, not a repository change made because the columns are there.
 
 > **`total_calculations` and the bucket counts are deliberately counting different things, and the statistics page must not present them as if they were not.** `total_calculations` is submissions; every `StatsBucket.count` is entries. `Σ by_sector[].count` is therefore ≥ `total_calculations`, and the gap is exactly the number of multi-entry submissions. `share` is computed within its own breakdown — over entries — so shares still sum to 1 and are the safe figure to display. Copy that reads "1,247 calculations" beside a sector chart whose counts add to 1,600 invites the obvious question; the honest phrasing names the unit ("1,247 calculations, covering 1,600 points in the supply chain"). See §6.4's copy constraint, which is D's.
 
@@ -3105,6 +3209,8 @@ Called once on page load to build every dropdown and input row.
   "token": "3f2b… (optional; omitted on the first call)",
   "gwp_horizon": 100,
   "time_frame": "one_year",
+  "period_start": "2025-07-01T00:00:00",
+  "period_end": "2026-06-30T23:59:00",
   "entries": [
     {
       "sector": "processing",
@@ -3138,7 +3244,9 @@ Called once on page load to build every dropdown and input row.
 | --- | --- | --- | --- |
 | `token` | string \| null | No | Session token; omitted on the first call. Any value that does not resolve to a live submission is treated as absent and a new one is minted — a stale `sessionStorage` value must not produce an error |
 | `gwp_horizon` | int | No | 20 or 100; defaults to 100. Applies to the whole submission |
-| `time_frame` | string \| null | No | **v1.48.** One of `one_week`, `one_month`, `one_quarter`, `one_year`. A closed vocabulary; anything else is `VALIDATION_ERROR`. **Persisted and never computed with** — it reaches `submission.time_frame` (§2.3) and is not passed to the engine at all |
+| `time_frame` | string \| null | No | **v1.48**, fifth member added **v1.67**. One of `one_week`, `one_month`, `one_quarter`, `one_year`, `custom`. A closed vocabulary; anything else is `VALIDATION_ERROR`. **Persisted and never computed with** — it reaches `submission.time_frame` (§2.3) and is not passed to the engine at all. From v1.67 it records **which shortcut the visitor pressed**, not merely that they pressed one: a preset fills the interval below and still stores its own name, so `one_week` beside seven days of dates is ordinary |
+| `period_start` | string \| null | No | **v1.67.** ISO-8601 **local date-time with no zone**: `"2026-09-14T08:10:00"`. Minute precision is the requirement, not an accident of the control — a shift is 08:10 to 16:20. **A zone-carrying value is refused**, not converted to UTC: normalising `…+13:00` would store an instant two hours before the one the visitor typed and print it back on their own download. Sub-second precision is dropped, because `submission.period_start` is `DATETIME` with none. Persisted, printed, **never computed with**; not passed to the engine, for the reason the note under §2.3 gives at length |
+| `period_end` | string \| null | No | **v1.67.** Same shape and the same rules. Must be `>= period_start`; equal is allowed |
 | `entries` | array | Yes | At least one entry |
 | `entries[].sector` | string | Yes | Must exist in the taxonomy |
 | `entries[].food_category` | string \| null | No | Null is treated as `standard_mix` |
@@ -3178,7 +3286,14 @@ If **any** entry carries an `alternative`, the response carries `net_benefit` at
 | Per scenario total, per entry `<= 50,000,000` | `VALIDATION_ERROR` |
 | Per scenario line count, per entry `<= 20` | `VALIDATION_ERROR` |
 | Entry count `<= 20` | `VALIDATION_ERROR` |
-| `time_frame` in {`one_week`, `one_month`, `one_quarter`, `one_year`} or absent | `VALIDATION_ERROR` |
+| `time_frame` in {`one_week`, `one_month`, `one_quarter`, `one_year`, `custom`} or absent (v1.67 adds the fifth) | `VALIDATION_ERROR` |
+| **`period_start` and `period_end` are both present or both absent (v1.67)** | `VALIDATION_ERROR`, `field` = `body`, `issue` = `period_half_interval` |
+| **`time_frame` = `custom` requires the interval** | `VALIDATION_ERROR`, `field` = `body`, `issue` = `period_custom_without_interval` |
+| **The interval requires a `time_frame`** — any member, not only `custom` | `VALIDATION_ERROR`, `field` = `body`, `issue` = `period_without_time_frame` |
+| **`period_end >= period_start`** (equal allowed) | `VALIDATION_ERROR`, `field` = `body`, `issue` = `period_ends_before_it_starts` |
+| **Neither instant carries a timezone offset** | `VALIDATION_ERROR`, `field` = `period_start` / `period_end`, `issue` = `period_carries_a_zone` |
+| **Neither instant is earlier than `1970-01-01`** | `VALIDATION_ERROR`, `field` = `period_start` / `period_end`, `issue` = `period_before_1970` |
+| **Neither instant is more than 38 hours past the server's UTC clock** — see below for why 38 and not 24 | `VALIDATION_ERROR`, `field` = `period_start` / `period_end`, `issue` = `period_too_far_ahead` |
 | `total_input_kg`, `total_value_nzd`, `wasted_value_nzd` each `>= 0` and within their scale | `VALIDATION_ERROR` |
 | **Per entry carrying an `alternative`: `\|Σ alternative.qty_kg − Σ current.qty_kg\| <= 0.010`** | `VALIDATION_ERROR`, `field` = `entries[i].alternative` |
 | **No `destination.is_prevention` line in a `current` scenario** | `VALIDATION_ERROR`, `field` = `entries[i].current`, `issue` = `prevention_in_current` |
@@ -3192,6 +3307,24 @@ If **any** entry carries an `alternative`, the response carries `net_benefit` at
 | `dry_run.factor_set_version` and `dry_run.bundle` both non-null | `VALIDATION_ERROR` |
 | `dry_run.bundle` row count across all tables `<= 5000` | `VALIDATION_ERROR` |
 | `dry_run.bundle` fails `FactorBundle.validate()` | `VALIDATION_ERROR`, one `details` entry per problem |
+
+> **The period's contradiction rule is a refusal, not a normalisation, and the database holds it too (v1.67).** Three states are refused above and a fourth — a preset beside an interval — is allowed, because from v1.67 the presets are templates that fill the picker and `time_frame` records which button was pressed.
+>
+> **Refuse rather than normalise, because every normalisation on offer invents an answer.** Turning "an interval with no `time_frame`" into `custom` claims the visitor pressed nothing, which is indistinguishable from a client bug that dropped the field; dropping the interval when it arrives with a preset throws away the only record of the dates there is; and `custom` with no interval cannot be normalised at all, because there is nothing to fill it with. A refusal is the one outcome that puts no fact in the database that nobody stated.
+>
+> **The same three states are refused by `ck_submission_period` (§2.3)**, and that duplication is deliberate: a rule the API holds and the schema does not is a rule that lasts until the first write that does not go through the API — the admin panel, a CLI, a correction made by hand.
+>
+> **`field` is `body` for the four cross-field rules**, not `period_start` or `period_end`. A Pydantic `model_validator` reports against the location of the *model*, and these four are properties of the payload rather than of either field — the same limitation `api/schemas.py`'s module docstring records for mass conservation. **`issue` is what a front end binds to**, and each of the four carries its own; the three per-field bounds do land on the field by name.
+
+> **The server's ceiling is `now (UTC) + 38 hours`, and 38 is arithmetic rather than slack (v1.67). Do not tighten it to 24.**
+>
+> The rule the client wants is *a reporting period may not end more than 24 hours from now* — a shift entered at 17:55 may end at 22:00 and may cross midnight; beyond a day it is not a period anybody is reporting. **That rule lives in the form**, where "now" is the visitor's own now and the two clocks being compared are the same clock.
+>
+> The server cannot enforce it. The instants carry no zone (§2.3), so handed `2026-09-22T17:55` this API cannot tell which side of the date line it was typed on. A visitor in New Zealand sits at UTC+12 or UTC+13, and the widest civil offset in use anywhere is UTC+14; their honest "now + 24 hours", written down with no zone, reads as much as **24 + 14 = 38** hours ahead of the server's UTC clock.
+>
+> So the server's bound is deliberately loose, and the looseness costs nothing that matters: the value enters no calculation. **At 24 the API would refuse a shift somebody in Auckland entered correctly, at the time it actually happened, with nothing in the payload they could change to make it pass.** The third way out — carrying a UTC offset on the wire, which would make the check exact — was considered and rejected: it turns the stored value from a label into a real instant, which is a larger decision than this field needs and is `architecture.md` O-4's neighbour.
+>
+> The bound is the one part of the period's validation that `ck_submission_period` does **not** carry. It moves with the clock, so a CHECK cannot express it; that is a known gap rather than an oversight, and the constraint's own comment says so.
 
 > **The two amount ceilings are the same number, and that is the rule — not a coincidence to be tidied away.** From v1.0 to v1.45 the per-line cap was 10,000,000 kg against a scenario cap of 50,000,000 kg. Nothing in this document ever said why either figure was chosen, and the ratio between them was never anybody's decision — it simply fell out of two numbers picked separately. Its effect was a rule the model does not contain: **a scenario could only reach its own ceiling if it was spread across at least five destinations.** A site that sends everything to landfill, or everything to anaerobic digestion, could not describe itself at any tonnage above 10,000 t; "all of our waste goes to one place" is an ordinary, truthful answer and no combination of legal values expressed it. Reported by a user who entered 50,000 t at step 3 and allocated all of it to animal feed at step 4.
 >
@@ -3436,7 +3569,9 @@ No other key is accepted. The body is `extra="forbid"`, as every request body in
 ```json
 {
   "gwp_horizon": 100,
-  "time_frame": "one_year",
+  "time_frame": "custom",
+  "period_start": "2026-09-14T08:10:00",
+  "period_end": "2026-09-14T16:20:00",
   "entries": [
     {
       "sector": "processing",
@@ -3456,7 +3591,8 @@ No other key is accepted. The body is `extra="forbid"`, as every request body in
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `gwp_horizon` | int | No | 20 or 100; defaults to 100. Same validator as §6.2's |
-| `time_frame` | string \| null | No | Same closed vocabulary as §6.2's (`one_week`, `one_month`, `one_quarter`, `one_year`, or absent) |
+| `time_frame` | string \| null | No | Same closed vocabulary as §6.2's (`one_week`, `one_month`, `one_quarter`, `one_year`, `custom` from v1.67, or absent) |
+| `period_start` / `period_end` | string \| null | No | **v1.67.** Same shape, same bounds and the same contradiction rule as §6.2's, because both payloads inherit `api.schemas.PricingOptions` — a period this route accepted while `/calculate` refused it would mean a visitor whose figures were computed and whose download then failed, with nothing on screen to say why. **This route persists nothing**, so the interval is printed and not stored: no `submission` row is written here at all |
 | `entries` | array | Yes | Same shape, and the same §6.2 validation table, as `POST /calculate`'s `entries` — sector/food-category existence, mass conservation between scenarios, no `is_prevention` destination in `current`, no duplicate destination or `(sector, food_category, food_item)` — a **triple** since v1.58, so two entries naming the same category and different foods are accepted and the same food twice is not, the same per-line, per-scenario and per-submission limits |
 | `locale` | string | Yes | 2–35 characters. **Not checked against a closed vocabulary.** A tag with no catalogue resolves to English — the same rule `web/js/i18n.js` follows for the page (§7.7.2) — because a download is not the place to tell somebody their browser's language is unsupported |
 
@@ -3471,6 +3607,14 @@ No `token`, no `dry_run`: both are refused by `extra="forbid"` if sent, rather t
 **An unstated food type prints as `ABSENT`, and no longer as the standard mix (v1.55).** `food_category: null` on an entry and the standard-mix category's own `code` are two different *answers* as of the multi-select: step 2 offers them as two separate boxes, because §5.4 requires "I do not know, or my waste is not broken down by type" to be its own bucket rather than a category the visitor picked. `api/pdf_render.py` substituted the standard-mix row's own name for a NULL — right while a NULL could only *mean* the standard mix, and wrong the moment a submission could carry both, because it then printed two rows a reader could not tell apart carrying different figures. A NULL category now reaches `_look_up` like any other unstated field and prints `ABSENT` (an en dash, `–`), which is already what this document prints for a metric an entry did not carry. **The engine's own resolution is unchanged** — a NULL category is still priced as the standard mix (§4.1) — because what the document *prints* and what the engine *prices* are two questions, and this revision only answers the first.
 
 > **No new catalogue string is involved, and that is a constraint rather than a convenience.** The obvious rendering is a translated sentence such as "not broken down by type", which is what the screen shows. It cannot be used here: `Catalogue.gettext` raises rather than falling back to English (above), so a key added on this path would make the whole document fail to render in every language whose catalogue had not yet caught up — and a catalogue pass always lands after the code that needs it. `ABSENT` is a glyph, carries no language, and is already on four other paths in the same document.
+
+**The reporting period is printed on the document (v1.68).** One line, below the masthead and above the summary grid, in the same sentence and the same three shapes the results page and the plain-text download carry — `These figures cover: One week · 14/09/2026 08:10 – 21/09/2026 08:10` for v1.67's preset-with-interval case, the two instants alone for `custom`, the phrase alone for a preset that filled nothing, and **nothing at all** when no period was stated. `render_export_pdf` passes the `ExportPayload` itself as the renderer's `period`, because the payload already carries exactly the three fields a period is.
+
+> **On its own line, and never inside the summary grid.** §2.3 makes the period a label that nothing is scaled by; a period set beside a total is an invitation to derive the one thing this contract forbids anyone to derive from it. The renderer subtracts nothing either — the two instants are printed side by side.
+>
+> **No new catalogue string, on exactly the reasoning the `ABSENT` note above gives.** The sentence is v1.48's own `These figures cover: %(period)s` and the four phrases are step 5's own `<select>` options; the `–` between the instants and the `·` between the phrase and them are notation, like `GWP100` and like the cover line's own separators. `tests/api/test_pdf_render.py` asserts all five are strings the front end renders **and** that every catalogue already carries them, so the strict lookup cannot fire in earnest on this path.
+>
+> **`en-NZ` in every language**, `dd/mm/yyyy hh:mm`, formatted by hand rather than through a locale table for the same reason the generated stamp above is: digits read the same everywhere and this renderer owns no calendar dictionary. It is also character-for-character the shape `web/js/period.js`'s own boxes accept, so the document prints back a date the form that collected it would take. Under a right-to-left locale the run reorders — the extracted text reads `16:20 14/09/2026 – 08:10 14/09/2026` — because each date and each time is a European-number run at an even embedding level while the neutrals between them take the paragraph's odd one (UAX #9, N1). Read right-to-left it is the period as written, it is the same thing a browser does to the same string on the screen, and **nothing inserts an LRM or any other invisible control to "correct" it**: this module reorders no character.
 
 **The fallback disclosure travels with the document (v1.59).** When an entry's `item_basis` is `category` the PDF carries the same caveat the screen and the plain-text export carry, in the same words, from §7.3c's two catalogue keys — because this is the copy most likely to be read months later by somebody who was not in the room, and a figure that is not as specific as the question it answers has to say so on its face. It sits beside the placeholder warning and is independent of it: a real factor set can still price a food only at its category. `_CATEGORY_AVERAGE_FLAG` and `_CATEGORY_AVERAGE_BODY` are this module's own constants and `tests/api/test_pdf_render.py` asserts they are strings the front end also renders, so a reword on one surface fails rather than producing two accounts of one submission.
 
@@ -4472,6 +4616,19 @@ export function bindResultsSectionSpy(root);
 export function resultsNavIsDocked(root);
 ```
 
+> **The reporting period reads back as what the visitor chose (v1.68).** One line, above every figure on the page and near the top of the text download, worded identically on both because `resultsPeriod` and `periodLine` go through one `periodPhrase` rather than each formatting the period themselves. Three shapes, because §6.2 accepts three:
+>
+> | What `state` holds | What the line says |
+> | --- | --- |
+> | `timeFrame: ''` | nothing at all — never the label with nothing after it, and never a phrase implying "not stated" is itself a period |
+> | a preset and no interval (every submission before v1.67) | `These figures cover: One week` |
+> | a preset **and** an interval — v1.67's designed normal case | `These figures cover: One week · 14/09/2026 08:10 – 21/09/2026 08:10` |
+> | `custom` and an interval | `These figures cover: 14/09/2026 08:10 – 14/09/2026 16:20` |
+>
+> **`custom` has no phrase and `TIME_FRAME_LABELS` deliberately does not gain one.** "Custom period" names a control, not a period; a reader holding their own results learns nothing from it. The map keeps the job v1.48 gave it — a `time_frame` it has no phrase for, with no interval beside it, renders nothing rather than a raw identifier.
+>
+> **A preset beside an interval prints both halves**, because the phrase records which shortcut was pressed and the interval records what it filled, and the client's first question of this column needs both. **The dash and the `·` are notation and carry no `t()` key**: `api/pdf_render.py` prints the identical sentence from the same catalogue keys through a lookup that *raises* rather than falling back, so a sentence coined here would break every non-English download until twenty catalogues caught up. The instants are formatted by `period.js`'s own `formatInstant`, imported rather than re-derived, so the page prints them back in the shape the box that collected them accepts — `en-NZ`, in every language, which is O-4 and is not this module's to settle.
+
 > **"Per entry" on this screen means per LEAF, not per chain (v1.55).** A supply-chain chain that names three food categories is three `entries[]` elements and therefore three breakdown sections and three rows in the text report, each named by `leafDisplayName` (§7.2) rather than by a label this module decides. That is what closed two defects at once here: a leaf carried one name on step 3, another on step 4 and a third on the review step, and `Standard mix / not specified` was returned both for a NULL `food_category` and for the `standard_mix` category — two answers step 2 offers as two separate boxes, rendering byte-identically on a page whose rows carry different numbers. The pairing itself is `entryResultsFrom`'s (§7.2), which must be handed the leaves the request was built from; handed chains it pairs by index against a longer response and attaches every figure to the wrong entry, silently.
 >
 > **The export used to contain no results.** It printed the total mass, the entries, their destinations and quantities, the factor version and the placeholder warning, and not one output number — under a file name that says "results". `buildResultsReport` exists as a separate export because that is the half a test can assert on: `tests/web/test_results_export.py` runs this module under Node against the §10 fixtures and matches whole anchored lines, so a report that printed the label without the figure, or the figure without its unit, fails. A test that greps this file for a heading would have passed on the broken version.
@@ -4570,6 +4727,104 @@ No exports. Uses top-level `await` to call `getFactors()`, then writes the facto
 
 > **The downstream table carries a `Sector` column (v1.31)**, rendering `All sectors` where `downstream[].sector` is `null`, beside the `All food categories` the food column already renders. It is not optional: with a set that prices by sector, omitting it prints rows that are identical in every visible column and differ only in the number — the figure published without its basis that §2.2's provenance columns exist to prevent. The sentence above the table states §4.1's order as well, because the two columns each show a scope and neither can say which one gives way.
 
+### `period.js` — step 5's reporting period (v1.67, written by C)
+
+**The control behind §6.2's `period_start` / `period_end`.** Step 5's `#time-frame` select
+gains a fifth option, `custom`, and any stated answer reveals two typable bounds — a date box
+and a time box each — with a hand-built calendar dialog behind each date box. The field stays
+optional and "Not stated" stays the default, which is the whole of what a visitor who never
+opens it sees.
+
+| Export | What it is |
+| --- | --- |
+| `PeriodField()` | The whole field as HTML, rendered by `reviewStep` inside `.time-frame-field`. Returns `''` when `time_frame` is unstated |
+| `periodProblem(fields?)` | `{ message, field }` — the form's own rules, asked by the render path and by the typing path so the two cannot disagree |
+| `periodValues(fields?)` | `{ periodStart, periodEnd }` in the wire's shape, `YYYY-MM-DDTHH:MM`, or `''` when the period is not legal |
+| `timeFrameChanged(value)` | The `setState` patch the select produces: a preset fills the interval, `custom` keeps it, "Not stated" clears it |
+| `handlePeriodClick` / `handlePeriodInput` / `handlePeriodKeydown` | Delegated from `calculator.js`; each answers whether it owned the event |
+| `MAX_HOURS_AHEAD` | **24**, and see below |
+
+**No library, no build step.** §7.6 rule 7 forbids a runtime asset from a third-party host —
+the reason Chart.js is vendored — so a date-picker package is not available either. Neither
+is `<input type="date">` or `<input type="time">`: owner decision 2 refused the native
+controls because the client's team is on Apple hardware and Safari's rendering of them cannot
+be relied on to match the browser the rest of the team uses. Both boxes are `type="text"` with
+`inputmode="numeric"`.
+
+**The time is typed, not dialled.** `HH:MM`, 24-hour, no stepper and no clock face: at minute
+precision a shift is *entered* — `0810` is accepted as well as `08:10` — and a dial resolving
+1,440 positions is slower than four keystrokes in every case. Two `<select>`s lose on the same
+ground and double the tab stops per bound.
+
+**The dialog is a real one.** `role="dialog"`, `aria-modal="true"`, focus moved in on open and
+**returned to the control that opened it** on close, `Esc` to dismiss, `Tab` cycled inside it —
+`aria-modal` tells a screen reader the rest of the page is inert and does not stop Tab walking
+out of it. The grid is `role="grid"` with one tab stop (a roving `tabindex`), each cell named
+by its whole date rather than by its number, `aria-selected` on the chosen day, and days
+outside the allowed range carrying no `data-day` and no `tabindex` at all — genuinely
+unreachable rather than greyed. The keyboard is arrows by day, `PageUp`/`PageDown` by month
+(`Shift` for a year), `Home`/`End` to the ends of the displayed week, `Enter`/`Space` to
+choose. **The horizontal arrows mirror under `dir="rtl"`**, because a `<table>`'s columns
+mirror with the document and an unmirrored `ArrowRight` would move the focus ring leftwards
+across the screen.
+
+**`render()` replaces `main.innerHTML` on every `setState`**, so whether the dialog is open,
+which day the roving `tabindex` sits on and what is typed in the four boxes all live in
+`state` (`periodPicker`, `periodFields`) and are re-derived on every render. The roving cell
+carries `id="period-grid-focus"` — **an id that names its role, not its date** — so
+`main.js`'s generic "re-focus the id that had focus" lands on the day the cursor moved *to*;
+a date-shaped id would survive the render intact and pull focus back to the day just left.
+Opening and closing are the two moves `main.js` cannot make on its own and are done in a
+`requestAnimationFrame` after the render, the same way `calculator.js` moves focus between the
+results breakdown tabs.
+
+**The four text boxes do not call `setState`** — §7.3a's documented exception, here because a
+re-render per keystroke destroys the caret and because `change` on a text input fires while
+focus is already leaving it. They mutate `state.periodFields` and patch the error line, the
+`aria-invalid` flags and the Calculate button by hand, all through the one `periodProblem`
+the render path uses.
+
+**Dates, month names and weekday names are `en-NZ` in every language, and the first day of the
+week follows from that pin.** `stats.js` and `home.js` pin the same locale for the same
+reason: a date *format* is O-4, which is open and promises nothing. Passing the active
+language to `Intl` would translate the month names for free and with no catalogue entries,
+which is exactly why it is tempting — and it would settle O-4 on one screen while the rest of
+the site pinned `en-NZ` two pages away. **The alternative exists and belongs to O-4**; when
+O-4 is decided these three modules change together or not at all.
+`tests/web/test_period_picker_browser.py` asserts the pin from a German page.
+
+> **The 24-hour rule lives in the form and the 38-hour rule lives in the API, and neither
+> number may be copied onto the other side.** `MAX_HOURS_AHEAD` is 24 because this is the one
+> place where "now" is the visitor's own now and the two clocks being compared are the same
+> clock. `api/schemas.PERIOD_CEILING_HOURS` is 38 because the stored instants carry no zone,
+> so the server cannot tell which side of the date line a value was typed on and has to allow
+> 24 plus the widest civil UTC offset in use (+14). Tightening the server to 24 refuses a
+> shift somebody in Auckland entered correctly; loosening the form to 38 lets a period a day
+> and a half in the future through. `tests/web/test_period_form_bounds.py` reads both numbers
+> out of both files, asserts the arithmetic between them, and greps the browser module for a
+> stray `38`.
+
+> **What this leaves for later (WP4).** The nineteen new `t()` keys are not in the twenty
+> catalogues, so they render in English there until they are. Everything downstream of
+> `state.periodStart` / `state.periodEnd` landed at v1.68: `web/js/submission.js` sends both
+> fields on both payloads, `results.js` reads them back on the page and into the text
+> download, and `api/pdf_render.py` prints them on the document.
+
+> **`periodProblem` refuses `custom` with no interval (v1.68), and it takes the `time_frame`
+> as an argument so that it can.** §6.2 answers `period_custom_without_interval` to that
+> payload, and this form could build it two ways — choosing *Custom period* and typing
+> nothing, and pressing a preset and then emptying all four boxes, which demotes the answer
+> to `custom` and leaves nothing under it. `handlePeriodInput` decides the demotion first and
+> asks the question against the *demoted* answer — **and that ordering is deliberately not
+> claimed to be load-bearing today.** Swapping it back leaves every browser test green, and
+> that was measured rather than assumed: emptying a preset-filled interval takes four edits
+> and the demotion lands on the first of them, so by the last edit `state.timeFrame` already
+> reads `custom`. It is written that way because the agreement is an accident of there being
+> four boxes — a control that cleared the interval in one event would demote and empty on
+> the same keystroke, and a default read would then answer about `one_week`, which with no
+> interval is perfectly legal. The clause and the argument are asserted directly, in
+> `tests/web/test_period_rules.py`, where both time frames can actually be passed.
+
 ## 7.3c The fallback disclosure (v1.59, written by C and D; mirrored by B in the PDF)
 
 **One sentence, three surfaces, one field.** The results page, its plain-text export and §6.2.3's PDF each render the same caveat when a visitor named a food the published set does not price: *"%(food)s is priced at the %(category)s average. The published factor set carries no factors for this food, so the figures here are its category's rather than its own."*
@@ -4589,6 +4844,8 @@ The decision is `entries[].item_basis` and nothing else. **No surface may work i
 **The privacy copy names the food too (v1.59).** Both enumerating sentences on `home.html`, `index.html`, `methodology.html` and `stats.html` read *the sector, food category, the specific food where you name one, and the quantities entered*. `submission_entry.food_item_id` has been written since v1.58, so the old enumeration was already incomplete; the clause is worded *where you name one* so that it is true before landing step 8 as well as after it. `tests/web/test_consent_copy.py`'s predicate is over the copy rather than over a list of sentences, so the reworded pair is still selected by it.
 
 ## 7.3b `submission.js` — the one builder of the calculate request (written by C)
+
+> **It sends `period_start` and `period_end` from v1.68**, on **both** payloads, through one helper — and the paragraph below is exactly why it is both. `time_frame` was one of the four fields Compare Impact used to drop; v1.67 put two more columns beside it, and a period sent by Calculate and not by Compare is two `NULL`s a moment after the next click, in a row `ck_submission_period` would then have to be lenient about. **`state.periodStart` and `state.periodEnd` are sent as they are held** — `"2026-09-14T08:10"`, the wire's own shape — and nothing here builds a `Date`, calls `toISOString()` or takes an epoch millisecond: the first produces a zone-carrying value §6.2 refuses outright, and the second is worse, because a value *converted* to UTC is well-formed and says a different time. `''` in the state becomes `null` on the wire, because §2.3 records absence rather than a sentinel.
 
 > **It sends `food_item` from v1.60.** `foodItem` has travelled on every leaf since the fork, so the review step, the results page and the duplicate notice could label one, and it stopped at the payload boundary because `EntryPayload` was `extra="forbid"` with no such field -- sending it was a 400. v1.58 gave the model that field, which turned the withholding into the front end standing one revision behind the API. `entry.foodItem || null`, for the reason `food_category` beside it uses one: §6.2 reads absent and null the same way, and only the explicit null is distinguishable from a client written before the field existed.
 
@@ -4710,6 +4967,13 @@ export function submissionPayload(state, chains, alternativeFor);
  * folded into the frozen record `entryResultsFrom` (§7.2) built at Calculate time,
  * and this reads the same entries the visitor is looking at rather than a second
  * copy of the wizard's working state.
+ *
+ * **Carries the same `period_start` / `period_end` `submissionPayload` does (v1.68)**,
+ * from the same state through the same helper. `ExportPayload` inherits
+ * `PricingOptions` precisely so the two routes cannot disagree about a period one
+ * accepts and the other refuses, and two builders here would put that disagreement
+ * back one layer up. The route persists nothing, so this body is the only way the
+ * document learns which period its figures cover.
  *
  * @param {object} state
  * @param {string} locale  the interface language the visitor is reading — `i18n.js`'s
@@ -5688,6 +5952,8 @@ Every other code carries `details: []`, except §9.2's `BLOCKED`, which carries 
 
 On the field shape's three keys: `field` is §9's bracket path, `issue` is a stable machine-readable slug (Pydantic's error `type` where the failure is Pydantic's, e.g. `value_error`; a name this API chooses otherwise, e.g. `mass_not_conserved`, `bundle_invalid`), and `message` is per-field prose distinct from the envelope's single `message`, which describes the request as a whole. **Branch on `issue`, display `message`, target `field`.**
 
+> **A Pydantic-raised failure can carry a chosen slug too, and from v1.67 some do.** A validator that raises `ValueError` arrives as `issue: "value_error"` whatever went wrong with it, which is a slug a consumer cannot branch on — the defect v1.22 fixed for `prevention_in_current` by moving that rule out of Pydantic entirely. Where the rule genuinely belongs in Pydantic, raising `pydantic_core.PydanticCustomError(slug, message)` instead sets the error's `type` to `slug`, so the value that reaches `issue` is this API's name and not Pydantic's generic one. §6.2's seven `period_*` slugs are the first to use it. **Nothing about the envelope changes**; this is how an `issue` gets a name without the rule having to leave the schema.
+
 > **Both halves of this were wrong until v1.5, in opposite directions.** The `message` key was emitted from the first commit and shown in no version of this section, while `tests/fixtures/errors/validation_error.json` has always carried it — so a front end built from the old sample rendered `Request validation failed` against every highlighted row and discarded the only text saying what was wrong with that row. And `api/router.py`'s inline-bundle check emitted a *third* shape, `{field, issue}` with no `message`, putting `FactorBundle.validate()`'s human-readable prose (§4.1) into `issue` — inverting the two keys, so a consumer told to branch on `issue` got a sentence that changes whenever the engine's wording changes, and found no `message` to display. **The code was corrected to the contract rather than the contract widened to the code**, because two shapes a consumer can predict from `code` is a contract, and three shapes it must sniff at runtime is not.
 
 **`field` is a bracket-indexed path into the request body**, exactly as a front end would write it: `entries[0].current[1].qty_kg`. Array positions are `[n]`, object keys are `.key`, and the path starts at the root of the request.
@@ -5795,11 +6061,11 @@ Located in `tests/fixtures/`. C and D consume these directly before the backend 
 | File | Content |
 | --- | --- |
 | `taxonomy.json` | A complete `GET /taxonomy` response: six sectors, ten food categories including `standard_mix`, **an empty `food_items` array and `factor_set.item_level_enabled: false` (v1.58) — which is what every deployment returns, because `admin/seed.py` seeds no `food_item`**, **fourteen destinations across the three `destination_group` rows `reuse`, `recycle_recovery` and `disposal`** — `prevention` is a destination in the `reuse` group, not a group of its own — the metrics, and the unit presets. **Its codes are `admin/seed.py`'s codes**, not prose invented for the fixture — `code` is the cross-layer identifier (§1.1), and a fixture that renames one produces a front end bound to a code the API will never send |
-| `calculate_request.json` | A two-entry `POST /calculate` request (§6.2), mass-conserving per entry, and the request that produces `calculate_response.json`. **From v1.48 it carries all four context fields**: `time_frame` at the top level, both money figures on both entries, and `total_input_kg` on **one** entry only, so that the present and the absent shapes are both exercised. Its two entries are priced at $4.50/kg and $5.00/kg, which is what makes §4.5's per-entry rate visible in the response beside it — a blended rate answers 3,739.13 where the fixture says 4,000.00 |
+| `calculate_request.json` | A two-entry `POST /calculate` request (§6.2), mass-conserving per entry, and the request that produces `calculate_response.json`. **From v1.48 it carries all four context fields**: `time_frame` at the top level, both money figures on both entries, and `total_input_kg` on **one** entry only, so that the present and the absent shapes are both exercised. Its two entries are priced at $4.50/kg and $5.00/kg, which is what makes §4.5's per-entry rate visible in the response beside it — a blended rate answers 3,739.13 where the fixture says 4,000.00. **From v1.67 it also carries `period_start` and `period_end` beside its `one_year`** — the preset-as-template shape, which is the one a preset button produces from this revision on |
 | `calculate_response.json` | The corresponding 200 body: `totals` plus two `entries`, dual scenario, with `by_destination` per entry **and, from v1.48, at the totals level too** — summed `qty_kg` and `value`, both rate fields at `"0.0000000000"` (§3 rule 2) — and a populated `totals.money` (§4.5) |
 | `calculate_response_single.json` | A 200 body with no alternative scenario: `alternative` and `net_benefit` null at both levels (§3 rule 4), and `"money": null`, which is v1.48's absent case on the wire |
 | `calculate_request_partial_coverage.json` / `calculate_response_partial_coverage.json` | **Added in the v1.50 review.** Neither of the two pairs above ever gave a money field `incomplete` or the share `complete` — `calculate_response.json` is `complete` in all four money fields and `incomplete` in the share, `calculate_response_single.json` is `not_supplied` throughout — so §4.5's rewrite, the state its own callout describes, was never exercised by a fixture. This pair's second entry supplies `total_input_kg` but no money figures, which makes the share `complete` (`"21.30"`) and all four money fields `incomplete` (`null`, with `data_state` naming the reason) at once. Not hand-typed: it is `engine.calculate.calculate`'s own output for that request, saved once, the same discipline the canonical pair was built with. `tests/api/test_fixture_consistency.py::test_every_data_state_value_is_exercised_somewhere_in_the_fixtures` fails without it |
-| `export_pdf_request.json` | **v1.49.** **The one request fixture that carries no `food_item` key at all, and deliberately so (v1.58): it is what proves an absent key is accepted, which no file that always sends the key can prove.** A `POST /export/pdf` request (§6.2.3): `calculate_request.json`'s two entries, with `token` and `dry_run` dropped — `ExportPayload` declares neither and `extra="forbid"` refuses both — and `locale: "ar"` added, so the one fixture exercising this route also exercises a right-to-left catalogue. `tests/api/test_export_pdf.py` posts it to the real route rather than reshaping `calculate_request.json` at test time, so a field this file gets wrong fails the same test a hand-built payload could quietly pass |
+| `export_pdf_request.json` | **v1.49.** **The one request fixture that carries no `food_item` key at all, and deliberately so (v1.58): it is what proves an absent key is accepted, which no file that always sends the key can prove.** A `POST /export/pdf` request (§6.2.3): `calculate_request.json`'s two entries, with `token` and `dry_run` dropped — `ExportPayload` declares neither and `extra="forbid"` refuses both — and `locale: "ar"` added, so the one fixture exercising this route also exercises a right-to-left catalogue. **From v1.67 it carries `time_frame: "custom"` with a shift — 08:10 to 16:20 — and is the only fixture naming the vocabulary's fifth member.** `tests/api/test_export_pdf.py` posts it to the real route rather than reshaping `calculate_request.json` at test time, so a field this file gets wrong fails the same test a hand-built payload could quietly pass |
 | `stats.json` | A `GET /stats` response with a suppressed `other` bucket in every breakdown, an `unspecified` food-category bucket, and shares that sum to exactly 1 |
 | `factors.json` | A `GET /factors` response: constants, five formulas, upstream and downstream rows including a **negative** downstream factor and a generic (`food_category: null`) row, and `source_note` / `data_quality` on every row. **`prevention` is at zero on both sides** — all three downstream rows, and since v1.8 an upstream row for every `(sector, food_category, metric)` that has a general one (open item O-7). `test_prevention_is_a_whole_offset_upstream_as_well_as_down` is what keeps the upstream half complete |
 | `errors/*.json` | **Seven files, one per §9 code that has a fixed body**: `validation_error`, `unknown_code`, `unauthorized`, `blocked`, `rate_limited`, `formula_error`, `no_published_factor_set`. `errors/blocked.json` is the only one whose `details` is `null` rather than `[]` (§9.2) |
@@ -5812,7 +6078,7 @@ A fixture that agrees with nothing is a fixture that drifts. Two test modules ho
 
 | Module | What it holds | Examples |
 | --- | --- | --- |
-| `tests/api/test_fixture_consistency.py` | The fixtures against **each other, the arithmetic, and `admin/seed.py`** — no HTTP, no app | Every decimal is a string at the contracted scale; no fixture leaks a primary key (§1.1); the request and the response describe the same calculation; every entry conserves mass to §6.2's 0.010 kg; a destination's factors do not change between scenarios; the response's own arithmetic closes; every line equals its formula applied to `factors.json`; every equivalence is derived from the metric total it names; **the totals-level `by_destination` partitions its metric total exactly and both of its rate fields are zero** (v1.48); `taxonomy.json`'s codes **and names** are the shipped seeds; `prevention` never appears in a current scenario; **`export_pdf_request.json` conserves mass to the same 0.010 kg and carries neither `token` nor `dry_run`** (v1.49); `stats.json`'s shares sum to 1; every §9 code has a fixture; `blocked` is the one `details: null`; `details[].field` uses the bracket form |
+| `tests/api/test_fixture_consistency.py` | The fixtures against **each other, the arithmetic, and `admin/seed.py`** — no HTTP, no app | Every decimal is a string at the contracted scale; no fixture leaks a primary key (§1.1); the request and the response describe the same calculation; every entry conserves mass to §6.2's 0.010 kg; a destination's factors do not change between scenarios; the response's own arithmetic closes; every line equals its formula applied to `factors.json`; every equivalence is derived from the metric total it names; **the totals-level `by_destination` partitions its metric total exactly and both of its rate fields are zero** (v1.48); `taxonomy.json`'s codes **and names** are the shipped seeds; `prevention` never appears in a current scenario; **`export_pdf_request.json` conserves mass to the same 0.010 kg and carries neither `token` nor `dry_run`** (v1.49); `stats.json`'s shares sum to 1; every §9 code has a fixture; `blocked` is the one `details: null`; `details[].field` uses the bracket form; **the four request fixtures between them exercise all three legal period shapes** — a preset with an interval, `custom` with an interval, and a preset alone, which is the pre-v1.67 shape that must go on being accepted (v1.67) |
 | `tests/api/test_api.py` | The fixtures against **real responses from the real app** | `test_contract_fixtures_have_the_same_top_level_shapes` (taxonomy, both calculate responses), `test_factors_fixture_matches_the_published_export`, `test_stats_fixture_shape_holds_against_a_populated_database`, and the per-code error assertions inside the behavioural tests |
 
 Both matter, and neither substitutes for the other. The shape check proves the API can produce the fixture; it cannot prove the fixture's numbers are right, because `_assert_shape` compares JSON types and key sets rather than values — which is exactly how a `stats.json` of three empty arrays and a `calculate_response.json` of empty `metrics` passed for two revisions while giving C and D nothing to build against. The consistency check proves the numbers, and cannot prove the API emits them.

@@ -3541,3 +3541,106 @@ def test_the_equivalence_explanation_does_not_overflow(browser, language, width)
         )
     finally:
         context.close()
+
+
+# ------------------------------------------------- the reporting period (v1.68)
+#
+# Item ⑦ gained an interval at v1.67 and a sentence that can say it at v1.68.
+# Everything below is driven through `buildResultsReport` and `renderResults`
+# from one state in one Node process, because §7.3c requires the screen and the
+# file to carry the SAME sentence and a test of one of them proves nothing about
+# the other — the fault this whole file was written against.
+
+
+def _state_with_period(time_frame, start="", end=""):
+    """`build_state`'s shape with §6.2's three period fields set.
+
+    The two instants are in the wire's own shape, `YYYY-MM-DDTHH:MM`, because
+    that is what `state.periodStart` holds — a hand-written `Date` here would
+    be testing a state the calculator cannot reach.
+    """
+    state = build_state()
+    state["timeFrame"] = time_frame
+    state["periodStart"] = start
+    state["periodEnd"] = end
+    return state
+
+
+#: The client's own example: a shift, 08:10 to 16:20.
+SHIFT = ("2026-09-14T08:10", "2026-09-14T16:20")
+
+
+@node
+def test_the_export_prints_a_hand_picked_period_as_its_two_instants(tmp_path):
+    """The shift, in the downloaded file.
+
+    **`dd/mm/yyyy`, not `2026-09-14T08:10`.** The wire shape is what the API
+    stores; what a person opens has to read the way the box they typed it into
+    read, which is `en-NZ` — the pin `web/js/stats.js` and `web/js/home.js`
+    carry and the reason written beside them is O-4.
+    """
+    report = report_for(tmp_path, _state_with_period("custom", *SHIFT))
+    assert "These figures cover: 14/09/2026 08:10 – 14/09/2026 16:20" in report
+    assert "2026-09-14T08:10" not in report, (
+        "the file printed the wire shape rather than the period as a person reads it"
+    )
+    assert "custom" not in report.lower(), (
+        "the file printed the vocabulary word instead of the dates"
+    )
+
+
+@node
+def test_the_export_prints_a_preset_and_the_interval_it_filled(tmp_path):
+    """v1.67's normal case. Both halves, for the reason the line exists: the
+    phrase records which shortcut was pressed and the interval records what it
+    filled, and the client's first question of this column needs both to be
+    answerable."""
+    report = report_for(tmp_path, _state_with_period("one_week", *SHIFT))
+    assert (
+        "These figures cover: One week · 14/09/2026 08:10 – 14/09/2026 16:20" in report
+    )
+
+
+@node
+def test_the_export_still_prints_a_preset_that_filled_nothing(tmp_path):
+    """Every submission made before v1.67 is this shape and must go on reading
+    as what it always read as — with no dangling separator where the dates
+    would have been."""
+    report = report_for(tmp_path, _state_with_period("one_month"))
+    assert "These figures cover: One month" in report
+    assert "These figures cover: One month ·" not in report
+
+
+@node
+def test_the_export_prints_no_period_line_when_none_was_stated(tmp_path):
+    """"Not stated" renders nothing, the same way an unstated money figure
+    does — never the label with nothing after it."""
+    assert "These figures cover" not in report_for(tmp_path, _state_with_period(""))
+
+
+@node
+def test_the_screen_and_the_file_carry_the_identical_period_sentence(tmp_path):
+    """§7.3c, and the reason `periodLine` and `resultsPeriod` share one
+    function rather than each formatting the period themselves.
+
+    A visitor reads the line on the results page and then opens the file they
+    downloaded from it. Two sentences about one fact is two sentences the day
+    one of them is reworded — and this is asserted across all three shapes,
+    because a helper that agreed on the simple case and diverged on the preset
+    one would pass a single-state check.
+    """
+    for time_frame, start, end in (
+        ("custom", *SHIFT),
+        ("one_week", *SHIFT),
+        ("one_year", "", ""),
+    ):
+        state = _state_with_period(time_frame, start, end)
+        report = report_for(tmp_path, state)
+        screen = screen_for(tmp_path, state)
+        sentence = next(
+            line for line in report.splitlines() if line.startswith("These figures cover")
+        )
+        assert sentence in screen, (
+            f"{time_frame}: the page and the file word the period differently.\n"
+            f"file: {sentence!r}"
+        )

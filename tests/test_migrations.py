@@ -382,6 +382,80 @@ def test_the_chain_creates_the_check_constraints_compare_metadata_cannot_see(
     assert "food_item_id" in clauses["ck_submission_entry_item_has_category"]
     assert "food_category_id" in clauses["ck_submission_entry_item_has_category"]
 
+    #: 0018's one CHECK (contract §2.3, v1.67), and the blind spot again:
+    #: tests/db/test_submissions.py proves all six refusals behaviourally off
+    #: the create_all() schema and would stay green if the op.execute here
+    #: were dropped. This constraint is the half of v1.67's contradiction rule
+    #: that holds against a writer which is not the API -- the panel, a CLI, a
+    #: correction made by hand -- so losing it in a deployment loses exactly
+    #: the guarantee it was added for, and losing it silently.
+    assert "ck_submission_period" in clauses, (
+        "alembic upgrade head did not create ck_submission_period. Without it "
+        "a row may carry half an interval, an interval that runs backwards, "
+        "time_frame='custom' with no dates, or dates with no time_frame at "
+        f"all. Found: {sorted(clauses)}"
+    )
+    for column in ("period_start", "period_end", "time_frame"):
+        assert column in clauses["ck_submission_period"], (
+            f"ck_submission_period no longer mentions {column}; the "
+            "contradiction rule spans all three columns and a clause that "
+            "dropped one of them would still be a constraint that exists, is "
+            "named right and enforces less than it says. "
+            f"Clause: {clauses['ck_submission_period']}"
+        )
+
+
+@pytest.mark.db
+def test_the_chain_gives_the_submission_its_period_columns(migrated_engine):
+    """Contract §2.3, v1.67. `0018`'s two columns, read back out of MySQL.
+
+    `compare_metadata` would catch a missing column, so this is not closing a
+    blind spot -- it is pinning the two things about these columns that a
+    diff would happily agree with and that the design depends on:
+
+    * **`DATETIME`, never a `FLOAT` or a `DOUBLE`.** §1.2 prohibits both
+      outright. The temptation is not the instants themselves but the
+      *duration* between them, which is the natural shape for a float and
+      which this schema deliberately does not store -- nothing derives a
+      length from the period, because §2.3 forbids computing with it at all.
+    * **Nullable.** Absence is how "no period was given" is represented, for
+      every row written before this revision and for every visitor who leaves
+      step 5 at "Not stated". A NOT NULL column here would have needed a
+      backfill, and there is no instant that could be back-filled honestly.
+    """
+    with migrated_engine.connect() as conn:
+        columns = {
+            row[0]: (row[1], row[2], row[3])
+            for row in conn.execute(text("""
+                SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, DATETIME_PRECISION
+                FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'submission'
+            """)).all()
+        }
+
+    for column in ("period_start", "period_end"):
+        assert column in columns, (
+            f"alembic upgrade head did not add submission.{column}. "
+            f"Columns found: {sorted(columns)}"
+        )
+        data_type, nullable, precision = columns[column]
+        assert data_type == "datetime", (
+            f"submission.{column} is {data_type}, not datetime. §1.2 "
+            "prohibits FLOAT and DOUBLE, and a period is two instants rather "
+            "than a duration for that reason among others"
+        )
+        assert nullable == "YES", (
+            f"submission.{column} is NOT NULL. Absence is how 'no period was "
+            "given' is stored (§2.3); a NOT NULL column would demand a "
+            "backfill nobody can supply honestly"
+        )
+        assert precision == 0, (
+            f"submission.{column} carries {precision} digits of "
+            "fractional-seconds precision. The wire drops microseconds "
+            "before the value is written (api.schemas.PricingOptions) "
+            "precisely because the column does not keep them"
+        )
+
 
 @pytest.mark.db
 def test_the_chain_gives_the_factor_tables_bigint_primary_keys(migrated_engine):

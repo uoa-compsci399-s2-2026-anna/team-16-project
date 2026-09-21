@@ -6,6 +6,7 @@ import { escapeHtml, formatNumber, slug, stepNav } from './view.js'
 import { t } from './i18n.js'
 import { armContribute, bindResultsSectionSpy, cancelContribute, downloadPdf, downloadResults, renderResults, resultsNavIsDocked } from './results.js'
 import { compareImprovement, openImprovement, resetImprovement, updateImprovementInput } from './improvement.js'
+import { handlePeriodClick, handlePeriodInput, handlePeriodKeydown, PeriodField, periodProblem, timeFrameChanged } from './period.js'
 
 const decimalPattern = /^\d+(\.\d{1,2})?$/
 
@@ -1400,6 +1401,18 @@ const leafCountNote = (chains, leaves) => (chains === 1
   ? t('This entry will be calculated as %(leaves)s food-type entries.', { leaves })
   : t('These %(chains)s entries will be calculated as %(leaves)s food-type entries.', { chains, leaves }))
 
+/**
+ * Every reason the review step's Calculate is off that has nothing to do with the
+ * reporting period.
+ *
+ * Pulled out so that `period.js`'s typing fast path can ask the identical question
+ * this render path just asked. That path patches the button by hand rather than
+ * re-rendering (§7.3a's documented exception — a `setState` per keystroke destroys
+ * the caret), and a fast path that knew only its own half of the condition would
+ * re-enable Calculate on a corrected date while a request was still in flight.
+ */
+const calculateOtherwiseDisabled = () => state.loading || Date.now() < state.rateLimitedUntil || blocked()
+
 function reviewStep() {
   const sector = selected(state.taxonomy.sectors, state.sector)
   const draft = draftChain()
@@ -1420,7 +1433,7 @@ function reviewStep() {
   // screens, and meet the ceiling as a 400 the form had every means to prevent.
   const noRoomForAnother = addEntryRefused()
   return `<section class="content-section wide" aria-labelledby="review-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 5 }))}</p><h1 id="review-title">${escapeHtml(t('Review your information'))}</h1><p class="section-intro">${escapeHtml(t('Check this entry, or add another supply-chain entry before viewing the combined results.'))}</p>
-    <div class="form-field time-frame-field"><label for="time-frame">${escapeHtml(t('What period do these figures cover?'))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('Optional — it only labels your figures, it never changes a result.'))}</p><select id="time-frame"><option value="" ${!state.timeFrame ? 'selected' : ''}>${escapeHtml(t('Not stated'))}</option><option value="one_week" ${state.timeFrame === 'one_week' ? 'selected' : ''}>${escapeHtml(t('One week'))}</option><option value="one_month" ${state.timeFrame === 'one_month' ? 'selected' : ''}>${escapeHtml(t('One month'))}</option><option value="one_quarter" ${state.timeFrame === 'one_quarter' ? 'selected' : ''}>${escapeHtml(t('One quarter'))}</option><option value="one_year" ${state.timeFrame === 'one_year' ? 'selected' : ''}>${escapeHtml(t('One year'))}</option></select></div>
+    <div class="form-field time-frame-field"><label for="time-frame">${escapeHtml(t('What period do these figures cover?'))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('Optional — it only labels your figures, it never changes a result.'))}</p><select id="time-frame"><option value="" ${!state.timeFrame ? 'selected' : ''}>${escapeHtml(t('Not stated'))}</option><option value="one_week" ${state.timeFrame === 'one_week' ? 'selected' : ''}>${escapeHtml(t('One week'))}</option><option value="one_month" ${state.timeFrame === 'one_month' ? 'selected' : ''}>${escapeHtml(t('One month'))}</option><option value="one_quarter" ${state.timeFrame === 'one_quarter' ? 'selected' : ''}>${escapeHtml(t('One quarter'))}</option><option value="one_year" ${state.timeFrame === 'one_year' ? 'selected' : ''}>${escapeHtml(t('One year'))}</option><option value="custom" ${state.timeFrame === 'custom' ? 'selected' : ''}>${escapeHtml(t('Custom period'))}</option></select>${PeriodField()}</div>
     ${state.entries.length ? `<section class="saved-entries"><div class="section-heading-row"><h2>${escapeHtml(t('Added entries'))}</h2><span>${state.entries.length}</span></div>${state.entries.map(entryCard).join('')}</section>` : ''}
     <div class="section-heading-row current-entry-heading ${entryProblem(state.entries.length) ? 'has-error' : ''}"><h2>${escapeHtml(t('Current entry %(number)s', { number: state.entries.length + 1 }))}</h2><span>${escapeHtml(t('Ready to calculate'))}</span></div>${entryProblemHtml(state.entries.length)}
     <article class="review-block"><div class="section-heading-row"><h2>${escapeHtml(t('Supply-chain stage'))}</h2>${reviewEdit(0)}</div><p>${escapeHtml(sector?.name || state.sector)}</p></article>
@@ -1435,7 +1448,7 @@ function reviewStep() {
       step: 4,
       back: 3,
       label: state.loading ? t('Calculating…') : Date.now() < state.rateLimitedUntil ? t('Try again shortly') : state.entries.length ? t('Calculate results for %(count)s entries', { count: chains }) : t('Calculate impact'),
-      disabled: state.loading || Date.now() < state.rateLimitedUntil || blocked(),
+      disabled: calculateOtherwiseDisabled() || Boolean(periodProblem().message),
       action: 'calculate',
     })}</section>`
 }
@@ -2524,6 +2537,9 @@ export function bindCalculator(main, retryTaxonomy) {
     const control = event.target.closest('[data-action]')
     if (!control) return
     const action = control.dataset.action
+    // Step 5's calendar owns four actions and answers whether it took the click,
+    // so the chain below is not extended by a component that has its own module.
+    if (handlePeriodClick(action, control, event)) return
     if (action === 'start') setState({ step: 0, returnTo: null, ...clearedError() })
     // **A declined discard ends the click**, exactly as `edit-entry`'s own declined
     // question below already did. `goToStep` returning early was not enough on its own:
@@ -2738,7 +2754,11 @@ export function bindCalculator(main, retryTaxonomy) {
     if (target.name === 'sector') setState({ sector: target.value, error: null, errorAt: null })
     if (target.name === 'food-category') toggleFoodChoice(target)
     if (target.name === 'food-item') toggleFoodItem(target)
-    if (target.id === 'time-frame') setState({ timeFrame: target.value })
+    // v1.67: the four presets are templates now, so choosing one fills the
+    // interval (`period.js::timeFrameChanged`) and `time_frame` goes on recording
+    // which shortcut was pressed. "Not stated" clears it, because the two columns
+    // mean "no period was given" by absence.
+    if (target.id === 'time-frame') setState(timeFrameChanged(target.value))
     // One control, both modes. `current: []` was already this handler's behaviour and the
     // reason is unchanged and now broader: the destination amounts were entered against a
     // total in a unit that is no longer the one in force.
@@ -2916,6 +2936,11 @@ export function bindCalculator(main, retryTaxonomy) {
 
   main.addEventListener('input', event => {
     const target = event.target
+    // The period's four text boxes, and they deliberately do not go through
+    // `setState` — see `period.js`'s header. `calculateOtherwiseDisabled()` is
+    // handed over so the button it patches carries the whole condition and not
+    // just this field's half of it.
+    if (handlePeriodInput(event, calculateOtherwiseDisabled())) return
     // **Keyed on `data-leaf-field`, never on an id.** There are N of each of these boxes
     // now, one per leaf, and the id is only a label target.
     if (target.dataset.leafField === 'amount' && !target.dataset.lineId) {
@@ -2960,6 +2985,10 @@ export function bindCalculator(main, retryTaxonomy) {
   })
 
   main.addEventListener('keydown', event => {
+    // The calendar's own keyboard: the arrows, Page Up/Down, Home/End, Enter,
+    // Space, Esc and the Tab cycle that keeps focus inside an `aria-modal`
+    // dialog. It answers whether it took the key.
+    if (handlePeriodKeydown(event)) return
     const tab = event.target.closest('[data-action="breakdown-tab"]')
     if (!tab || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
     event.preventDefault()

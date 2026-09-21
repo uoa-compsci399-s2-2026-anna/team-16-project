@@ -1709,8 +1709,12 @@ def test_the_review_step_asks_what_period_the_figures_cover(page_at):
     per-entry loop where a visitor with three entries would be asked three
     times.
 
-    The values are the four §6.2 accepts. A fifth would be refused by the API
+    The values are the five §6.2 accepts. A sixth would be refused by the API
     after the visitor pressed Calculate.
+
+    **`custom` is the fifth, from v1.67.** It is the option that reveals the
+    date-and-time fields; the other four now fill them as templates and go on
+    recording which shortcut was pressed.
     """
     #: `4`, not the UI's own "Step 5" label - `walk()`'s numeric yields are
     #: one behind the 1-based on-screen label; `4` is the review screen,
@@ -1727,7 +1731,7 @@ def test_the_review_step_asks_what_period_the_figures_cover(page_at):
     values = select.locator("option").evaluate_all(
         "options => options.map(o => o.value)"
     )
-    assert values == ["", "one_week", "one_month", "one_quarter", "one_year"], (
+    assert values == ["", "one_week", "one_month", "one_quarter", "one_year", "custom"], (
         f"the period vocabulary does not match what the API accepts: {values}"
     )
 
@@ -1735,7 +1739,11 @@ def test_the_review_step_asks_what_period_the_figures_cover(page_at):
     # by it - and a visitor who picks "one week" has no way to know that from
     # the label alone. The natural assumption runs the other way, so the hint
     # carries the fact the label cannot.
-    hint = page.locator(".time-frame-field .field-hint")
+    #: `>` rather than a descendant selector: v1.67's period fields carry a
+    #: second `.field-hint` (the `dd/mm/yyyy` format note) inside this same
+    #: block whenever a period is stated, and a descendant match would count
+    #: both and fail on a screen that is working correctly.
+    hint = page.locator(".time-frame-field > .field-hint")
     assert hint.count() == 1, "the period selector has no explanatory hint"
     assert hint.is_visible(), "the period hint exists but is not visible"
     assert "result" in hint.inner_text().lower(), (

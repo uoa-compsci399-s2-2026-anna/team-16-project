@@ -93,6 +93,32 @@ export const state = {
   // values are exactly what §6.2 accepts as `time_frame`, and the engine is
   // never given it.
   timeFrame: '',
+  // v1.67. The interval the period covers, to the minute - a shift, 08:10 to
+  // 16:20 (`web/js/period.js`, §6.2). Two strings in the wire's own shape,
+  // `YYYY-MM-DDTHH:MM`, or `''` for "no period was given"; §6.2 appends the
+  // seconds. **Local wall-clock time carrying no zone**, which is adequate for
+  // a label and inadequate for comparing one submission against another -
+  // `submission.period_start` in §2.3 says the same thing where the column is
+  // defined, and it is said here as well because this is where the value is
+  // first written down.
+  //
+  // **They hold a value only while the whole period is legal.** A half-typed
+  // date empties both, so a stale instant from three keystrokes ago can never
+  // be the thing that gets sent.
+  periodStart: '',
+  periodEnd: '',
+  // What is actually typed in the four boxes - `startDate`, `startTime`,
+  // `endDate`, `endTime` - kept raw and unparsed. Separate from the two above
+  // because `render()` replaces `main.innerHTML` on every `setState`: the text
+  // has to survive a re-render exactly as typed, including while it is half a
+  // date and parses to nothing.
+  periodFields: { startDate: '', startTime: '', endDate: '', endTime: '' },
+  // The calendar dialog: `null` when closed, else `{ field, cursor, openerId }`.
+  // Open-ness, the day the roving `tabindex` sits on and the control focus
+  // returns to on close are all here rather than in the DOM, for the same
+  // reason `improvementChartExpanded` is: a re-render would otherwise close the
+  // dialog and lose the cursor on the next keystroke anywhere on the step.
+  periodPicker: null,
   // §7.2's key list, and nothing beyond it. `alternative: []` and `compareAlternative: false`
   // stood here and in `resetCalculator` below, were assigned `[]` / never assigned by two
   // functions in `calculator.js`, and were read by nothing: the alternative scenario is built
@@ -501,6 +527,10 @@ export function resetCalculator() {
     totalUnit: 'kilograms',
     leafFigures: {},
     timeFrame: '',
+    periodStart: '',
+    periodEnd: '',
+    periodFields: { startDate: '', startTime: '', endDate: '', endTime: '' },
+    periodPicker: null,
     entries: [],
     result: null,
     error: null,

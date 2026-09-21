@@ -36,15 +36,31 @@ route that persists nothing and always prices the published set, and
 inheriting them would invite a caller to believe one of them does something
 here.
 
-**But it no longer repeats that model's validators.** ``gwp_horizon`` and
-``time_frame`` — and the two closed-vocabulary checks over them — now live on
-``api.schemas.PricingOptions``, which both payloads inherit. Task 2's
-implementer flagged the duplication and was right to: duplicated validators
-drift, and a horizon this route accepted while ``/calculate`` refused it would
-mean two documents of one request disagreeing about methane, with nothing to
-say which was right. The shared base carries exactly the two fields the two
-models have in common and none of the four they do not, so the reason for not
-inheriting ``CalculatePayload`` is untouched.
+**But it no longer repeats that model's validators.** ``gwp_horizon``,
+``time_frame`` and — from v1.67 — ``period_start`` and ``period_end``, with
+every check over them, live on ``api.schemas.PricingOptions``, which both
+payloads inherit. Task 2's implementer flagged the duplication and was right
+to: duplicated validators drift, and a horizon this route accepted while
+``/calculate`` refused it would mean two documents of one request disagreeing
+about methane, with nothing to say which was right. v1.67's interval joined
+them there for the same reason — a download and the calculation it documents
+must not disagree about the period the figures cover either. The shared base
+carries exactly the fields the two models have in common and none of the four
+they do not, so the reason for not inheriting ``CalculatePayload`` is
+untouched.
+
+**This route persists nothing, so the interval is a label here and not even a
+stored one.** ``period_start`` and ``period_end`` reach ``ExportPayload`` so
+that the document can print the period its figures cover; no row is written,
+and ``upsert_submission`` is not called (see above).
+
+**And from v1.68 the document does print it.** ``render_export_pdf`` hands the
+payload itself to the renderer as its ``period``, because the payload is
+already exactly the three fields a period is -- ``time_frame``,
+``period_start`` and ``period_end`` -- and passing it whole is what stops a
+fourth shape of "a period" existing. ``api/pdf_render.py::_period_text`` is
+where it becomes a sentence, and it is the same sentence
+``web/js/results.js`` puts on the screen and into the text download.
 """
 
 from __future__ import annotations
@@ -125,8 +141,18 @@ def render_export_pdf(
     dropped it produces a 500 rather than a quiet placeholder document
     somebody forwards.
 
+    `period` is the payload itself (v1.68), which already carries exactly the
+    three fields a reporting period is — `time_frame`, `period_start` and
+    `period_end`, all three inherited from `PricingOptions`. Passing the whole
+    payload rather than unpacking the three is deliberate: a fourth object
+    meaning "a period" is a fourth thing that can disagree with the other
+    three, and the renderer reads them by name the same way it reads `result`
+    and `taxonomy`.
+
     This function performs no arithmetic and no formatting of its own; it is
-    three arguments and a call, so that there is exactly one place a figure is
+    four arguments and a call, so that there is exactly one place a figure is
     turned into text.
     """
-    return render_results_pdf(result, taxonomy, payload.locale, generated_at)
+    return render_results_pdf(
+        result, taxonomy, payload.locale, generated_at, period=payload
+    )

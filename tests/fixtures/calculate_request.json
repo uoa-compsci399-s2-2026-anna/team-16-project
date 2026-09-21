@@ -2,6 +2,8 @@
   "token": null,
   "gwp_horizon": 100,
   "time_frame": "one_year",
+  "period_start": "2025-07-01T00:00:00",
+  "period_end": "2026-06-30T23:59:00",
   "entries": [
     {
       "sector": "processing",

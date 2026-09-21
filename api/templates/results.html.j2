@@ -113,6 +113,26 @@
   </div>
 </header>
 
+{#- THE REPORTING PERIOD (contract v1.68). One line, above every figure and
+    below the masthead, in the same place and the same words
+    `web/js/results.js` puts it on the screen and into the text download - a
+    figure somebody keeps for months has to carry the period it describes, and
+    this document printed none at all until v1.68 although `time_frame` had
+    reached its payload since v1.48.
+
+    A LABEL, NOT A MULTIPLIER. It sits on its own rather than beside any
+    figure, exactly as it does on screen, because nothing below it is scaled by
+    it (§2.3) and a period printed next to a total invites the reader to do the
+    arithmetic the contract forbids.
+
+    `api/pdf_render.py::_period_text` decides what it says and whether there is
+    anything to say; this only chooses where it sits. Absent when the visitor
+    stated no period - never "not stated", which would be a phrase implying
+    that is itself a period. -#}
+{% if doc.period %}
+<p class="period">{{ doc.period }}</p>
+{% endif %}
+
 <div class="summary">
   <div class="summary__item">
     <span class="summary__label">{{ doc.labels.total_mass }}</span>

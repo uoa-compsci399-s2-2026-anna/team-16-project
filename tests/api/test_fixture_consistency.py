@@ -1130,6 +1130,68 @@ def test_every_data_state_value_is_exercised_somewhere_in_the_fixtures():
         )
 
 
+#: Every request-shaped fixture, and what §6.2's period rules say about it.
+_REQUEST_FIXTURES = (
+    "calculate_request.json",
+    "calculate_request_partial_coverage.json",
+    "calculate_request_zero_totals.json",
+    "export_pdf_request.json",
+)
+
+
+def test_the_request_fixtures_exercise_the_period_present_and_absent():
+    """§6.2, v1.67. The fixtures are the executable contract, so the shapes
+    they carry are the shapes a front end builds against.
+
+    All three legal states must appear across the four request fixtures, or
+    a front end (and a backend contract test) develops against whichever
+    happened to be convenient:
+
+    * **a preset with an interval** -- v1.67's designed normal case, since
+      the presets became templates that fill the picker;
+    * **`custom` with an interval** -- the visitor choosing dates themselves,
+      and the only fixture appearance of the vocabulary's fifth member;
+    * **a preset with no interval** -- the shape of every row written before
+      v1.67, and the shape the deployed front end still sends until WP3
+      lands. A suite in which it disappeared would stop noticing if a later
+      revision made the old shape a 400.
+
+    The *illegal* states are not fixtured, deliberately: a fixture is an
+    example of a valid document, and `tests/api/test_api.py` and
+    `tests/test_schemas.py` hold the refusals instead. What is asserted here
+    is that none of the four has drifted into one of them.
+    """
+    seen = set()
+    for name in _REQUEST_FIXTURES:
+        body = load(name)
+        time_frame = body.get("time_frame")
+        start, end = body.get("period_start"), body.get("period_end")
+
+        assert (start is None) == (end is None), (
+            f"{name} carries half an interval, which §6.2 refuses outright"
+        )
+        if start is not None:
+            assert time_frame is not None, (
+                f"{name} carries an interval and no time_frame, which §6.2 "
+                "refuses: 'Not stated' cannot be carrying dates"
+            )
+            assert start <= end, f"{name}'s period runs backwards"
+        else:
+            assert time_frame != "custom", (
+                f"{name} says time_frame 'custom' and names no dates, which "
+                "§6.2 refuses: 'custom' means the visitor chose these dates"
+            )
+        seen.add(
+            (time_frame == "custom", start is not None) if time_frame else None
+        )
+
+    assert {(False, True), (True, True), (False, False)} <= seen, (
+        "the request fixtures no longer cover all three legal period shapes "
+        "(preset+interval, custom+interval, preset alone); they cover "
+        f"{sorted(x for x in seen if x is not None)}"
+    )
+
+
 # ---------------------------------------------------------------- statistics
 
 

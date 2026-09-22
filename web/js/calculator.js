@@ -6,7 +6,7 @@ import { escapeHtml, formatNumber, slug, stepNav } from './view.js'
 import { t } from './i18n.js'
 import { armContribute, bindResultsSectionSpy, cancelContribute, downloadPdf, downloadResults, renderResults, resultsNavIsDocked } from './results.js'
 import { compareImprovement, openImprovement, resetImprovement, updateImprovementInput } from './improvement.js'
-import { handlePeriodBlur, handlePeriodClick, handlePeriodComposition, handlePeriodInput, handlePeriodKeydown, PeriodField, periodProblem, timeFrameChanged } from './period.js'
+import { handlePeriodBlur, handlePeriodClick, handlePeriodComposition, handlePeriodInput, handlePeriodKeydown, handlePeriodPointer, PeriodField, periodProblem, timeFrameChanged } from './period.js'
 
 const decimalPattern = /^\d+(\.\d{1,2})?$/
 
@@ -3003,6 +3003,26 @@ export function bindCalculator(main, retryTaxonomy) {
   // physical keyboard with an IME active makes it possible.
   main.addEventListener('compositionstart', handlePeriodComposition)
   main.addEventListener('compositionend', handlePeriodComposition)
+
+  // Step 5's clock face. **Pointer events, so a mouse, a finger and a pen are
+  // one code path** — see `period.js::handlePeriodPointer`.
+  //
+  // Delegated on `main` like everything else here, because `render()` replaces
+  // `main.innerHTML` and a listener bound to the `<svg>` would be thrown away
+  // with it. That survives a drag only because the dial deliberately does *not*
+  // `setState` between `pointerdown` and `pointerup`: the `<svg>` holds the
+  // pointer capture, so `pointermove` and `pointerup` are retargeted to it and
+  // still bubble here however far outside the circle the pointer has gone.
+  //
+  // `pointermove` is bound unconditionally rather than added on `pointerdown`
+  // and removed on `pointerup`, which would be one listener instead of a
+  // permanent one. It is not worth it: the handler's first line is an identity
+  // check against the captured pointer id and returns immediately, and a
+  // listener added mid-gesture is a listener that leaks if the gesture ends in a
+  // way nobody predicted.
+  for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) {
+    main.addEventListener(type, handlePeriodPointer)
+  }
 
   main.addEventListener('keydown', event => {
     // The calendar's own keyboard: the arrows, Page Up/Down, Home/End, Enter,

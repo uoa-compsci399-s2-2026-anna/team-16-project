@@ -19,23 +19,53 @@
  * relied on to look like — or behave like — the same control in the browser the
  * rest of the team uses. Both are therefore `type="text"`.
  *
- * ## The time control is typed, and that is a decision
+ * ## The time control is typed **and** there is now a dial — a decision that
+ * was reversed, on 2026-09-22, by the owner
  *
- * `HH:MM` in a text box, 24-hour, with no stepper and no clock face.
+ * The first pass of this module, and PR #114 with it, recorded the opposite
+ * ruling in this spot, and it is quoted here rather than deleted because the
+ * reasoning behind it is still true and is the reason the dial has the shape it
+ * has:
  *
- *   * **A clock face is the wrong affordance at minute precision.** A shift is
- *     *entered* — "0810" — not rotated. A dial that has to resolve 1,440
- *     positions is slower than four keystrokes in every case and unusable on a
- *     touch screen in most.
- *   * **Two `<select>`s were the other candidate and lose on the same ground.**
- *     Sixty minute options is a scroll, on a field whose whole job is to be
- *     quicker than opening anything, and it doubles the tab stops per bound.
- *   * **No stepper.** §7.3a's own rule — a control that exists and does nothing
- *     useful is worse than no control — applies to a pair of arrows that would
- *     need 1,440 presses to cross a day. The keyboard answer to "make this
- *     later" here is to type the number.
- *   * Seconds are not offered because `submission.period_start` is a `DATETIME`
- *     with no fractional precision and the requirement is minutes (§2.3).
+ * > *"The time control is a text box, not a dial. A dial resolves 1,440
+ * > positions, two selects make sixty minutes a scroll on the field whose whole
+ * > job is to beat opening anything."*
+ *
+ * The three arguments under it were: a clock face is the wrong affordance at
+ * minute precision, because a shift is *entered* — "0810" — and not rotated;
+ * two `<select>`s lose on the same ground and double the tab stops per bound;
+ * and a stepper needing 1,440 presses to cross a day is §7.3a's "a control that
+ * exists and does nothing useful is worse than no control".
+ *
+ * **What changed.** The owner used the finished field and asked for the dial
+ * (item 4 of five, 2026-09-22). That is their call and it is not relitigated
+ * here. What the old reasoning buys is the *shape* of the answer, and it is
+ * exactly why Android pairs a dial with a keyboard mode:
+ *
+ *   * **It is an addition, never a replacement.** The text box is unchanged and
+ *     is still the fast path. Typing `0810` and tabbing straight past the clock
+ *     button without opening anything both do today what they did before, and
+ *     `tests/web/test_period_typing_browser.py` still says so.
+ *   * **A dial cannot be driven by a keyboard and has no accessible name for
+ *     1,440 positions**, which is the old paragraph's first argument restated as
+ *     an accessibility fact. So the dialog carries two number boxes and a toggle
+ *     beside the face, the face itself is `aria-hidden="true"`, and **which of
+ *     the two a press opens is decided by how the button was pressed** — see
+ *     `openClockMode`.
+ *   * **Minutes snap to one minute and only every fifth minute is labelled.** A
+ *     five-minute snap is the version of this control that would have deserved
+ *     the old ruling: a roster that says 08:07 is real, and a dial that refused
+ *     it would be slower *and* wrong. The labels are a reading aid; the
+ *     resolution is one minute, which is `submission.period_start`'s own.
+ *   * Seconds are still not offered, for the unchanged reason:
+ *     `submission.period_start` is a `DATETIME` with no fractional precision and
+ *     the requirement is minutes (§2.3).
+ *
+ * `inputmode="numeric"` on the four text boxes, rather than `type="number"`: a
+ * number input will not hold `14/09/2026` at all, and `selectionStart` throws on
+ * one — which is the same reason `calculator.js`'s minus guard cannot read a
+ * caret. The clock dialog's own two boxes *are* `type="number"`: they hold one
+ * integer each, nothing masks them, and nothing reads a caret out of them.
  *
  * `inputmode="numeric"` rather than `type="number"`: a number input will not
  * hold `14/09/2026` at all, and `selectionStart` throws on one — which is the
@@ -96,6 +126,9 @@
  *     disagree with it;
  *   * **which of the three grids is drawn** — `state.periodPicker.view`, see
  *     below;
+ *   * **whether the clock is open, on which bound, at which stage, in which
+ *     mode, and over which hour and minute** — `state.periodClock` is `null` or
+ *     `{ field, stage, mode, hours, minutes, openerId }`;
  *   * **what is typed in the four text boxes** — `state.periodFields`.
  *
  * Focus is restored by `main.js`, which re-focuses `document.activeElement.id`
@@ -138,6 +171,52 @@
  *     Choosing a year or a month moves the cursor and changes what is drawn; it
  *     states no date, and `time_frame` records which shortcut was pressed rather
  *     than which grid was opened.
+ *
+ * ## The clock, and why it is two controls in one dialog
+ *
+ * Beside each *time* box is a clock button, mirroring the calendar button beside
+ * each date box. What it opens is a second dialog — `state.periodClock` — built
+ * on the same four rules the calendar's is: `role="dialog"`, `aria-modal`, focus
+ * moved in on open and **returned to the button that opened it** on close, `Esc`
+ * to dismiss and `Tab` held inside.
+ *
+ * It has **two modes and they are peers.**
+ *
+ *   * **The dial**: 24 hours on two rings — 1–12 outside, 13–23 and 00 inside,
+ *     which is what a 24-hour clock needs and what Material does — then minutes,
+ *     snapped to one minute with every fifth minute labelled. Hours first,
+ *     minutes following automatically on release, and the readout's two halves
+ *     are buttons so either stage can be gone back to. Pointer maths on
+ *     `pointerdown`/`pointermove`/`pointerup`, so a mouse, a finger and a pen
+ *     are one code path and a drag from the centre is the same gesture as a tap.
+ *   * **The keyboard mode**: two number boxes and a toggle, exactly as Android's
+ *     has. **This is not a fallback.** The dial is `aria-hidden="true"` because
+ *     a dial has no accessible structure to expose, so the number boxes are the
+ *     only keyboard and screen-reader route into the control, and the chosen
+ *     value is announced from a polite live region as the dial moves.
+ *
+ * **Which mode opens follows how the button was pressed** (`openClockMode`): a
+ * pointer press opens the dial, a keyboard press opens the number boxes.
+ * `event.detail === 0` is what tells a keyboard-synthesised click from a real
+ * one, and it is one character carrying the whole of the paragraph above.
+ *
+ * Three things the clock deliberately does **not** do:
+ *
+ *   * **It does not re-implement the 24-hour ceiling.** `periodProblem` owns
+ *     that rule and is the only place it is written down. The clock writes
+ *     `HH:MM` into `state.periodFields` and lets the existing check answer,
+ *     exactly as `chooseDay` does. A second copy of the bound inside the dial
+ *     would be a second rule to keep in step, and it would be the wrong one.
+ *   * **It does not fill a date.** `chooseDay` fills a missing *time* with
+ *     `00:00` because a date on its own is half a bound and the form would
+ *     refuse it; the reverse is not symmetric. A date guessed from a time would
+ *     be a value the visitor never stated, on the column the whole feature
+ *     exists to record honestly.
+ *   * **It does not mirror under `dir="rtl"`**, which is a deliberate
+ *     inconsistency with the calendar — see the note over `faceContents`.
+ *
+ * Writing a time **is** an edit, so confirming one demotes a preset to `custom`
+ * through `demotion()`, exactly as choosing a day does.
  *
  * ## The typing path does not call `setState`
  *
@@ -767,13 +846,13 @@ export function presetFields(timeFrame) {
  * before naming the answer.
  */
 export function timeFrameChanged(value) {
-  if (!value) return { timeFrame: value, periodFields: { ...EMPTY_FIELDS }, periodStart: '', periodEnd: '', periodPicker: null }
+  if (!value) return { timeFrame: value, periodFields: { ...EMPTY_FIELDS }, periodStart: '', periodEnd: '', periodPicker: null, periodClock: null }
   if (value === 'custom') {
     const fields = periodFields()
-    return { timeFrame: value, periodFields: fields, ...periodValues(fields), periodPicker: null }
+    return { timeFrame: value, periodFields: fields, ...periodValues(fields), periodPicker: null, periodClock: null }
   }
   const fields = presetFields(value)
-  return { timeFrame: value, periodFields: fields, ...periodValues(fields), periodPicker: null }
+  return { timeFrame: value, periodFields: fields, ...periodValues(fields), periodPicker: null, periodClock: null }
 }
 
 // ---------------------------------------------------------------------------
@@ -1127,8 +1206,21 @@ const pickerView = picker => (picker?.view === 'months' || picker?.view === 'yea
  */
 const CALENDAR_ICON = '<svg class="period-open-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.25" y="5.25" width="17.5" height="15.5" rx="2.5"/><path d="M3.25 10.25h17.5M8 3v4M16 3v4"/></svg>'
 
+/**
+ * The clock button's icon, drawn in the same hand as `CALENDAR_ICON` and for the
+ * same two reasons: §7.6 rule 7 forbids fetching an icon font, and a clock code
+ * point (`🕐` U+1F550, `⏰` U+23F0) is one font's decision away from the empty
+ * rectangle U+1F5D3 actually drew.
+ *
+ * Same viewBox, same 1.8 stroke, same `currentColor`, same `aria-hidden` — the
+ * two buttons sit one row apart on the same screen and a second visual weight
+ * between them would read as two different kinds of control.
+ */
+const CLOCK_ICON = '<svg class="period-open-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.75"/><path d="M12 6.75V12l3.5 2.25"/></svg>'
+
 const boundLabel = bound => (bound === 'start' ? t('Period start') : t('Period end'))
 const boundOpenLabel = bound => (bound === 'start' ? t('Choose the start date') : t('Choose the end date'))
+const boundClockLabel = bound => (bound === 'start' ? t('Choose the start time') : t('Choose the end time'))
 
 function boundFields(bound, fields, problem) {
   const invalid = field => (problem.field === field ? ' aria-invalid="true"' : '')
@@ -1146,7 +1238,10 @@ function boundFields(bound, fields, problem) {
       </div>
       <div class="form-field period-time-field">
         <label for="${timeId}">${escapeHtml(t('Time'))}</label>
-        <input id="${timeId}" type="text" inputmode="numeric" autocomplete="off" class="period-input" data-period-field="${bound}Time" value="${escapeHtml(fields[`${bound}Time`])}" placeholder="hh:mm" aria-describedby="period-format-hint"${invalid(timeId)}>
+        <div class="period-time-control">
+          <input id="${timeId}" type="text" inputmode="numeric" autocomplete="off" class="period-input" data-period-field="${bound}Time" value="${escapeHtml(fields[`${bound}Time`])}" placeholder="hh:mm" aria-describedby="period-format-hint"${invalid(timeId)}>
+          <button class="period-open" type="button" id="period-clock-${bound}" data-action="period-clock-open" data-bound="${bound}" aria-haspopup="dialog" aria-label="${escapeHtml(boundClockLabel(bound))}">${CLOCK_ICON}</button>
+        </div>
       </div>
     </div>
   </fieldset>`
@@ -1169,6 +1264,298 @@ export function PeriodField() {
     ${BOUNDS.map(bound => boundFields(bound, fields, problem)).join('')}
     <p class="field-error period-error" id="period-error" role="alert"${problem.message ? '' : ' hidden'}>${escapeHtml(problem.message)}</p>
     ${pickerDialog()}
+    ${clockDialog()}
+  </div>`
+}
+
+// ---------------------------------------------------------------------------
+// The clock
+// ---------------------------------------------------------------------------
+
+/**
+ * The face's geometry, in the 200-unit `viewBox` every number below is written
+ * in.
+ *
+ * **User units, not pixels, and that is what makes the dial resolution-free.**
+ * The `<svg>` is sized in CSS and the pointer arithmetic divides by the measured
+ * radius, so the same constants describe the face at 240px on a phone and at
+ * 280px on a laptop without a second set of numbers to keep in step.
+ *
+ * `RING_EDGE` is the fraction of the face's radius at which the outer ring stops
+ * being the nearer one — **halfway between the two label rings**, derived rather
+ * than typed, so that moving a ring moves the boundary with it. A press inside
+ * that circle is an inner-ring hour (13–23 and 00); anything further out is
+ * 1–12. Very near the centre it still reads as inner, which is right: there is
+ * no third thing it could mean.
+ */
+const FACE_CENTRE = 100
+const FACE_RADIUS = 96
+const OUTER_RING = 80
+const INNER_RING = 52
+const KNOB_RADIUS = 17
+const RING_EDGE = (OUTER_RING + INNER_RING) / 2 / FACE_RADIUS
+
+/** Which stage a clock is on, defaulting the way `pickerView` does. */
+const clockStage = clock => (clock?.stage === 'minutes' ? 'minutes' : 'hours')
+
+/** 0, and 13 to 23: the hours the inner ring carries, so the hand is short for
+ *  them. `12` is on the outer ring at the top and `0` is on the inner ring at
+ *  the top, which is the one place the two rings disagree about a position. */
+const isInnerHour = hours => hours === 0 || hours >= 13
+
+/**
+ * Degrees clockwise from twelve o'clock, for a pointer offset from the centre.
+ *
+ * `atan2(dx, -dy)` rather than the textbook `atan2(dy, dx)`: the arguments are
+ * swapped and `dy` is negated so that zero is straight up and the angle grows
+ * the way a clock does. Written this way rather than as `90 - atan2(dy, dx)`
+ * because the correction term is exactly the sort of thing that survives a
+ * refactor with the wrong sign.
+ *
+ * **`dy` grows downwards**, because that is what both a client rectangle and an
+ * SVG `viewBox` do. The negation is the whole of the translation between "the
+ * screen" and "a clock", and it is the reason `hourFromPointer(0, -1)` is 12
+ * rather than 6.
+ *
+ * @param {number} dx pointer x minus the face's centre x.
+ * @param {number} dy pointer y minus the face's centre y.
+ * @returns {number} 0 ≤ degrees < 360.
+ */
+export function clockAngle(dx, dy) {
+  return ((Math.atan2(dx, -dy) * 180) / Math.PI + 360) % 360
+}
+
+/**
+ * The hour a press at this offset means, **on whichever of the two rings it
+ * landed on**.
+ *
+ * Twelve positions per ring, so the nearest is the angle rounded to 30°. The top
+ * position is `12` on the outer ring and `0` on the inner one, and every other
+ * inner position is its outer twin plus twelve — 13 at one o'clock, 23 at
+ * eleven — which is Material's layout and the only one that puts 00:00 and 12:00
+ * where a reader of a 24-hour clock looks for them.
+ *
+ * @param {number} dx pointer x minus centre x.
+ * @param {number} dy pointer y minus centre y.
+ * @param {number} radius the face's measured radius, in the same units as
+ *   `dx`/`dy`. Only the *ratio* is used, so pixels and user units both work.
+ * @returns {number} 0–23.
+ */
+export function hourFromPointer(dx, dy, radius) {
+  const step = Math.round(clockAngle(dx, dy) / 30) % 12
+  const inner = radius > 0 && Math.hypot(dx, dy) / radius < RING_EDGE
+  if (!inner) return step === 0 ? 12 : step
+  return step === 0 ? 0 : step + 12
+}
+
+/**
+ * The minute a press at this offset means. **Sixty positions, not twelve.**
+ *
+ * The labels are drawn every five minutes and the value is not: a roster that
+ * says 08:07 is a real shift, and a dial that snapped it to 08:05 or 08:10 would
+ * refuse a period somebody actually worked. The ring is 6° per minute, so the
+ * rounding is the same one line as the hours over a finer step.
+ *
+ * The distance from the centre is not read at all — there is one minute ring —
+ * which is why this takes no radius and why a drag that wanders inwards while it
+ * sweeps does not change the answer.
+ *
+ * @returns {number} 0–59.
+ */
+export function minuteFromPointer(dx, dy) {
+  return Math.round(clockAngle(dx, dy) / 6) % 60
+}
+
+/** Where a label sits, in `viewBox` units. `sin`/`-cos` because zero degrees is
+ *  straight up; see `clockAngle`. */
+function facePoint(degrees, radius) {
+  const radians = (degrees * Math.PI) / 180
+  return {
+    x: FACE_CENTRE + radius * Math.sin(radians),
+    y: FACE_CENTRE - radius * Math.cos(radians),
+  }
+}
+
+/** The twenty-four hour labels: 1–12 outside, then 00 and 13–23 inside. */
+const HOUR_LABELS = [
+  ...Array.from({ length: 12 }, (unused, index) => ({
+    value: index === 0 ? 12 : index,
+    text: String(index === 0 ? 12 : index),
+    angle: index * 30,
+    radius: OUTER_RING,
+  })),
+  ...Array.from({ length: 12 }, (unused, index) => ({
+    value: index === 0 ? 0 : index + 12,
+    text: pad(index === 0 ? 0 : index + 12),
+    angle: index * 30,
+    radius: INNER_RING,
+  })),
+]
+
+/** Every fifth minute, and only every fifth minute. See `minuteFromPointer`:
+ *  this list is what is *written*, never what can be *chosen*. */
+const MINUTE_LABELS = Array.from({ length: 12 }, (unused, index) => ({
+  value: index * 5,
+  text: pad(index * 5),
+  angle: index * 30,
+  radius: OUTER_RING,
+}))
+
+/**
+ * The face's contents, regenerated whole.
+ *
+ * **Returned as markup rather than patched attribute by attribute** because the
+ * pointer path has to redraw this sixty times a second without a `setState` —
+ * `render()` replaces `main.innerHTML`, which would destroy the element the
+ * pointer is captured on, mid-drag. Assigning `svg.innerHTML` replaces the
+ * children and leaves the `<svg>` itself — and therefore the capture — alone.
+ *
+ * ## The clock does not mirror under `dir="rtl"`, and that is deliberate
+ *
+ * The calendar one screen away *does* mirror, and its own RTL note says why: a
+ * week is text laid out in reading order, so in Arabic Monday belongs on the
+ * right and an `ArrowRight` that did not follow it would move the focus ring
+ * backwards across the screen. **A clock is not text.** Three o'clock is to the
+ * right of twelve in every country that uses this dial, an Arabic reader expects
+ * the hand to sweep the same way as everyone else's, and a mirrored face would
+ * put 3 where 9 is on the wall behind them.
+ *
+ * It is enforced by construction rather than by a rule anyone has to remember:
+ * every position here is an explicit `x`/`y` in the `viewBox`, and SVG geometry
+ * does not mirror with `direction`. The pointer maths is the same story from the
+ * other end — `getBoundingClientRect()` is in viewport coordinates, which are
+ * absolute. Nothing in `styles.css` positions a number, so there is no
+ * `inset-inline-start` to flip and no physical property to smuggle in either.
+ *
+ * **If you are here to make this consistent with the calendar: don't.** Measure
+ * it in Arabic first — `tests/web/test_period_clock_browser.py` already does,
+ * and asserts that 3 is drawn to the right of 9 under `?lang=ar`.
+ */
+function faceContents(clock) {
+  const stage = clockStage(clock)
+  const value = stage === 'hours' ? clock.hours : clock.minutes
+  const labels = stage === 'hours' ? HOUR_LABELS : MINUTE_LABELS
+  const angle = stage === 'hours' ? (clock.hours % 12) * 30 : clock.minutes * 6
+  const length = stage === 'hours' && isInnerHour(clock.hours) ? INNER_RING : OUTER_RING
+  const labelled = labels.some(label => label.value === value)
+  const tip = FACE_CENTRE - length
+  const marks = labels.map(label => {
+    const point = facePoint(label.angle, label.radius)
+    return `<text class="period-clock-label${label.value === value ? ' is-current' : ''}" x="${point.x.toFixed(2)}" y="${point.y.toFixed(2)}" text-anchor="middle" dominant-baseline="central">${escapeHtml(label.text)}</text>`
+  }).join('')
+  // The hand is drawn before the labels so the knob sits *behind* the number it
+  // has landed on; the label then inverts to white over it rather than being
+  // covered by it. When the value carries no label — every minute that is not a
+  // multiple of five — a small mark stands in for one, so the visitor can see
+  // the hand has stopped somewhere real rather than between two numbers.
+  return `<circle class="period-clock-dial" cx="${FACE_CENTRE}" cy="${FACE_CENTRE}" r="${FACE_RADIUS}"/>
+    <g class="period-clock-hand" style="transform: rotate(${angle}deg)">
+      <line class="period-clock-stem" x1="${FACE_CENTRE}" y1="${FACE_CENTRE}" x2="${FACE_CENTRE}" y2="${tip}"/>
+      <circle class="period-clock-knob" cx="${FACE_CENTRE}" cy="${tip}" r="${KNOB_RADIUS}"/>
+      ${labelled ? '' : `<circle class="period-clock-tick" cx="${FACE_CENTRE}" cy="${tip}" r="3.5"/>`}
+    </g>
+    <circle class="period-clock-hub" cx="${FACE_CENTRE}" cy="${FACE_CENTRE}" r="4"/>
+    ${marks}`
+}
+
+/** `HH:MM` for what the dial is currently over. Not written anywhere until the
+ *  visitor confirms — see `setClockTime`. */
+const clockText = clock => `${pad(clock.hours)}:${pad(clock.minutes)}`
+
+/**
+ * The readout, which is also the way back to the hours.
+ *
+ * Two buttons, the same decomposition the calendar's caption went through in
+ * WP2 and for the same reason: the stage is a thing the visitor has to be able
+ * to change, and the value is the obvious place to press. `aria-pressed` carries
+ * which stage is live, and each accessible name carries **the value as well as
+ * the invitation** — "8, Choose the hour" — because a button named only "Choose
+ * the hour" says what it does and not what is currently true.
+ *
+ * **The roving `id="period-clock-stage"` is the calendar's trick, reused.**
+ * Whichever button is the live stage carries it, so when releasing the hour hand
+ * advances to the minutes, `main.js`'s focus restore — which re-focuses
+ * `document.activeElement.id` after a same-step render — lands on the minute
+ * button rather than on the hour button the visitor has just left.
+ */
+function clockReadout(clock) {
+  const stage = clockStage(clock)
+  const part = (key, text, label) =>
+    `<button class="period-clock-stage${stage === key ? ' is-current' : ''}" type="button" data-action="period-clock-stage" data-stage="${key}"${stage === key ? ' id="period-clock-stage"' : ''} aria-pressed="${stage === key ? 'true' : 'false'}" aria-label="${escapeHtml(label)}">${escapeHtml(text)}</button>`
+  return `<div class="period-clock-readout">${
+    part('hours', pad(clock.hours), `${clock.hours}, ${t('Choose the hour')}`)
+  }<span class="period-clock-colon" aria-hidden="true">:</span>${
+    part('minutes', pad(clock.minutes), `${clock.minutes}, ${t('Choose the minute')}`)
+  }</div>`
+}
+
+/**
+ * The keyboard mode: two number boxes.
+ *
+ * `type="number"` here and `type="text" inputmode="numeric"` on the four boxes
+ * outside, which is not an inconsistency — see the header. These hold one
+ * integer each, nothing masks them and nothing reads a caret out of them, so the
+ * spinner and the `min`/`max` a number input brings are all wanted. The value is
+ * written unpadded (`8`, not `08`): a number input normalises a leading zero
+ * away on the first keystroke anyway, and a box that silently rewrote what was
+ * typed is the defect the blur path outside exists to avoid.
+ */
+function clockEntry(clock) {
+  const box = (key, id, label, max, value) =>
+    `<div class="form-field period-clock-box">
+      <label for="${id}">${escapeHtml(label)}</label>
+      <input id="${id}" type="number" inputmode="numeric" autocomplete="off" min="0" max="${max}" step="1" data-period-clock-field="${key}" value="${value}">
+    </div>`
+  return `<div class="period-clock-entry">
+    ${box('hours', 'period-clock-hour', t('Hour'), 23, clock.hours)}
+    <span class="period-clock-colon" aria-hidden="true">:</span>
+    ${box('minutes', 'period-clock-minute', t('Minute'), 59, clock.minutes)}
+  </div>`
+}
+
+/**
+ * The clock dialog: the same four dialog rules as the calendar's, over two modes
+ * that are peers rather than a control and its fallback.
+ *
+ * The face is `aria-hidden="true"` because there is no honest way to expose 1,440
+ * positions to a screen reader, and the live region under it is what a
+ * screen-reader user hears instead while a sighted pointer user drags. Both are
+ * in the markup in both modes' sight but only one is rendered at a time, so
+ * there is never a second claimant to `#period-clock-value`.
+ */
+function clockDialog() {
+  const clock = state.periodClock
+  if (!clock) return ''
+  const keyboard = clock.mode === 'keyboard'
+  const title = boundClockLabel(clock.field)
+  const hint = keyboard
+    ? t('Type the hour and the minute on the 24-hour clock.')
+    : t('Drag the hand or press a number to set the hour, then the minute.')
+  // **The toggle names the mode it switches *to*, never the one it is in.** A
+  // button labelled with the current mode is a label a visitor reads as a
+  // statement and presses expecting nothing to change.
+  const toggle = keyboard ? t('Choose the time on a clock face') : t('Enter the time on a keyboard')
+  const body = keyboard
+    ? clockEntry(clock)
+    : `${clockReadout(clock)}
+      <svg class="period-clock-face" viewBox="0 0 200 200" aria-hidden="true" focusable="false">${faceContents(clock)}</svg>`
+  return `<div class="period-dialog-backdrop" data-action="period-clock-dismiss">
+    <div class="period-dialog period-clock-dialog" role="dialog" aria-modal="true" aria-labelledby="period-clock-title" id="period-clock-dialog">
+      <div class="period-dialog-head">
+        <h3 id="period-clock-title">${escapeHtml(title)}</h3>
+        <button class="period-dialog-close" type="button" data-action="period-clock-close" aria-label="${escapeHtml(t('Close the clock'))}">×</button>
+      </div>
+      <p class="period-dialog-hint" id="period-clock-hint">${escapeHtml(hint)}</p>
+      ${body}
+      <p class="sr-only" id="period-clock-value" aria-live="polite">${escapeHtml(clockText(clock))}</p>
+      <div class="period-clock-actions">
+        <button class="period-clock-mode" type="button" data-action="period-clock-mode">${escapeHtml(toggle)}</button>
+        <span class="period-clock-confirm">
+          <button class="period-clock-cancel" type="button" data-action="period-clock-close">${escapeHtml(t('Cancel'))}</button>
+          <button class="period-clock-set" type="button" data-action="period-clock-set">${escapeHtml(t('Set the time'))}</button>
+        </span>
+      </div>
+    </div>
   </div>`
 }
 
@@ -1317,6 +1704,9 @@ function commitPeriodFields(fields, otherwiseDisabled) {
  * @returns {boolean} whether this module owned the event.
  */
 export function handlePeriodInput(event, otherwiseDisabled = false) {
+  // The clock's two number boxes come through the same delegated `input`
+  // listener and are the same exception — see `handleClockInput`.
+  if (handleClockInput(event)) return true
   const field = event.target.dataset.periodField
   if (!field) return false
   if (INSERTIONS.has(event.inputType)) applyPeriodMask(event, field)
@@ -1408,6 +1798,7 @@ function applyPeriodMask(event, field) {
  * @returns {boolean} whether this module owned the event.
  */
 export function handlePeriodBlur(event, otherwiseDisabled = false) {
+  if (handleClockBlur(event)) return true
   const field = event.target?.dataset?.periodField
   if (!field) return false
   composing = false
@@ -1440,11 +1831,15 @@ function canonicalPeriodText(field, text) {
  * `calculator.js`'s delegated handler can go on to its own actions.
  */
 export function handlePeriodClick(action, control, event) {
+  // The clock's seven actions, kept in their own function so that this one does
+  // not become the place two dialogs are told apart by prefix.
+  if (action.startsWith('period-clock-')) return handleClockClick(action, control, event)
   if (action === 'period-open') {
     const bound = control.dataset.bound
     // **Always `'days'`.** A picker that remembered the year grid from last time
-    // would open on the wrong question — see the header.
-    setState({ periodPicker: { field: bound, cursor: openingCursor(bound), openerId: control.id, view: 'days' } })
+    // would open on the wrong question — see the header. The clock closes:
+    // two modal dialogs on one screen is two focus traps over one `Tab`.
+    setState({ periodClock: null, periodPicker: { field: bound, cursor: openingCursor(bound), openerId: control.id, view: 'days' } })
     focusAfterRender('period-grid-focus')
     return true
   }
@@ -1564,8 +1959,42 @@ function chooseDay(iso) {
   if (openerId) focusAfterRender(openerId)
 }
 
-/** The focusable controls inside the open dialog, in document order. */
-const dialogStops = () => [...document.querySelectorAll('#period-dialog button:not([disabled]), #period-dialog [tabindex="0"]')]
+/**
+ * The focusable controls inside one open dialog, in document order.
+ *
+ * Parametrised on the dialog's id from WP3, because there are two of these now
+ * and a `Tab` cycle that queried both would let `Tab` walk out of the clock and
+ * into a calendar that is not on screen. `input` joined the selector at the same
+ * time and changes nothing for the calendar, which has none.
+ */
+const dialogStops = id => [...document.querySelectorAll(`#${id} button:not([disabled]), #${id} input:not([disabled]), #${id} [tabindex="0"]`)]
+
+/**
+ * `Tab` and `Shift`+`Tab` held inside one dialog.
+ *
+ * `aria-modal` tells a screen reader the rest of the page is inert; it does not
+ * stop `Tab` reaching it. This does — and it is shared by the two dialogs
+ * because a trap written twice is a trap that is right once.
+ *
+ * @returns {boolean} whether the key was taken.
+ */
+function trapTab(event, id) {
+  const stops = dialogStops(id)
+  if (!stops.length) return false
+  const first = stops[0]
+  const last = stops[stops.length - 1]
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last.focus()
+    return true
+  }
+  if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first.focus()
+    return true
+  }
+  return false
+}
 
 /**
  * The keyboard, and it is the whole of what makes this component usable.
@@ -1593,6 +2022,7 @@ const dialogStops = () => [...document.querySelectorAll('#period-dialog button:n
  * leftwards across the screen — the one thing an arrow key may not do.
  */
 export function handlePeriodKeydown(event) {
+  if (handleClockKeydown(event)) return true
   const picker = state.periodPicker
   if (!picker) return false
   const dialog = document.getElementById('period-dialog')
@@ -1607,25 +2037,7 @@ export function handlePeriodKeydown(event) {
     else closePicker()
     return true
   }
-  if (event.key === 'Tab') {
-    const stops = dialogStops()
-    if (!stops.length) return false
-    const first = stops[0]
-    const last = stops[stops.length - 1]
-    // `aria-modal` tells a screen reader the rest of the page is inert; it does
-    // not stop Tab reaching it. This does.
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault()
-      last.focus()
-      return true
-    }
-    if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault()
-      first.focus()
-      return true
-    }
-    return false
-  }
+  if (event.key === 'Tab') return trapTab(event, 'period-dialog')
   const cell = event.target.closest('[data-action="period-day"], [data-action="period-choose-month"], [data-action="period-choose-year"]')
   if (!cell) return false
   const view = pickerView(picker)
@@ -1710,4 +2122,338 @@ const yearMoves = (cursor, horizontal) => {
     Home: () => addYears(cursor, -column),
     End: () => addYears(cursor, YEARS_PER_ROW - 1 - column),
   }
+}
+
+// ---------------------------------------------------------------------------
+// The clock's behaviour
+// ---------------------------------------------------------------------------
+
+/**
+ * Which mode a press of the clock button opens, decided by **how it was
+ * pressed**.
+ *
+ * A pointer press opens the dial; `Enter` or `Space` on the focused button opens
+ * the two number boxes. This is Android's rule and it is the whole of the
+ * control's accessibility story in one line: a keyboard user is never dropped
+ * into a face they cannot drive, and a pointer user is never handed two spinners
+ * when they reached for a dial.
+ *
+ * **`event.detail === 0` is what tells the two apart.** `UIEvent.detail` on a
+ * click is the click count — 1 for a real press, 2 for the second of a
+ * double-click — and a click *synthesised* from a key press on a focused button
+ * carries 0, because no button was clicked any number of times. There is no
+ * other signal on the event that distinguishes them: `pointerType` is not on a
+ * `click`, `event.isTrusted` is `true` for both, and `screenX`/`screenY` are 0
+ * for a keyboard press *and* for a pointer press at the screen's origin.
+ *
+ * Written as a function of its own so that the condition has a name and a test
+ * can state it. `tests/web/test_period_clock_browser.py` presses the button both
+ * ways and asserts which mode came up; inverting the comparison here fails it
+ * twice over, which is what a one-character condition carrying this much needs.
+ *
+ * @param {Event} [event] the click that opened it.
+ * @returns {'dial'|'keyboard'}
+ */
+export function openClockMode(event) {
+  return event && event.detail === 0 ? 'keyboard' : 'dial'
+}
+
+/**
+ * Where a freshly-opened clock puts its hand: what the box already holds, else
+ * the visitor's own now.
+ *
+ * The same rule as `openingCursor`'s, one field over, and for the same reason —
+ * a control that opened at midnight every time would make the common case (a
+ * shift today) the longest drag on the face. **Nothing is written by opening**:
+ * this is where the hand starts, and `setClockTime` is the only function that
+ * puts a value in the box.
+ */
+function openingTime(bound) {
+  const typed = parseTimeText(periodFields()[`${bound}Time`])
+  if (typed) {
+    const [hours, minutes] = typed.split(':').map(Number)
+    return { hours, minutes }
+  }
+  const at = now()
+  return { hours: at.getHours(), minutes: at.getMinutes() }
+}
+
+/** Open the clock on one bound. Closes the calendar if it was open: two modal
+ *  dialogs on one screen is two focus traps fighting over the same `Tab`. */
+function openClock(bound, openerId, mode) {
+  setState({
+    periodPicker: null,
+    periodClock: { field: bound, stage: 'hours', mode, openerId, ...openingTime(bound) },
+  })
+  // In the dial the face is `aria-hidden` and unfocusable, so the live stage's
+  // readout button is where focus goes — it is a real control, it is the way
+  // back between the stages, and it keeps `Esc` and the `Tab` cycle reachable.
+  // In the keyboard mode the hour box is the obvious first thing to type into.
+  focusAfterRender(mode === 'keyboard' ? 'period-clock-hour' : 'period-clock-stage')
+}
+
+function closeClock() {
+  const openerId = state.periodClock?.openerId
+  setState({ periodClock: null })
+  // The rule that makes this a dialog rather than a panel, and the same one
+  // `closePicker` follows: focus goes back to the control that opened it.
+  if (openerId) focusAfterRender(openerId)
+}
+
+/**
+ * The visitor's answer, written into the field.
+ *
+ * **Two things this deliberately does not do**, both of them written out at
+ * length in the header because both are the kind of helpfulness that invents a
+ * value nobody stated:
+ *
+ *   * it does not check the 24-hour ceiling. `periodProblem` owns that rule; the
+ *     time goes into `state.periodFields` and the existing check answers, which
+ *     is exactly what `chooseDay` does with a date;
+ *   * it does not fill the date beside it. `chooseDay` fills a missing *time*
+ *     with `00:00` because a date alone is half a bound and would be refused —
+ *     but a date guessed from a time is not the mirror of that, it is a day the
+ *     visitor never said.
+ *
+ * `demotion()` because writing a time **is** an edit: somebody who pressed *One
+ * week* and then set the start to 08:10 did not press a shortcut for what is now
+ * in the fields.
+ */
+function setClockTime() {
+  const clock = state.periodClock
+  if (!clock) return
+  const fields = { ...periodFields(), [`${clock.field}Time`]: clockText(clock) }
+  const openerId = clock.openerId
+  setState({ periodFields: fields, ...periodValues(fields), ...demotion(), periodClock: null })
+  if (openerId) focusAfterRender(openerId)
+}
+
+/** Swap the dial for the number boxes or back, keeping the value. Focus follows
+ *  into whichever control the new mode's visitor is expected to use, for
+ *  `openClock`'s reason. */
+function setClockMode(mode) {
+  const clock = state.periodClock
+  if (!clock) return
+  setState({ periodClock: { ...clock, mode } })
+  focusAfterRender(mode === 'keyboard' ? 'period-clock-hour' : 'period-clock-stage')
+}
+
+function setClockStage(stage) {
+  const clock = state.periodClock
+  if (!clock) return
+  setState({ periodClock: { ...clock, stage } })
+  focusAfterRender('period-clock-stage')
+}
+
+/**
+ * The dial redrawn from `state.periodClock` **without a `setState`**.
+ *
+ * §7.3a's documented exception again, for a second reason the typing path has
+ * already established. A `setState` per `pointermove` would re-render the step —
+ * `render()` replaces `main.innerHTML` — and the `<svg>` the pointer is
+ * *captured* on would be destroyed underneath the drag, which ends the gesture
+ * in the middle of it. So the drag mutates `state.periodClock` in place and
+ * patches the three things a render would have changed: the face, the readout,
+ * and the live region.
+ *
+ * The face is patched by replacing the `<svg>`'s children rather than the
+ * `<svg>`, for exactly that reason — the capture is on the element, and the
+ * element survives.
+ */
+function redrawClock() {
+  const clock = state.periodClock
+  if (!clock) return
+  const face = document.querySelector('.period-clock-face')
+  if (face) face.innerHTML = faceContents(clock)
+  for (const key of ['hours', 'minutes']) {
+    const button = document.querySelector(`[data-action="period-clock-stage"][data-stage="${key}"]`)
+    if (!button) continue
+    button.textContent = pad(clock[key])
+    button.setAttribute('aria-label', `${clock[key]}, ${key === 'hours' ? t('Choose the hour') : t('Choose the minute')}`)
+  }
+  announceClock()
+}
+
+/** The chosen value, said once, politely. This is what a screen-reader user
+ *  hears in place of a face that is `aria-hidden` on purpose. */
+function announceClock() {
+  const live = document.getElementById('period-clock-value')
+  if (live && state.periodClock) live.textContent = clockText(state.periodClock)
+}
+
+/** The pointer id of the drag in progress, or `null`. One at a time: a second
+ *  finger on the face during a drag is the first finger's gesture continuing,
+ *  not a second answer. */
+let clockPointer = null
+
+/**
+ * The whole dial, from `pointerdown` to `pointerup`.
+ *
+ * **One handler for mouse, touch and pen**, which is the point of pointer events
+ * and the reason there is no `mousedown`/`touchstart` pair anywhere in this
+ * file. A tap is a `pointerdown` and a `pointerup` with nothing in between, and
+ * a drag is the same two with `pointermove`s in the middle, so the two gestures
+ * are the same code and cannot come apart.
+ *
+ * **`setPointerCapture` is what makes a drag off the edge of the face keep
+ * working.** Without it, a sweep that leaves the circle stops being delivered
+ * and the hand freezes where the pointer crossed the boundary — which is most
+ * drags, because a person aiming at "ten past" pushes outwards. With it every
+ * later event is retargeted to the `<svg>`, so the angle goes on being read
+ * however far out the pointer is, and a release anywhere on the page still lands
+ * here.
+ *
+ * `preventDefault()` on `pointerdown` suppresses the compatibility `mousedown`,
+ * which is what would otherwise blur the readout button and drop focus on
+ * `<body>` — taking `Esc` and the `Tab` cycle with it. It also stops a touch
+ * drag being read as a scroll, together with `touch-action: none` in the
+ * stylesheet.
+ *
+ * @returns {boolean} whether this module owned the event.
+ */
+export function handlePeriodPointer(event) {
+  if (event.type === 'pointerdown') {
+    const face = event.target?.closest?.('.period-clock-face')
+    if (!face || !state.periodClock) return false
+    event.preventDefault()
+    clockPointer = event.pointerId
+    try { face.setPointerCapture(event.pointerId) } catch { /* capture is an optimisation, not the gesture */ }
+    face.classList.add('is-dragging')
+    trackClock(face, event)
+    return true
+  }
+  if (clockPointer === null || event.pointerId !== clockPointer) return false
+  const face = document.querySelector('.period-clock-face')
+  if (!face || !state.periodClock) { clockPointer = null; return false }
+  if (event.type === 'pointermove') { trackClock(face, event); return true }
+  clockPointer = null
+  face.classList.remove('is-dragging')
+  // **`pointercancel` is not a choice.** The browser sends it when the gesture
+  // was taken over — a scroll, a system gesture — and reading a value out of it
+  // would set the hand from a press the visitor did not finish. The hand stays
+  // where the last `pointermove` left it and nothing advances.
+  if (event.type !== 'pointerup') return true
+  trackClock(face, event)
+  // The minutes follow the hours automatically, which is the whole of the "two
+  // stages" requirement: releasing the hour hand is the visitor saying "that
+  // one". Releasing on the minutes advances nothing — the value is complete and
+  // *Set the time* is what states it, so a stray drag cannot commit a period.
+  if (clockStage(state.periodClock) === 'hours') setClockStage('minutes')
+  return true
+}
+
+/**
+ * One pointer position, read as an hour or a minute.
+ *
+ * The centre is measured from the element's own client rectangle on every event
+ * rather than cached, because the dialog is centred in the viewport and a
+ * phone's on-screen keyboard appearing mid-drag moves it. **Client coordinates
+ * are absolute**, so this arithmetic is the same under `dir="rtl"` as under
+ * `ltr` — which is the pointer half of the deliberate non-mirroring written out
+ * over `faceContents`.
+ */
+function trackClock(face, event) {
+  const clock = state.periodClock
+  if (!clock) return
+  const box = face.getBoundingClientRect()
+  const dx = event.clientX - (box.x + box.width / 2)
+  const dy = event.clientY - (box.y + box.height / 2)
+  if (clockStage(clock) === 'hours') clock.hours = hourFromPointer(dx, dy, box.width / 2)
+  else clock.minutes = minuteFromPointer(dx, dy)
+  redrawClock()
+}
+
+/**
+ * A keystroke in one of the keyboard mode's two number boxes.
+ *
+ * **No `setState`**, for the reason the four text boxes outside have: a
+ * re-render per keystroke replaces `main.innerHTML` and destroys the caret. The
+ * value is written straight onto `state.periodClock` and the live region is
+ * patched by hand.
+ *
+ * The value is **clamped into range here and rewritten in the box on blur**,
+ * rather than refused as it is typed. A box that refused the `9` of a `19` about
+ * to be typed is a box that cannot be typed into at all; `max="23"` states the
+ * bound to the spinner and to assistive technology, this keeps `state` inside it
+ * whatever arrives, and `handlePeriodBlur` makes the two agree once the caret
+ * leaves.
+ *
+ * @returns {boolean} whether this module owned the event.
+ */
+function handleClockInput(event) {
+  const key = event.target?.dataset?.periodClockField
+  if (!key || !state.periodClock) return false
+  const limit = key === 'hours' ? 23 : 59
+  const typed = Number(event.target.value)
+  // An empty box is a value being retyped, not a zero. Leaving `state` alone
+  // until something parses is what lets somebody select-all and type `16`
+  // without the hand jumping to midnight on the way.
+  if (event.target.value === '' || !Number.isFinite(typed)) return true
+  state.periodClock[key] = Math.max(0, Math.min(limit, Math.trunc(typed)))
+  announceClock()
+  return true
+}
+
+/** The caret has left a number box: show the value `state` actually holds, so a
+ *  typed `99` reads back as the `23` that was recorded. See `handleClockInput`. */
+function handleClockBlur(event) {
+  const key = event.target?.dataset?.periodClockField
+  if (!key || !state.periodClock) return false
+  event.target.value = String(state.periodClock[key])
+  return true
+}
+
+/**
+ * `Esc` and `Tab` inside the clock.
+ *
+ * **`Esc` closes, and it does not nest the way the calendar's does.** That is a
+ * considered difference rather than an oversight: the calendar's three views are
+ * three separate questions and `Esc` from a year grid returns to the month the
+ * visitor had navigated to, which would otherwise be lost. The clock's two
+ * stages are one question — an hour and a minute of the same time — the readout
+ * offers a permanent, visible way back between them, and nothing is written
+ * until *Set the time*. So `Esc` here means "not this time", once.
+ */
+function handleClockKeydown(event) {
+  if (!state.periodClock) return false
+  const dialog = document.getElementById('period-clock-dialog')
+  if (!dialog || !dialog.contains(event.target)) return false
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    closeClock()
+    return true
+  }
+  if (event.key === 'Tab') return trapTab(event, 'period-clock-dialog')
+  return false
+}
+
+/** Every click the clock owns, answered from `handlePeriodClick`. */
+function handleClockClick(action, control, event) {
+  if (action === 'period-clock-open') {
+    openClock(control.dataset.bound, control.id, openClockMode(event))
+    return true
+  }
+  if (!state.periodClock) return false
+  // A click on the backdrop dismisses and a click *inside* the dialog must not.
+  // The identity test is `handlePeriodClick`'s own, for the same reason: the
+  // dialog is a child of the backdrop, so `closest('[data-action]')` from
+  // anything inside it finds the backdrop.
+  if (action === 'period-clock-dismiss' && event?.target !== control) return false
+  if (action === 'period-clock-close' || action === 'period-clock-dismiss') {
+    closeClock()
+    return true
+  }
+  if (action === 'period-clock-stage') {
+    setClockStage(control.dataset.stage === 'minutes' ? 'minutes' : 'hours')
+    return true
+  }
+  if (action === 'period-clock-mode') {
+    setClockMode(state.periodClock.mode === 'keyboard' ? 'dial' : 'keyboard')
+    return true
+  }
+  if (action === 'period-clock-set') {
+    setClockTime()
+    return true
+  }
+  return false
 }

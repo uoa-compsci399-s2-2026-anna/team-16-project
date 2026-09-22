@@ -850,6 +850,106 @@ class _HtmlElement(Extension):
         return source.replace(SQLADMIN_HTML_ELEMENT, _KAICALC_HTML_ELEMENT, 1)
 
 
+#: The template whose Import button the panel rewrites, and the exact anchor
+#: sqladmin writes into it.
+#:
+#: Matched literally, and matched with the ``data-bs-target`` attribute in
+#: front of the label rather than on ``_("Import CSV")`` alone, so that the
+#: substitution can only ever land on THIS control. A future sqladmin that
+#: used the same three words on a menu entry or a tooltip would not silently
+#: acquire the rewrite as well - it would fail the drift guard below instead,
+#: which is the outcome that gets looked at.
+SQLADMIN_LIST_TEMPLATE = "sqladmin/list.html"
+SQLADMIN_IMPORT_BUTTON = 'data-bs-target="#modal-import">{{ _("Import CSV") }}</a>'
+
+#: What the panel emits in its place. Still a ``_()`` call with the English
+#: as the msgid, so the Chinese panel goes on translating the button through
+#: ``admin/locales/zh.json`` exactly as it did; only the msgid changes, from
+#: a claim about the formats to a name for the action. ``"Import"`` was
+#: already a catalogue entry before this existed.
+_KAICALC_IMPORT_BUTTON = 'data-bs-target="#modal-import">{{ _("Import") }}</a>'
+
+_IMPORT_BUTTON_SKEW = (
+    "admin/i18n.py cannot find {expected!r} in sqladmin's own {template!r}, so "
+    "the list page's Import button would go on telling every staff member "
+    "that this screen takes CSV only, when it takes a .csv OR a .json file on "
+    "one path (admin/importing.py).\n\n"
+    "THE LIKELY CAUSE IS A VERSION SKEW, NOT A BUG IN THIS REPOSITORY. This "
+    "rewrite is written against the sqladmin pinned in docker/constraints.txt, "
+    "and it is that pin - not whatever is installed on this machine - that the "
+    "images build and CI installs. Check the installed version against the pin "
+    "first: tests/admin/test_i18n.py::"
+    "test_the_installed_sqladmin_is_the_version_pinned_for_the_images asserts "
+    "exactly that, and a failure there means this message is a symptom and the "
+    "pin is the thing to fix.\n\n"
+    "If the versions DO match, sqladmin has changed its list template and the "
+    "literal above needs to be updated by hand to whatever it now writes."
+)
+
+
+class _ImportButton(Extension):
+    """Stops the list page's Import button promising only one of two formats.
+
+    **The defect.** sqladmin's own ``templates/sqladmin/list.html`` labels the
+    control ``_("Import CSV")``, and this panel's import takes a ``.csv`` OR a
+    ``.json`` file on one path - see ``admin/importing.py``, and
+    ``admin/templates/sqladmin/modals/import.html``, whose file control offers
+    both extensions and whose heading is already format-neutral. The button is
+    the only part of the feature a staff member sees *before* opening the
+    dialog, so a staff member holding a JSON file was being told on the screen
+    that this was not the place for it.
+
+    The label is ``_()``-wrapped, so the Chinese panel rendered 「导入 CSV」 -
+    faithfully translated and just as wrong. A catalogue cannot fix a string
+    that is wrong in English.
+
+    **Why this is a rewrite rather than a shadowing template.** Unlike the
+    ``<html>`` element, this label *is* inside a ``{% block %}``
+    (``model_menu_bar``), so in principle a child template could reach it. In
+    practice that block also carries the Export dropdown, the single-format
+    Export button, the New button and their permission checks, and a child
+    that redefined it would have to re-state all of them - freezing them at
+    today's sqladmin to change three words. That is exactly the debt
+    ``admin/templates/sqladmin/_macros.html`` already cost this project once
+    (see ``_HtmlElement``), and the ratio here is worse, not better. Five
+    templates in this panel descend from ``list.html``, so a shadowing block
+    would also have to be repeated or re-parented five times.
+
+    **The drift guard, for the same reason ``_HtmlElement`` has one.** A
+    rewrite that silently matches nothing is worse than no rewrite, because it
+    looks installed: the button would quietly go back to saying CSV and
+    nothing would say so. So a ``list.html`` this cannot find its literal in
+    raises here rather than rendering, and ``_IMPORT_BUTTON_SKEW`` names
+    version skew as the first thing to check.
+    ``tests/admin/test_i18n.py::
+    test_the_import_button_rewrite_still_finds_the_line_it_rewrites`` asserts
+    the literal is present in the installed package, so an upgrade fails the
+    suite before this can ever raise in front of a staff member.
+
+    **``"Import CSV"`` stays in ``admin/locales/zh.json``.** Nothing renders it
+    now, but ``test_sqladmin_s_own_chrome_is_translated`` reads its msgids out
+    of the *installed package*, where the string is still written - this
+    extension rewrites the compiled template, not the file on disk. Removing
+    the entry would fail that test, and the failure would be indistinguishable
+    from a genuinely untranslated control.
+    """
+
+    def preprocess(self, source, name, filename=None):
+        # Only sqladmin's own list template. The five `brand/` templates that
+        # descend from it inherit the rewritten block, so touching them as
+        # well would be a second substitution on markup that no longer holds
+        # the literal - and would therefore raise.
+        if name != SQLADMIN_LIST_TEMPLATE:
+            return source
+        if SQLADMIN_IMPORT_BUTTON not in source:
+            raise RuntimeError(
+                _IMPORT_BUTTON_SKEW.format(
+                    expected=SQLADMIN_IMPORT_BUTTON, template=SQLADMIN_LIST_TEMPLATE
+                )
+            )
+        return source.replace(SQLADMIN_IMPORT_BUTTON, _KAICALC_IMPORT_BUTTON, 1)
+
+
 def install(env) -> None:
     """Give a Jinja environment ``_()`` and the language globals.
 
@@ -881,6 +981,12 @@ def install(env) -> None:
     # preprocesses at compile time and caches the result - and `install()` is
     # called at application build time, before any request.
     env.add_extension(_HtmlElement)
+    # The second rewrite, on the same terms and for the same reason: see
+    # `_ImportButton`. Two extensions rather than one keyed on a table of
+    # templates, so that each carries its own drift message naming its own
+    # consequence - a reader who hits one is told what breaks, not that
+    # "a rewrite" failed.
+    env.add_extension(_ImportButton)
     env.install_gettext_callables(gettext, ngettext, newstyle=True)
     env.globals["kaicalc_language"] = active_language
     env.globals["kaicalc_html_lang"] = html_lang

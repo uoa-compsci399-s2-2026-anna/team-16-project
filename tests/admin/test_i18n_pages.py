@@ -252,6 +252,33 @@ async def test_the_page_heading_composed_from_a_view_name_is_translated(admin_cl
 
 
 
+async def test_the_rewritten_import_button_is_still_translated_in_place(admin_client):
+    """The button says the right thing, and says it in the rendered language.
+
+    Two ways this could regress and they fail differently, so both are named:
+    a rewrite that dropped the `_()` wrapper would leave a correct English
+    button on a Chinese page, and a rewrite that never ran would leave
+    「导入 CSV」 - faithfully translated and still wrong about the formats.
+
+    Anchored on the anchor element rather than on the word, because 「导入」
+    also appears in the dialog's heading and its submit button on this same
+    page; a bare substring assertion would pass against a button that had
+    reverted.
+    """
+    page = (
+        await admin_client.get("/admin/sector/list", params={"lang": "zh"})
+    ).text
+
+    assert 'data-bs-target="#modal-import">导入</a>' in page, (
+        "the list page's Import button did not render as 导入 - either "
+        "admin/i18n.py::_ImportButton dropped the `_()` wrapper, or the "
+        "rewrite did not run on this environment's sqladmin/list.html"
+    )
+    assert "导入 CSV" not in page, (
+        "the button still carries the CSV-only label, translated"
+    )
+
+
 def _with_choice(client, value):
     """Add the language cookie to `client`'s jar for one `with` block.
 

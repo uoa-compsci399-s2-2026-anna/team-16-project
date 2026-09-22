@@ -944,7 +944,7 @@ def test_the_import_button_rewrite_is_applied_to_the_list_page_and_nowhere_else(
     substitution through a real Jinja environment instead.
 
     The second half matters more here than it did for the `<html>` element:
-    five `brand/` templates descend from `sqladmin/list.html` and inherit the
+    six `brand/` templates descend from `sqladmin/list.html` and inherit the
     rewritten block, so a rewrite keyed on anything looser than the template
     name would run twice - and the second pass, finding no literal, would
     raise.

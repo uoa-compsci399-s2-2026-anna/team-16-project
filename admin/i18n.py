@@ -911,9 +911,11 @@ class _ImportButton(Extension):
     that redefined it would have to re-state all of them - freezing them at
     today's sqladmin to change three words. That is exactly the debt
     ``admin/templates/sqladmin/_macros.html`` already cost this project once
-    (see ``_HtmlElement``), and the ratio here is worse, not better. Five
-    templates in this panel descend from ``list.html``, so a shadowing block
-    would also have to be repeated or re-parented five times.
+    (see ``_HtmlElement``), and the ratio here is worse, not better. Six
+    templates under ``admin/templates/brand/`` descend from ``list.html``
+    (``list_table``, ``model_list``, and the four that extend those), so a
+    shadowing block would have to be written into the one they all share -
+    which is a fork of ``model_menu_bar`` wherever it is put.
 
     **The drift guard, for the same reason ``_HtmlElement`` has one.** A
     rewrite that silently matches nothing is worse than no rewrite, because it
@@ -935,7 +937,7 @@ class _ImportButton(Extension):
     """
 
     def preprocess(self, source, name, filename=None):
-        # Only sqladmin's own list template. The five `brand/` templates that
+        # Only sqladmin's own list template. The six `brand/` templates that
         # descend from it inherit the rewritten block, so touching them as
         # well would be a second substitution on markup that no longer holds
         # the literal - and would therefore raise.

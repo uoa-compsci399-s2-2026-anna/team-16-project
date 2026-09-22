@@ -1322,6 +1322,15 @@ const isInnerHour = hours => hours === 0 || hours >= 13
  * @returns {number} 0 ≤ degrees < 360.
  */
 export function clockAngle(dx, dy) {
+  // **The exact centre has no angle, so it is given one here rather than left to
+  // IEEE.** `Math.atan2(0, -0)` is π — the negation of a zero `dy` produces
+  // negative zero, which `atan2` reads as "the negative x axis" — so a press on
+  // the dead centre of the face came back as *six o'clock*, and on the inner
+  // ring that is 18:00. Measured, not reasoned about: it is
+  // `tests/web/test_period_rules.py`'s centre case, which failed the first time
+  // it was run. Twelve is the answer that surprises nobody, and the press is in
+  // any case somebody who has not aimed yet.
+  if (dx === 0 && dy === 0) return 0
   return ((Math.atan2(dx, -dy) * 180) / Math.PI + 360) % 360
 }
 

@@ -33,6 +33,7 @@ project has lost defects to exactly that substitution.
 from __future__ import annotations
 
 import json
+import math
 import shutil
 import subprocess
 from pathlib import Path
@@ -81,6 +82,13 @@ const out = cases.map(entry => {
     return value
   }
   if (entry.call === 'step') return period.maskPeriodStep(entry.step, entry.field)
+  // WP3's clock. `dx`/`dy` are an offset from the centre of the face, in
+  // whatever units the caller measured in — the ring test divides by `radius`,
+  // so only the ratio matters and a test may write user units or pixels.
+  if (entry.call === 'angle') return period.clockAngle(entry.dx, entry.dy)
+  if (entry.call === 'hour') return period.hourFromPointer(entry.dx, entry.dy, entry.radius)
+  if (entry.call === 'minute') return period.minuteFromPointer(entry.dx, entry.dy)
+  if (entry.call === 'mode') return period.openClockMode(entry.event)
   throw new Error(`unknown call ${entry.call}`)
 })
 writeFileSync(process.argv[4], JSON.stringify(out), 'utf8')
@@ -477,3 +485,181 @@ def test_typing_never_changes_what_a_value_means(tmp_path):
     assert dict(zip(dates, date_result))["14092026"] == "2026-09-14"
     assert dict(zip(dates, date_result))["01012026"] == "2026-01-01"
     assert dict(zip(times, time_result))["0810"] == "08:10"
+
+
+# ---------------------------------------------------------------------------
+# WP3's clock: the pointer arithmetic, called directly
+# ---------------------------------------------------------------------------
+#
+# **Here as well as in the browser, and the division is the same one the rest of
+# this file makes.** `tests/web/test_period_clock_browser.py` drives real
+# `pointerdown`/`pointermove`/`pointerup` at real coordinates, which is the only
+# way to prove that a drag works, that the capture survives leaving the face and
+# that the hand ends up where the finger did. What it cannot afford is the
+# *decision*: 96 ring-and-angle cases is 96 page loads, and §6.5 caps a caller at
+# 600 GETs an hour. The angle, the two rings and the one-minute snap are
+# arithmetic, so they are asserted where arithmetic can be enumerated.
+
+
+def _polar(degrees: float, radius: float) -> tuple[float, float]:
+    """A point at `degrees` clockwise from twelve, `radius` from the centre.
+
+    The inverse of `period.js`'s `facePoint`, written out here rather than
+    imported so that the test states the convention independently: x grows to
+    the right and **y grows downwards**, which is what both a client rectangle
+    and an SVG `viewBox` do and is the whole reason `clockAngle` negates `dy`.
+    """
+    radians = math.radians(degrees)
+    return (radius * math.sin(radians), -radius * math.cos(radians))
+
+
+@node
+def test_twelve_oclock_is_up_and_the_angle_grows_the_way_a_clock_does(tmp_path):
+    """The convention the entire dial rests on, in four presses.
+
+    `atan2` measures from the positive x axis and anticlockwise; a clock
+    measures from straight up and clockwise. `clockAngle` swaps its arguments
+    and negates `dy` to make that translation, and a sign lost anywhere in it
+    gives a dial that reads three o'clock as nine.
+    """
+    up, right, down, left = run(
+        tmp_path,
+        [{"call": "angle", "dx": dx, "dy": dy} for dx, dy in
+         [(0, -10), (10, 0), (0, 10), (-10, 0)]],
+    )
+    assert (up, right, down, left) == (0, 90, 180, 270), (
+        f"the face is not a clock: up={up}, right={right}, down={down}, left={left}"
+    )
+
+
+@node
+def test_the_outer_ring_is_one_to_twelve_and_the_inner_ring_is_the_other_twelve(tmp_path):
+    """**The two rings are what makes this a 24-hour dial**, and the top of each
+    is the position the two disagree about: twelve o'clock outside, midnight
+    inside.
+
+    Every other inner position is its outer twin plus twelve — 1 becomes 13, 11
+    becomes 23 — which is Material's layout and the only one that puts 00:00 and
+    12:00 where a reader of a 24-hour clock looks for them. Enumerated over all
+    twelve positions of both rings rather than sampled, because an off-by-one in
+    the `step === 0` branch is invisible at any single position but 12.
+    """
+    outer = run(
+        tmp_path,
+        [{"call": "hour", "dx": _polar(index * 30, 80)[0], "dy": _polar(index * 30, 80)[1],
+          "radius": 96} for index in range(12)],
+    )
+    assert outer == [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], outer
+
+    inner = run(
+        tmp_path,
+        [{"call": "hour", "dx": _polar(index * 30, 52)[0], "dy": _polar(index * 30, 52)[1],
+          "radius": 96} for index in range(12)],
+    )
+    assert inner == [0, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23], inner
+
+
+@node
+def test_the_ring_boundary_is_halfway_between_the_two_rows_of_numbers(tmp_path):
+    """Which ring a press lands on is a distance, and the distance has to be
+    where the numbers say it is.
+
+    The two label rings are at 52 and 80 of a 96 radius, so the boundary is 66.
+    A press at 65 is inner and a press at 67 is outer; a boundary that had
+    drifted towards either ring would read a press aimed squarely at a printed
+    number as the other one's.
+
+    **The centre is included because it caught a real defect the first time it
+    was run.** It has no angle, and `Math.atan2(0, -0)` is π — negating a zero
+    `dy` produces negative zero, which `atan2` reads as the negative x axis — so
+    the dead centre of the face came back as six o'clock, and on the inner ring
+    that is 18:00. `clockAngle` now answers 0 there, which is midnight on the
+    ring a centre press lands on and surprises nobody.
+    """
+    just_inside, just_outside, centre, far_outside = run(
+        tmp_path,
+        [
+            {"call": "hour", "dx": 0, "dy": -65, "radius": 96},
+            {"call": "hour", "dx": 0, "dy": -67, "radius": 96},
+            {"call": "hour", "dx": 0, "dy": 0, "radius": 96},
+            {"call": "hour", "dx": 0, "dy": -140, "radius": 96},
+        ],
+    )
+    assert just_inside == 0, "a press at 65 of 96 is inside the inner ring"
+    assert just_outside == 12, "a press at 67 of 96 is on the outer ring"
+    assert centre == 0, (
+        "the dead centre of the face has no angle; it must be given one rather "
+        "than left to `atan2(0, -0)`, which is π and reads as six o'clock"
+    )
+    assert far_outside == 12, (
+        "a press beyond the face — which pointer capture makes reachable on "
+        "every drag — still reads as the outer ring"
+    )
+
+
+@node
+def test_a_minute_is_a_minute_and_not_a_multiple_of_five(tmp_path):
+    """**The single most consequential number in this control.**
+
+    Only every fifth minute is labelled, and the obvious implementation snaps to
+    the labels. A roster that says 08:07 is a real shift, and a dial that
+    answered 08:05 or 08:10 would refuse a period somebody actually worked —
+    while looking, on screen, exactly like one that worked.
+
+    So: all sixty positions, each read back as itself. If this ever returns
+    `round(value / 5) * 5` the assertion below names the first minute it lost.
+    """
+    minutes = run(
+        tmp_path,
+        [{"call": "minute", "dx": _polar(value * 6, 80)[0], "dy": _polar(value * 6, 80)[1]}
+         for value in range(60)],
+    )
+    assert minutes == list(range(60)), (
+        f"the minute ring does not resolve to one minute: {minutes}"
+    )
+
+
+@node
+def test_the_minute_ring_ignores_how_far_from_the_centre_the_pointer_is(tmp_path):
+    """There is one minute ring, so the distance means nothing on this stage.
+
+    It matters because a drag wanders: somebody sweeping towards "ten past"
+    pulls inwards and outwards across the gesture, and a minute that changed
+    with the radius would flicker while the angle held still.
+    """
+    near, on, far = run(
+        tmp_path,
+        [{"call": "minute", "dx": _polar(42, radius)[0], "dy": _polar(42, radius)[1]}
+         for radius in (20, 80, 200)],
+    )
+    assert (near, on, far) == (7, 7, 7), (near, on, far)
+
+
+@node
+def test_a_keyboard_press_opens_the_keyboard_mode_and_a_pointer_press_the_dial(tmp_path):
+    """**One character carrying the whole accessibility story**, so it is
+    asserted where it can be stated rather than only implied by a browser.
+
+    `UIEvent.detail` on a click is the click count. A real press is 1, the
+    second of a double-click is 2, and a click *synthesised* from `Enter` or
+    `Space` on a focused button is 0, because no button was clicked any number
+    of times. A dial has no keyboard route into it, so getting this backwards
+    hands a keyboard user a control they cannot drive at all.
+
+    `undefined` — a caller with no event to offer — opens the dial, which is the
+    safe default: the dial is the visible half, and the toggle inside the dialog
+    reaches the other one in one press either way.
+    """
+    keyboard, single, double, missing = run(
+        tmp_path,
+        [
+            {"call": "mode", "event": {"detail": 0}},
+            {"call": "mode", "event": {"detail": 1}},
+            {"call": "mode", "event": {"detail": 2}},
+            {"call": "mode"},
+        ],
+    )
+    assert keyboard == "keyboard", "a keyboard-synthesised click must open the number boxes"
+    assert single == "dial", "a pointer press must open the dial"
+    assert double == "dial", "the second click of a double-click is still a pointer press"
+    assert missing == "dial"

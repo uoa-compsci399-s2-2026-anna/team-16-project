@@ -19,6 +19,7 @@ against the defect and proves nothing.
 """
 
 import re
+from contextlib import contextmanager
 
 import pytest
 
@@ -32,6 +33,24 @@ pytestmark = [pytest.mark.db]
 #: exports the same table twice in one session must get two files rather than
 #: one silently overwritten by their browser.
 _EXPECTED = re.compile(r"^(?P<stem>[a-z0-9-]+)_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")
+
+
+@contextmanager
+def _rendering_in(language: str):
+    """Render as the panel would for `language`, and put it back afterwards.
+
+    The language is a ContextVar the whole session shares, and
+    `i18n.set_language` returns the code it SET rather than the one it
+    replaced - so the active value is read first and restored by hand. A test
+    that left Chinese in force would translate the next test's fixtures and
+    fail it somewhere else entirely.
+    """
+    previous = i18n.active_language()
+    i18n.set_language(language)
+    try:
+        yield
+    finally:
+        i18n.set_language(previous)
 
 
 def _live_admin(app):
@@ -53,11 +72,13 @@ def _live_admin(app):
 def _exporting(app):
     """Every registered ModelView whose Export control is on.
 
-    `_views` also holds the panel's four non-model pages (Getting started,
-    the dry run, the deployment view, self service), which have no model and
-    no export; `isinstance` rather than `getattr(..., "can_export", False)`
-    so that a view which lost the attribute is a failure here rather than a
-    silent exclusion.
+    `_views` also holds the panel's own pages - everything registered with
+    `add_base_view` rather than `add_view`: Getting started, the dry run, the
+    comparison, the deployment view and the login gauntlet's screens. They
+    have no model and no export. Filtered by `isinstance` rather than by
+    `getattr(view, "can_export", False)`, so that a ModelView which somehow
+    lost the attribute fails here rather than being silently excluded from
+    every assertion below.
     """
     from sqladmin import ModelView
 
@@ -83,8 +104,7 @@ def test_every_exporting_screen_names_its_file_after_the_table(admin_app, langua
     the *name* being translated rather than of any one screen - a view added
     later inherits it without anybody touching this file.
     """
-    previous = i18n.set_language(language)
-    try:
+    with _rendering_in(language):
         for view in _exporting(admin_app):
             for export_type in view.export_types:
                 name = view.get_export_name(export_type=export_type)
@@ -99,8 +119,6 @@ def test_every_exporting_screen_names_its_file_after_the_table(admin_app, langua
                     f"{view.identity} exports as {name!r} in {language}; the "
                     f"file does not say which table it came from"
                 )
-    finally:
-        i18n.set_language(previous)
 
 
 @pytest.mark.parametrize("language", ["en", "zh"])
@@ -117,8 +135,7 @@ def test_the_name_survives_the_ascii_filter_it_is_about_to_be_passed_through(
     """
     from sqladmin.helpers import secure_filename
 
-    previous = i18n.set_language(language)
-    try:
+    with _rendering_in(language):
         for view in _exporting(admin_app):
             name = view.get_export_name(export_type="csv")
             assert name.isascii(), f"{view.identity} in {language}: {name!r}"
@@ -126,31 +143,36 @@ def test_the_name_survives_the_ascii_filter_it_is_about_to_be_passed_through(
                 f"{view.identity}'s export name is altered by the ASCII filter "
                 f"in {language}: {name!r} -> {secure_filename(name)!r}"
             )
-    finally:
-        i18n.set_language(previous)
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("language", ["en", "zh"])
+@pytest.mark.parametrize("identity", ["sector", "audit-log"])
 async def test_the_downloaded_file_is_named_on_a_real_response(
-    admin_client, language
+    admin_client, identity, language
 ):
     """The header a browser actually reads, on the Chinese panel too.
 
-    The three tests above call `get_export_name` directly. This one goes
-    through the route, because the translated `name` is installed on the view
-    *class* at application build time and only a real request proves the
-    language in force during a response is the one the filename was built
-    from.
+    The tests above call `get_export_name` directly. This one goes through the
+    route, because the translated `name` is installed on the view *class* at
+    application build time and only a real request proves that the language in
+    force while a response is built is the one the filename was built from.
+
+    **Both export paths.** `sector` wears `AuditedImport`, whose own
+    `export_data` (admin/importing.py) replaces sqladmin's pair so that the
+    file it writes is the file the import reads; `audit-log` does not, and
+    goes through sqladmin's `_export_csv`. They call `secure_filename` in
+    different modules, so a repair that reached only one of them would still
+    lose the title on the five screens that do not wear it.
     """
     response = await admin_client.get(
-        "/admin/sector/export/csv", params={"lang": language}
+        f"/admin/{identity}/export/csv", params={"lang": language}
     )
     assert response.status_code == 200
 
     disposition = response.headers["content-disposition"]
     filename = disposition.split("filename=", 1)[1].strip('"')
-    assert filename.startswith("sector_"), (
+    assert filename.startswith(f"{identity}_"), (
         f"the downloaded file is called {filename!r} in {language}; it does "
         f"not say which table it came from"
     )
@@ -166,10 +188,7 @@ def test_the_table_name_on_the_page_is_still_translated(admin_app, language):
     English navigation menu on the Chinese panel. So the property that caused
     the defect is asserted to still hold.
     """
-    previous = i18n.set_language(language)
-    try:
+    with _rendering_in(language):
         sector = next(v for v in _exporting(admin_app) if v.identity == "sector")
         expected = "供应链环节" if language == "zh" else "Sector"
         assert sector.name == expected
-    finally:
-        i18n.set_language(previous)

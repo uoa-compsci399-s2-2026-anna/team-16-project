@@ -25,6 +25,25 @@ This document defines **what every person's code receives and what it returns.**
 
 ## 0.1 Change Log
 
+### v1.69 — 2026-09-22 (the period can be typed without punctuating it and picked without paging through it; affects C, and D only as advance notice)
+
+The owner used v1.68's finished field and reported five things. Four are the cost of entering a period by hand; one is a range the component could draw and could not reach. **Nothing here touches the wire** — this revision is entirely `web/js/period.js`, its stylesheet and the catalogues.
+
+**What does not change.** No request or response shape, no column, no migration, no CHECK, no validator. No engine input: the period is still absent from §3's `CalculationRequest`, and `tests/test_period_is_not_an_engine_input.py` walks `engine/`'s own source and all thirteen golden cases for the three names. No public statistic. **`tests/fixtures/*.json` does not move** — the executable contract already carries the three legal shapes and no field is added to any file, which is the third step of the change process satisfied by inspection rather than by edit.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **The four boxes punctuate themselves as they are typed.** `14092026` becomes `14/09/2026` and `0810` becomes `08:10`, key by key. Three rules make that safe rather than infuriating, and each was found by driving a real browser one keystroke per event: separators are inserted on `insertText` and `insertFromPaste` and **never on a delete**, or the `/` cannot be removed and the caret sits still while nothing happens; the caret is restored by **counting the digits before it**, not by character offset, or an edit to the middle of a value throws it to the end; and the mask **stops the moment the visitor types their own separator**, because `parseDateText` accepts `-`, `.`, a space and year-first order, and a mask that forced `dd/mm/yyyy` would break input shapes the field already takes. An IME's composition is left alone until it ends | §7.3a |
+| 2 | **A value that parses is tidied when the caret leaves, and a value that does not is left exactly as it was typed.** `1/1/2026` becomes `01/01/2026` on `focusout`; `31/02/2026` stays `31/02/2026` beside the sentence saying why. Somebody who wrote a wrong date needs to see what they wrote in order to fix it, and silently rewriting a value the visitor did not choose is the worse of the two failures. **This changes appearance and nothing else** — `parseDateText` already accepted `1/1/2026` and `parseTimeText` already returned a padded `08:10` for `0810`, so the instant sent has always been the tidy one. A round-trip test types the untidy form and asserts the request body is byte-identical to the tidy form's | §7.3a |
+| 3 | **`parseTimeText` accepts a one-digit minute and a bare hour**: `8:5` is `08:05` and `8` is `08:00`. Widened in the parser, so the typing path, the blur path and the calendar's own missing-time fallback agree; a looser second parser used only on blur would be two rules for one field. `810` stays refused — it is five past eight to one reader and ten past to another | §7.3a |
+| 4 | **The calendar's caption is two buttons, and each opens a grid.** The range is 1970-01-01 to now + 24 hours — **fifty-seven years** — and v1.67's only ways across it were 57 `Shift+PageUp` presses or 684 clicks on `‹`, which made the lower half of a range the form advertises effectively unreachable. Pressing the year opens a year grid; choosing a year returns to the days, same month, that year. The month opens a twelve-cell grid on the same machinery. `‹ ›` and `PageUp`/`PageDown` are unchanged. **`Esc` nests** — from a grid it returns to the days, and only from the days does it close the dialog | §7.3a |
+| 5 | **A clock face sits beside each time box, with a keyboard mode beside it, and the text box is untouched.** Two stages, hours then minutes; two rings, because a 24-hour clock needs 1–12 outside and 00 and 13–23 inside; **minutes snap to one minute and only every fifth is labelled**, because a roster that says 08:07 is real and a five-minute snap would refuse it. **Which mode a press opens is decided by how the button was pressed** (`event.detail === 0`): a pointer opens the face, a keyboard opens two number boxes. The face is `aria-hidden` and the value is announced from a polite live region, so the keyboard mode is not a fallback but the only accessible route into a control with 1,440 positions | §7.3a |
+| 6 | **The clock writes a time and nothing else.** It writes into `state.periodFields` and lets `periodProblem` answer, so `MAX_HOURS_AHEAD` is not re-implemented inside it; and it **does not fill a date**, although `chooseDay` fills a missing time with `00:00`. A date alone is half a bound and midnight is the honest reading of a day somebody pointed at; a date guessed from a time is a value the visitor never stated. Writing a time is an edit, so it demotes a preset to `custom` exactly as choosing a day does | §7.3a |
+| 7 | **Sixteen new keys across the twenty catalogues, both trees byte-identical.** Fourteen code points had no glyph in any embedded face — `拖 曳 盤 盘 錶 鐘 钟 確 确 著 押 ボ 끌 늘 판`, the vocabulary of a dial, its hand and its face — so the four CJK subsets were re-cut (`api/assets/fonts/noto/PROVENANCE.md`, 2026-09-22). **None of the sixteen carries a format pattern**, so §7.7.7's translate-around-the-pattern rule has nothing to bite on here; hours, minutes, months and years are numerals and are not catalogue keys. `fr` and `de` declare `Minute` in `IDENTICAL_BY_DESIGN` — it is the word on a French and a German clock, and the alternatives are an abbreviation and a plural over a single-value box | §7.7, §7.7.7 |
+| 8 | **The calendar button's icon is inline SVG.** It was `🗓` (U+1F5D3), whose **default presentation is text**: measured in the page's own font it is 16.0px wide, the same as a capital M, against 22.0px for an emoji-presentation glyph — so Windows drew it monochrome from a symbol font and it read as an empty rectangle. §7.6 rule 7 forbids an icon font, which is why it is drawn rather than fetched. The clock button carries a matching one | §7.3a |
+
+> **Every measurement in this revision was taken at a 390px viewport as well as a desktop one, in five languages including two right-to-left.** v1.67's calendar shipped a grid measuring 760px inside a 358px dialog — seven columns of 109px, three of them unreachable by touch — and nothing caught it, because `tests/web/test_horizontal_overflow.py` walks static pages and never opens a dialog, and a dialog's own `overflow: auto` keeps its overflow off the document. The five surfaces this revision leaves behind are each asserted against their dialog's own box. What the measurement showed is that **a translation grows the dialog's height, not its width**: the widest child of every calendar surface is the hint line at exactly the grid's 326px in all five languages, while the tallest surface measured — the Malayalam clock at 624px — still fits an 844px phone without scrolling.
+
 ### v1.68 — 2026-09-21 (the period reaches the payload, the page and both downloads; affects C and D, and B as the owner of the document renderer)
 
 v1.67 gave the wire and the store two instants and said, in as many words, what it was leaving behind: *"`web/js/results.js`'s `TIME_FRAME_LABELS` has no phrase for `custom` and needs one; nothing under `web/` sends either new field yet; `api/pdf_render.py` prints no period at all."* This revision is those three sentences, closed.
@@ -4727,13 +4746,16 @@ No exports. Uses top-level `await` to call `getFactors()`, then writes the facto
 
 > **The downstream table carries a `Sector` column (v1.31)**, rendering `All sectors` where `downstream[].sector` is `null`, beside the `All food categories` the food column already renders. It is not optional: with a set that prices by sector, omitting it prints rows that are identical in every visible column and differ only in the number — the figure published without its basis that §2.2's provenance columns exist to prevent. The sentence above the table states §4.1's order as well, because the two columns each show a scope and neither can say which one gives way.
 
-### `period.js` — step 5's reporting period (v1.67, written by C)
+### `period.js` — step 5's reporting period (v1.67, extended v1.69, written by C)
 
 **The control behind §6.2's `period_start` / `period_end`.** Step 5's `#time-frame` select
 gains a fifth option, `custom`, and any stated answer reveals two typable bounds — a date box
-and a time box each — with a hand-built calendar dialog behind each date box. The field stays
-optional and "Not stated" stays the default, which is the whole of what a visitor who never
-opens it sees.
+and a time box each — with a hand-built calendar dialog behind each date box and, from v1.69,
+a hand-built clock behind each time box. The field stays optional and "Not stated" stays the
+default, which is the whole of what a visitor who never opens it sees. **Both dialogs are
+additions to the boxes and never replacements for them**: a visitor who types `14092026` and
+`0810` and never opens either one is the fast path this module was built around, and
+`tests/web/test_period_typing_browser.py` still says so.
 
 | Export | What it is |
 | --- | --- |
@@ -4742,6 +4764,10 @@ opens it sees.
 | `periodValues(fields?)` | `{ periodStart, periodEnd }` in the wire's shape, `YYYY-MM-DDTHH:MM`, or `''` when the period is not legal |
 | `timeFrameChanged(value)` | The `setState` patch the select produces: a preset fills the interval, `custom` keeps it, "Not stated" clears it |
 | `handlePeriodClick` / `handlePeriodInput` / `handlePeriodKeydown` | Delegated from `calculator.js`; each answers whether it owned the event |
+| `handlePeriodBlur` / `handlePeriodComposition` (v1.69) | `focusout` and the IME guard, delegated the same way. `blur` does not bubble, so `focusout` is what a delegated listener can see |
+| `handlePeriodPointer` (v1.69) | `pointerdown`/`move`/`up`/`cancel` on the clock face, one code path for mouse, touch and pen |
+| `maskPeriodStep`, `maskPeriodText` (v1.69) | The separator arithmetic, exported so it can be enumerated without a browser |
+| `clockAngle`, `hourFromPointer`, `minuteFromPointer`, `openClockMode` (v1.69) | The dial's arithmetic, exported for the same reason |
 | `MAX_HOURS_AHEAD` | **24**, and see below |
 
 **No library, no build step.** §7.6 rule 7 forbids a runtime asset from a third-party host —
@@ -4751,10 +4777,18 @@ controls because the client's team is on Apple hardware and Safari's rendering o
 be relied on to match the browser the rest of the team uses. Both boxes are `type="text"` with
 `inputmode="numeric"`.
 
-**The time is typed, not dialled.** `HH:MM`, 24-hour, no stepper and no clock face: at minute
-precision a shift is *entered* — `0810` is accepted as well as `08:10` — and a dial resolving
-1,440 positions is slower than four keystrokes in every case. Two `<select>`s lose on the same
-ground and double the tab stops per bound.
+**The time is typed *and*, from v1.69, dialled — and the order of those two words is the
+decision.** v1.67 recorded the opposite ruling here: *"The time is typed, not dialled … a dial
+resolving 1,440 positions is slower than four keystrokes in every case. Two `<select>`s lose on
+the same ground and double the tab stops per bound."* The owner asked for the dial (2026-09-22)
+and that is theirs to ask. **The old reasoning is not withdrawn; it is what gives the dial its
+shape.** The text box is unchanged and still accepts `0810`, `08:10`, `08.10`, `8:10` and, from
+v1.69, `8:5` and `8`. The face is an addition reached by a button, minutes resolve to one
+minute rather than to the labels, and because a dial genuinely cannot be driven by a keyboard
+and has no accessible name for 1,440 positions, the dialog carries two number boxes and a
+toggle beside the face — which is the old paragraph's first argument restated as an
+accessibility fact, and the reason Android's own picker has both. Two `<select>`s are still
+refused, on v1.67's unchanged ground. Seconds are still not offered.
 
 **The dialog is a real one.** `role="dialog"`, `aria-modal="true"`, focus moved in on open and
 **returned to the control that opened it** on close, `Esc` to dismiss, `Tab` cycled inside it —
@@ -4767,6 +4801,31 @@ unreachable rather than greyed. The keyboard is arrows by day, `PageUp`/`PageDow
 choose. **The horizontal arrows mirror under `dir="rtl"`**, because a `<table>`'s columns
 mirror with the document and an unmirrored `ArrowRight` would move the focus ring leftwards
 across the screen.
+
+**From v1.69 the calendar has three views and the caption is two buttons.** `periodPicker.view`
+is `days`, `months` or `years`; anything unexpected normalises to `days`, and opening the
+dialog always opens on days, because a picker that remembered a year grid would open on the
+wrong question. Choosing a year returns to the days in that month of that year, and **choosing
+a year or a month writes no field and demotes nothing** — `chooseDay` remains the only writer.
+**`Esc` nests**: from a grid it returns to the days, and only from the days does it close the
+dialog. The year grid is five to a row from 1970, so every row is a half-decade, and it opens
+**scrolled to the year the cursor is on** rather than at 1970 — the scroll is done beside the
+focus call rather than left to `.focus()`, which scrolls only to `nearest` and puts the cursor
+hard against an edge. The new grids take no `PageUp`/`PageDown` and their hints do not claim
+any. **The day grid stopped using `aria-labelledby` on the caption**: `aria-labelledby`
+resolves a referenced button to its *accessible name*, so a split caption would have had the
+grid announced as "September, Choose a month 2026, Choose a year".
+
+**The clock is a second dialog, in the same shape (v1.69).** Two stages with a permanent visible
+way back between them, so **`Esc` closes rather than nesting** — deliberately unlike the
+calendar, because the two stages are two halves of one value and nothing is written until *Set
+the time*. **The face does not mirror under `dir="rtl"`**, which is the other deliberate
+difference: a week is text laid out in reading order and mirrors with it, a clock is a clock,
+and the face was measured byte-identical in position under Arabic. The face is `aria-hidden`
+and carries `touch-action: none`; the value is announced from a polite live region; the hand's
+transition is dropped under `prefers-reduced-motion` and during a drag. **The clock re-implements
+none of `periodProblem`'s rules** — it writes into `state.periodFields` and lets the existing
+check answer, so `MAX_HOURS_AHEAD` has exactly one copy.
 
 **`render()` replaces `main.innerHTML` on every `setState`**, so whether the dialog is open,
 which day the roving `tabindex` sits on and what is typed in the four boxes all live in
@@ -4782,7 +4841,21 @@ results breakdown tabs.
 re-render per keystroke destroys the caret and because `change` on a text input fires while
 focus is already leaving it. They mutate `state.periodFields` and patch the error line, the
 `aria-invalid` flags and the Calculate button by hand, all through the one `periodProblem`
-the render path uses.
+the render path uses. **From v1.69 the blur path shares that hand-patcher with the keystroke
+path** rather than owning a second copy of it, which is what keeps the two-path agreement the
+exception is granted on.
+
+**That exception is also what makes v1.69's self-punctuating boxes possible**, since rewriting
+`event.target.value` and placing a caret is only safe where no render intervenes. Three rules
+bound it, each measured one keystroke per event in a real browser rather than with a single
+`fill`: separators are inserted on insertion and **never on a delete**, or the `/` cannot be
+removed; the caret is restored by **counting digits before it** rather than by character
+offset; and the mask **takes its own separators back out the moment a foreign character
+lands**, because four bare digits are indistinguishable from `dd/mm` and a visitor typing
+`2026-09-14` has already been given `20/26` by the time their `-` arrives. Which separators
+are the mask's own cannot be read off the text once a mid-value edit has moved them, so it is
+held on the element and cleared by a render — a value the calendar or a preset wrote is
+nobody's to re-punctuate.
 
 **Dates, month names and weekday names are `en-NZ` in every language, and the first day of the
 week follows from that pin.** `stats.js` and `home.js` pin the same locale for the same
@@ -4804,11 +4877,12 @@ O-4 is decided these three modules change together or not at all.
 > out of both files, asserts the arithmetic between them, and greps the browser module for a
 > stray `38`.
 
-> **What this leaves for later (WP4).** The nineteen new `t()` keys are not in the twenty
-> catalogues, so they render in English there until they are. Everything downstream of
-> `state.periodStart` / `state.periodEnd` landed at v1.68: `web/js/submission.js` sends both
-> fields on both payloads, `results.js` reads them back on the page and into the text
-> download, and `api/pdf_render.py` prints them on the document.
+> **Nothing in this module is waiting on anything.** v1.67's nineteen `t()` keys reached the
+> twenty catalogues at v1.68, and v1.69's sixteen reached them in the same revision that added
+> them; every catalogue carries 454 entries and the two trees are byte-identical. Everything
+> downstream of `state.periodStart` / `state.periodEnd` landed at v1.68: `web/js/submission.js`
+> sends both fields on both payloads, `results.js` reads them back on the page and into the
+> text download, and `api/pdf_render.py` prints them on the document.
 
 > **`periodProblem` refuses `custom` with no interval (v1.68), and it takes the `time_frame`
 > as an argument so that it can.** §6.2 answers `period_custom_without_interval` to that

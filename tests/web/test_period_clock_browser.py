@@ -302,10 +302,10 @@ def test_a_drag_across_twelve_oclock_does_not_wrap_the_wrong_way(review):
     11, 10. The value is read off the live region at every step, so what is
     asserted is the whole path and not only where it stopped.
 
-    It also proves `setPointerCapture`: the moves are dispatched at 0.85 of the
-    radius, but the `pointerup` is deliberately released at 1.4 — well outside
-    the face — and the value still lands, which is the case a drag without
-    capture loses.
+    The `pointerup` is deliberately released at 1.4 of the radius — well outside
+    the face — and the value still lands. **That is not, on its own, evidence of
+    the pointer capture**, and the claim that it is was measured and found false:
+    see `test_the_face_holds_the_pointer_capture_while_a_drag_is_in_flight`.
     """
     page = review()
     _open_dial(page)
@@ -331,6 +331,59 @@ def test_a_drag_across_twelve_oclock_does_not_wrap_the_wrong_way(review):
     assert _announced(page).startswith("02:"), (
         f"the release outside the face was lost: {_announced(page)} — this is what "
         f"pointer capture exists for"
+    )
+    assert not page.uncaught, page.uncaught
+
+
+def test_the_face_holds_the_pointer_capture_while_a_drag_is_in_flight(review):
+    """**A survivor, and the honest way to close it.**
+
+    Deleting `setPointerCapture` from `handlePeriodPointer` left every other test
+    in this file green, and the reason is measured rather than guessed: the
+    dialog's backdrop is `position: fixed; inset: 0`, it is what
+    `document.elementFromPoint` returns at *every* point in the viewport
+    including (2, 2), and it is a DOM descendant of `main` — which is where all
+    four pointer listeners are delegated, because `render()` replaces
+    `main.innerHTML`. So a `pointermove` a long way outside the face bubbles to
+    the same handler whether or not anything captured the pointer. Releasing the
+    capture from the page mid-drag and then moving to 1.6 × the radius still
+    tracked the hand and still advanced the stage.
+
+    **That makes the mutation equivalent, not the drag test weak** — no gesture
+    a browser test can perform distinguishes the two, because the one case that
+    does is a pointer released outside the browser window, which Playwright
+    cannot reach. So the capture is asserted directly, through the browser's own
+    `hasPointerCapture`, which is observable state rather than a read of the
+    source.
+
+    It is worth keeping and worth pinning because the equivalence is a fact about
+    a *stylesheet*: it holds only while the backdrop covers the viewport and
+    lives inside `main`, both of which are one `inset` or one `popover` away from
+    being false, and a gesture that broke then would be a long way from the
+    change that broke it.
+    """
+    page = review()
+    _open_dial(page)
+    assert page.evaluate(
+        """() => { const backdrop = document.elementFromPoint(2, 2);
+             return [backdrop?.className, document.querySelector('main').contains(backdrop)]; }"""
+    ) == ["period-dialog-backdrop", True], (
+        "the backdrop no longer covers the viewport from inside `main`, so the "
+        "delegated listeners no longer see a pointer outside the face and the "
+        "capture below is now the only thing keeping a drag alive"
+    )
+
+    page.mouse.move(*_at(page, 240))
+    page.mouse.down()
+    page.wait_for_timeout(60)
+    # Chromium gives a mouse `pointerId` of 1.
+    held = page.evaluate("document.querySelector('.period-clock-face').hasPointerCapture(1)")
+    page.mouse.up()
+    page.wait_for_timeout(150)
+    assert held, (
+        "the face does not hold the pointer capture during a drag; a release "
+        "outside the browser window would never be delivered, and the gesture "
+        "would be depending on the backdrop's geometry instead"
     )
     assert not page.uncaught, page.uncaught
 
@@ -400,9 +453,10 @@ def test_the_hours_come_first_and_the_minutes_follow_and_there_is_a_way_back(rev
     """
     page = review()
     _open_dial(page)
-    assert page.evaluate(STAGES) == [
-        ["hours", "true", "00"], ["minutes", "false", "00"],
-    ] or page.evaluate(STAGES)[0][1] == "true", "the clock did not open on the hours"
+    opened = page.evaluate(STAGES)
+    assert [stage[:2] for stage in opened] == [["hours", "true"], ["minutes", "false"]], (
+        f"the clock did not open on the hours: {opened}"
+    )
 
     _tap(page, 90)  # three o'clock
     stages = page.evaluate(STAGES)
@@ -860,6 +914,15 @@ def test_the_whole_clock_fits_inside_the_dialog_on_a_phone(review, lang):
             f"{measured['content']}px dialog, so it does not fit the phone it is "
             f"being read on"
         )
+        # **What this guards is the viewBox, not a stylesheet declaration.** An
+        # `aspect-ratio: 1` was written on `.period-clock-face` and deleting it
+        # survived this test — an `<svg viewBox="0 0 200 200">` at `inline-size:
+        # 100%` with an auto block size already has an intrinsic 1:1 ratio, so
+        # the declaration decided nothing and has been removed. Measured at both
+        # viewports: 260x260 with it and 260x260 without. The same measurement
+        # with the viewBox changed to `0 0 200 260` gives 260x338, which this
+        # assertion does catch — and a face that is not square is a face where
+        # the angle a press means is not the angle it looks like.
         assert measured["round"] == 0, (
             f"{lang}/{stage}: the face is not square ({measured['round']}px out), so "
             f"the angle a press means is not the angle it looks like"

@@ -3244,9 +3244,19 @@ td.period-choice:focus-visible { outline: 2px solid var(--focus); outline-offset
 /* **`touch-action: none` is not decoration.** Without it a finger dragging the
    hand is claimed by the page's own scrolling before the second `pointermove`
    arrives, and the dial is unusable by touch - which is the half of the control
-   the owner asked for. `aspect-ratio` keeps the circle round at every width, and
-   `margin-inline` (not `margin-left`) centres it. */
-.period-clock-face { display: block; inline-size: 100%; max-inline-size: 260px; margin-inline: auto; aspect-ratio: 1; touch-action: none; }
+   the owner asked for. `margin-inline` (not `margin-left`) centres it.
+
+   **There is deliberately no `aspect-ratio: 1` here, and that is a measurement
+   rather than an omission.** It was written, and deleting it survived the phone
+   test: an `<svg viewBox="0 0 200 200">` with `inline-size: 100%` and an auto
+   block size already has an intrinsic 1:1 ratio, so the declaration decided
+   nothing. Measured in Chromium at 1278px and at 390px - 260x260 with it and
+   260x260 without, identically - and the same measurement with the viewBox
+   changed to `0 0 200 260` gave 260x338, which is what actually decides the
+   shape. `test_the_whole_clock_fits_inside_the_dialog_on_a_phone` asserts the
+   face is square to the pixel, and that assertion guards the viewBox, which is
+   the thing that answers. */
+.period-clock-face { display: block; inline-size: 100%; max-inline-size: 260px; margin-inline: auto; touch-action: none; }
 .period-clock-dial { fill: var(--mint); }
 .period-clock-stem,
 .period-clock-knob,

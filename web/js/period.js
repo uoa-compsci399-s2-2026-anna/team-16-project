@@ -2304,13 +2304,30 @@ let clockPointer = null
  * a drag is the same two with `pointermove`s in the middle, so the two gestures
  * are the same code and cannot come apart.
  *
- * **`setPointerCapture` is what makes a drag off the edge of the face keep
- * working.** Without it, a sweep that leaves the circle stops being delivered
- * and the hand freezes where the pointer crossed the boundary — which is most
- * drags, because a person aiming at "ten past" pushes outwards. With it every
- * later event is retargeted to the `<svg>`, so the angle goes on being read
- * however far out the pointer is, and a release anywhere on the page still lands
- * here.
+ * **`setPointerCapture` keeps a drag alive off the edge of the face, and it is
+ * currently belt to the backdrop's braces — which was measured, not assumed.**
+ * The obvious claim is that without it a sweep leaving the circle stops being
+ * delivered and the hand freezes where the pointer crossed the boundary. That
+ * claim is **false here**, and deleting the call survives every browser test.
+ * Measured in Chromium: the dialog's backdrop is `position: fixed; inset: 0`, it
+ * is what `document.elementFromPoint` returns at *every* point in the viewport
+ * including (2, 2), and it is a DOM descendant of `main` — where all four
+ * pointer listeners are delegated, because `render()` replaces `main.innerHTML`.
+ * So every `pointermove` and `pointerup` anywhere on screen bubbles to the same
+ * handler with or without the capture. Releasing the capture mid-drag from the
+ * console and then moving to 1.6 × the radius still tracked the hand and still
+ * advanced the stage.
+ *
+ * It is kept, for two reasons that are not the false one. A pointer released
+ * **outside the browser window** is delivered only to the captured element, and
+ * nothing in a Playwright test can leave the window to show that. And the drag
+ * should not silently depend on a full-viewport backdrop existing: that is a
+ * fact about a *stylesheet*, one `inset` away from not being true, and a
+ * gesture that broke when somebody made the dialog a popover would be a very
+ * long way from the change that broke it.
+ * `tests/web/test_period_clock_browser.py` therefore asserts the capture
+ * directly, with `hasPointerCapture` mid-drag, and says there why the
+ * behavioural assertion beside it cannot.
  *
  * `preventDefault()` on `pointerdown` suppresses the compatibility `mousedown`,
  * which is what would otherwise blur the readout button and drop focus on

@@ -28,6 +28,7 @@ session this class did not create.
 """
 
 import contextvars
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -524,7 +525,60 @@ class AdministratorOnly:
             raise HTTPException(status_code=403)
 
 
-class AuditedModelView(ModelView):
+class AsciiExportName:
+    """Names a downloaded export after its table, in every language.
+
+    **What went wrong, because it was invisible in English.** sqladmin builds
+    the download name as ``f"{self.name}_{time.strftime(...)}.{ext}"`` and then
+    passes it through ``sqladmin.helpers.secure_filename``, a Werkzeug port
+    whose second line is ``filename.encode("ascii", "ignore").decode("ascii")``.
+    By the time an export runs, ``admin/i18n.py::translate_view_names`` has
+    replaced every registered view's ``name`` with a descriptor returning the
+    **translated** string - which is what it is for, and what puts 「供应链环节」
+    at the top of the page. On the Chinese panel the whole title is therefore
+    non-ASCII, and the filter deletes all of it::
+
+        'Sector'     -> 'Sector_2026-09-22_16-54-02.csv'
+        '供应链环节'  -> '2026-09-22_16-54-02.csv'      <- the title is gone
+
+    A staff member exporting three tables to compare got three files
+    distinguishable only by the second they were downloaded in.
+
+    **``self.name`` IS NOT USED HERE AND MUST NOT BE PUT BACK.** It reads
+    better - "Sector_..." over "sector_..." - and that is exactly why the
+    measurement above is written out rather than summarised: the friendlier
+    name is the defect, and it only shows itself in a language the person
+    making the change is probably not reading the panel in.
+
+    **``identity`` instead**, which sqladmin derives from the model class
+    (``slugify_class_name(model.__name__)``), is ASCII by construction, is
+    never translated, and is the same word as the URL the file was exported
+    from - so a staff member can see at a glance which screen a file on their
+    desktop came from.
+
+    **The ASCII filter stays.** The filename travels in ``Content-Disposition``
+    and then onto a filesystem, and a non-ASCII one there is a bet on how the
+    client decodes it. The repair is to stop feeding a translated string into
+    the filter, not to defeat it. ``tests/admin/test_export_name.py`` asserts
+    that ``secure_filename`` is now a no-op on what this returns, in Chinese as
+    well as English - which is the assertion that would fail if somebody put
+    ``self.name`` back.
+
+    **The timestamp stays**, unchanged from sqladmin's own: a staff member
+    exporting the same table twice in one session has to get two files rather
+    than one silently overwritten by their browser.
+
+    Worn by ``AuditedModelView`` and by ``AuditLogAdmin``, which between them
+    are every exporting screen on this panel; the test above walks the
+    registered views rather than a list, so a view added later that misses
+    this fails there.
+    """
+
+    def get_export_name(self, export_type: str) -> str:
+        return f"{self.identity}_{time.strftime('%Y-%m-%d_%H-%M-%S')}.{export_type}"
+
+
+class AuditedModelView(AsciiExportName, ModelView):
     """Base for every CRUD view. Contract §8.1.
 
     The eleven taxonomy and factor views of contract §8.1 subclass this in
@@ -681,7 +735,7 @@ class AuditedModelView(ModelView):
             _view_var.reset(view_token)
 
 
-class AuditLogAdmin(AdministratorOnly, ModelView, model=AuditLog):
+class AuditLogAdmin(AdministratorOnly, AsciiExportName, ModelView, model=AuditLog):
     """Contract §8.2: read-only, filterable by actor, time and table.
     Contract §8.3 from v1.15: ``role = admin`` only.
 

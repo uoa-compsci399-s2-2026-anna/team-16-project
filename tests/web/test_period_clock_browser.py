@@ -938,3 +938,70 @@ def test_the_whole_clock_fits_inside_the_dialog_on_a_phone(review, lang):
             f"{lang}/{stage}: the clock pushed the page sideways: {measured['page']}"
         )
     assert not page.uncaught, page.uncaught
+
+@pytest.mark.parametrize("lang", ["en", "de", "ml", "ar"])
+def test_the_keyboard_mode_fits_inside_the_dialog_on_a_phone(review, lang):
+    """**The dial's phone measurement above never opens this mode**, and it is
+    the half that a translation is most likely to break.
+
+    The dial is a square SVG: it is the same 260px in every language, because
+    nothing in it is a word. The keyboard mode is nothing but words — two field
+    labels, a hint sentence, a mode toggle that is a whole sentence, and two
+    action buttons — over two number boxes whose `flex: 0 1 110px` is free to
+    shrink under a `min-inline-size: auto` that resolves to the label's
+    min-content width. A long label is therefore the one thing here that can
+    make a box narrower than a finger, and no test looked.
+
+    The four languages are chosen for length rather than coverage: German and
+    Malayalam are the two that ran longest across the sixteen strings WP4
+    translated (Malayalam's hint is the widest of the twenty), and Arabic is
+    here because a right-to-left row that did not mirror would put a control
+    outside the box on the other side.
+
+    **44px is the touch target, not a round number** — WCAG 2.2's 2.5.8 minimum,
+    and the reason the boxes are measured at all rather than only the dialog.
+    """
+    page = review(lang=lang, width=390, height=844)
+    _open_dial(page)
+    page.click('[data-action="period-clock-mode"]')
+    page.wait_for_selector(".period-clock-entry", timeout=5000)
+    page.wait_for_timeout(200)
+
+    measured = page.evaluate(
+        """() => {
+          const dialog = document.querySelector('.period-clock-dialog');
+          const box = dialog.getBoundingClientRect();
+          const parts = [...dialog.querySelectorAll(
+            '.period-clock-box label, .period-clock-box input, .period-dialog-hint,'
+            + ' .period-clock-mode, .period-clock-set, .period-clock-cancel')];
+          return {
+            content: Math.round(dialog.clientWidth),
+            boxes: [...dialog.querySelectorAll('.period-clock-box input')]
+              .map(input => Math.round(input.getBoundingClientRect().width)),
+            outside: parts.filter(part => {
+              const rect = part.getBoundingClientRect();
+              return rect.left < box.left - 1 || rect.right > box.right + 1;
+            }).map(part => part.textContent.trim() || part.id),
+            sideways: Math.round(dialog.scrollWidth - dialog.clientWidth),
+            page: [document.documentElement.scrollWidth, document.documentElement.clientWidth],
+          };
+        }"""
+    )
+
+    assert len(measured["boxes"]) == 2, measured
+    assert min(measured["boxes"]) >= 44, (
+        f"{lang}: the number boxes measure {measured['boxes']}px inside a "
+        f"{measured['content']}px dialog — under 44px is smaller than the finger "
+        f"that has to hit it"
+    )
+    assert measured["outside"] == [], (
+        f"{lang}: drawn outside the dialog's own box and so unreachable by "
+        f"touch: {measured['outside']}"
+    )
+    assert measured["sideways"] == 0, (
+        f"{lang}: the dialog scrolls sideways by {measured['sideways']}px"
+    )
+    assert measured["page"] == [390, 390], (
+        f"{lang}: the keyboard mode pushed the page sideways: {measured['page']}"
+    )
+    assert not page.uncaught, page.uncaught

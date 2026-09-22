@@ -1037,7 +1037,7 @@ def test_all_seven_columns_fit_inside_the_calendar_on_a_phone(review, lang):
     )
 
 
-@pytest.mark.parametrize("lang", ["en", "ar"])
+@pytest.mark.parametrize("lang", ["en", "de", "ml", "ar"])
 def test_the_year_and_month_grids_fit_inside_the_calendar_on_a_phone(review, lang):
     """**A new grid is a new table and inherits none of the fix above.**
 
@@ -1049,6 +1049,14 @@ def test_the_year_and_month_grids_fit_inside_the_calendar_on_a_phone(review, lan
     nothing else would: `test_horizontal_overflow.py` walks static pages and
     never opens a dialog, and the dialog's own `overflow: auto` keeps a grid's
     overflow off the document.
+
+    **German and Malayalam joined the parametrisation when the two grids were
+    translated.** The cells are numerals and English month abbreviations in every
+    language, so nothing in the grid itself grew - but the hint line above it did,
+    and it is the widest thing in the dialog in all twenty catalogues. Measured at
+    390px: the hint is 326px in every language here and the dialog it is wrapping
+    inside grows taller rather than wider (English months 331px tall, German 353,
+    Malayalam 366), which is the outcome this asserts rather than assumes.
     """
     page = review(lang=lang, width=390, height=844)
     page.select_option("#time-frame", "custom")

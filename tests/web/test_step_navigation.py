@@ -486,8 +486,22 @@ def test_the_bar_is_sticky_and_not_fixed(page_at):
     samples = [gap_at(round(scrollable * fraction)) for fraction in (0, 0.4, 0.85)]
     assert all(sample["position"] == "sticky" for sample in samples), samples
     gaps = [sample["gap"] for sample in samples]
-    assert gaps[0] < gaps[1] < gaps[2], (
-        f"the gap did not grow while scrolling - a fixed bar reads this way too: {gaps}"
+    #: **Non-decreasing, and strictly greater by the end** - not strictly
+    #: growing at every sample, which is a claim about where the bar unpins
+    #: rather than about `sticky` versus `fixed`. The three fractions were
+    #: chosen when this step's only scroll came from Task 2's two fields; any
+    #: copy added to step 3 lengthens the pinned region, and 0.4 then lands
+    #: inside it and reads the same 0 as the top. Measured: `[0, 0, 159]` on
+    #: this step once the production total explains itself. What still tells
+    #: the two apart is the end - a `fixed` bar's gap never changes, so
+    #: `gaps[0] < gaps[-1]` fails for it at any page height, which is asserted
+    #: rather than inferred and is mutation-checked against
+    #: `.step-nav { position: fixed }`.
+    assert gaps[0] <= gaps[1] <= gaps[2], (
+        f"the gap shrank while scrolling, which no sticky bar does: {gaps}"
+    )
+    assert gaps[0] < gaps[-1], (
+        f"the gap never grew - a fixed bar reads this way too: {gaps}"
     )
 
 
@@ -1320,12 +1334,30 @@ def test_the_production_total_names_its_unit_and_is_cleared_when_the_unit_change
     assert "kilograms" in label.inner_text(), (
         f"the field does not name the unit it is read in: {label.inner_text()!r}"
     )
+    #: **Issue #65's half of this test: the explanation is on screen, and it is
+    #: on screen once.** The two sentences were written on 2026-09-19 but both
+    #: lived behind the term tooltip, which a reader has to know is there before
+    #: it can help them - and the client's report was that this field is not
+    #: explained. So the hint carries *what goes in the box* and the tooltip
+    #: carries *why it is optional*, and neither repeats the other: printing
+    #: both in both places makes `aria-describedby` read the same two sentences
+    #: twice in a row, once as the label's description and once as the hint.
     hint = field.locator("xpath=..").locator(".field-hint").inner_text()
     assert "same period" in hint and "waste included" in hint, (
         f"the production-total hint does not explain what to include: {hint!r}"
     )
-    assert "share of production" in hint and "Leaving it empty" in hint, (
-        f"the production-total hint does not explain why the field is optional: {hint!r}"
+    #: `text_content`, not `inner_text`: the tooltip is hidden until the term is
+    #: hovered or focused, and `inner_text` reports what is *rendered*, which for
+    #: a `visibility: hidden` panel is the empty string. What is being asserted
+    #: here is which sentence the markup carries, not whether it is on screen -
+    #: `test_step_three_zones_browser.py` owns the opening behaviour.
+    tip = label.locator(".term .tip").text_content()
+    assert "share of production" in tip and "Leaving it empty" in tip, (
+        f"the production-total tooltip does not explain why the field is optional: {tip!r}"
+    )
+    assert "waste included" not in tip and "share of production" not in hint, (
+        "the hint and the tooltip say the same thing, so a screen reader reads it "
+        f"twice - hint {hint!r}, tooltip {tip!r}"
     )
 
     field.fill("50000")

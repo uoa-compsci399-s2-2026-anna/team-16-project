@@ -154,7 +154,7 @@
       fileName.textContent = chosen.name;
       fileName.classList.remove("is-empty");
     } else {
-      fileName.textContent = fileName.getAttribute("data-empty");
+      fileName.textContent = words(fileName, "empty");
       fileName.classList.add("is-empty");
     }
     hide(message);

@@ -1320,6 +1320,13 @@ def test_the_production_total_names_its_unit_and_is_cleared_when_the_unit_change
     assert "kilograms" in label.inner_text(), (
         f"the field does not name the unit it is read in: {label.inner_text()!r}"
     )
+    hint = field.locator("xpath=..").locator(".field-hint").inner_text()
+    assert "same period" in hint and "waste included" in hint, (
+        f"the production-total hint does not explain what to include: {hint!r}"
+    )
+    assert "share of production" in hint and "Leaving it empty" in hint, (
+        f"the production-total hint does not explain why the field is optional: {hint!r}"
+    )
 
     field.fill("50000")
     page.select_option("#total-unit", "tonnes")

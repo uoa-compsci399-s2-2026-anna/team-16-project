@@ -385,6 +385,16 @@
     "The import was refused.": "导入被拒绝。",
     "The import did not complete.": "导入没有完成。",
     "The import could not be sent: {error}": "导入请求发送失败：{error}",
-    "Reloading the list…": "正在重新加载列表……"
+    "Reloading the list…": "正在重新加载列表……",
+    "What a .json file for this screen has to look like": "这个屏幕的 .json 文件该长什么样",
+    "The whole file is one JSON array, and every entry in it is one row of this table, written as an object. A file that is anything else is refused, and the refusal says what was found instead.": "整个文件是一个 JSON 数组，数组里的每一项都是本表的一行，写成一个对象。文件不是这个形状就会被拒绝，拒绝信息会说明读到的是什么。",
+    "Every object carries every column this screen imports — the same columns Export writes. A column meant to be blank is written with an empty string or null, never left out.": "每个对象都要写齐这个屏幕导入的每一列 —— 也就是「导出」写出的那些列。需要留空的列要写成空字符串或 null，不能省略不写。",
+    "A value is text, a number, true, false or null. A list or another object is refused: one cell holds one value.": "值可以是文本、数字、true、false 或 null。列表或另一个对象会被拒绝：一个单元格只放一个值。",
+    "Save the file as UTF-8. A byte-order mark is tolerated, so a file an editor on Windows put one into without asking is still read.": "文件请存成 UTF-8。字节顺序标记（BOM）是允许的，所以 Windows 上的编辑器未经询问写进去的 BOM 不会让文件读不出来。",
+    "Line numbers start at 2: the first object in the array is line 2, the second is line 3. Line 1 is the header row a .csv file would have, so a refusal names the same row the same way in both formats.": "行号从 2 开始：数组里的第一个对象是第 2 行，第二个是第 3 行。第 1 行是 .csv 文件会有的表头行，这样同一行在两种格式里被拒绝时的叫法是一样的。",
+    "A column naming a row of another table carries that row's own code — a factor set is named by its version label — and never its id number. Ids differ between one deployment and the next, so a file written with them could only ever be loaded back into the database it came from.": "指向另一张表的列，写的是那一行自己的 code —— 因子集写它的版本标签 —— 而不是它的 id 数字。id 在不同部署之间并不相同，所以用 id 写出来的文件只能装回它原来的那个数据库。",
+    "Whether a row is updated or added is decided by the row's own key, so a mistyped key is silently a new row rather than a correction. That is what checking the file first is for: read the preview before you confirm.": "一行是更新还是新增，由这一行自己的键决定，所以键打错了不会变成一次更正，而会悄悄变成新的一行。这正是先检查文件的意义：确认之前先读一遍预览。",
+    "Two rows for this screen. The first object is line 2, the second is line 3.": "本屏幕的两行。第一个对象是第 2 行，第二个是第 3 行。",
+    "Every value above stands in for a real one; the column names are this screen's own.": "上面每个值都只是占位，列名才是这个屏幕自己的。"
   }
 }

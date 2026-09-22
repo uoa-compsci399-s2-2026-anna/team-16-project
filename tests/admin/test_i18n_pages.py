@@ -15,6 +15,7 @@ to appear in. "The page contains Chinese characters" would pass against a
 page with one translated word in it and is not written anywhere in this file.
 """
 
+import json
 import re
 
 import pytest
@@ -421,6 +422,13 @@ async def test_the_import_dialog_is_english_when_english_was_asked_for(admin_cli
     assert 'data-empty="No file selected"' in _open_tag(
         body, '<p id="kaicalc-import-filename"'
     )
+    assert (
+        _inside(
+            body,
+            r'<details id="kaicalc-import-json-guide"[^>]*>\s*<summary>(.*?)</summary>',
+        )
+        == "What a .json file for this screen has to look like"
+    )
     assert "未选择文件" not in body
 
 
@@ -527,6 +535,167 @@ async def test_the_retirement_mode_says_what_this_screen_will_actually_do(admin_
     formula = (await admin_client.get("/admin/formula/list", params={"lang": "zh"})).text
     option = _inside(formula, r'<option value="deactivate_missing">(.*?)</option>')
     assert option == "更新并新增，并把文件中没有列出的每一行删除", option
+
+
+#: The JSON guide's seven rules, in the order the dialog lists them, each
+#: paired with the place in `admin/importing.py` it was read out of. The
+#: comment is load-bearing: a rule here that no longer matches that function
+#: is a dialog teaching a staff member a file format the server does not
+#: accept, which is worse than a dialog that says nothing.
+_JSON_GUIDE_RULES_ZH = (
+    # `rows_from_json` -> `_json_is_not_a_list`, which names what was found.
+    "整个文件是一个 JSON 数组，数组里的每一项都是本表的一行，写成一个对象。"
+    "文件不是这个形状就会被拒绝，拒绝信息会说明读到的是什么。",
+    # `rows_from_json`'s `missing` check, and `get_export_columns` returning
+    # `get_import_columns()`.
+    "每个对象都要写齐这个屏幕导入的每一列 —— 也就是「导出」写出的那些列。"
+    "需要留空的列要写成空字符串或 null，不能省略不写。",
+    # `_json_cell`: `None`/`""` for a blank, and a list or dict refused.
+    "值可以是文本、数字、true、false 或 null。列表或另一个对象会被拒绝："
+    "一个单元格只放一个值。",
+    # `content.decode("utf-8-sig")`.
+    "文件请存成 UTF-8。字节顺序标记（BOM）是允许的，"
+    "所以 Windows 上的编辑器未经询问写进去的 BOM 不会让文件读不出来。",
+    # `line = index + 2`, and JSON_LINE_NOTE, which says the same thing in
+    # the refusal itself. **The one this guide exists for.**
+    "行号从 2 开始：数组里的第一个对象是第 2 行，第二个是第 3 行。"
+    "第 1 行是 .csv 文件会有的表头行，这样同一行在两种格式里被拒绝时的叫法是一样的。",
+    # `natural_key_column` / `_NATURAL_KEY_COLUMNS` / `_unknown_code`.
+    "指向另一张表的列，写的是那一行自己的 code —— 因子集写它的版本标签 —— "
+    "而不是它的 id 数字。id 在不同部署之间并不相同，"
+    "所以用 id 写出来的文件只能装回它原来的那个数据库。",
+    # MODE_UPSERT and `_key_cells`: the match is the row's own natural key.
+    "一行是更新还是新增，由这一行自己的键决定，所以键打错了不会变成一次更正，"
+    "而会悄悄变成新的一行。这正是先检查文件的意义：确认之前先读一遍预览。",
+)
+
+
+def _json_guide(body: str) -> str:
+    """The guide element's own markup, so that every assertion below is
+    anchored inside it rather than anywhere on a list page."""
+    start = body.index('<details id="kaicalc-import-json-guide"')
+    return body[start : body.index("</details>", start)]
+
+
+async def test_the_json_guide_s_rules_are_translated_inside_the_guide(admin_client):
+    """The guide to the JSON format, in Chinese, rule by rule.
+
+    The dialog's hint says a file is "written the way this screen's own Export
+    writes one", which is true and is not enough to write one from scratch -
+    and JSON is the format a staff member is most likely to hand-edit. Every
+    rule below was read out of `admin/importing.py`; `_JSON_GUIDE_RULES_ZH`
+    names which function each came from.
+
+    Each assertion names the element the string has to be inside, per this
+    file's rule: the `<summary>`, a `<li>` of the guide's own list, and the
+    two paragraphs around the worked example. A bare substring check against
+    the page body would pass against a rule that had ended up in the CSS
+    comment above it.
+    """
+    body = (await admin_client.get(_IMPORT_PAGE, params={"lang": "zh"})).text
+    guide = _json_guide(body)
+
+    assert (
+        _inside(
+            guide,
+            r'<details id="kaicalc-import-json-guide"[^>]*>\s*<summary>(.*?)</summary>',
+        )
+        == "这个屏幕的 .json 文件该长什么样"
+    ), "the guide's own heading is still English, so nothing below it is reached"
+
+    for rule in _JSON_GUIDE_RULES_ZH:
+        assert f"<li>{rule}</li>" in guide, (
+            f"the guide has no <li> reading {rule!r}; the rule is missing, "
+            "reworded, or rendering in English"
+        )
+
+    assert (
+        _inside(guide, r'<p class="kaicalc-json-caption">(.*?)</p>')
+        == "本屏幕的两行。第一个对象是第 2 行，第二个是第 3 行。"
+    ), "the example's caption - which is where line 2 is said a second time"
+
+    assert (
+        _inside(guide, r'<p class="kaicalc-json-footnote">(.*?)</p>')
+        == "上面每个值都只是占位，列名才是这个屏幕自己的。"
+    ), "the footnote admitting the example's values are placeholders"
+
+
+async def test_the_json_guide_is_closed_by_default_and_needs_no_script(admin_client):
+    """A `<details>` with no `open`, whose content is in the served HTML.
+
+    **Both halves matter and neither implies the other.** A guide injected by
+    `/admin/static/import.js` would satisfy every assertion in the test above
+    when run against a browser and none of them here, and would be absent on
+    the panel whose script failed to load - which is exactly the panel whose
+    visitor most needs to read a file format. A Bootstrap collapse widget
+    would render its content server-side and still need the script to open.
+
+    Closed by default because the dialog's job is to take a file: a reader who
+    already has one must not have to scroll past the manual to reach the
+    button.
+    """
+    body = (await admin_client.get(_IMPORT_PAGE)).text
+
+    tag = _open_tag(body, '<details id="kaicalc-import-json-guide"')
+    assert tag == '<details id="kaicalc-import-json-guide">', (
+        f"the guide's own tag is {tag!r}: an `open` attribute would have it "
+        "expanded on every visit, and a `data-bs-toggle` would make it a "
+        "widget that needs the script"
+    )
+
+    guide = _json_guide(body)
+    assert guide.count("<li>") == len(_JSON_GUIDE_RULES_ZH), (
+        "the guide's rules are not all in the served markup, so a panel with "
+        f"no JavaScript shows a heading and nothing under it: {guide!r}"
+    )
+    assert '<pre id="kaicalc-import-json-example">' in guide
+
+    # And nothing in the script has any opinion about the element, which is
+    # what makes "needs no script" a measurement rather than a reading of the
+    # markup.
+    script = (await admin_client.get("/admin/static/import.js")).text
+    assert "kaicalc-import-json" not in script, (
+        "/admin/static/import.js now touches the guide; the guide is the one "
+        "part of this dialog that has to work with scripting off"
+    )
+
+
+async def test_the_worked_example_is_this_screen_s_own_columns(admin_client):
+    """The example matches the screen the dialog is open on.
+
+    An example that does not match the screen is worse than none: it is a
+    file a staff member would copy and a refusal they could not explain. The
+    column names are rendered from `model_view._import_prop_names` - the very
+    list `rows_from_json` iterates when it decides whether a row is missing a
+    column - so the two screens below must show two different sets.
+
+    Parsed rather than substring-matched, because the thing being asserted is
+    that the example **is valid JSON**: a Jinja loop that lost a comma or a
+    brace would still contain every column name.
+    """
+    sector = (await admin_client.get(_IMPORT_PAGE)).text
+    example = json.loads(
+        _inside(sector, r'<pre id="kaicalc-import-json-example">(.*?)</pre>')
+    )
+    assert [list(row) for row in example] == [
+        ["code", "name", "description", "sort_order", "active"],
+        ["code", "name", "description", "sort_order", "active"],
+    ], f"the example on the Sectors screen is not two rows of its own columns: {example!r}"
+    assert set(example[0].values()) == {"…"}, (
+        "the example's values are supposed to be the placeholder the footnote "
+        f"says they are: {example[0]!r}"
+    )
+
+    # A screen whose columns are almost all foreign keys, so that the example
+    # is shown to follow the screen rather than to be one file repeated.
+    upstream = (await admin_client.get("/admin/factor-upstream/list")).text
+    other = json.loads(
+        _inside(upstream, r'<pre id="kaicalc-import-json-example">(.*?)</pre>')
+    )
+    assert list(other[0]) == [
+        "factor_set", "sector", "food_category", "food_item", "destination",
+        "metric", "value_per_kg", "data_quality", "source_note",
+    ], f"the example on the Upstream factors screen is not its own: {other[0]!r}"
 
 
 def _with_choice(client, value):

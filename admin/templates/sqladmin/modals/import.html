@@ -155,6 +155,49 @@
     letter-spacing: .04em;
     color: #4a635a;
   }
+
+  /* THE JSON GUIDE. Inline, scoped to its own id, for the reason written at
+     the top of this block: a rule that no page but this one uses is a rule
+     nobody finds when this page changes.
+
+     Sized for the dialog it is in rather than for a page. `modal-lg` is
+     800px at desktop widths and the whole width of the viewport below
+     576px, so the example - which is the only thing here that cannot be
+     reflowed - scrolls inside its own box instead of pushing the dialog
+     wider than the screen. */
+  #kaicalc-import-json-guide {
+    margin-top: .75rem;
+    font-size: .875rem;
+    color: #003223;
+  }
+  #kaicalc-import-json-guide > summary {
+    cursor: pointer;
+    font-weight: 600;
+  }
+  #kaicalc-import-json-guide ul {
+    margin: .5rem 0 0;
+    padding-left: 1.1rem;
+  }
+  #kaicalc-import-json-guide li { margin-top: .35rem; }
+  #kaicalc-import-json-guide .kaicalc-json-caption {
+    margin: .75rem 0 .25rem;
+    color: #4a635a;
+  }
+  #kaicalc-import-json-example {
+    margin: 0;
+    padding: .65rem .75rem;
+    border-radius: 8px;
+    background: #F1F5F3;
+    color: #003223;
+    font-size: .8125rem;
+    max-height: 13rem;
+    overflow: auto;
+  }
+  #kaicalc-import-json-guide .kaicalc-json-footnote {
+    margin: .4rem 0 0;
+    font-size: .8125rem;
+    color: #4a635a;
+  }
 </style>
 
 <div class="modal modal-blur fade" id="modal-import" tabindex="-1" role="dialog" aria-hidden="true">
@@ -228,6 +271,84 @@
              translations, drifting from the day it was added. #}
           <p id="kaicalc-import-filename" class="is-empty"
              data-empty="{{ _('No file selected') }}">{{ _("No file selected") }}</p>
+
+          {# WHAT A .JSON FILE HAS TO LOOK LIKE, AND WHY IT IS SPELT OUT HERE.
+             The hint above says a file is "written the way this screen's own
+             Export writes one", which is true and is not enough to write one
+             from scratch - and JSON is the format a staff member is most
+             likely to open in an editor and change by hand.
+
+             EVERY RULE BELOW IS READ OUT OF admin/importing.py, not composed
+             from what the format ought to be:
+
+               * array of objects, refused by shape, naming what was found -
+                 `rows_from_json` / `_json_is_not_a_list`;
+               * every import column present in every object -
+                 `rows_from_json`'s `missing` check, which is STRICTER than
+                 "the keys are the import columns": a column left out is a
+                 refusal, not a blank;
+               * one value per cell, `null` for a blank - `_json_cell`;
+               * UTF-8 with a tolerated BOM - `content.decode("utf-8-sig")`;
+               * line numbers from 2 - `line = index + 2`, and JSON_LINE_NOTE,
+                 which is the sentence the server itself adds to a refusal;
+               * foreign keys by natural key - `natural_key_column` and
+                 `_unknown_code`, and `_NATURAL_KEY_COLUMNS` for why a factor
+                 set is named by its version label;
+               * the upsert matches on the row's own natural key - MODE_UPSERT
+                 and `_key_cells`.
+
+             THE CSV RULES ARE NOT RESTATED. This is the JSON format only.
+
+             `<details>` RATHER THAN A BOOTSTRAP COLLAPSE. It needs no script,
+             so it opens on a panel whose JavaScript failed to load - which is
+             exactly the panel whose visitor most needs to read a file format -
+             and a browser announces it as a disclosure control without any
+             `aria-expanded` this template would have to keep in step with the
+             widget's state. Closed by default: the dialog's job is to take a
+             file, and a reader who already has one should not have to scroll
+             past the manual to reach the button. #}
+          <details id="kaicalc-import-json-guide">
+            <summary>{{ _("What a .json file for this screen has to look like") }}</summary>
+            <ul>
+              <li>{{ _("The whole file is one JSON array, and every entry in it is one row of this table, written as an object. A file that is anything else is refused, and the refusal says what was found instead.") }}</li>
+              <li>{{ _("Every object carries every column this screen imports — the same columns Export writes. A column meant to be blank is written with an empty string or null, never left out.") }}</li>
+              <li>{{ _("A value is text, a number, true, false or null. A list or another object is refused: one cell holds one value.") }}</li>
+              <li>{{ _("Save the file as UTF-8. A byte-order mark is tolerated, so a file an editor on Windows put one into without asking is still read.") }}</li>
+              <li>{{ _("Line numbers start at 2: the first object in the array is line 2, the second is line 3. Line 1 is the header row a .csv file would have, so a refusal names the same row the same way in both formats.") }}</li>
+              <li>{{ _("A column naming a row of another table carries that row's own code — a factor set is named by its version label — and never its id number. Ids differ between one deployment and the next, so a file written with them could only ever be loaded back into the database it came from.") }}</li>
+              <li>{{ _("Whether a row is updated or added is decided by the row's own key, so a mistyped key is silently a new row rather than a correction. That is what checking the file first is for: read the preview before you confirm.") }}</li>
+            </ul>
+
+            {# THE EXAMPLE IS THIS SCREEN'S OWN, not a generic one, and the
+               column names come from `model_view._import_prop_names` - the
+               very list `rows_from_json` iterates when it decides whether a
+               row is missing a column. Read off that attribute rather than
+               re-derived here, so the example cannot describe a different set
+               of columns from the one the reader's file is checked against; a
+               worked example that does not match the screen is worse than no
+               example at all.
+
+               The values are placeholders and the footnote says so. Real ones
+               cannot be produced per screen without inventing data, and a
+               plausible-looking wrong value is the thing a reader would copy.
+               What the example is for is the SHAPE: an array, two objects,
+               every column present in both, every value a string - and the two
+               line numbers a refusal will use for them. #}
+            <p class="kaicalc-json-caption">{{ _("Two rows for this screen. The first object is line 2, the second is line 3.") }}</p>
+            <pre id="kaicalc-import-json-example">[
+  {
+  {%- for name in model_view._import_prop_names %}
+    "{{ name }}": "…"{% if not loop.last %},{% endif %}
+  {%- endfor %}
+  },
+  {
+  {%- for name in model_view._import_prop_names %}
+    "{{ name }}": "…"{% if not loop.last %},{% endif %}
+  {%- endfor %}
+  }
+]</pre>
+            <p class="kaicalc-json-footnote">{{ _("Every value above stands in for a real one; the column names are this screen's own.") }}</p>
+          </details>
 
           {# THE WORDING OF THE SECOND OPTION IS THE POINT.
              `model_view.import_retirement_word` is "deactivated" on the nine

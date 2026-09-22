@@ -90,10 +90,12 @@
  * things therefore live in `state` and are re-derived from it on every render:
  *
  *   * **whether the dialog is open** — `state.periodPicker` is `null` or
- *     `{ field, cursor, openerId }`;
+ *     `{ field, cursor, openerId, view }`;
  *   * **which day the roving `tabindex` is on** — `state.periodPicker.cursor`,
  *     which also decides the month on screen, so there is no second key that can
  *     disagree with it;
+ *   * **which of the three grids is drawn** — `state.periodPicker.view`, see
+ *     below;
  *   * **what is typed in the four text boxes** — `state.periodFields`.
  *
  * Focus is restored by `main.js`, which re-focuses `document.activeElement.id`
@@ -109,6 +111,33 @@
  * keep focus outside the dialog it has just opened. Both are done here, in a
  * `requestAnimationFrame` after the synchronous re-render, which is
  * `calculator.js`'s own precedent for the breakdown tabs.
+ *
+ * ## Three grids, one dialog
+ *
+ * **The range is fifty-seven years and, with one grid, the lower half of it was
+ * unreachable.** 1970-01-01 to now + 24 hours is crossed by `‹` 684 times or by
+ * `Shift`+`PageUp` 57 times, which is not a way anybody enters a date in 1994.
+ * So the caption decomposes into two buttons — the month and the year — and
+ * each opens a grid of its own: `state.periodPicker.view` is `'days'`,
+ * `'months'` or `'years'`, and one press of the year button crosses the range.
+ *
+ * Four things follow, and each of them is a rule rather than a detail.
+ *
+ *   * **The dialog always opens on days.** A picker that remembered a year grid
+ *     from last time would open on the wrong question.
+ *   * **The roving `id="period-grid-focus"` is reused unchanged**, in all three
+ *     views: whichever cell is the cursor carries it, so `main.js`'s focus
+ *     restore goes on working across the full re-render every keypress causes.
+ *     There is never more than one grid on screen, so there is never a second
+ *     claimant to the id.
+ *   * **`Esc` nests.** From a year or a month grid it returns to the day grid;
+ *     only from the day grid does it close the dialog. A single `Esc` that
+ *     closed everything from three levels deep loses the visitor's place for
+ *     nothing.
+ *   * **Only `chooseDay` writes a field, so only `chooseDay` demotes a preset.**
+ *     Choosing a year or a month moves the cursor and changes what is drawn; it
+ *     states no date, and `time_frame` records which shortcut was pressed rather
+ *     than which grid was opened.
  *
  * ## The typing path does not call `setState`
  *
@@ -202,6 +231,11 @@ const LOCALE = 'en-NZ'
 const DATE_DISPLAY = new Intl.DateTimeFormat(LOCALE, { day: '2-digit', month: '2-digit', year: 'numeric' })
 const DAY_NAME = new Intl.DateTimeFormat(LOCALE, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 const MONTH_CAPTION = new Intl.DateTimeFormat(LOCALE, { month: 'long', year: 'numeric' })
+/** The caption's two halves, for the two buttons it decomposed into. The year is
+ *  not formatted at all: `2026` is the same four characters in every catalogue,
+ *  and running it through `Intl` would be a place for a grouping separator to
+ *  appear in a year. */
+const MONTH_NAME = new Intl.DateTimeFormat(LOCALE, { month: 'long' })
 const WEEKDAY_LONG = new Intl.DateTimeFormat(LOCALE, { weekday: 'long' })
 const WEEKDAY_SHORT = new Intl.DateTimeFormat(LOCALE, { weekday: 'short' })
 
@@ -773,6 +807,42 @@ const clampDay = iso => {
  *  because a grid that disabled the whole day would refuse this morning. */
 const dayEnabled = iso => iso >= isoDay(FLOOR) && iso <= isoDay(ceiling())
 
+/**
+ * The two grids behind the caption, and the arithmetic they are laid out on.
+ *
+ * **Five years to a row and three months to a row**, both chosen so that a row
+ * is a thing a reader already has a name for: 1970 is a multiple of five, so
+ * every row of the year grid is a half-decade — 1970–1974, 1975–1979 — and every
+ * row of the month grid is a quarter. A column count that did not divide the
+ * range at a place a reader recognises makes `Home` and `End` land somewhere
+ * arbitrary, and `Home`/`End` are defined as the ends of the row.
+ *
+ * The last row of the year grid runs past the ceiling — 2025–2029 for a ceiling
+ * in 2026 — and those cells are **drawn and disabled** rather than left out, so
+ * that the grid's own shape says where the range stops. Years before 1970 are
+ * not drawn at all, which is stronger than disabled: the grid begins at the
+ * floor because the floor is a multiple of the row length.
+ */
+const YEARS_PER_ROW = 5
+const MONTHS_PER_ROW = 3
+const FLOOR_YEAR = FLOOR.getFullYear()
+
+/** Whole years added, with the day clamped: `addMonths` already does that, and
+ *  29 February is the reason it has to be done at all. */
+const addYears = (date, count) => addMonths(date, count * 12)
+
+/** A year is offerable when any day of it is. Same rule as `dayEnabled` and for
+ *  the same reason: the ceiling is an instant inside a day, so the year holding
+ *  it is partly out of range and stays enabled. */
+const yearEnabled = year => year >= FLOOR_YEAR && year <= ceiling().getFullYear()
+
+/** A month is offerable when any day of it is — which is what makes January 1970
+ *  reachable and December 1969 not, and what disables the months after the
+ *  ceiling's own month in the ceiling's own year. `new Date(y, m + 1, 0)` is the
+ *  last day of month `m`. */
+const monthEnabled = (year, month) =>
+  isoDay(new Date(year, month + 1, 0)) >= isoDay(FLOOR) && isoDay(new Date(year, month, 1)) <= isoDay(ceiling())
+
 /** The day a freshly-opened calendar should land on: what the field already
  *  holds, else today, clamped into range either way. */
 function openingCursor(bound) {
@@ -852,7 +922,100 @@ function monthGrid(picker) {
     // months for no reason a visitor can see.
     if (cells.some(cell => !cell.includes('is-outside'))) rows.push(`<tr role="row">${cells.join('')}</tr>`)
   }
-  return `<table class="period-grid" role="grid" aria-labelledby="period-dialog-month" aria-describedby="period-dialog-hint"><thead>${head}</thead><tbody>${rows.join('')}</tbody></table>`
+  // `aria-label` rather than `aria-labelledby="period-dialog-month"` from the
+  // second pass: the caption is two buttons now, and an `aria-labelledby` is
+  // resolved from the referenced element's *accessible* text — so the grid would
+  // have been named "September, Choose a month 2026, Choose a year". The string
+  // is the same one the caption shows, built from the same formatter.
+  return `<table class="period-grid" role="grid" aria-label="${escapeHtml(MONTH_CAPTION.format(cursorDate))}" aria-describedby="period-dialog-hint"><thead>${head}</thead><tbody>${rows.join('')}</tbody></table>`
+}
+
+/**
+ * One cell of the year or the month grid.
+ *
+ * **A disabled cell is genuinely unreachable**, exactly as the day grid's are
+ * and for the reason written over `monthGrid`: no `data-action`, so nothing can
+ * click it; no `tabindex`, so nothing can focus it; `aria-disabled="true"`, so
+ * nothing reads it as offerable. The colour is the last of the four signals and
+ * never the only one.
+ */
+function choiceCell({ label, text, enabled, cursor, selected, action, value }) {
+  if (!enabled) {
+    return `<td role="gridcell" class="period-choice is-disabled" aria-disabled="true" aria-label="${escapeHtml(label)}">${escapeHtml(text)}</td>`
+  }
+  return `<td role="gridcell" class="period-choice${selected ? ' is-selected' : ''}" data-action="${action}" data-value="${escapeHtml(value)}"${cursor ? ' id="period-grid-focus"' : ''} tabindex="${cursor ? '0' : '-1'}" aria-selected="${selected ? 'true' : 'false'}" aria-label="${escapeHtml(label)}">${escapeHtml(text)}</td>`
+}
+
+/** The year already in the box, or `null`. What `aria-selected` marks, as
+ *  against the cursor, which is what the roving `tabindex` marks. */
+function selectedDate(picker) {
+  const iso = parseDateText(periodFields()[`${picker.field}Date`])
+  return iso ? dayOf(iso) : null
+}
+
+/**
+ * Fifty-seven years, in a box that scrolls.
+ *
+ * The scroller is a `<div>` around the table rather than a `max-block-size` on
+ * the table itself, because a `<table>` is not a scroll container: `overflow`
+ * on one is ignored in every engine. It is scrolled to the cursor by
+ * `focusAfterRender`, which is also what focuses it — see the note there about
+ * why the scroll is not left to `.focus()`.
+ */
+function yearGrid(picker) {
+  const cursorYear = dayOf(picker.cursor).getFullYear()
+  const selected = selectedDate(picker)
+  const last = ceiling().getFullYear()
+  const rows = []
+  for (let start = FLOOR_YEAR; start <= last; start += YEARS_PER_ROW) {
+    const cells = []
+    for (let index = 0; index < YEARS_PER_ROW; index += 1) {
+      const year = start + index
+      cells.push(choiceCell({
+        label: String(year),
+        text: String(year),
+        enabled: yearEnabled(year),
+        cursor: year === cursorYear,
+        selected: Boolean(selected) && selected.getFullYear() === year,
+        action: 'period-choose-year',
+        value: String(year),
+      }))
+    }
+    rows.push(`<tr role="row">${cells.join('')}</tr>`)
+  }
+  return `<div class="period-scroller"><table class="period-grid period-choices" role="grid" aria-label="${escapeHtml(t('Choose a year'))}" aria-describedby="period-dialog-hint"><tbody>${rows.join('')}</tbody></table></div>`
+}
+
+/**
+ * Twelve months of the cursor's year, three to a row.
+ *
+ * Each cell's accessible name is the month **and the year** — "September 2026" —
+ * for the reason a day cell's name is the whole date: "September" read out of a
+ * grid in a dialog says nothing about which September.
+ */
+function monthChoiceGrid(picker) {
+  const cursor = dayOf(picker.cursor)
+  const year = cursor.getFullYear()
+  const selected = selectedDate(picker)
+  const rows = []
+  for (let row = 0; row < 12 / MONTHS_PER_ROW; row += 1) {
+    const cells = []
+    for (let index = 0; index < MONTHS_PER_ROW; index += 1) {
+      const month = row * MONTHS_PER_ROW + index
+      const first = new Date(year, month, 1)
+      cells.push(choiceCell({
+        label: MONTH_CAPTION.format(first),
+        text: MONTH_NAME.format(first),
+        enabled: monthEnabled(year, month),
+        cursor: month === cursor.getMonth(),
+        selected: Boolean(selected) && selected.getFullYear() === year && selected.getMonth() === month,
+        action: 'period-choose-month',
+        value: String(month),
+      }))
+    }
+    rows.push(`<tr role="row">${cells.join('')}</tr>`)
+  }
+  return `<table class="period-grid period-choices" role="grid" aria-label="${escapeHtml(t('Choose a month'))}" aria-describedby="period-dialog-hint"><tbody>${rows.join('')}</tbody></table>`
 }
 
 /**
@@ -865,6 +1028,7 @@ function monthGrid(picker) {
 function pickerDialog() {
   const picker = state.periodPicker
   if (!picker) return ''
+  const view = pickerView(picker)
   const cursor = dayOf(picker.cursor)
   const title = picker.field === 'start' ? t('Choose the start date') : t('Choose the end date')
   // A month is reachable when any day of it is: the last day of the month
@@ -874,22 +1038,75 @@ function pickerDialog() {
   // not depending on where the visitor's arrow keys happen to be.
   const previous = dayEnabled(isoDay(new Date(cursor.getFullYear(), cursor.getMonth(), 0)))
   const next = dayEnabled(isoDay(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1)))
+  // **A hint per view, because the day grid's names keys the others do not
+  // have.** "Page Up and Page Down to move by month" over a grid of years
+  // describes two keys that do nothing there, and a hint that is wrong is worse
+  // than no hint at all.
+  const hint = {
+    days: t('Use the arrow keys to move by day, Page Up and Page Down to move by month, then press Enter to choose.'),
+    months: t('Use the arrow keys to move between months, then press Enter to choose.'),
+    years: t('Use the arrow keys to move between years, then press Enter to choose.'),
+  }[view]
+  const grid = { days: monthGrid, months: monthChoiceGrid, years: yearGrid }[view](picker)
+  // **The `‹ ›` steppers belong to the day grid and are drawn only with it.**
+  // They move by one month, which is the thing the other two views exist to stop
+  // a visitor having to do; leaving them on a grid of years would be a pair of
+  // controls whose effect is invisible on the screen they are drawn on.
+  const steppers = view !== 'days' ? ['', ''] : [
+    `<button class="period-month-step" type="button" data-action="period-month" data-delta="-1" ${previous ? '' : 'disabled'} aria-label="${escapeHtml(t('Previous month'))}">‹</button>`,
+    `<button class="period-month-step" type="button" data-action="period-month" data-delta="1" ${next ? '' : 'disabled'} aria-label="${escapeHtml(t('Next month'))}">›</button>`,
+  ]
   return `<div class="period-dialog-backdrop" data-action="period-dismiss">
     <div class="period-dialog" role="dialog" aria-modal="true" aria-labelledby="period-dialog-title" id="period-dialog">
       <div class="period-dialog-head">
         <h3 id="period-dialog-title">${escapeHtml(title)}</h3>
         <button class="period-dialog-close" type="button" data-action="period-close" aria-label="${escapeHtml(t('Close the calendar'))}">×</button>
       </div>
-      <p class="period-dialog-hint" id="period-dialog-hint">${escapeHtml(t('Use the arrow keys to move by day, Page Up and Page Down to move by month, then press Enter to choose.'))}</p>
+      <p class="period-dialog-hint" id="period-dialog-hint">${escapeHtml(hint)}</p>
       <div class="period-dialog-months">
-        <button class="period-month-step" type="button" data-action="period-month" data-delta="-1" ${previous ? '' : 'disabled'} aria-label="${escapeHtml(t('Previous month'))}">‹</button>
-        <p class="period-dialog-month" id="period-dialog-month" aria-live="polite">${escapeHtml(MONTH_CAPTION.format(cursor))}</p>
-        <button class="period-month-step" type="button" data-action="period-month" data-delta="1" ${next ? '' : 'disabled'} aria-label="${escapeHtml(t('Next month'))}">›</button>
+        ${steppers[0]}
+        ${caption(picker, view, cursor)}
+        ${steppers[1]}
       </div>
-      ${monthGrid(picker)}
+      ${grid}
     </div>
   </div>`
 }
+
+/**
+ * The caption, which is now two buttons and is the whole of WP2's answer.
+ *
+ * **Each half toggles its own view**, Material's behaviour: pressing *2026*
+ * opens the years and pressing it again comes back to the days, which is the
+ * only pointer route back out of a grid that has not been chosen from. A
+ * keyboard has `Esc`, which nests for the same reason.
+ *
+ * `aria-expanded` says which grid is open, and the accessible name carries the
+ * **value as well as the invitation** — "September, Choose a month" — because a
+ * button named only "Choose a month" tells a screen-reader user what it does and
+ * not what is currently true. The value is interpolated around the `t()` call
+ * rather than into it: the key stays a plain quoted literal, which is what
+ * `tests/web/i18n_keys.py`'s extractor can see.
+ *
+ * The id stays on the wrapper, not on either button, so that what
+ * `#period-dialog-month` reads is still the caption — "September 2026" — in
+ * every view.
+ */
+function caption(picker, view, cursor) {
+  const part = (key, text, label, expanded) =>
+    `<button class="period-caption" type="button" data-action="period-view" data-view="${key}" aria-expanded="${expanded ? 'true' : 'false'}" aria-label="${escapeHtml(label)}">${escapeHtml(text)}</button>`
+  const month = MONTH_NAME.format(cursor)
+  const year = String(cursor.getFullYear())
+  return `<p class="period-dialog-month" id="period-dialog-month" aria-live="polite">${
+    part('months', month, `${month}, ${t('Choose a month')}`, view === 'months')
+  } ${
+    part('years', year, `${year}, ${t('Choose a year')}`, view === 'years')
+  }</p>`
+}
+
+/** Which grid is drawn. `'days'` for anything else, including the `undefined` a
+ *  picker stored before this existed would carry. */
+const pickerView = picker => (picker?.view === 'months' || picker?.view === 'years' ? picker.view : 'days')
 
 /**
  * The calendar button's icon, **drawn rather than typed**.
@@ -968,7 +1185,20 @@ export function PeriodField() {
  * moment this module can have the last word. `calculator.js`'s breakdown tabs do
  * the same thing for the same reason.
  */
-const focusAfterRender = id => requestAnimationFrame(() => document.getElementById(id)?.focus())
+const focusAfterRender = id => requestAnimationFrame(() => {
+  const target = document.getElementById(id)
+  if (!target) return
+  // **The year grid is twelve rows in a scrolling box and has to open showing
+  // the year the visitor is on**, not 1970. `.focus()` would scroll it into view
+  // on its own, but only to `nearest` — which puts the cursor hard against an
+  // edge with no years visible on one side of it. So the scroll is taken away
+  // from `.focus()` and done here, centred, and it moves no focus of its own:
+  // the element being scrolled to is the element that has just been focused.
+  const scroller = target.closest('.period-scroller')
+  target.focus({ preventScroll: Boolean(scroller) })
+  if (!scroller) return
+  scroller.scrollTop = Math.max(0, target.offsetTop - (scroller.clientHeight - target.offsetHeight) / 2)
+})
 
 /**
  * Editing the interval by hand demotes a preset to `custom`.
@@ -1212,7 +1442,9 @@ function canonicalPeriodText(field, text) {
 export function handlePeriodClick(action, control, event) {
   if (action === 'period-open') {
     const bound = control.dataset.bound
-    setState({ periodPicker: { field: bound, cursor: openingCursor(bound), openerId: control.id } })
+    // **Always `'days'`.** A picker that remembered the year grid from last time
+    // would open on the wrong question — see the header.
+    setState({ periodPicker: { field: bound, cursor: openingCursor(bound), openerId: control.id, view: 'days' } })
     focusAfterRender('period-grid-focus')
     return true
   }
@@ -1233,7 +1465,68 @@ export function handlePeriodClick(action, control, event) {
     chooseDay(control.dataset.day)
     return true
   }
+  if (action === 'period-view') {
+    // Pressing the button for the view that is already open goes back to the
+    // days. See `caption`: it is the pointer's way out of a grid, and it is what
+    // `aria-expanded` on those two buttons is describing.
+    const wanted = control.dataset.view
+    setView(pickerView(state.periodPicker) === wanted ? 'days' : wanted)
+    return true
+  }
+  if (action === 'period-choose-year') {
+    chooseYear(Number(control.dataset.value))
+    return true
+  }
+  if (action === 'period-choose-month') {
+    chooseMonth(Number(control.dataset.value))
+    return true
+  }
   return false
+}
+
+/** Swap the grid without disturbing the cursor. The roving id moves to whichever
+ *  cell is the cursor in the new view, so the focus lands inside the grid that
+ *  has just been drawn rather than on the button that drew it. */
+function setView(view) {
+  const picker = state.periodPicker
+  if (!picker) return
+  setState({ periodPicker: { ...picker, view } })
+  focusAfterRender('period-grid-focus')
+}
+
+/**
+ * A year or a month chosen: the cursor moves there and the day grid comes back.
+ *
+ * **Nothing is written into a field and nothing is demoted.** `chooseDay` is
+ * still the only function that states a date, which is what keeps `time_frame`
+ * a record of which shortcut was pressed rather than of which grid was opened.
+ *
+ * The day of the month is clamped rather than overflowed, for `addMonths`'s
+ * reason: a cursor on 31 March taken to a year's February would otherwise land
+ * in March, and the visitor would watch the grid move somewhere they did not ask
+ * for.
+ */
+function moveCursorTo(year, month) {
+  const picker = state.periodPicker
+  if (!picker) return
+  const cursor = dayOf(picker.cursor)
+  const lastDay = new Date(year, month + 1, 0).getDate()
+  const target = new Date(year, month, Math.min(cursor.getDate(), lastDay))
+  setState({ periodPicker: { ...picker, view: 'days', cursor: clampDay(isoDay(target)) } })
+  focusAfterRender('period-grid-focus')
+}
+
+function chooseYear(year) {
+  if (!state.periodPicker || !yearEnabled(year)) return
+  moveCursorTo(year, dayOf(state.periodPicker.cursor).getMonth())
+}
+
+function chooseMonth(month) {
+  const picker = state.periodPicker
+  if (!picker) return
+  const year = dayOf(picker.cursor).getFullYear()
+  if (!monthEnabled(year, month)) return
+  moveCursorTo(year, month)
 }
 
 function closePicker() {
@@ -1286,7 +1579,12 @@ const dialogStops = () => [...document.querySelectorAll('#period-dialog button:n
  * | `Home` / `End` | the ends of the displayed week |
  * | `Enter` / `Space` | choose the focused day |
  *
- * `Esc` closes from anywhere in the dialog and `Tab` cycles within it.
+ * The month grid and the year grid take the same four arrows, `Home`/`End` and
+ * `Enter`/`Space`, over their own step — a month, a year, a row of each. They
+ * take no `PageUp`/`PageDown`, and the hint drawn over them does not offer any.
+ *
+ * `Esc` **nests** — a year or month grid goes back to the days, and only the day
+ * grid closes the dialog — and `Tab` cycles within it.
  *
  * **The horizontal arrows are mirrored under `dir="rtl"` and that is not a
  * nicety.** Arabic and Urdu render this page right-to-left and a `<table>`'s
@@ -1301,7 +1599,12 @@ export function handlePeriodKeydown(event) {
   if (!dialog || !dialog.contains(event.target)) return false
   if (event.key === 'Escape') {
     event.preventDefault()
-    closePicker()
+    // **`Esc` nests.** From a year or a month grid it goes back to the days;
+    // only from the days does it close the dialog. One `Esc` that closed
+    // everything from three levels deep would lose the visitor's place — and the
+    // month they had navigated to — for nothing.
+    if (pickerView(picker) !== 'days') setView('days')
+    else closePicker()
     return true
   }
   if (event.key === 'Tab') {
@@ -1323,21 +1626,22 @@ export function handlePeriodKeydown(event) {
     }
     return false
   }
-  const cell = event.target.closest('[data-action="period-day"]')
+  const cell = event.target.closest('[data-action="period-day"], [data-action="period-choose-month"], [data-action="period-choose-year"]')
   if (!cell) return false
+  const view = pickerView(picker)
   const cursor = dayOf(picker.cursor)
+  // **Measured under `dir="rtl"`, not assumed**, in all three grids and for one
+  // reason: a `<table>`'s columns mirror with the document, so in Arabic the cell
+  // drawn to the right of the cursor is the *previous* one — the previous day,
+  // the previous month, the previous year. An unmirrored `ArrowRight` would move
+  // the focus ring leftwards across the screen, which is the one thing an arrow
+  // key may not do. The three grids are all tables and all mirror together, so
+  // the same sign serves all three.
   const rtl = getComputedStyle(cell).direction === 'rtl'
   const horizontal = rtl ? -1 : 1
-  const moves = {
-    ArrowLeft: () => addDays(cursor, -horizontal),
-    ArrowRight: () => addDays(cursor, horizontal),
-    ArrowUp: () => addDays(cursor, -7),
-    ArrowDown: () => addDays(cursor, 7),
-    PageUp: () => (event.shiftKey ? addMonths(cursor, -12) : addMonths(cursor, -1)),
-    PageDown: () => (event.shiftKey ? addMonths(cursor, 12) : addMonths(cursor, 1)),
-    Home: () => addDays(cursor, -((cursor.getDay() - FIRST_DAY_OF_WEEK + 7) % 7)),
-    End: () => addDays(cursor, 6 - ((cursor.getDay() - FIRST_DAY_OF_WEEK + 7) % 7)),
-  }
+  const moves = view === 'years' ? yearMoves(cursor, horizontal)
+    : view === 'months' ? monthMoves(cursor, horizontal)
+      : dayMoves(cursor, horizontal, event.shiftKey)
   if (moves[event.key]) {
     event.preventDefault()
     moveCursor(moves[event.key]())
@@ -1345,8 +1649,65 @@ export function handlePeriodKeydown(event) {
   }
   if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
     event.preventDefault()
-    chooseDay(cell.dataset.day)
+    if (view === 'years') chooseYear(Number(cell.dataset.value))
+    else if (view === 'months') chooseMonth(Number(cell.dataset.value))
+    else chooseDay(cell.dataset.day)
     return true
   }
   return false
+}
+
+const dayMoves = (cursor, horizontal, shift) => ({
+  ArrowLeft: () => addDays(cursor, -horizontal),
+  ArrowRight: () => addDays(cursor, horizontal),
+  ArrowUp: () => addDays(cursor, -7),
+  ArrowDown: () => addDays(cursor, 7),
+  PageUp: () => (shift ? addMonths(cursor, -12) : addMonths(cursor, -1)),
+  PageDown: () => (shift ? addMonths(cursor, 12) : addMonths(cursor, 1)),
+  Home: () => addDays(cursor, -((cursor.getDay() - FIRST_DAY_OF_WEEK + 7) % 7)),
+  End: () => addDays(cursor, 6 - ((cursor.getDay() - FIRST_DAY_OF_WEEK + 7) % 7)),
+})
+
+/**
+ * The month grid's keys: one month sideways, one row — a quarter — vertically,
+ * and `Home`/`End` to the ends of that row.
+ *
+ * **Vertical movement crosses the year**, exactly as the day grid's crosses the
+ * month: `ArrowUp` from January is October of the year before, and the grid
+ * follows the cursor there. Clamping it inside the displayed year would leave
+ * four cells from which an arrow key does nothing, which is how a keyboard user
+ * concludes a control is broken.
+ *
+ * No `PageUp`/`PageDown`. There is nothing for them to mean that an arrow does
+ * not already mean better, and the hint over this grid does not claim them.
+ */
+const monthMoves = (cursor, horizontal) => {
+  const column = cursor.getMonth() % MONTHS_PER_ROW
+  return {
+    ArrowLeft: () => addMonths(cursor, -horizontal),
+    ArrowRight: () => addMonths(cursor, horizontal),
+    ArrowUp: () => addMonths(cursor, -MONTHS_PER_ROW),
+    ArrowDown: () => addMonths(cursor, MONTHS_PER_ROW),
+    Home: () => addMonths(cursor, -column),
+    End: () => addMonths(cursor, MONTHS_PER_ROW - 1 - column),
+  }
+}
+
+/**
+ * The year grid's keys: one year sideways, one row — five years — vertically.
+ *
+ * `column` is `year % YEARS_PER_ROW` only because 1970 is a multiple of five and
+ * the rows are laid out from it; it is written as the distance from the row's
+ * start so that it stays right if either number ever moves.
+ */
+const yearMoves = (cursor, horizontal) => {
+  const column = (cursor.getFullYear() - FLOOR_YEAR) % YEARS_PER_ROW
+  return {
+    ArrowLeft: () => addYears(cursor, -horizontal),
+    ArrowRight: () => addYears(cursor, horizontal),
+    ArrowUp: () => addYears(cursor, -YEARS_PER_ROW),
+    ArrowDown: () => addYears(cursor, YEARS_PER_ROW),
+    Home: () => addYears(cursor, -column),
+    End: () => addYears(cursor, YEARS_PER_ROW - 1 - column),
+  }
 }

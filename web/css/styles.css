@@ -3150,6 +3150,15 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 .period-dialog-hint { margin-block: 8px 12px; font-size: 0.85rem; color: var(--muted); }
 .period-dialog-months { display: flex; gap: var(--space-sm); align-items: center; justify-content: space-between; margin-block-end: 8px; }
 .period-dialog-month { flex: 1 1 auto; margin: 0; font-family: var(--font-heading); text-align: center; }
+/* The caption decomposed into two buttons, one per grid behind it. `font:
+   inherit` is what keeps them looking like the caption they replaced rather than
+   like form controls: a button inherits no font at all from its ancestors.
+   `aria-expanded` is the state, so it is also what the open one is coloured by —
+   the styling and the announcement cannot then disagree. */
+.period-caption { padding: 2px 8px; font: inherit; color: var(--kai-kale); cursor: pointer; background: none; border: 1px solid transparent; border-radius: 8px; }
+.period-caption:hover { border-color: rgba(0, 50, 35, 0.25); background: var(--mint); }
+.period-caption[aria-expanded="true"] { color: var(--kai-white); background: var(--kai-kale); }
+.period-caption:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .period-month-step { padding: 4px 12px; font-size: 1.2rem; line-height: 1.2; color: var(--kai-kale); cursor: pointer; background: var(--mint); border: 1px solid rgba(0, 50, 35, 0.2); border-radius: 8px; }
 .period-month-step[disabled] { color: var(--muted); cursor: not-allowed; opacity: 0.45; }
 
@@ -3176,6 +3185,29 @@ td.period-day[data-day]:hover { background: var(--mint); }
 td.period-day.is-disabled { color: var(--muted); cursor: not-allowed; opacity: 0.4; }
 td.period-day.is-selected { font-weight: 700; color: var(--kai-white); background: var(--kai-kale); }
 td.period-day:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+
+/* The month and year grids behind the caption.
+
+   **`.period-grid` is on those tables too, and that is the point.** The rule
+   above is a fix for a `<table>`'s `min-inline-size: auto`, and a new table
+   inherits none of it — fifty-seven years in five columns measured as wide as
+   its widest row's min-content otherwise. Sharing the class is what makes the
+   fix one rule rather than three that have to be kept in step.
+
+   The scroller is a `<div>`, because `overflow` on a `<table>` does nothing:
+   twelve rows of years do not fit a phone's dialog beside a caption and a hint,
+   and a dialog that scrolled as a whole would scroll the caption off the top.
+   `position: relative` makes it the `offsetParent` of its own cells, which is
+   what `period.js`'s `focusAfterRender` measures against to centre the cursor. */
+.period-scroller { position: relative; max-block-size: 232px; overflow-y: auto; }
+td.period-choice { block-size: 40px; padding: 2px; font-size: 0.9rem; text-align: center; border-radius: 8px; }
+td.period-choice[data-action] { cursor: pointer; }
+td.period-choice[data-action]:hover { background: var(--mint); }
+/* Genuinely disabled, on the same four signals as a day cell: no `data-action`,
+   no `tabindex`, `aria-disabled`, and the colour last. */
+td.period-choice.is-disabled { color: var(--muted); cursor: not-allowed; opacity: 0.4; }
+td.period-choice.is-selected { font-weight: 700; color: var(--kai-white); background: var(--kai-kale); }
+td.period-choice:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 
 @media (max-width: 480px) {
   .period-bound-row .period-time-field { flex: 1 1 100%; }

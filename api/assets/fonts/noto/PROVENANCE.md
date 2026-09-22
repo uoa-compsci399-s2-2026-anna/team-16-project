@@ -320,3 +320,44 @@ carries them, and `_is_drawable` asks every embedded face rather than the one
 matching the locale — which is exactly why nothing failed while `sc` lacked
 them, and why a per-face gap is worth recording here even when no test can see
 it.
+
+## Re-cut, 2026-09-22 (the year and month grids, and the clock)
+
+The period picker's second pass added a year grid, a month grid and an
+Android-style clock dial with a keyboard mode beside it, and their sixteen
+`t()` keys reached the twenty catalogues in one batch. Almost all of them are
+furniture the CJK catalogues had never had to say: a dial, its hand, its face,
+and the instruction that tells a visitor to drag one.
+`test_no_character_in_any_catalogue_would_print_as_a_box` named **fourteen**
+code points across `ja`, `ko`, `zh` and `zh-Hant` — 拖 and 曳 ("drag"), 盤/盘
+("dial", the clock face), 錶 ("watch") and 鐘/钟 ("clock"), 押 (`ja`'s 押して,
+"press"), ボ (the katakana in `ja`'s キーボード, "keyboard"), 確/确
+("confirm", on *Set the time*), 著 (`zh-Hant`'s 接著, "then"), and `ko`'s 끌
+(끌거나, "drag"), 늘 (바늘, "the hand") and 판 (문자판, "the dial").
+
+Re-cut the same way as every entry above: `recut_cjk_subsets.py`, run inside
+the `api` container with `fonts-noto-cjk` (1:20240730+repack1-1, the same
+package version the table at the top of this file names) installed fresh.
+
+| Face | Characters before | Characters after | Bytes before | Bytes after |
+| --- | --- | --- | --- | --- |
+| `NotoSansCJKjp-Regular.woff2` | 657 | 662 | 237,032 | 239,016 |
+| `NotoSansCJKkr-Regular.woff2` | 564 | 567 | 80,948 | 81,256 |
+| `NotoSansCJKsc-Regular.woff2` | 713 | 717 | 205,572 | 207,056 |
+| `NotoSansCJKtc-Regular.woff2` | 711 | 719 | 269,312 | 273,540 |
+
+**Nothing was lost this time.** Every character in each old face is in the
+face that replaced it — the first re-cut in this file for which that is true,
+and it is true because the catalogues only gained strings in this round and
+lost none. Checked the way the 2026-09-19 entry requires, per face rather than
+across the set.
+
+**Eighteen glyphs were added and only fourteen were undrawable**, which is not
+a discrepancy. `_is_drawable` asks *every* embedded face, so a character
+already carried by one face is drawable for all twenty locales even when the
+face for its own language lacks it: 文 and 針 (`jp`), 份 and 確 (`tc`) were
+each already in another CJK face and so never failed the test, and they arrive
+in their own face now only because a fresh cut reads that catalogue's current
+strings. The four extra glyphs are the difference between "nothing prints as a
+box" and "each face covers its own language", and it is the second that this
+script produces.

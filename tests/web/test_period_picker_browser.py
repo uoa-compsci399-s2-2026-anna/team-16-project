@@ -743,6 +743,25 @@ def test_esc_nests_and_each_view_carries_its_own_hint(review):
     page.wait_for_timeout(250)
     assert page.locator("#period-dialog").count() == 0, "Esc did not close the day grid"
     assert page.evaluate("document.activeElement.id") == "period-open-start"
+
+    # And it opens on the days again - **closed from the year grid**, which is
+    # the only close that can tell the rule apart from an accident. A picker that
+    # remembered the view would open on the wrong question: the visitor pressed a
+    # button labelled "Choose the start date", and what they are shown first has
+    # to be the thing that button names. Closing by way of `Esc` would not ask
+    # the question, because leaving the year grid is itself a move to the days;
+    # measured, with a picker that remembered its last view, and it passed.
+    _open_calendar(page)
+    _open_view(page, "years")
+    page.click('[data-action="period-close"]')
+    page.wait_for_timeout(250)
+    assert page.locator("#period-dialog").count() == 0, "the close button did not close the dialog"
+
+    _open_calendar(page)
+    assert page.locator(".period-choices").count() == 0, (
+        "the calendar reopened on the grid it was last left in rather than on the days"
+    )
+    assert page.locator(".period-grid th").count() == 7
     assert not page.uncaught, page.uncaught
 
 
@@ -775,6 +794,9 @@ def test_the_year_grid_opens_scrolled_to_the_cursor_and_the_scroll_takes_no_focu
             scrollTop: Math.round(scroller.scrollTop),
             scrollable: Math.round(scroller.scrollHeight - scroller.clientHeight),
             inside: seen.top >= box.top - 1 && seen.bottom <= box.bottom + 1,
+            above: Math.round(seen.top - box.top),
+            below: Math.round(box.bottom - seen.bottom),
+            row: Math.round(seen.height),
           };
         }"""
     )
@@ -789,6 +811,18 @@ def test_the_year_grid_opens_scrolled_to_the_cursor_and_the_scroll_takes_no_focu
     assert measured["focused"], (
         "the cursor is scrolled to but not focused; the scroll and the focus have "
         "come apart"
+    )
+    # **Centred, and the difference is what this line exists for.** Dropping the
+    # scroll and letting `.focus()` do it on its own leaves every assertion above
+    # green - measured, scrollTop 249 against 224 - because `.focus()` scrolls to
+    # `nearest`, which satisfies "visible" by putting the cursor against an edge
+    # with no years on one side of it. 2011 is chosen to sit in the middle of the
+    # range, where the scroller is not clamped at either end and centring is
+    # therefore something the code either does or does not do.
+    assert abs(measured["above"] - measured["below"]) <= measured["row"], (
+        f"the cursor is {measured['above']}px from the top of the scroller and "
+        f"{measured['below']}px from the bottom, so it was scrolled to an edge "
+        f"rather than centred"
     )
     assert not page.uncaught, page.uncaught
 

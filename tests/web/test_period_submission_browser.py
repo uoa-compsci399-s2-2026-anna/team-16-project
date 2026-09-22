@@ -11,6 +11,13 @@ reach `POST /api/v1/calculate` in a shape §6.2 accepts. So the POST is
 intercepted in a real browser, after a real journey through the wizard, and the
 JSON that was actually on the wire is what every assertion below reads.
 
+**One of these tests exists to prove that the typing pass changed nothing.** The four
+period boxes now insert their own separators while they are typed and tidy
+themselves on blur; `test_the_untidy_form_sends_the_same_bytes_as_the_tidy_one`
+drives the same journey twice and compares the two captured bodies character for
+character, because "this is appearance only" is a claim about the wire and the
+wire is what this file reads.
+
 **Two of these tests exist because of a state the form could reach and the API
 refuses.** §6.2's `period_custom_without_interval` makes `time_frame: "custom"`
 with two nulls a 422, and the form could produce it two ways: by choosing
@@ -150,6 +157,35 @@ def _type_shift(page, *, start_date="14/09/2026", start_time="08:10",
     page.wait_for_timeout(180)
 
 
+def _type_untidy(page):
+    """The same shift, typed the way somebody in a hurry types it.
+
+    `press_sequentially` and not `fill`: a fill is one event carrying the whole
+    string, and what is under test is the box punctuating itself between one
+    digit and the next and tidying itself when the caret leaves. `blur()` is the
+    explicit trigger for the second half — `focusout`, and not a timer.
+    """
+    for selector, text in (
+        ("#period-start-date", "1/1/2026"),
+        ("#period-start-time", "0810"),
+        ("#period-end-date", "1/1/2026"),
+        ("#period-end-time", "1620"),
+    ):
+        box = page.locator(selector)
+        box.click()
+        box.press_sequentially(text, delay=30)
+        box.blur()
+        page.wait_for_timeout(120)
+    page.wait_for_timeout(120)
+
+
+def _values(page):
+    return {
+        field: page.locator(f"#{field}").input_value()
+        for field in ("period-start-date", "period-start-time", "period-end-date", "period-end-time")
+    }
+
+
 def _calculate(page):
     page.click(CALCULATE)
     page.wait_for_selector(".results-page", timeout=20000)
@@ -256,6 +292,65 @@ def test_the_pdf_request_carries_the_same_period_the_calculation_did(journey):
             f"{exported[field]!r} vs {calculated[field]!r}"
         )
     assert not page.uncaught, page.uncaught
+
+
+def test_the_untidy_form_sends_the_same_bytes_as_the_tidy_one(journey):
+    """**The whole claim of the second pass, measured on the wire.**
+
+    The four boxes punctuate themselves while they are typed and tidy
+    themselves when the caret leaves, and *none of that may reach the request*.
+    The values were already correct before any of it existed — `parseDateText`
+    accepted `1/1/2026` and `parseTimeText` returned a padded `08:10` for
+    `0810` — so a visitor who typed the untidy form already submitted the right
+    instant and was merely left looking at an untidy box.
+
+    So the same journey is driven twice: once typing `1/1/2026` and `0810` a
+    key at a time and letting blur tidy them, once filling the canonical
+    strings, and **the whole captured body is compared character for
+    character**, not just the two period fields. The whole body because the
+    failure this guards is not confined to them: a normalisation that reached
+    `time_frame`, or an extra field, or a `Date` object serialised into
+    `period_start`, would all be well-formed JSON that said something the
+    visitor did not.
+
+    The boxes are read back as well, because "the wire is unchanged" is only
+    half the promise; the other half is that the visitor can see what they are
+    about to send.
+    """
+    untidy_page, untidy_sent = journey()
+    untidy_page.select_option("#time-frame", "custom")
+    untidy_page.wait_for_timeout(150)
+    _type_untidy(untidy_page)
+    assert _values(untidy_page) == {
+        "period-start-date": "01/01/2026",
+        "period-start-time": "08:10",
+        "period-end-date": "01/01/2026",
+        "period-end-time": "16:20",
+    }, _values(untidy_page)
+    _calculate(untidy_page)
+
+    tidy_page, tidy_sent = journey()
+    tidy_page.select_option("#time-frame", "custom")
+    tidy_page.wait_for_timeout(150)
+    _type_shift(
+        tidy_page,
+        start_date="01/01/2026",
+        start_time="08:10",
+        end_date="01/01/2026",
+        end_time="16:20",
+    )
+    _calculate(tidy_page)
+
+    untidy = json.dumps(untidy_sent[0], sort_keys=True, ensure_ascii=False)
+    tidy = json.dumps(tidy_sent[0], sort_keys=True, ensure_ascii=False)
+    assert untidy == tidy, (
+        "typing the untidy form produced a different request body:\n"
+        f"  untidy: {untidy}\n  tidy:   {tidy}"
+    )
+    assert untidy_sent[0]["period_start"] == "2026-01-01T08:10"
+    assert untidy_sent[0]["period_end"] == "2026-01-01T16:20"
+    assert not untidy_page.uncaught, untidy_page.uncaught
+    assert not tidy_page.uncaught, tidy_page.uncaught
 
 
 # ---------------------------------------------------------------------------

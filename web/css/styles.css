@@ -3127,12 +3127,18 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 .period-bound legend { padding-inline: 6px; font-family: var(--font-heading); font-size: 0.95rem; }
 .period-bound-row { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
 .period-bound-row .form-field { flex: 1 1 200px; margin: 0; }
-.period-bound-row .period-time-field { flex: 0 1 140px; }
+.period-bound-row .period-time-field { flex: 0 1 190px; }
 .period-date-control { display: flex; gap: 6px; align-items: stretch; }
 .period-date-control .period-input { flex: 1 1 auto; min-inline-size: 0; }
 .period-input[aria-invalid="true"] { border-color: var(--error); }
-.period-open { flex: 0 0 auto; padding-inline: 12px; font-size: 1.1rem; line-height: 1; color: var(--kai-kale); cursor: pointer; background: var(--mint); border: 1px solid rgba(0, 50, 35, 0.2); border-radius: 8px; }
+/* The icon inside is inline SVG, not a code point: U+1F5D3 defaults to text
+   presentation and Windows drew it as an empty rectangle. `display: flex` is
+   what centres a drawn glyph in a box that used to centre a character by its
+   line box, and `stroke: currentColor` in the markup is why no colour is set
+   here for either theme. */
+.period-open { display: flex; flex: 0 0 auto; align-items: center; justify-content: center; padding-inline: 12px; line-height: 1; color: var(--kai-kale); cursor: pointer; background: var(--mint); border: 1px solid rgba(0, 50, 35, 0.2); border-radius: 8px; }
 .period-open:hover { background: var(--kai-pea); }
+.period-open-icon { display: block; inline-size: 18px; block-size: 18px; }
 .period-error { margin-block-start: 4px; }
 
 .period-dialog-backdrop { position: fixed; z-index: 1000; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(0, 32, 24, 0.72); }
@@ -3144,6 +3150,15 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 .period-dialog-hint { margin-block: 8px 12px; font-size: 0.85rem; color: var(--muted); }
 .period-dialog-months { display: flex; gap: var(--space-sm); align-items: center; justify-content: space-between; margin-block-end: 8px; }
 .period-dialog-month { flex: 1 1 auto; margin: 0; font-family: var(--font-heading); text-align: center; }
+/* The caption decomposed into two buttons, one per grid behind it. `font:
+   inherit` is what keeps them looking like the caption they replaced rather than
+   like form controls: a button inherits no font at all from its ancestors.
+   `aria-expanded` is the state, so it is also what the open one is coloured by —
+   the styling and the announcement cannot then disagree. */
+.period-caption { padding: 2px 8px; font: inherit; color: var(--kai-kale); cursor: pointer; background: none; border: 1px solid transparent; border-radius: 8px; }
+.period-caption:hover { border-color: rgba(0, 50, 35, 0.25); background: var(--mint); }
+.period-caption[aria-expanded="true"] { color: var(--kai-white); background: var(--kai-kale); }
+.period-caption:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .period-month-step { padding: 4px 12px; font-size: 1.2rem; line-height: 1.2; color: var(--kai-kale); cursor: pointer; background: var(--mint); border: 1px solid rgba(0, 50, 35, 0.2); border-radius: 8px; }
 .period-month-step[disabled] { color: var(--muted); cursor: not-allowed; opacity: 0.45; }
 
@@ -3170,6 +3185,125 @@ td.period-day[data-day]:hover { background: var(--mint); }
 td.period-day.is-disabled { color: var(--muted); cursor: not-allowed; opacity: 0.4; }
 td.period-day.is-selected { font-weight: 700; color: var(--kai-white); background: var(--kai-kale); }
 td.period-day:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+
+/* The month and year grids behind the caption.
+
+   **`.period-grid` is on those tables too, and that is the point.** The rule
+   above is a fix for a `<table>`'s `min-inline-size: auto`, and a new table
+   inherits none of it — fifty-seven years in five columns measured as wide as
+   its widest row's min-content otherwise. Sharing the class is what makes the
+   fix one rule rather than three that have to be kept in step.
+
+   The scroller is a `<div>`, because `overflow` on a `<table>` does nothing:
+   twelve rows of years do not fit a phone's dialog beside a caption and a hint,
+   and a dialog that scrolled as a whole would scroll the caption off the top.
+   `position: relative` makes it the `offsetParent` of its own cells, which is
+   what `period.js`'s `focusAfterRender` measures against to centre the cursor. */
+.period-scroller { position: relative; max-block-size: 232px; overflow-y: auto; }
+td.period-choice { block-size: 40px; padding: 2px; font-size: 0.9rem; text-align: center; border-radius: 8px; }
+td.period-choice[data-action] { cursor: pointer; }
+td.period-choice[data-action]:hover { background: var(--mint); }
+/* Genuinely disabled, on the same four signals as a day cell: no `data-action`,
+   no `tabindex`, `aria-disabled`, and the colour last. */
+td.period-choice.is-disabled { color: var(--muted); cursor: not-allowed; opacity: 0.4; }
+td.period-choice.is-selected { font-weight: 700; color: var(--kai-white); background: var(--kai-kale); }
+td.period-choice:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+
+
+/* ---------------------------------------------------------------------------
+   The clock beside the two time boxes (`web/js/period.js`, WP3).
+
+   **The face is drawn in SVG and positioned in its own coordinate system, and
+   that is the whole of its RTL story.** The calendar above mirrors under
+   `dir="rtl"` because a week is text laid out in reading order. A clock is not:
+   three o'clock is to the right of twelve for an Arabic reader as much as for
+   anyone else, so the face must NOT mirror. Nothing here places a number — every
+   position is an `x`/`y` in the `viewBox`, written by `faceContents` — so there
+   is no `inset-inline-start` to flip and nothing for a well-meaning change to
+   this file to get wrong. Read the note over `faceContents` before "fixing" it.
+   ------------------------------------------------------------------------ */
+
+/* The time box and its clock button, the same row the date box and its calendar
+   button make one field over. `.period-time-field`'s basis grew with the button:
+   at 140px the box and a 42px button shared 140px and the text was clipped at
+   `08:1`. Measured at a 1278px viewport. */
+.period-time-control { display: flex; gap: 6px; align-items: stretch; }
+.period-time-control .period-input { flex: 1 1 auto; min-inline-size: 0; }
+
+.period-clock-dialog { inline-size: min(340px, 100%); text-align: center; }
+/* The readout: two buttons and a colon, the same decomposition the calendar's
+   caption went through. `font-variant-numeric: tabular-nums` so the hand moving
+   from 09 to 10 does not shift the colon sideways. */
+.period-clock-readout { display: flex; gap: 2px; align-items: baseline; justify-content: center; margin-block-end: 10px; font-family: var(--font-heading); font-size: 2rem; font-variant-numeric: tabular-nums; }
+.period-clock-stage { padding: 2px 10px; font: inherit; color: var(--kai-kale); cursor: pointer; background: none; border: 1px solid transparent; border-radius: 8px; }
+.period-clock-stage:hover { border-color: rgba(0, 50, 35, 0.25); background: var(--mint); }
+.period-clock-stage[aria-pressed="true"] { color: var(--kai-white); background: var(--kai-kale); }
+.period-clock-stage:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.period-clock-colon { font-family: var(--font-heading); }
+
+/* **`touch-action: none` is not decoration.** Without it a finger dragging the
+   hand is claimed by the page's own scrolling before the second `pointermove`
+   arrives, and the dial is unusable by touch - which is the half of the control
+   the owner asked for. `margin-inline` (not `margin-left`) centres it.
+
+   **There is deliberately no `aspect-ratio: 1` here, and that is a measurement
+   rather than an omission.** It was written, and deleting it survived the phone
+   test: an `<svg viewBox="0 0 200 200">` with `inline-size: 100%` and an auto
+   block size already has an intrinsic 1:1 ratio, so the declaration decided
+   nothing. Measured in Chromium at 1278px and at 390px - 260x260 with it and
+   260x260 without, identically - and the same measurement with the viewBox
+   changed to `0 0 200 260` gave 260x338, which is what actually decides the
+   shape. `test_the_whole_clock_fits_inside_the_dialog_on_a_phone` asserts the
+   face is square to the pixel, and that assertion guards the viewBox, which is
+   the thing that answers. */
+.period-clock-face { display: block; inline-size: 100%; max-inline-size: 260px; margin-inline: auto; touch-action: none; }
+.period-clock-dial { fill: var(--mint); }
+.period-clock-stem,
+.period-clock-knob,
+.period-clock-hub { fill: var(--kai-kale); stroke: var(--kai-kale); stroke-width: 2; }
+.period-clock-tick { fill: var(--kai-white); stroke: none; }
+.period-clock-label { font-family: var(--font-body); font-size: 15px; fill: var(--kai-kale); }
+.period-clock-label.is-current { font-weight: 700; fill: var(--kai-white); }
+
+/* `transform-box: view-box` makes `transform-origin: 50% 50%` mean the centre of
+   the `viewBox` rather than the centre of the group's own bounding box, which
+   for a hand pointing at twelve is nowhere near it.
+
+   The transition is the only motion in this control, so it is also the only
+   thing `prefers-reduced-motion` has to switch off. It is dropped during a drag
+   as well: a hand that eased towards the pointer would lag behind the finger
+   dragging it, which reads as the control being broken rather than as
+   animation. */
+.period-clock-hand { transform-box: view-box; transform-origin: 50% 50%; transition: transform 180ms ease; }
+.period-clock-face.is-dragging .period-clock-hand { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .period-clock-hand { transition: none; }
+}
+
+/* The keyboard mode: two number boxes and the colon between them. This is not a
+   fallback - see `period.js`'s header - so it is laid out as a control in its
+   own right rather than squeezed under the dial. */
+.period-clock-entry { display: flex; gap: var(--space-sm); align-items: flex-end; justify-content: center; margin-block-end: 12px; }
+.period-clock-entry .period-clock-colon { padding-block-end: 8px; font-size: 1.6rem; }
+.period-clock-box { flex: 0 1 110px; margin: 0; text-align: start; }
+.period-clock-box input { inline-size: 100%; min-inline-size: 0; }
+
+/* `flex-wrap` and `min-inline-size: 0` because the mode toggle is a whole
+   sentence in most catalogues - "Enter the time on a keyboard" is 27 characters
+   in English and longer in German - and a row that could not wrap would push the
+   dialog wider than the phone it is on. Measured at 390px. */
+.period-clock-actions { display: flex; flex-wrap: wrap; gap: var(--space-sm); align-items: center; justify-content: space-between; margin-block-start: 12px; }
+.period-clock-confirm { display: flex; flex: 0 1 auto; gap: 8px; align-items: center; }
+.period-clock-mode,
+.period-clock-cancel,
+.period-clock-set { padding: 8px 14px; font: inherit; font-size: 0.9rem; cursor: pointer; border-radius: 8px; }
+.period-clock-mode,
+.period-clock-cancel { min-inline-size: 0; color: var(--kai-kale); background: none; border: 1px solid rgba(0, 50, 35, 0.25); }
+.period-clock-mode:hover,
+.period-clock-cancel:hover { background: var(--mint); }
+.period-clock-mode { flex: 1 1 auto; text-align: start; }
+.period-clock-set { font-weight: 700; color: var(--kai-white); background: var(--kai-kale); border: 1px solid var(--kai-kale); }
+.period-clock-set:hover { box-shadow: 0 4px 14px rgba(0, 50, 35, 0.24); }
 
 @media (max-width: 480px) {
   .period-bound-row .period-time-field { flex: 1 1 100%; }

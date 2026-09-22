@@ -554,6 +554,280 @@ def test_half_an_interval_is_refused(review):
 
 
 # ---------------------------------------------------------------------------
+# The two grids behind the caption
+# ---------------------------------------------------------------------------
+
+
+def _open_view(page, view):
+    """Press one half of the caption and wait for its grid."""
+    page.click(f'[data-action="period-view"][data-view="{view}"]')
+    page.wait_for_selector(".period-choices", timeout=5000)
+    page.wait_for_timeout(180)
+
+
+def _cursor(page):
+    return page.evaluate("document.getElementById('period-grid-focus')?.textContent")
+
+
+def test_the_year_grid_crosses_the_whole_range_in_one_press(review):
+    """**The defect this package exists for, measured as a count.**
+
+    1970-01-01 to now + 24 hours is fifty-seven years, and the only ways across
+    it were 57 `Shift`+`PageUp` presses or 684 clicks on the previous month.
+    What is asserted here is that the year grid offers *every* year of the range
+    at once - not a decade page a visitor has to walk - and that choosing one
+    lands the day grid on the same month of that year.
+
+    The count is derived from the clock rather than written down, so the test
+    goes on being about the range instead of about the year it was written in.
+    """
+    page = review()
+    page.select_option("#time-frame", "custom")
+    page.wait_for_timeout(150)
+    page.fill("#period-start-date", "10/06/2026")
+    page.wait_for_timeout(120)
+    _open_calendar(page)
+    _open_view(page, "years")
+
+    offered = page.locator('td[data-action="period-choose-year"]').all_inner_texts()
+    ceiling_year = (dt.datetime.now() + dt.timedelta(hours=24)).year
+    assert offered[0] == "1970", f"the year grid does not begin at the floor: {offered[:3]}"
+    assert offered[-1] == str(ceiling_year), (
+        f"the year grid stops at {offered[-1]} rather than at the ceiling's year"
+    )
+    assert len(offered) == ceiling_year - 1970 + 1, (
+        f"{len(offered)} years are offered where the range holds "
+        f"{ceiling_year - 1970 + 1}; a grid that pages is not one press across"
+    )
+    assert page.locator('.period-choices td[tabindex="0"]').count() == 1, (
+        "the year grid has more than one tab stop; the roving tabindex is not roving"
+    )
+
+    page.click('td[data-action="period-choose-year"][data-value="1994"]')
+    page.wait_for_timeout(250)
+    assert page.locator(".period-choices").count() == 0, "choosing a year did not return to the days"
+    assert page.locator("#period-dialog-month").inner_text().strip() == "June 1994", (
+        "choosing a year changed the month as well as the year"
+    )
+    assert _focused_day(page) == "Friday, 10 June 1994"
+    assert not page.uncaught, page.uncaught
+
+
+def test_choosing_a_year_states_no_date_and_so_demotes_no_preset(review):
+    """**A year is not a date, and `time_frame` records which shortcut was
+    pressed.**
+
+    `chooseDay` demotes a preset to `custom` because somebody who moved the
+    start back three days did not press a shortcut for what is now in the
+    fields. Opening a year grid and choosing 1994 states nothing: no box
+    changes, so the answer the visitor gave is still the answer they gave. A
+    demotion here would rewrite `time_frame` over a dialog the visitor then
+    dismissed without choosing a day at all.
+    """
+    page = review()
+    page.select_option("#time-frame", "one_week")
+    page.wait_for_timeout(200)
+    before = _values(page)
+    assert before["period-start-date"], "the preset did not fill the interval"
+
+    _open_calendar(page)
+    _open_view(page, "years")
+    page.click('td[data-action="period-choose-year"][data-value="1994"]')
+    page.wait_for_timeout(250)
+    _open_view(page, "months")
+    page.click('td[data-action="period-choose-month"][data-value="0"]')
+    page.wait_for_timeout(250)
+
+    assert _values(page) == before, (
+        "moving the calendar's cursor wrote into a field; only choosing a day may"
+    )
+    assert page.locator("#time-frame").input_value() == "one_week", (
+        "opening a year grid demoted a preset to custom without a date being stated"
+    )
+    assert not page.uncaught, page.uncaught
+
+
+def test_a_year_and_a_month_outside_the_range_are_genuinely_disabled(review):
+    """The same four signals the day grid's disabled cells carry, in both new
+    grids: no `data-action`, so a pointer cannot choose one; no `tabindex`, so
+    the roving cursor cannot land on one; `aria-disabled`, so it is not offered;
+    and the colour last rather than only.
+
+    The year grid's last row runs past the ceiling - 2025-2029 for a ceiling in
+    2026 - and draws those years disabled rather than leaving them out, so the
+    grid's own shape says where the range stops. The ceiling's own year is the
+    other boundary: the months after the one the ceiling falls in are out of
+    range and are drawn the same way.
+    """
+    page = review()
+    page.select_option("#time-frame", "custom")
+    page.wait_for_timeout(150)
+    _open_calendar(page)
+    _open_view(page, "years")
+
+    limit = dt.datetime.now() + dt.timedelta(hours=24)
+    disabled = page.locator(".period-choices td.is-disabled")
+    assert disabled.count() > 0, "no year past the ceiling is drawn; the boundary is invisible"
+    assert page.locator(".period-choices td.is-disabled[data-action]").count() == 0, (
+        "a disabled year is still a click target"
+    )
+    assert page.locator(".period-choices td.is-disabled[tabindex]").count() == 0, (
+        "a disabled year is still focusable"
+    )
+    assert disabled.first.get_attribute("aria-disabled") == "true"
+    assert all(int(text) > limit.year for text in disabled.all_inner_texts()), (
+        f"a year inside the range is disabled: {disabled.all_inner_texts()}"
+    )
+    assert page.locator(f'td[data-action="period-choose-year"][data-value="{limit.year + 1}"]').count() == 0, (
+        "the year after the ceiling's is choosable"
+    )
+    assert page.locator('td[data-action="period-choose-year"][data-value="1969"]').count() == 0, (
+        "1969 is offered; the floor is 1970-01-01"
+    )
+
+    # And the clamp: the arrow keys cannot walk onto one either.
+    for _ in range(6):
+        page.keyboard.press("ArrowRight")
+    page.wait_for_timeout(250)
+    assert int(_cursor(page)) <= limit.year, f"the arrow keys walked past the ceiling to {_cursor(page)}"
+
+    # The ceiling's own year, in the month grid: the months after it are out.
+    _open_view(page, "months")
+    assert page.locator("#period-dialog-month").inner_text().strip().endswith(str(limit.year))
+    offered = page.locator('td[data-action="period-choose-month"]').count()
+    assert offered == limit.month, (
+        f"{offered} months are offered in {limit.year}, where the ceiling falls "
+        f"in month {limit.month}"
+    )
+    assert not page.uncaught, page.uncaught
+
+
+def test_esc_nests_and_each_view_carries_its_own_hint(review):
+    """Two rules that are one behaviour: the grids are a stack, and what the
+    dialog says about the keyboard has to be about the grid on screen.
+
+    A single `Esc` that closed the whole dialog from a year grid would lose the
+    month the visitor had navigated to, for nothing - they asked to leave the
+    year grid, not the calendar. And the day grid's hint names `Page Up` and
+    `Page Down`, which do nothing in a grid of years: a hint that names keys
+    that are not bound is worse than no hint, because it is the only thing
+    telling a keyboard user what is bound.
+    """
+    page = review()
+    page.select_option("#time-frame", "custom")
+    page.wait_for_timeout(150)
+    _open_calendar(page)
+    day_hint = page.locator("#period-dialog-hint").inner_text()
+    assert "Page Up" in day_hint, day_hint
+
+    _open_view(page, "years")
+    year_hint = page.locator("#period-dialog-hint").inner_text()
+    assert "Page Up" not in year_hint, (
+        f"the year grid offers the day grid's hint, which names keys it does not "
+        f"bind: {year_hint!r}"
+    )
+    assert "years" in year_hint, year_hint
+
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(250)
+    assert page.locator("#period-dialog").count() == 1, (
+        "Esc closed the whole dialog from a year grid rather than returning to the days"
+    )
+    assert page.locator(".period-choices").count() == 0, "Esc did not leave the year grid"
+    assert page.locator(".period-grid th").count() == 7, "the day grid did not come back"
+    assert page.evaluate(
+        "!!document.getElementById('period-dialog')?.contains(document.activeElement)"
+    ), "Esc out of the year grid left focus outside the dialog"
+
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(250)
+    assert page.locator("#period-dialog").count() == 0, "Esc did not close the day grid"
+    assert page.evaluate("document.activeElement.id") == "period-open-start"
+
+    # And it opens on the days again - **closed from the year grid**, which is
+    # the only close that can tell the rule apart from an accident. A picker that
+    # remembered the view would open on the wrong question: the visitor pressed a
+    # button labelled "Choose the start date", and what they are shown first has
+    # to be the thing that button names. Closing by way of `Esc` would not ask
+    # the question, because leaving the year grid is itself a move to the days;
+    # measured, with a picker that remembered its last view, and it passed.
+    _open_calendar(page)
+    _open_view(page, "years")
+    page.click('[data-action="period-close"]')
+    page.wait_for_timeout(250)
+    assert page.locator("#period-dialog").count() == 0, "the close button did not close the dialog"
+
+    _open_calendar(page)
+    assert page.locator(".period-choices").count() == 0, (
+        "the calendar reopened on the grid it was last left in rather than on the days"
+    )
+    assert page.locator(".period-grid th").count() == 7
+    assert not page.uncaught, page.uncaught
+
+
+def test_the_year_grid_opens_scrolled_to_the_cursor_and_the_scroll_takes_no_focus(review):
+    """Fifty-seven years do not fit a dialog, so the grid scrolls - and a grid
+    that opened at 1970 would put the visitor's own year off the bottom of a box
+    they have to find the scrollbar of.
+
+    The scroll is applied to the cell that has just been focused, which is what
+    keeps it from being a second thing that moves the focus ring: the assertion
+    is that the cursor is both focused **and** inside the scroller's own box.
+    """
+    page = review()
+    page.select_option("#time-frame", "custom")
+    page.wait_for_timeout(150)
+    page.fill("#period-start-date", "10/06/2011")
+    page.wait_for_timeout(120)
+    _open_calendar(page)
+    _open_view(page, "years")
+
+    measured = page.evaluate(
+        """() => {
+          const scroller = document.querySelector('.period-scroller');
+          const cell = document.getElementById('period-grid-focus');
+          const box = scroller.getBoundingClientRect();
+          const seen = cell.getBoundingClientRect();
+          return {
+            year: cell.textContent,
+            focused: document.activeElement === cell,
+            scrollTop: Math.round(scroller.scrollTop),
+            scrollable: Math.round(scroller.scrollHeight - scroller.clientHeight),
+            inside: seen.top >= box.top - 1 && seen.bottom <= box.bottom + 1,
+            above: Math.round(seen.top - box.top),
+            below: Math.round(box.bottom - seen.bottom),
+            row: Math.round(seen.height),
+          };
+        }"""
+    )
+    assert measured["year"] == "2011", measured
+    assert measured["scrollable"] > 0, (
+        "the year grid does not scroll at all, so this test is measuring nothing"
+    )
+    assert measured["scrollTop"] > 0, (
+        "the year grid opened at 1970 with the cursor somewhere below the fold"
+    )
+    assert measured["inside"], "the cursor is outside the scroller's own box"
+    assert measured["focused"], (
+        "the cursor is scrolled to but not focused; the scroll and the focus have "
+        "come apart"
+    )
+    # **Centred, and the difference is what this line exists for.** Dropping the
+    # scroll and letting `.focus()` do it on its own leaves every assertion above
+    # green - measured, scrollTop 249 against 224 - because `.focus()` scrolls to
+    # `nearest`, which satisfies "visible" by putting the cursor against an edge
+    # with no years on one side of it. 2011 is chosen to sit in the middle of the
+    # range, where the scroller is not clamped at either end and centring is
+    # therefore something the code either does or does not do.
+    assert abs(measured["above"] - measured["below"]) <= measured["row"], (
+        f"the cursor is {measured['above']}px from the top of the scroller and "
+        f"{measured['below']}px from the bottom, so it was scrolled to an edge "
+        f"rather than centred"
+    )
+    assert not page.uncaught, page.uncaught
+
+
+# ---------------------------------------------------------------------------
 # Language and direction
 # ---------------------------------------------------------------------------
 
@@ -633,6 +907,71 @@ def test_the_grid_mirrors_under_rtl_and_the_arrow_keys_follow_the_screen(review)
     assert not page.uncaught, page.uncaught
 
 
+def test_the_year_and_month_grids_mirror_under_rtl_and_the_arrows_follow_the_screen(review):
+    """**Measured in Arabic, not assumed**, for the reason the day grid's own RTL
+    test gives: a `<table>`'s column order mirrors with the document, which is
+    table layout rather than anything in `styles.css`, and that is exactly the
+    fact that makes an unmirrored arrow key wrong.
+
+    The year chosen matters. 2022 sits in the middle of its row - 2020-2024 -
+    so one press cannot wrap to another row, and the focus ring's x coordinate
+    is therefore a statement about the arrow key rather than about the wrap.
+    2020 would have told us nothing: it starts a row, and in *either* direction
+    a step from it lands on a different line.
+    """
+    page = review("ar")
+    assert page.evaluate("document.documentElement.dir") == "rtl"
+    page.select_option("#time-frame", "custom")
+    page.wait_for_timeout(150)
+    page.fill("#period-start-date", "10/06/2022")
+    page.wait_for_timeout(120)
+    _open_calendar(page)
+    _open_view(page, "years")
+
+    row = page.evaluate(
+        "[...document.querySelectorAll('.period-choices tr')[0].children].map(c => Math.round(c.getBoundingClientRect().x))"
+    )
+    assert row == sorted(row, reverse=True), f"the year grid did not mirror under dir=rtl: {row}"
+
+    before = page.locator("#period-grid-focus").bounding_box()
+    assert _cursor(page) == "2022"
+    page.keyboard.press("ArrowRight")
+    page.wait_for_timeout(220)
+    after = page.locator("#period-grid-focus").bounding_box()
+    assert _cursor(page) == "2021", "ArrowRight did not move to the previous year in a mirrored grid"
+    assert after["x"] > before["x"], (
+        f"ArrowRight moved the focus ring leftwards: {before['x']} -> {after['x']}"
+    )
+    page.keyboard.press("ArrowLeft")
+    page.wait_for_timeout(220)
+    back = page.locator("#period-grid-focus").bounding_box()
+    assert _cursor(page) == "2022"
+    assert back["x"] < after["x"]
+
+    # The month grid is the same table and the same rule. June is the last cell
+    # of its row - April, May, June - so in a mirrored grid it is drawn leftmost
+    # and the previous month is the cell to its right.
+    _open_view(page, "months")
+    months = page.evaluate(
+        "[...document.querySelectorAll('.period-choices tr')[0].children].map(c => Math.round(c.getBoundingClientRect().x))"
+    )
+    assert months == sorted(months, reverse=True), f"the month grid did not mirror: {months}"
+    start = page.locator("#period-grid-focus").bounding_box()
+    page.keyboard.press("ArrowRight")
+    page.wait_for_timeout(220)
+    moved = page.locator("#period-grid-focus").bounding_box()
+    assert page.evaluate(
+        "document.getElementById('period-grid-focus').getAttribute('aria-label')"
+    ) == "May 2022", "ArrowRight did not move to the previous month in a mirrored grid"
+    assert moved["x"] > start["x"], (
+        f"ArrowRight moved the focus ring leftwards: {start['x']} -> {moved['x']}"
+    )
+    assert page.evaluate("[document.documentElement.scrollWidth, document.documentElement.clientWidth]") == [1278, 1278], (
+        "a grid pushed the page sideways under dir=rtl"
+    )
+    assert not page.uncaught, page.uncaught
+
+
 @pytest.mark.parametrize("lang", ["en", "de", "ar"])
 def test_all_seven_columns_fit_inside_the_calendar_on_a_phone(review, lang):
     """**Every day of the week has to be on screen, and one measurement says so.**
@@ -696,3 +1035,69 @@ def test_all_seven_columns_fit_inside_the_calendar_on_a_phone(review, lang):
         f"is how the missing columns were reachable at all and is not a way "
         f"anybody finds them"
     )
+
+
+@pytest.mark.parametrize("lang", ["en", "de", "ml", "ar"])
+def test_the_year_and_month_grids_fit_inside_the_calendar_on_a_phone(review, lang):
+    """**A new grid is a new table and inherits none of the fix above.**
+
+    `min-inline-size: 0` is what stopped the day grid measuring 760px inside a
+    358px dialog, and a `<table>`'s `min-inline-size: auto` resolves to
+    min-content and beats `inline-size: 100%` whatever `table-layout` says. The
+    year grid is five columns and the month grid is three, both drawn from the
+    same class for that reason - and this is the assertion that says so, because
+    nothing else would: `test_horizontal_overflow.py` walks static pages and
+    never opens a dialog, and the dialog's own `overflow: auto` keeps a grid's
+    overflow off the document.
+
+    **German and Malayalam joined the parametrisation when the two grids were
+    translated.** The cells are numerals and English month abbreviations in every
+    language, so nothing in the grid itself grew - but the hint line above it did,
+    and it is the widest thing in the dialog in all twenty catalogues. Measured at
+    390px: the hint is 326px in every language here and the dialog it is wrapping
+    inside grows taller rather than wider (English months 331px tall, German 353,
+    Malayalam 366), which is the outcome this asserts rather than assumes.
+    """
+    page = review(lang=lang, width=390, height=844)
+    page.select_option("#time-frame", "custom")
+    page.wait_for_timeout(200)
+    page.locator('[data-action="period-open"]').first.click()
+    page.wait_for_selector(".period-grid")
+    page.wait_for_timeout(150)
+
+    measure = """(expected) => {
+      const grid = document.querySelector('.period-choices');
+      const dialog = grid.closest('.period-dialog');
+      const cells = [...grid.querySelector('tr').children];
+      const box = dialog.getBoundingClientRect();
+      return {
+        grid: Math.round(grid.getBoundingClientRect().width),
+        content: Math.round(dialog.clientWidth),
+        columns: cells.length,
+        outside: cells.filter(cell => {
+          const rect = cell.getBoundingClientRect();
+          return rect.left < box.left - 1 || rect.right > box.right + 1;
+        }).length,
+        sideways: Math.round(dialog.scrollWidth - dialog.clientWidth),
+        expected,
+      };
+    }"""
+
+    for view, columns in (("years", 5), ("months", 3)):
+        _open_view(page, view)
+        measured = page.evaluate(measure, columns)
+        assert measured["columns"] == columns, measured
+        assert measured["grid"] <= measured["content"], (
+            f"{lang}: the {view} grid is {measured['grid']}px inside a "
+            f"{measured['content']}px dialog, so it does not fit the phone it is "
+            f"being read on"
+        )
+        assert measured["outside"] == 0, (
+            f"{lang}: {measured['outside']} of the {view} grid's columns are drawn "
+            f"outside the dialog's own box - they cannot be reached by touch"
+        )
+        assert measured["sideways"] == 0, (
+            f"{lang}: the dialog scrolls sideways by {measured['sideways']}px with "
+            f"the {view} grid open"
+        )
+    assert not page.uncaught, page.uncaught

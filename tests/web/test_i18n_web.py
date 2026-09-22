@@ -45,14 +45,24 @@ NEVER_TRANSLATED = ("Kai Commitment", "CO2e", "NZD")
 #: cannot outlive the entry it was written for: reword the French `Code` and
 #: this fails on the next run rather than quietly permitting an English value.
 IDENTICAL_BY_DESIGN = {
-    "de": {"Code", "Name"},
+    #: `Minute` joins for the clock's keyboard mode. The German for one minute
+    #: of an hour is `Minute` -- Duden's own headword, and what Android's German
+    #: time picker labels the box. The alternatives are worse in two different
+    #: ways: `Min.` is an abbreviation where the box beside it says `Stunde` in
+    #: full, and `Minuten` is the plural over a field that holds one number.
+    "de": {"Code", "Minute", "Name"},
     "es": {"No", "Sector"},
     #: `Date` joins the list for v1.68's period fields. French for a date is
     #: `Date`, and the alternative a translator would reach for -- `Jour` --
     #: names a day rather than a date, beside a box that wants `dd/mm/yyyy`.
     #: Preferring a wrong word to an identical one is exactly what this list
     #: exists to prevent.
-    "fr": {"Code", "Date", "Destination", "Documentation"},
+    #:
+    #: `Minute` joins it for the clock. The French for a minute is `Minute`,
+    #: and it is the word beside `Heure` on every French clock face; the only
+    #: thing a translator could reach for instead is the plural `Minutes`,
+    #: over a box that holds one.
+    "fr": {"Code", "Date", "Destination", "Documentation", "Minute"},
     "nl": {"Code", "Sector"},
 }
 

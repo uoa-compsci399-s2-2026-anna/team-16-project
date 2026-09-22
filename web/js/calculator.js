@@ -6,7 +6,7 @@ import { escapeHtml, formatNumber, slug, stepNav } from './view.js'
 import { t } from './i18n.js'
 import { armContribute, bindResultsSectionSpy, cancelContribute, downloadPdf, downloadResults, renderResults, resultsNavIsDocked } from './results.js'
 import { compareImprovement, openImprovement, resetImprovement, updateImprovementInput } from './improvement.js'
-import { handlePeriodClick, handlePeriodInput, handlePeriodKeydown, PeriodField, periodProblem, timeFrameChanged } from './period.js'
+import { handlePeriodBlur, handlePeriodClick, handlePeriodComposition, handlePeriodInput, handlePeriodKeydown, handlePeriodPointer, PeriodField, periodProblem, timeFrameChanged } from './period.js'
 
 const decimalPattern = /^\d+(\.\d{1,2})?$/
 
@@ -2983,6 +2983,46 @@ export function bindCalculator(main, retryTaxonomy) {
     }
     if (target.matches('[data-improvement-code]')) updateImprovementInput(target, state)
   })
+
+  // **`focusout`, not `blur`.** `blur` does not bubble, so a delegated listener
+  // on `main` never hears it — and every other listener in this file is
+  // delegated, because `render()` replaces `main.innerHTML` and a listener bound
+  // to one of the four boxes would be thrown away with it on the next keystroke
+  // anywhere on the step. This is the first `focusout` in `web/js/`.
+  //
+  // It tidies what is in the box — `1/1/2026` to `01/01/2026`, `8` to `08:00` —
+  // and changes nothing that is sent; see `period.js`'s header. Like the `input`
+  // handler above it is handed the rest of Calculate's condition, because the
+  // rewrite re-asks `periodProblem` and patches the button by hand.
+  main.addEventListener('focusout', event => {
+    handlePeriodBlur(event, calculateOtherwiseDisabled())
+  })
+
+  // An IME composing into one of the period boxes must not have its text
+  // reformatted mid-composition. `inputmode="numeric"` makes that unlikely; a
+  // physical keyboard with an IME active makes it possible.
+  main.addEventListener('compositionstart', handlePeriodComposition)
+  main.addEventListener('compositionend', handlePeriodComposition)
+
+  // Step 5's clock face. **Pointer events, so a mouse, a finger and a pen are
+  // one code path** — see `period.js::handlePeriodPointer`.
+  //
+  // Delegated on `main` like everything else here, because `render()` replaces
+  // `main.innerHTML` and a listener bound to the `<svg>` would be thrown away
+  // with it. That survives a drag only because the dial deliberately does *not*
+  // `setState` between `pointerdown` and `pointerup`: the `<svg>` holds the
+  // pointer capture, so `pointermove` and `pointerup` are retargeted to it and
+  // still bubble here however far outside the circle the pointer has gone.
+  //
+  // `pointermove` is bound unconditionally rather than added on `pointerdown`
+  // and removed on `pointerup`, which would be one listener instead of a
+  // permanent one. It is not worth it: the handler's first line is an identity
+  // check against the captured pointer id and returns immediately, and a
+  // listener added mid-gesture is a listener that leaks if the gesture ends in a
+  // way nobody predicted.
+  for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) {
+    main.addEventListener(type, handlePeriodPointer)
+  }
 
   main.addEventListener('keydown', event => {
     // The calendar's own keyboard: the arrows, Page Up/Down, Home/End, Enter,

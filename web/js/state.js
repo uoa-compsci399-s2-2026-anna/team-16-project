@@ -119,6 +119,16 @@ export const state = {
   // reason `improvementChartExpanded` is: a re-render would otherwise close the
   // dialog and lose the cursor on the next keystroke anywhere on the step.
   periodPicker: null,
+  // The clock dialog beside the two time boxes: `null` when closed, else
+  // `{ field, stage, mode, hours, minutes, openerId }`. Here for the calendar's
+  // reason and for one of its own — `stage` and `mode` are what a re-render has
+  // to be able to rebuild, and a dial whose hand lived in the DOM would snap
+  // back to the hour on the next keystroke anywhere on the step.
+  //
+  // **`hours` and `minutes` are where the hand is, not what was answered.**
+  // Nothing reaches `periodFields` until the visitor presses *Set the time*, so
+  // an abandoned dialog states nothing (`period.js::setClockTime`).
+  periodClock: null,
   // §7.2's key list, and nothing beyond it. `alternative: []` and `compareAlternative: false`
   // stood here and in `resetCalculator` below, were assigned `[]` / never assigned by two
   // functions in `calculator.js`, and were read by nothing: the alternative scenario is built
@@ -531,6 +541,7 @@ export function resetCalculator() {
     periodEnd: '',
     periodFields: { startDate: '', startTime: '', endDate: '', endTime: '' },
     periodPicker: null,
+    periodClock: null,
     entries: [],
     result: null,
     error: null,

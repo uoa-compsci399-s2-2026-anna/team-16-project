@@ -163,8 +163,9 @@
       {# EVERY VISIBLE STRING BELOW GOES THROUGH `_()`, AND THAT IS A REPAIR.
          This dialog replaced sqladmin's own, whose every string was wrapped;
          the replacement's were bare literals, so the dialog left the
-         translation system as a side effect nobody noticed and rendered
-         English on the Chinese panel while the button that opens it did not.
+         translation system as a side effect nobody noticed: it rendered in
+         English on the Chinese panel, underneath a list-page button that
+         renders 「导入」.
          Measured before the repair: 154 `_()` calls across the 51 templates
          under admin/templates/, and 0 in this one.
 

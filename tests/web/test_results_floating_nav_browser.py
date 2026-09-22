@@ -666,6 +666,26 @@ def test_the_link_for_the_section_in_view_is_marked_as_the_reader_scrolls(browse
         assert mark["colour"] == "rgb(0, 50, 35)", f"the current item's text is {mark['colour']}, not Kale"
 
 
+def test_switching_breakdown_tabs_does_not_scroll_the_results_page(results):
+    """The breakdown tabs replace their panel in place; changing one must not
+    move the reader to the section's top or to the document top."""
+    page = results
+    page.evaluate(
+        """() => {
+          const section = document.querySelector('[aria-labelledby="breakdown-title"]');
+          window.scrollTo({top: section.offsetTop + 80, behavior: 'instant'});
+        }"""
+    )
+    page.wait_for_timeout(80)
+    before = page.evaluate("window.scrollY")
+    page.locator("#breakdown-tab-destination").click()
+    page.wait_for_timeout(80)
+    after = page.evaluate("window.scrollY")
+    assert abs(after - before) <= 2, (
+        f"changing the breakdown tab moved the reader from {before}px to {after}px"
+    )
+
+
 @pytest.mark.parametrize("section,height", [("tangible-equivalents", 287), ("impact-summary", 762)])
 def test_a_press_on_a_link_marks_that_link_and_not_the_one_after_it(browser, section, height):
     """**The reported defect: press the second item, and the third lights up.**

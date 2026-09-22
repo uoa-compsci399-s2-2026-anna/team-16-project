@@ -2712,7 +2712,16 @@ export function bindCalculator(main, retryTaxonomy) {
     // request rather than after it.
     if (action === 'contribute-submit') armContribute(state, publicError)
     if (action === 'contribute-undo') cancelContribute()
-    if (action === 'breakdown-tab') setState({ resultBreakdownTab: control.dataset.tab })
+    if (action === 'breakdown-tab') {
+      // Switching the breakdown is an in-place tab change, not navigation. Re-rendering
+      // replaces the tab panel, and browsers may try to reveal the replacement while
+      // restoring focus. Keep the reader at the same document position so selecting a
+      // category never unexpectedly sends them down the results page.
+      const scrollTop = window.scrollY
+      const scrollLeft = window.scrollX
+      setState({ resultBreakdownTab: control.dataset.tab })
+      requestAnimationFrame(() => window.scrollTo({ top: scrollTop, left: scrollLeft, behavior: 'instant' }))
+    }
     // Through `setState`, not by writing the DOM. `render()` replaces
     // `main.innerHTML` on every state change, so the element's own
     // `data-open` was erased by any unrelated update -- opening the menu and

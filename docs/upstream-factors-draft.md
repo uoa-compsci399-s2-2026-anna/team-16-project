@@ -870,6 +870,19 @@ dairy submission is byte-identical before and after the metric row exists,
 and its bundle carries `land` in `metrics[]` while `computed_metrics` does
 not.
 
+**What a reader sees, and where.** `unit` is `m2` and `display_unit` is
+`m²` -- the split `co2e` already uses for `kg CO2e` / `kg CO₂e`, which §6.1
+allows because the two are the same quantity at the same scale. `results.js`
+prefers the figure's own `unit`, so the results page and the text download
+read `m2`; `api/pdf_render.py` prints `display_unit`, so the PDF reads `m²`.
+That was **rendered and looked at**, not inferred from a font table: a
+results PDF carrying the unit was produced in English, Chinese and Arabic and
+`Land use (m²)` draws a real superscript two in all three, including Arabic,
+where the Arabic face has no glyph for it and the renderer falls back to a
+Latin one. It needed looking at because `metric.unit` is staff-typed and is
+in no catalogue, so the test that checks every catalogue character has a
+glyph does not cover it.
+
 #### The conversion
 
 **The client publishes `t/ha of land`, which is a yield, not a footprint.**

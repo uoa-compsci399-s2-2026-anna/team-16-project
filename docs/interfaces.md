@@ -25,6 +25,50 @@ This document defines **what every person's code receives and what it returns.**
 
 ## 0.1 Change Log
 
+### v1.71 — 2026-09-24 (an equivalence that a reader can picture at any size; affects A, B, C, D and E)
+
+The client asked for two things by email and said **"Yes please."** to both: equivalents a staff member can configure without a code change, and *automatic selection of an appropriate equivalent by the size of the result* — their own example was that **"0 Olympic swimming pools" is not meaningful**. The first was already delivered; this revision is the second. At a later meeting they added *"be creative"* and *"if a year is too much, change it to a day"*, and said the figures **need not be especially precise**.
+
+**Re-measured against the published set before anything was designed.** Scaling `tests/fixtures/calculate_request.json` and bisecting on the label the engine interpolates, against factor set 15 (`CLIENT-DRAFT-2026-09-21`, `is_mock = true`, published):
+
+| equivalence | reads `0` below | measured earlier against set 14 |
+| --- | ---: | ---: |
+| Olympic swimming pools | **638.755 kg** | ~639 kg |
+| Passenger vehicles for a year | **403.737 kg** | ~158 kg |
+| Meals | **0.225 kg** | ~0.23 kg |
+
+The pool figure did not move because the client's corrected table 2 did not change the water column. **The vehicle figure moved outwards by a factor of 2.56**, because that same correction took landfill's CO2-eq from 4.95 to 0.60 and the totals with it: a submission now has to be **two and a half times larger** before that card stops reading zero. So a 23 kg submission — a café's week — still shows two of its three tangible equivalents as `0`, and the case for this revision is stronger than the investigation that proposed it measured, not weaker. **Decimal places are not a substitute and that is measured too**: rendering the pool figure non-zero at 10 kg takes four places (`0.0078 Olympic swimming pools`), which is less meaningful than `0`, and how many places are needed varies with the magnitude, which is the selection problem wearing a different hat.
+
+**Nothing is published.** The ladders live in a **new draft** factor set (id 18, `is_mock = true`); the published set 15 and WP2's draft 17 are untouched. Whether any of it goes live is the owner's decision. **O-1 stays open** and the placeholder banner stays mandatory.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`equivalence` gains `family`, `min_value`, `max_value` and `label_template_one`, all nullable.** `family` says which ladder a row is a rung of; `min_value`/`max_value` are the half-open band `[min, max)` of **that row's own converted value** that the rung is eligible for. **`source_metric_id` cannot serve as `family`** — a vehicle kilometre, a vehicle-day and a vehicle-year are all `co2e` and *are* one ladder, while two different *framings* of `co2e` would share the metric and must not displace each other. **The band is on the converted value and not on the metric total**, which is what makes it survive O-1: a ten-minute shower is 90 litres whatever a kilogram of waste costs in water, so real factors change which rung a submission lands on and change nothing about where the rungs are. `family IS NULL` is the pre-v1.71 meaning — not a rung of anything, always shown — so every row in every database behaves exactly as it did | §2.2 |
+| 2 | **Two CHECK constraints** (`alembic 0019`). A band on a row with no family is a rule that can never fire, because selection only happens within a family; an inverted or empty band is a rung that can never be chosen, which looks exactly like a rung nobody added. Both refused rather than ignored. `tests/test_migrations.py`'s drift gate **cannot see a missing CHECK** — its own docstring records the blind spot — so they are proven behaviourally against real MySQL in `tests/db/test_equivalence_bands.py` and by name in `information_schema` | §2.2 |
+| 3 | **The selection is data, and is in the engine.** `_select_rungs` walks `bundle.equivalences()` in `(sort_order, code)` order and asks each row whether its band admits its own value. **The first admitting row of a family wins**, so `sort_order` within a family is a *priority order* rather than a partition: bands may overlap, and both shipped ladders rely on it — every rung above the bottom one carries `min_value = 1` and nothing else, so the rule reads *use the largest unit that still comes to at least one*. A family whose bands admit nothing **falls back to its first row**, which is the client's own unit in both ladders. A ladder occupies the page position of **its first row**, not of the rung that won, so dropping a rung does not also move the card. No family name, equivalence code or band appears in `engine/`, `api/` or `web/js/`; the test that walked `engine/` for six quoted metric codes now walks all three trees for the rung and family names as well | §4.1, §4.2 |
+| 4 | **The whole submission's `totals.current` chooses the rung, once, for every scenario in the result.** §6.2 carries `equivalences[]` in six places for a two-entry submission, and a per-scenario choice would put **two units for one family on one page**. `calculate` computes one selection from the rolled-up current metrics and hands it to the totals' current and alternative and to both scenarios of every entry. Three reasons that scenario: it is the one the page renders equivalences from, and it is now literally the same `MetricResult` objects, because the roll-up happens before the selection and is passed on rather than repeated; it always exists, where `alternative` and `net_benefit` are both `null` whenever no entry carries an alternative (§3 rule 4); and it is monotone in the size of the submission, where a net benefit of zero on a five-tonne submission is not. **`web/js/improvement.js` is the surface that would have shown the failure**: it merges the current and alternative lists **by `code`**, so two rungs would have produced two rows with one side each — a comparison with nothing to compare | §4.2, §6.2 |
+| 5 | **`label_template_one`, and the plural defect it closes.** `Equivalent to 1 Olympic swimming pools of water` and `running 1 passenger vehicles for a year` are what this repository prints today, because `label_template` is one fixed string. **A ladder drives the displayed number toward 1 by design**, so what was occasional becomes routine. The singular template is chosen off the **printed** number — `{value}` has already been interpolated to `1` — rather than off the raw value, so the sentence and the number in it cannot disagree; `1.4` prints `1` and therefore reads as one. **`-1` takes the plural.** Staff-typed, because §7.6 rule 9 forbids reworking these sentences at all and English grammar in a module that serves twenty languages would be wrong in most of them | §2.2, §3 |
+| 6 | **`GET /factors` carries all four, present-and-null**, on the same terms as `source_note`: a consumer must be able to tell "this row is not a rung of anything" from "this endpoint does not report ladders". **`bundle.json` makes them optional**, like `food_items` and unlike `source_note` — optional but **read**, because the engine selects on them. A bundle that omits them is every bundle written before this revision, including all thirteen golden cases, and produces exactly the equivalence list it produced before | §6.3, §10.2 |
+| 7 | **The panel shows `family`, `min_value` and `max_value` on the equivalence *list*, not only on the detail page.** A ladder is the one thing on that screen a staff member cannot check one row at a time — "does this family cover the range, in the right order" is a question about the rows side by side, and the list sorted by `sort_order` is the only place they are. All four columns are on the form with field help, so a rung is authored without reading this document | §8.1 |
+| 8 | **The build refuses a ladder that is upside down or has no bottom rung.** Neither is malformed data: both load, validate, compute, and show the wrong sentence to every visitor. A bigger unit has a *smaller* `value_per_unit`, so within a family `value_per_unit` must strictly increase down the sort order — reversed, the smallest unit is tried first, reaches one immediately, and the ladder never climbs. And if every rung carries a `min_value`, a value below all of them falls back to the family's first row — the largest unit, the one that reads `0`, which is the defect the ladder was built to remove. `build_upstream_factors_draft.py::_assert_ladders_are_well_formed` | §10.2 |
+
+**The ladders, rung by rung.** The client's own units stay at the top of each and rungs are added **below** them; nothing the client supplied is replaced, reworded or re-factored.
+
+| family | rung | unit | basis |
+| --- | --- | ---: | --- |
+| `vehicles` | `vehicles_year` | 2,410 kg CO2e | **The client's own**, *Data sources for impact calculator* (2026-08-29), per tonne, applied per kilogram |
+| | `vehicles_day` | 6.60 kg CO2e | The row above ÷ 365. **No new source**, and the client's own suggestion. "An average day" is the whole day and not a journey — it includes the hours the vehicle is parked, because the year it is divided from does |
+| `water_volume` | `olympic_pools` | 2,500,000 L | **The client's own**, same document |
+| | `backyard_pools` | 48,000 L | 8 m × 4 m × 1.5 m — an ordinary domestic rectangular pool at an average depth. Derived from stated dimensions, the team's judgement, so that a reader who disagrees can see exactly what to change |
+| | `showers` | 90 L | **PLACEHOLDER**, and **O-3**'s own named equivalent: ten minutes at 9 L/min, an ordinary (not low-flow) head. Both halves are assumptions and the note says so |
+| — | `meals` | 0.45 kg | **The client's own**, same document. Deliberately **not** a ladder: it stops reading `0` at 0.225 kg, below anything a business reports |
+
+**The ladder stops where the arithmetic stops being picturable, and that is a decision rather than an omission.** The obvious third `co2e` rung is a vehicle-*hour*, and it was rejected after measuring it: 2,410 kg ÷ 8,760 h is 0.275 kg CO2e, whereas an hour of actual driving is nearer 10 kg — **a factor of about 38** — because the client's figure is a whole year including every hour the car is parked. "An average day" survives that division because a day is how people already talk about a car; "an hour" does not. So the `co2e` ladder's floor is **1.107 kg** of mixed waste, measured on the draft set the same way, against 403.737 kg before — and the remaining floor is stated rather than hidden. The `water_volume` floor is **0.023 kg**, against 638.755 kg.
+
+> **What this costs the translation, said plainly.** `label_template` is staff-typed and is therefore **never translated** — §7.7.7's recorded ruling, not a defect. This revision makes the untranslated surface **larger and machine-selected**: a Thai reader now gets one of three English sentences per ladder rather than one, and **which one they get is chosen by the size of their own result**, so they cannot tell why the wording changed between two visits. `label_template_one` doubles it again. That is six English sentences where there were three, on a page whose furniture is translated into twenty languages around them. It raises the cost of **O-8** — whatever closes O-8 must now translate a *set* of sentences per ladder and keep the singular forms in step — and it is recorded here rather than discovered when O-8 is picked up.
+
+> **Still open after this revision.** **O-1 remains the hard blocker**: no real emissions factors, `is_mock` true on every set, placeholder banner mandatory. **O-3 is narrowed and not closed** — showers now exist as an equivalence, which is what O-3 asked for, but the 90 litres is an assumption rather than a New Zealand source, and the backyard pool is the team's own derivation. **O-8 is unchanged in scope and more expensive**, per the note above. O-4, O-5 and O-6 are unchanged. **Not attempted here:** a ladder for `cost`, `ch4` or `land` (O-3 names no equivalent for any of them, and "rugby fields" is the kind of figure that needs a source rather than an arithmetic); any rung for `mass` below a meal; and the documentation page's factor table, which still publishes seven columns per equivalence and none of the four new ones — the four are machinery for choosing a sentence rather than factors a public reader can act on, and adding four headings would mean eighty unreviewed machine translations.
+
 ### v1.70 — 2026-09-23 (a sixth metric, and the rule that stops it reaching every factor set that never heard of it; affects A, B, C, D and E)
 
 The client's *Rawtec calculations* document has published a land column since the first revision and this calculator has never reported it. The owner has ruled that it is introduced. `land` is that metric, and everything else in this revision is what introducing it turned out to cost.
@@ -1696,9 +1740,18 @@ UNIQUE(`factor_set_id`, `metric_id`)
 | `source_metric_id` | INT | FK, NOT NULL | Which metric it converts from |
 | `value_per_unit` | DECIMAL(20,10) | NOT NULL | Result = metric total × this factor |
 | `label_template` | VARCHAR(255) | NOT NULL | `Equivalent to driving {value} km`. `{value}` is the only placeholder; everything else is copied verbatim. **The engine interpolates it, and §3's rule 5 fixes the number format** (whole units, comma thousands separator, `ROUND_HALF_UP`) |
-| `source_note` | TEXT | NULL | Basis for the conversion. Open item O-3 — the New Zealand sources for km driven, meal equivalents and showers are not yet settled, and an equivalence with no stated basis is the figure most likely to be challenged |
-| `sort_order` | INT | NOT NULL, DEFAULT 0 | |
+| `label_template_one` | VARCHAR(255) | NULL | v1.71. The same sentence for a value that **prints** as exactly `1`. NULL means none was given and `label_template` is used whatever the number is, which is how `Equivalent to 1 Olympic swimming pools of water` reaches a results page today. A second staff-typed string rather than a pluralisation rule in code — see §3 rule 5 |
+| `family` | VARCHAR(64) | NULL | v1.71. Which **ladder** this row is a rung of. Rows sharing a family are the same comparison at several sizes and **exactly one of them is shown**; NULL means the row is not a rung of anything and is always shown, which is what every row in every database carried before this column existed. **Not `source_metric_id`** — km, a vehicle-day and a vehicle-year are all `co2e` and *are* one ladder, while two framings of `co2e` share the metric and must not displace each other |
+| `min_value` | DECIMAL(20,10) | NULL | v1.71. The bottom of the half-open band `[min_value, max_value)` this rung is eligible for, compared against **this row's own converted value** — 3 showers, 0.4 swimming pools — and never against the metric total. NULL is unbounded below |
+| `max_value` | DECIMAL(20,10) | NULL | v1.71. The top of the same band, **not included**. NULL is unbounded above. A rung with neither bound is its family's catch-all |
+| `source_note` | TEXT | NULL | Basis for the conversion. Open item O-3 — the New Zealand sources for km driven, meal equivalents and showers are not yet settled, and an equivalence with no stated basis is the figure most likely to be challenged. **A rung derived by the team needs one as much as a supplied figure does**: say what it was derived from and from what |
+| `sort_order` | INT | NOT NULL, DEFAULT 0 | Display order, lowest first, ties broken by `code`. **Inside a family it does a second job**: it is the order the rungs are tried in, so a ladder is numbered **largest unit first** |
 | `active` | BOOLEAN | NOT NULL, DEFAULT TRUE | |
+
+CHECK `ck_equivalence_band_needs_family`: `family IS NOT NULL OR (min_value IS NULL AND max_value IS NULL)`
+CHECK `ck_equivalence_band_ordered`: `min_value IS NULL OR max_value IS NULL OR min_value < max_value`
+
+> **How a ladder is selected, in one paragraph** (v1.71; §4.2 has the engine's side). The rungs of one family are tried in `sort_order`, and the first whose own converted value falls inside its band is the one shown. That makes `sort_order` a **priority order**, so bands may overlap and usually should: both shipped ladders give every rung above the bottom one `min_value = 1` and nothing else, which reads *use the largest unit that still comes to at least one*. The bottom rung carries no band, so a value too small for everything above it always has somewhere to land; if every rung is banded and none admits, the family falls back to its **first** row. The two CHECKs above cover the two band shapes that can never fire; the two failures they cannot see — a ladder numbered smallest-unit-first, and a ladder with no unbanded bottom rung — are refused by the draft build (`_assert_ladders_are_well_formed`), because both produce data that loads, validates, computes and shows the wrong sentence to everybody.
 
 ## 2.2a Comparison Scenarios
 
@@ -2247,8 +2300,11 @@ class CalculationResult:
 > | Negative values | A leading `-`, same grouping. Possible: a metric total can be negative when a downstream offset dominates (§4.2) |
 > | A value that rounds to zero | `0`, with **no sign**. The row above is for values that are actually negative; a magnitude that rounds away is not one. `Decimal("-0.4")` rounds to `Decimal("-0")` and `format(Decimal("-0"), ",")` is `"-0"`, so without this row the rule as written produces `Equivalent to driving -0 km` on a results page. `value` itself is unaffected and keeps its sign at full precision |
 > | Anything else in the template | Copied **verbatim**. `{value}` is the only placeholder substituted, and any other brace sequence is literal text — `label_template` is staff-authored (§8.1) and must never behave as a format string |
+| Which template (v1.71) | `label_template_one` when the **printed** number is exactly `1`, otherwise `label_template`. Tested against the interpolated string and not against the raw value, so the sentence and the number in it cannot disagree: `1.4` prints `1` and reads as one. `-1` takes the plural — English is not settled on negative ones, the sign is a real signal (a metric total can be negative when a downstream offset dominates), and a staff member who wants a negative singular can write it into the plural template. A row with no `label_template_one` prints the plural at every value, which is every equivalence written before v1.71 |
 >
 > `Equivalent to driving {value} km` with `value = Decimal("18596.8200000000")` gives `Equivalent to driving 18,597 km`.
+>
+> **The plural rule is not cosmetic, and v1.71 is when it stopped being rare.** `Equivalent to 1 Olympic swimming pools of water` and `running 1 passenger vehicles for a year` are what this contract produced before `label_template_one` existed. A ladder **drives the displayed number toward 1 by design** — that is what choosing the right-sized unit means — so the value that was an occasional embarrassment becomes the ordinary case. Two staff-typed strings rather than grammar in the engine: §7.6 rule 9 forbids reworking these sentences at all, they are the client's approved wording, and a pluralisation rule written for English would be wrong in most of the twenty languages the page around them is translated into.
 >
 > **`value` itself is unaffected and is transmitted at full precision**, as a string, next to the label (§1.2). `label` is display text; `value` is the number. A consumer that wants a different presentation formats `value`, and no consumer re-derives `label`.
 >
@@ -2361,7 +2417,14 @@ class FactorBundle:
         """Returns the default 'qty_kg * (upstream + downstream)' when not found."""
 
     def equivalences(self) -> tuple[EquivalenceSpec, ...]:
-        """Active only, sorted by sort_order."""
+        """Active only, sorted by sort_order, ties broken by code.
+
+        **Every** active row, including every rung of every ladder. Choosing
+        between the rungs is §4.2's, not this method's: a bundle is a
+        snapshot of a factor set and the selection depends on a calculation.
+        `EquivalenceSpec` carries `family`, `min_value`, `max_value` and
+        `label_template_one` since v1.71, all optional in `bundle.json` and
+        all absent from every bundle written before it."""
 
     def has_destination(self, code: str) -> bool: ...
     def has_sector(self, code: str) -> bool: ...
@@ -2485,7 +2548,8 @@ Within the engine, the roll-up rules are:
 | --- | --- |
 | `totals.current.metrics[code].total` | Σ over entries of that entry's metric total |
 | `totals.current.total_kg` | Σ over entries of `current.total_kg` |
-| `totals.current.equivalences` | Computed **from the rolled-up metric total**, not summed from the per-entry equivalence values. The conversion is linear so the two agree mathematically, but `Decimal` has finite precision and one computation is one rounding |
+| `totals.current.equivalences` | Computed **from the rolled-up metric total**, not summed from the per-entry equivalence values. The conversion is linear so the two agree mathematically, but `Decimal` has finite precision and one computation is one rounding. **One rung per family** (v1.71): every active equivalence with no `family`, plus exactly one rung of each family, at the page position of that family's first row |
+| the rung each family shows | **Chosen once per calculation, from these same rolled-up `totals.current` metric totals**, and used for `totals.alternative` and for both scenarios of every entry as well (v1.71). Not per scenario: §6.2 carries `equivalences[]` in six places for a two-entry submission, and a per-scenario choice would show two units for one family on one page. Within a family the rungs are tried in `sort_order` and the first whose own converted value falls inside its band wins; if none does, the family's first row is used |
 | `totals.current.metrics[code].by_destination` | **Per metric, per destination, across entries** (§3 rule 2, amended v1.48): `qty_kg` and `value` are Σ over the entries' rows for that destination; `upstream` and `downstream` are zero at `METRIC_SCALE`, i.e. `"0.0000000000"`. Row order is first appearance across entries, so two runs of one request produce the same JSON |
 | `totals.money` | §4.5. `None` when no entry supplied a money figure. **Not derived from any metric**, so it is the one row of this table whose input is the request rather than the per-entry results |
 | `totals.alternative` | Same rules, over each entry's `alternative` — **or its `current` where the entry has none** (§3 rule 3) |
@@ -3539,6 +3603,10 @@ Because every dry-run request carries its own data, concurrent staff dry runs ar
 
 **`totals.current.metrics[code].by_destination` is populated from v1.48, per metric, and its two rate fields are zero** (§3 rule 2). `qty_kg` and `value` are summed across the entries that used that destination, so the rows partition the metric total they sit beside exactly. `upstream` and `downstream` are `"0.0000000000"` — present, at full scale, and **meaningless as rates**: the entries sharing a destination draw different factors, and there is no single rate behind a rolled-up row. A front end that renders a rate column from `totals` is rendering zeros; the rates live in `entries[]`, which is where a rate has a meaning. The client asked for a cross-entry destination view, and this is it: a field the engine fills, not a loop in the browser.
 
+**`equivalences[]` carries one rung per ladder from v1.71, and no new field.** An equivalence with no `family` (§2.2) appears exactly as it always has. Where several rows share a family they are **rungs of one ladder** and the array carries **one** of them — the one the whole submission's `totals.current` selected — at the page position of that family's first row. So a consumer must not assume that every equivalence `GET /factors` publishes appears on every response, and must not re-select: the array is already the answer.
+
+**The same rung appears in every `equivalences[]` array on one response** — `totals.current`, `totals.alternative`, and both scenarios of every entry. That is a guarantee and not an accident: `web/js/improvement.js` merges the current and alternative lists **by `code`** to build its before-and-after rows, and a response that chose per scenario would give it two half-populated rows for one family. §4.2 has the rule and the reasons for choosing `totals.current`.
+
 **`equivalences[]` gained four fields at v1.52: `name`, `value_per_unit`, `value_per_unit_display`, `source_note`.** All four are additive — no existing field's type or meaning changes, so a client written against v1.51, reading only `code` / `label` / `value` / `source_metric`, is unaffected by any of them.
 
 | Field | Type | Notes |
@@ -3755,10 +3823,20 @@ Factors and formulas are published openly (Decision 7).
     { "code": "km_driven", "name": "Kilometres driven", "source_metric": "co2e",
       "value_per_unit": "4.1800000000",
       "label_template": "Equivalent to driving {value} km",
-      "source_note": null, "sort_order": 1 }
+      "label_template_one": "Equivalent to driving {value} km",
+      "family": "driving", "min_value": "1.0000000000", "max_value": null,
+      "source_note": null, "sort_order": 1 },
+    { "code": "metres_driven", "name": "Metres driven", "source_metric": "co2e",
+      "value_per_unit": "4180.0000000000",
+      "label_template": "Equivalent to driving {value} m",
+      "label_template_one": "Equivalent to driving {value} m",
+      "family": "driving", "min_value": null, "max_value": null,
+      "source_note": null, "sort_order": 2 }
   ]
 }
 ```
+
+**`family`, `min_value`, `max_value` and `label_template_one` are part of every equivalence row from v1.71, and all four may be `null`** — present-and-null, never omitted, on exactly the terms `source_note` beside them is carried on. This endpoint is where a consumer can see the whole ladder; `POST /calculate` deliberately shows only the rung it chose (§6.2), so without these four there is no surface on which "this row is not a rung of anything" can be told apart from "this endpoint does not report ladders". Unlike the provenance columns they are also **read**: §10.2 makes them optional in a bundle and the engine selects on them, so a projection that dropped them would not merely hide information, it would un-ladder every set a staff member pastes into the dry-run box. `min_value` and `max_value` are decimal-strings like every other decimal on the wire (§1.2).
 
 **`source_note` and `data_quality` are part of this response, and both may be `null`.** v1.1 added `source_note` to `factor_upstream`, `factor_downstream` and `equivalence`, and `data_quality` to the two factor tables only — `equivalence` has no `data_quality` column (§2.2) — and this endpoint is the whole reason they exist: v1.1's stated rationale is that a calculator which cannot say which of its numbers are measured and which are borrowed cannot be defended in public, and §6.3 is the only public surface where a number can say so. A factor export that carries the values and drops their provenance publishes exactly the figure that is hardest to defend, with the defence removed. `null` is a legal value — most rows will carry `null` until the client supplies real data — and it must appear as `null`, not as an omitted key, so a consumer can tell "no provenance recorded" from "this endpoint does not report provenance".
 
@@ -4699,6 +4777,8 @@ export function resultsNavIsDocked(root);
 >
 > The two hard-codings went with it: the breakdown columns are collected from the response's own key order (which §4.1 already sorts by `sort_order`), and the equivalence list prints `label` — the sentence the engine interpolated from `label_template` — rather than three English labels of its own for three hard-coded codes.
 >
+> **v1.71 extends that rule from the sentence to the *choice of* sentence.** `totals.current.equivalences` is no longer every equivalence the factor set publishes: rows sharing a `family` are rungs of one ladder and the response carries **one** of them, already chosen, already in the position it should be drawn (§6.2). `equivalences()` maps the array and nothing else — it does not select, filter, re-order or group, and no `family` reaches the wire for it to group on. `improvement.js` pairs the two scenarios **by `code`** and is safe to, because the engine chooses the rung once per calculation rather than once per scenario; the comment there says so, because pairing on anything else is the repair somebody would reach for on seeing two half-populated rows.
+>
 > **`mass` is named in this module, and that is not a §7.6.5 violation.** Rule 5 exists because a view listing `['co2e','water','cost']` *omits* the metric a staff member inserted; every metric the response carries still appears here. `mass` is held out of the impact cards and the breakdown columns because §3 hoists it — its formula is `qty_kg` (§4.3), so `scenario.total_kg` and `by_destination[].qty_kg` are the same figure, and it is already on screen as the primary card and the "Waste amount" column. `improvement.js` holds it out for a different reason, stated there. Both are single-code exclusions with a stated cause, not lists.
 >
 > **Bar widths are not figures.** A bar is scaled against the widest bar on the tab, across every section so two per-entry sections stay comparable, and no width is printed. §6.2 defines no share for an entry or a destination, so the percentage-of-total that used to sit beside each bar was a number the engine never produced.
@@ -5328,6 +5408,8 @@ This branch is narrower than it looks: it requires a stored language that no pan
 Decimals (they cross the wire as strings and take no locale-aware separator on either surface); `code` identifiers; factor set version labels; metric units and `metric.name`; the equivalence sentences, which §3 defines as `label_template` interpolated by the engine; the operator messages in `admin/cli.py` and `docker/init.sh`; and **everything a staff member typed** — destination names, food categories, sector names, factor notes, audit log contents. Ruled 2026-08-14: anything a staff member can edit is published exactly as written.
 
 The consequence, stated rather than discovered: a Thai visitor gets a Thai interface listing English destination names.
+
+**On the equivalence sentences the rule got *larger* at v1.71, and that is written here rather than left to be discovered.** An equivalence ladder makes each of the client's two units into a **set** of English sentences — `vehicles_year` / `vehicles_day`, `olympic_pools` / `backyard_pools` / `showers` — and `label_template_one` gives each of those a second form for the value `1`. Six staff-typed English sentences where there were three, and **which one a reader gets is chosen by the machine**, from the size of their own result (§4.2). So a Thai visitor not only reads an English sentence, they read a *different* English sentence between two visits with nothing on the page that explains why. It is the same 14 August ruling applied to more rows rather than a new exemption, and it is the reason **O-8** costs more than it did: whatever closes O-8 has to translate a set of sentences per ladder and keep each singular form in step with its plural.
 
 **On the statistics page this reaches into the charts**, and it is the rule most likely to be "fixed" by somebody who reads an English legend on a Thai page as a bug. Every bucket label — in a legend, in a tooltip and in the text list beneath the chart — is the API's `label`, so it is **identical in every language**, and a test asserts the legends are unchanged across a language switch rather than merely present. Every figure is likewise pinned to `en-NZ`: axis ticks, counts, shares and masses. Read in Arabic, where following the active locale would render Eastern Arabic numerals, and asserted there.
 
@@ -6336,7 +6418,8 @@ It is a **complete, self-contained snapshot** — the taxonomy as well as the fa
   "equivalences": [
     { "code": "km_driven", "name": "Kilometres driven", "source_metric": "co2e",
       "value_per_unit": "4.1800000000",
-      "label_template": "Equivalent to driving {value} km", "sort_order": 1 }
+      "label_template": "Equivalent to driving {value} km", "sort_order": 1,
+      "family": "driving", "min_value": "1.0000000000" }
   ]
 }
 ```
@@ -6348,6 +6431,7 @@ It is a **complete, self-contained snapshot** — the taxonomy as well as the fa
 | No `unit_presets` | Volume-to-kilogram conversion happens in the front end (§7.3); the engine only ever receives kilograms. |
 | Every decimal is a **string** | §1.2. `from_json()` converts with `Decimal()`; `float` is never an intermediate. |
 | `source_note` and `data_quality` are **optional and ignored** | They may appear on any `upstream`, `downstream` or `equivalences` row and may be `null`. The engine does not read them — provenance changes no number. **`from_json()` must accept and ignore them, never raise `BundleFormatError`, and `validate()` must not report them.** |
+| `equivalences[].family`, `.min_value`, `.max_value`, `.label_template_one` are **optional and read** (v1.71) | Absent or `null` both mean "not set", and a row with none of them is not a rung of anything and is always shown — which is every bundle written before v1.71, including all thirteen golden cases. **Optional is not the same as ignored**: the engine selects on them (§4.2), so a value that *is* present is parsed with the same strictness as any other. `min_value`/`max_value` are decimal **strings** like every other decimal here (§1.2); a JSON number is refused, because a band that had been through binary floating point would choose a rung from a value the bundle never carried. `validate()` reports a band with no family, a band that admits nothing, and a family whose rungs convert different metrics |
 
 > **Why the provenance columns are optional here but required in §6.3.** v1.1 added `source_note` and `data_quality` to both factor tables and `source_note` to `equivalence` (§2.2). §6.3 is the public factor export and must carry them — that is what they are for. `bundle.json` is a different object with three consumers (§10.1's golden cases, `FactorBundle.from_json()`, and `dry_run.bundle`), none of which computes anything from provenance, so requiring them would mean writing a note on every row of every golden case to say nothing.
 >

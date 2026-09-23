@@ -13,6 +13,10 @@ defect, and until now nothing ran either of them except the script itself:
 * ``_assert_completeness()`` refuses to write a factor set that is missing a
   row a submission could need, because a missing row prices at zero and a
   zero on screen is indistinguishable from a real measurement of none.
+* ``_assert_ladders_are_well_formed()`` (v1.71) refuses an equivalence ladder
+  that is upside down or has no bottom rung. Neither is malformed data --
+  both load, validate and compute -- and both show the wrong sentence to
+  every visitor, which is why the build is where they are caught.
 
 A check nothing exercises is a check nobody knows still works. Each test
 below breaks exactly one thing and asserts the failure names it, rather than
@@ -427,3 +431,146 @@ def test_a_data_quality_tag_too_long_for_its_column_stops_the_build():
     message = str(caught.value)
     assert "is 33 characters" in message
     assert "VARCHAR(32)" in message
+
+
+# ------------------------------------------- the equivalence ladders (v1.71)
+
+
+def _equivalences():
+    return {row["code"]: row for row in build_module.build()["equivalences"]}
+
+
+def test_the_built_ladders_pass_their_own_check():
+    """The negative case for every test below. Without it a check that raised
+    unconditionally would pass all five."""
+    build_module._assert_ladders_are_well_formed(build_module.build())
+
+
+def test_the_clients_own_units_are_still_at_the_top_of_each_ladder():
+    """The promise this package was given: *do not replace the client's
+    units*. Both of the client's own conversions keep their factor, their
+    wording and the lowest `sort_order` in their family, which is the position
+    the selection tries first and the one it falls back to.
+
+    Asserted on the factor as well as on the position, because "still at the
+    top" is not worth much if the number under it has moved."""
+    rows = _equivalences()
+
+    assert rows["vehicles_year"]["value_per_unit"] == "0.0004149378"  # 1 / 2410
+    assert rows["olympic_pools"]["value_per_unit"] == "4.000E-7"      # 1 / 2,500,000
+    assert rows["meals"]["value_per_unit"] == "2.2222222222"          # 1 / 0.45
+
+    for code, family in (("vehicles_year", "vehicles"),
+                         ("olympic_pools", "water_volume")):
+        family_rows = [row for row in rows.values() if row.get("family") == family]
+        assert rows[code]["sort_order"] == min(
+            row["sort_order"] for row in family_rows
+        ), f"{code} is no longer the first rung its family tries"
+
+
+def test_the_vehicle_day_is_the_clients_own_year_divided_by_365():
+    """It needs no new source, which is the whole reason it is the rung that
+    was added: it is the client's own 2.41 t CO2e per vehicle per year spread
+    over that year's days. Checked as exact `Decimal` arithmetic on the
+    client's own divisor rather than against a transcribed constant, so that a
+    figure typed in by hand cannot drift from the row above it."""
+    rows = _equivalences()
+
+    assert Decimal(rows["vehicles_day"]["value_per_unit"]) == (
+        Decimal(365) / Decimal(2410)
+    ).quantize(Decimal("1E-10"))
+    #: 6.60 kg CO2e a day, which is what the source_note says it is.
+    assert (Decimal(1) / Decimal(rows["vehicles_day"]["value_per_unit"])).quantize(
+        Decimal("0.01")
+    ) == Decimal("6.60")
+
+
+def test_every_rung_a_ladder_added_states_where_its_number_came_from():
+    """"Be creative" licenses the choice of rung, not an unsourced number.
+    Every row added here either derives from the client's own figure or states
+    the arithmetic it was built from, and the two rows that are assumptions
+    rather than measurements say `PLACEHOLDER` in the same way `km_driven`
+    always did."""
+    rows = _equivalences()
+
+    assert "divided by 365" in rows["vehicles_day"]["source_note"]
+    assert "8 m x 4 m x 1.5 m" in rows["backyard_pools"]["source_note"]
+    assert "48,000 litres" in rows["backyard_pools"]["source_note"]
+    assert rows["showers"]["source_note"].startswith("PLACEHOLDER")
+    assert "9 litres a minute" in rows["showers"]["source_note"]
+    assert "O-3" in rows["showers"]["source_note"]
+
+
+def test_every_rung_has_a_singular_sentence():
+    """A ladder drives the displayed number toward 1 by design, so `1 Olympic
+    swimming pools of water` stops being an occasional embarrassment and
+    becomes the normal case. Asserted on every equivalence in the set, not
+    only the rungs: `meals` is not a rung and still prints `1 meals` without
+    one."""
+    for code, row in _equivalences().items():
+        assert row.get("label_template_one"), f"{code} has no singular sentence"
+        assert "{value}" in row["label_template_one"], code
+
+
+def test_a_ladder_in_the_wrong_order_stops_the_build():
+    """The failure mode that has no other alarm: rungs are tried in
+    `sort_order` and the first that reaches one wins, so a ladder numbered
+    smallest-unit-first never climbs. Every submission ever made would read in
+    showers, and the data would be perfectly valid."""
+    data = build_module.build()
+    rows = {row["code"]: row for row in data["equivalences"]}
+    rows["olympic_pools"]["sort_order"], rows["showers"]["sort_order"] = (
+        rows["showers"]["sort_order"], rows["olympic_pools"]["sort_order"],
+    )
+
+    with pytest.raises(SystemExit) as caught:
+        build_module._assert_ladders_are_well_formed(data)
+
+    message = str(caught.value)
+    assert "LARGEST UNIT (smallest value_per_unit) FIRST" in message
+    assert "water_volume" in message
+
+
+def test_a_banded_bottom_rung_stops_the_build():
+    """The other half of the same rule, and the one that reintroduces the
+    original defect exactly: with every rung banded, a value below all of them
+    falls back to the family's FIRST row -- the largest unit, which is the one
+    that reads `0`."""
+    data = build_module.build()
+    rows = {row["code"]: row for row in data["equivalences"]}
+    rows["showers"]["min_value"] = "1.0000000000"
+
+    with pytest.raises(SystemExit) as caught:
+        build_module._assert_ladders_are_well_formed(data)
+
+    message = str(caught.value)
+    assert "its last rung (showers) carries a min_value" in message
+
+
+def test_a_ladder_drawing_on_two_metrics_stops_the_build():
+    """A ladder is one quantity at several sizes. Two metrics in one family
+    are two different facts wearing one name, and which one the reader is
+    shown would be decided by magnitude."""
+    data = build_module.build()
+    rows = {row["code"]: row for row in data["equivalences"]}
+    rows["showers"]["source_metric"] = "co2e"
+
+    with pytest.raises(SystemExit) as caught:
+        build_module._assert_ladders_are_well_formed(data)
+
+    assert "draws on more than one metric" in str(caught.value)
+
+
+def test_a_band_on_a_row_with_no_family_stops_the_build():
+    """`meals` is deliberately not a rung of anything. A band on it is a rule
+    that can never fire -- selection only ever happens within a family -- and
+    the database refuses the row outright, so the build must refuse it first
+    rather than at INSERT time."""
+    data = build_module.build()
+    rows = {row["code"]: row for row in data["equivalences"]}
+    rows["meals"]["min_value"] = "1.0000000000"
+
+    with pytest.raises(SystemExit) as caught:
+        build_module._assert_ladders_are_well_formed(data)
+
+    assert "carries a band and no family" in str(caught.value)

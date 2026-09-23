@@ -1129,7 +1129,7 @@ found), and `eggs`/`staples`' still-unresolved status as noted in §3.2
 (`staples` itself *is* seeded, from ReFED alone, per the owner's ruling;
 `eggs` remains an unseeded gap pending a taxonomy or client decision).
 
-## 7. The three equivalences
+## 7. The equivalences, and the ladders under them
 
 `equivalences` in this draft was `[]` through every prior revision --
 `admin/seed.py` creates no equivalence rows either, so the results page's
@@ -1171,6 +1171,138 @@ refuses to write a set where an equivalence names a `source_metric` this set
 does not compute, or carries no `source_note` -- the same mechanical
 guarantee §6 describes for the factor rows, extended to cover the one other
 place a silent gap could hide.
+
+### 7.1 Why the client's own units are not enough on their own
+
+**Measured, against the published set, before anything was designed.** The
+canonical request fixture was scaled so that the whole submission's current
+mass is a chosen number of kilograms, run through the repository, the bundle
+and the engine, and bisected on the label the engine interpolates -- not on
+the raw value, because the label is what a visitor reads and §3 rule 5 rounds
+it to whole units.
+
+| equivalence | reads `0` for any submission below |
+| --- | ---: |
+| Olympic swimming pools | **638.755 kg** |
+| Passenger vehicles for a year | **403.737 kg** |
+| Meals | **0.225 kg** |
+
+So a **23 kg** submission -- a small cafe's week, and the size of case the
+client described -- showed **two of its three tangible equivalents as `0`**.
+That is the client's own complaint, in their own words: *"0 Olympic swimming
+pools" is not meaningful*.
+
+An earlier measurement of the same two figures, taken against factor set 14
+(the one carrying the withdrawn table 2 CO2-eq column), read ~639 kg and
+~158 kg. **The pool figure did not move**, because the client's correction did
+not touch the water column. **The vehicle figure moved outwards by 2.56x**,
+because the correction took landfill's CO2-eq from 4.95 to 0.60 and every
+`co2e` total with it. The correction in §4.1 made the calculator more truthful
+and this particular symptom worse, and both are consequences of the same
+column.
+
+**Decimal places are not the fix, and that is measured too.** Rendering the
+pool figure non-zero at 10 kg takes four decimal places -- `0.0078 Olympic
+swimming pools` -- which nobody can picture, where `0` at least says honestly
+that the figure is negligible at this scale. How many places are needed varies
+with the magnitude, which is the same selection problem wearing a different
+hat.
+
+### 7.2 The ladders, rung by rung
+
+Contract v1.71 gives `equivalence` a `family`, a band (`min_value` /
+`max_value`) and a singular sentence (`label_template_one`). Rows sharing a
+family are rungs of one ladder and **exactly one is ever shown**. The client
+said *"be creative"*, that the figures *need not be especially precise*, and
+-- about the vehicle-year specifically -- *"if a year is too much, change it
+to a day"*.
+
+**The client's own units stay at the top of each ladder and every rung is
+added below them.** Nothing the client supplied is replaced, reworded or
+re-factored; `test_the_clients_own_units_are_still_at_the_top_of_each_ladder`
+asserts both the factor and the position.
+
+| family | `code` | one unit is | where the number comes from |
+| --- | --- | ---: | --- |
+| `vehicles` | `vehicles_year` | 2,410 kg CO2e | **The client's**, *Data sources for impact calculator* (2026-08-29) |
+| | `vehicles_day` | 6.60 kg CO2e | The row above / 365. **No new source** -- it is the client's own year spread over that year's days, and the client's own suggestion |
+| `water_volume` | `olympic_pools` | 2,500,000 L | **The client's**, same document |
+| | `backyard_pools` | 48,000 L | 8 m x 4 m x 1.5 m -- an ordinary domestic rectangular pool at an average depth. Derived here from those dimensions |
+| | `showers` | 90 L | Ten minutes at 9 L/min, an ordinary (not low-flow) head. **PLACEHOLDER**, and the equivalent **O-3** names by name |
+| *(none)* | `meals` | 0.45 kg | **The client's**, same document. Deliberately not a ladder |
+
+**"An average passenger vehicle's day" is the whole day, not a journey**, and
+the wording says so. 2,410 kg over a year is 6.60 kg over a day *including*
+every hour the car is parked, because the year it is divided from includes
+them. A reader who pictures a day of a car's life is picturing the right
+thing.
+
+**There is no vehicle-hour, and the reason was measured rather than assumed.**
+2,410 kg / 8,760 h is 0.275 kg CO2e, whereas an hour of actual driving is
+nearer 10 kg -- **about 38x apart**. "An average day" survives the division
+because a day is already how people talk about a car; an hour is not, and
+"running a passenger vehicle for an hour" would be read as an hour of driving
+and be wrong by a factor of forty. **So the ladder stops where the arithmetic
+stops being picturable**, and the floor it leaves is stated rather than
+hidden.
+
+**`meals` is deliberately left without a ladder.** It stops reading `0` at
+0.225 kg, which is below anything a business reports, and the unit below a
+meal is a mouthful. The client's message is that food waste is large; a tool
+that automatically downgrades a small business to *"three cups of water"*
+argues against its own purpose, which is the same class of decision contract
+§6.4 already takes for the statistics page.
+
+### 7.3 What the ladders are worth, on this draft set
+
+The same measurement, re-run against the built draft:
+
+| equivalence | floor before | floor after |
+| --- | ---: | ---: |
+| water (`water_volume`) | 638.755 kg | **0.023 kg** |
+| carbon (`vehicles`) | 403.737 kg | **1.107 kg** |
+| mass (`meals`, unchanged) | 0.225 kg | 0.225 kg |
+
+and what a reader actually sees, at four sizes:
+
+| submission | water | carbon |
+| ---: | --- | --- |
+| 1 kg | 22 ten-minute showers | *(`0 days` -- still below the floor)* |
+| 23 kg | 500 ten-minute showers | an average vehicle's emissions over 10 days |
+| 500 kg | 20 backyard swimming pools | over 226 days |
+| 2,300 kg | 2 Olympic swimming pools | 3 passenger vehicles for a year |
+
+### 7.4 Two failures the build refuses, and one it cannot see
+
+`_assert_ladders_are_well_formed()` refuses a ladder that is **upside down**
+or that has **no bottom rung**, because neither is malformed data: both load,
+validate, compute, and show the wrong sentence to every visitor.
+
+* A bigger unit has a *smaller* `value_per_unit` (an Olympic pool is `4e-7`
+  per litre; a shower is `0.0111`), so within a family `value_per_unit` must
+  strictly increase down the sort order. Numbered the other way, the smallest
+  unit is tried first, reaches one immediately, and the ladder never climbs --
+  every submission ever made would read in showers.
+* If every rung carries a `min_value`, a value below all of them matches
+  nothing and falls back to the family's **first** row -- the largest unit,
+  the one that reads `0`, which is exactly the defect the ladder removes.
+
+What it cannot see is whether the rungs are the *right* rungs. The bottom rung
+of a ladder is a message rather than a number, and this document is where that
+choice is recorded so that changing it is a conversation rather than an edit.
+
+### 7.5 What this costs the translation
+
+`equivalence.label_template` is staff-typed and is therefore never translated
+-- contract §7.7.7's recorded ruling, and not a defect. **A ladder makes that
+untranslated surface larger and machine-selected.** A Thai reader now gets one
+of three English sentences per ladder rather than one, and which one they get
+is chosen by the size of their own result, so nothing on the page explains why
+the wording changed between two visits. `label_template_one` doubles the count
+again. Six English sentences where there were three, inside a page whose
+furniture is translated into twenty languages around them. It raises the cost
+of **O-8** and is written down here rather than left to be discovered when O-8
+is picked up.
 
 ## 8. The traxie data directory
 

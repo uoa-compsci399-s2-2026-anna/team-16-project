@@ -1714,6 +1714,87 @@ def _assert_completeness(data: dict) -> None:
         )
 
 
+def _assert_ladders_are_well_formed(data: dict) -> None:
+    """Contract v1.71. Three things about a ladder that nothing else catches.
+
+    The engine's selection rule is *the first rung, in `sort_order`, whose own
+    value reaches its `min_value`*. That makes `sort_order` within a family a
+    PRIORITY ORDER, which is exactly the kind of thing that is correct the day
+    it is written and silently wrong after somebody inserts a rung. Each of the
+    three failures below produces a factor set that loads, validates, computes
+    and shows the wrong sentence:
+
+    1. **Largest unit first.** A bigger unit has a *smaller* `value_per_unit`
+       (one Olympic pool is 4e-7 of a litre's worth; one shower is 0.0111), so
+       within a family `value_per_unit` must strictly increase down the sort
+       order. Reversed, the first rung tried is the smallest unit, it reaches
+       one long before any other does, and the ladder never climbs -- every
+       submission ever made reads in showers.
+    2. **A bottom rung with no band.** If every rung carries a `min_value`, a
+       value below all of them matches nothing and falls back to the family's
+       first row, which is the largest unit -- so the smallest submissions get
+       the unit that reads `0`, which is the defect the ladder was built to
+       remove.
+    3. **One metric per ladder.** A ladder is one quantity at several sizes;
+       rungs drawn from two metrics are two facts wearing one name, and which
+       one a reader gets would be decided by magnitude.
+
+    `FactorBundle.validate()` reports 3 (and the two schema CHECKs cover the
+    band shapes), but nothing anywhere reports 1 or 2 -- they are not malformed
+    data, they are a ladder that works and is upside down. Checked here so the
+    build stops rather than the reader finding out.
+    """
+    families: dict[str, list[dict]] = {}
+    for row in data.get("equivalences", []):
+        family = row.get("family")
+        if family is None:
+            if row.get("min_value") is not None or row.get("max_value") is not None:
+                raise SystemExit(
+                    f"equivalence {row['code']}: carries a band and no family. "
+                    "Selection only happens within a family, so the band can "
+                    "never fire -- and the database refuses the row outright."
+                )
+            continue
+        families.setdefault(family, []).append(row)
+
+    problems: list[str] = []
+    for family, rows in families.items():
+        rungs = sorted(rows, key=lambda r: (r["sort_order"], r["code"]))
+        metrics = {row["source_metric"] for row in rungs}
+        if len(metrics) > 1:
+            problems.append(
+                f"family {family!r} draws on more than one metric "
+                f"({sorted(metrics)}); a ladder is one quantity at several "
+                "sizes"
+            )
+        previous = None
+        for row in rungs:
+            value = Decimal(row["value_per_unit"])
+            if previous is not None and value <= previous:
+                problems.append(
+                    f"family {family!r}: {row['code']} has value_per_unit "
+                    f"{value} at sort_order {row['sort_order']}, which is not "
+                    f"larger than the rung before it ({previous}). Rungs are "
+                    "tried in sort_order and the first that reaches one wins, "
+                    "so they must run LARGEST UNIT (smallest value_per_unit) "
+                    "FIRST or the ladder never climbs"
+                )
+            previous = value
+        if rungs[-1].get("min_value") is not None:
+            problems.append(
+                f"family {family!r}: its last rung ({rungs[-1]['code']}) "
+                "carries a min_value, so a value below every band matches "
+                "nothing and falls back to the FIRST rung -- the largest unit, "
+                "which is the one that reads 0. The bottom rung of a ladder "
+                "carries no band"
+            )
+    if problems:
+        raise SystemExit(
+            "Equivalence ladder check failed -- this factor set would show "
+            "the wrong rung:\n  " + "\n  ".join(problems)
+        )
+
+
 def _assert_only_table2_co2_moved() -> None:
     """Re-run, on every build, the measurement this revision was made on.
 
@@ -2157,9 +2238,7 @@ def build() -> dict:
     downstream = build_downstream() + build_ch4_downstream() + build_cost_downstream()
 
     data = {
-        "version_label": (
-            "CLIENT-DRAFT-2026-09-21 (Rawtec revised table 2 + ReFED "
-            #: **The suffix describes the DATA, not the publication state**, and
+        #: **The suffix describes the DATA, not the publication state**, and
         #: that is a correction. It read "- NOT PUBLISHED", which was true of
         #: this file and became false the moment the owner published the set
         #: (2026-09-23). `version_label` is not an internal note:
@@ -2169,7 +2248,19 @@ def build() -> dict:
         #: visitor something untrue. What has NOT changed is that these
         #: figures are a draft the client has not confirmed -- that is O-1,
         #: and it is what `is_mock` already drives the mandatory banner from.
-        "cumulative footprint, plus ch4, cost and land) - NOT CLIENT-CONFIRMED"
+        #:
+        #: **It also has to change whenever the data does, because
+        #: `load_upstream_factors_draft.py` refuses a label that already
+        #: exists** -- deliberately, so that two different sets cannot wear one
+        #: name in the "Factor version" line a visitor reads. v1.71's ladders
+        #: are why this line moved again; "Rawtec revised table 2" was
+        #: shortened to "rev. table 2" to make room, because
+        #: `factor_set.version_label` is **VARCHAR(128)** and the previous
+        #: label was already 125 characters. Anything added here from now on
+        #: has to displace something.
+        "version_label": (
+            "CLIENT-DRAFT-2026-09-21 (Rawtec rev. table 2 + ReFED footprint; "
+            "ch4, cost, land; equivalence ladders) - NOT CLIENT-CONFIRMED"
         ),
         "is_mock": True,
         "notes": (
@@ -2306,20 +2397,52 @@ def build() -> dict:
     data["downstream"] = downstream
 
     # The client's own conversions, from "Data sources for impact calculator"
-    # received 2026-08-29. This closes the vehicle and meal halves of O-3:
-    # the document states both the factor and its basis, which is exactly
-    # what `source_note` is for.
+    # received 2026-08-29, each at the TOP of its ladder, with smaller rungs
+    # added below it (contract v1.71). This closes the vehicle and meal halves
+    # of O-3: the document states both the factor and its basis, which is
+    # exactly what `source_note` is for.
     #
     # THE DIVISOR FOR VEHICLES IS 2410, NOT 2.41. The client states the
     # figure per TONNE of CO2e; this system's `co2e` metric is in
     # kilograms.
+    #
+    # WHY THE RUNGS EXIST, MEASURED RATHER THAN ASSUMED. Against the published
+    # set (15) and this one, scaling the canonical fixture and bisecting on the
+    # label the engine prints, the client's own two units read `0` below:
+    #
+    #     Olympic swimming pools   638.755 kg
+    #     Passenger vehicles/year  403.737 kg
+    #
+    # so a 23 kg submission -- a cafe's week -- showed two of its three cards
+    # reading zero. Decimal places make that worse rather than better: at 10 kg
+    # the pool figure is 0.0078, and `0` at least says honestly that the figure
+    # is negligible at this scale.
+    #
+    # HOW THE BANDS WORK. Rungs of one family are tried in `sort_order`, which
+    # is therefore LARGEST UNIT FIRST, and the first whose own value reaches
+    # its `min_value` is the one shown. Every rung above the bottom one says
+    # `min_value = 1` and nothing else -- "use the biggest unit that still
+    # comes to at least one of them" -- and the bottom rung carries no band at
+    # all, so a value too small for everything above it always has somewhere to
+    # land. `_assert_ladders_are_well_formed` below checks both.
+    #
+    # NOTHING THE CLIENT SUPPLIED IS REPLACED. `vehicles_year` and
+    # `olympic_pools` keep their factors, their wording and their place at the
+    # top of each ladder; the rungs are added underneath. Every added rung is
+    # either arithmetic on the client's own figure (the vehicle-day, which is
+    # the client's own suggestion: "if a year is too much, change it to a day")
+    # or carries a stated derivation of its own.
+    one = lambda n: str((Decimal(1) / Decimal(n)).quantize(Decimal("1E-10")))
     data["equivalences"] = [
         {
             "code": "vehicles_year",
             "name": "Passenger vehicles for a year",
             "source_metric": "co2e",
-            "value_per_unit": str((Decimal(1) / Decimal(2410)).quantize(Decimal("1E-10"))),
+            "family": "vehicles",
+            "min_value": "1.0000000000",
+            "value_per_unit": one(2410),
             "label_template": "Equivalent to running {value} passenger vehicles for a year",
+            "label_template_one": "Equivalent to running {value} passenger vehicle for a year",
             "source_note": (
                 "Client, Data sources for impact calculator (2026-08-29): "
                 "\"Passenger vehicles on the road: GHG emissions (t CO2e) / "
@@ -2329,11 +2452,45 @@ def build() -> dict:
             "sort_order": 10,
         },
         {
+            "code": "vehicles_day",
+            "name": "An average passenger vehicle's day",
+            "source_metric": "co2e",
+            "family": "vehicles",
+            #: The bottom rung of this ladder, so no band: a figure too small
+            #: for a whole vehicle-year lands here whatever it is.
+            "value_per_unit": str(
+                (Decimal(365) / Decimal(2410)).quantize(Decimal("1E-10"))
+            ),
+            "label_template": (
+                "Equivalent to an average passenger vehicle's emissions "
+                "over {value} days"
+            ),
+            "label_template_one": (
+                "Equivalent to an average passenger vehicle's emissions "
+                "over {value} day"
+            ),
+            "source_note": (
+                "The row above, divided by 365. No new source: it is the "
+                "client's own 2.41 t CO2e per passenger vehicle per year "
+                "(Data sources for impact calculator, 2026-08-29) spread "
+                "over the days of that year, which comes to 6.60 kg CO2e a "
+                "day. It is the client's own suggestion -- \"if a year is "
+                "too much, change it to a day\". \"An average day\" is "
+                "the whole day and not a journey: the figure includes the "
+                "hours the vehicle is parked, because the year it is divided "
+                "from does."
+            ),
+            "sort_order": 11,
+        },
+        {
             "code": "olympic_pools",
             "name": "Olympic swimming pools",
             "source_metric": "water",
-            "value_per_unit": str((Decimal(1) / Decimal(2500000)).quantize(Decimal("1E-10"))),
+            "family": "water_volume",
+            "min_value": "1.0000000000",
+            "value_per_unit": one(2500000),
             "label_template": "Equivalent to {value} Olympic swimming pools of water",
+            "label_template_one": "Equivalent to {value} Olympic swimming pool of water",
             "source_note": (
                 "Client, Data sources for impact calculator (2026-08-29): "
                 "\"Olympic swimming pools: = (Water Used (L)) / 2,500,000\"."
@@ -2341,11 +2498,60 @@ def build() -> dict:
             "sort_order": 20,
         },
         {
+            "code": "backyard_pools",
+            "name": "Backyard swimming pools",
+            "source_metric": "water",
+            "family": "water_volume",
+            "min_value": "1.0000000000",
+            "value_per_unit": one(48000),
+            "label_template": "Equivalent to {value} backyard swimming pools of water",
+            "label_template_one": "Equivalent to {value} backyard swimming pool of water",
+            "source_note": (
+                "48,000 litres, which is 8 m x 4 m x 1.5 m of water -- an "
+                "ordinary domestic rectangular pool at an average depth. "
+                "Derived here from those dimensions and not taken from a "
+                "published figure: the team's own judgement, which the "
+                "client asked for (\"be creative\", and these numbers "
+                "\"need not be especially precise\"). It sits between the "
+                "client's Olympic pool and a shower, which is the gap it was "
+                "added to fill, and the dimensions are stated so that a "
+                "reader who disagrees can see exactly what to change."
+            ),
+            "sort_order": 21,
+        },
+        {
+            "code": "showers",
+            "name": "Ten-minute showers",
+            "source_metric": "water",
+            "family": "water_volume",
+            #: The bottom rung of this ladder, so no band.
+            "value_per_unit": one(90),
+            "label_template": "Equivalent to {value} ten-minute showers",
+            "label_template_one": "Equivalent to {value} ten-minute shower",
+            "source_note": (
+                "PLACEHOLDER. Open item O-3 names showers as an intended "
+                "equivalent and the New Zealand basis for one is not "
+                "settled. 90 litres is ten minutes at 9 litres a minute, "
+                "which is an ordinary (not a low-flow) showerhead; the "
+                "assumption is stated here rather than hidden in the factor "
+                "so that replacing it is one number in one row. Both halves "
+                "are assumptions: how long a shower runs and how fast."
+            ),
+            "sort_order": 22,
+        },
+        {
             "code": "meals",
             "name": "Meals",
             "source_metric": "mass",
+            #: No family, and that is a decision rather than an omission.
+            #: `meals` needs no ladder: measured against the published set it
+            #: stops reading `0` at 0.225 kg, which is below anything a
+            #: business reports, and a smaller unit than a meal ("mouthfuls")
+            #: would argue against the tool's own message. §6.4's neighbouring
+            #: rule for the statistics page is the same class of decision.
             "value_per_unit": str((Decimal(1) / Decimal("0.45")).quantize(Decimal("1E-10"))),
             "label_template": "Equivalent to {value} meals",
+            "label_template_one": "Equivalent to {value} meal",
             "source_note": (
                 "Client, Data sources for impact calculator (2026-08-29): "
                 "\"Meals: 450g per meal\"."
@@ -2356,6 +2562,7 @@ def build() -> dict:
 
     _assert_completeness(data)
     _assert_no_land_downstream_rows(data)
+    _assert_ladders_are_well_formed(data)
     return data
 
 

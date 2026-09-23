@@ -1,5 +1,5 @@
 {
-  "version_label": "CLIENT-DRAFT-2026-09-21 (Rawtec revised table 2 + ReFED cumulative footprint, plus ch4, cost and land) - NOT CLIENT-CONFIRMED",
+  "version_label": "CLIENT-DRAFT-2026-09-21 (Rawtec rev. table 2 + ReFED footprint; ch4, cost, land; equivalence ladders) - NOT CLIENT-CONFIRMED",
   "is_mock": true,
   "notes": "Draft factor set derived from the client's own Rawtec tables (farm-to-fork/-shelf production footprint by food, and bin-to-destination footprint by destination). Upstream figures are built as a CUMULATIVE footprint per sector -- ReFED's own per-sector shape (tests/benchmark/refed/refed-benchmark-factors.json), anchored so the sector matching the client's own 'Life cycle covered' wording equals the client's own total exactly, with the client's farm stage for five categories ReFED does not publish one for filled from Poore & Nemecek (2018) via Our World in Data (co2e) or a stated assumption (water) -- see data/upstream-factors-draft/public_farm_share_source_data.py. This replaces an earlier construction (commit ba7fe93) that read ReFED's per-sector values as shares summing to the client's total, which understated every consumer-stage factor roughly fourfold; see docs/upstream-factors-draft.md. As of this revision, ch4 (raw methane mass, ReFED-only, every food category and all fourteen destinations -- thirteen matched directly to a ReFED destination, upcycling as a stated stand-in pooling ReFED's two reuse-group destinations) and cost (the New Zealand waste disposal levy at the rate in force 2026-09-05, landfill and refuse_discard only) are also seeded -- neither client table carries either column, so both are built entirely from ReFED or public New Zealand government sources; see docs/upstream-factors-draft.md. is_mock stays true: these values are derived, not yet the client's confirmed figures -- the placeholder banner must keep showing until the owner decides otherwise. This revision carries the client's CORRECTED table 2 CO2-eq column, received 2026-09-21: the 2026-09-05 column was a verbatim copy of table 1's food figures, which priced composting worse than landfill. The set built from that column was published on 2026-09-06 on the owner's instruction and stayed live until the corrected set replaced it on 2026-09-23, also on the owner's instruction. Publishing archives rather than deletes, so rollback remains available either way. THIS revision adds `land`, the sixth metric (contract v1.70) and the one column the client's own document has always carried and this calculator never reported. The client publishes t/ha, which is a YIELD: it is inverted into land occupation per kilogram (10/Y m2/kg) and every row is checked against Poore & Nemecek (2018) via Our World in Data, taking the public figure wherever the two differ by a factor of ten or more (Poultry, Other meat, Eggs, Sweeteners) and the client's otherwise; every row's source_note names which and why. Land is flat across all six sectors and has no downstream row at all, both for stated reasons. THIS SET IS A DRAFT AND IS NOT PUBLISHED -- whether it goes live is the owner's decision. Full provenance: docs/upstream-factors-draft.md and data/upstream-factors-draft/build_upstream_factors_draft.py.",
   "constants": [
@@ -4887,19 +4887,59 @@
       "code": "vehicles_year",
       "name": "Passenger vehicles for a year",
       "source_metric": "co2e",
+      "family": "vehicles",
+      "min_value": "1.0000000000",
       "value_per_unit": "0.0004149378",
       "label_template": "Equivalent to running {value} passenger vehicles for a year",
+      "label_template_one": "Equivalent to running {value} passenger vehicle for a year",
       "source_note": "Client, Data sources for impact calculator (2026-08-29): \"Passenger vehicles on the road: GHG emissions (t CO2e) / 2.41 (t CO2e/passenger vehicle/year)\". Applied per kilogram, so the divisor here is 2,410.",
       "sort_order": 10
+    },
+    {
+      "code": "vehicles_day",
+      "name": "An average passenger vehicle's day",
+      "source_metric": "co2e",
+      "family": "vehicles",
+      "value_per_unit": "0.1514522822",
+      "label_template": "Equivalent to an average passenger vehicle's emissions over {value} days",
+      "label_template_one": "Equivalent to an average passenger vehicle's emissions over {value} day",
+      "source_note": "The row above, divided by 365. No new source: it is the client's own 2.41 t CO2e per passenger vehicle per year (Data sources for impact calculator, 2026-08-29) spread over the days of that year, which comes to 6.60 kg CO2e a day. It is the client's own suggestion -- \"if a year is too much, change it to a day\". \"An average day\" is the whole day and not a journey: the figure includes the hours the vehicle is parked, because the year it is divided from does.",
+      "sort_order": 11
     },
     {
       "code": "olympic_pools",
       "name": "Olympic swimming pools",
       "source_metric": "water",
+      "family": "water_volume",
+      "min_value": "1.0000000000",
       "value_per_unit": "4.000E-7",
       "label_template": "Equivalent to {value} Olympic swimming pools of water",
+      "label_template_one": "Equivalent to {value} Olympic swimming pool of water",
       "source_note": "Client, Data sources for impact calculator (2026-08-29): \"Olympic swimming pools: = (Water Used (L)) / 2,500,000\".",
       "sort_order": 20
+    },
+    {
+      "code": "backyard_pools",
+      "name": "Backyard swimming pools",
+      "source_metric": "water",
+      "family": "water_volume",
+      "min_value": "1.0000000000",
+      "value_per_unit": "0.0000208333",
+      "label_template": "Equivalent to {value} backyard swimming pools of water",
+      "label_template_one": "Equivalent to {value} backyard swimming pool of water",
+      "source_note": "48,000 litres, which is 8 m x 4 m x 1.5 m of water -- an ordinary domestic rectangular pool at an average depth. Derived here from those dimensions and not taken from a published figure: the team's own judgement, which the client asked for (\"be creative\", and these numbers \"need not be especially precise\"). It sits between the client's Olympic pool and a shower, which is the gap it was added to fill, and the dimensions are stated so that a reader who disagrees can see exactly what to change.",
+      "sort_order": 21
+    },
+    {
+      "code": "showers",
+      "name": "Ten-minute showers",
+      "source_metric": "water",
+      "family": "water_volume",
+      "value_per_unit": "0.0111111111",
+      "label_template": "Equivalent to {value} ten-minute showers",
+      "label_template_one": "Equivalent to {value} ten-minute shower",
+      "source_note": "PLACEHOLDER. Open item O-3 names showers as an intended equivalent and the New Zealand basis for one is not settled. 90 litres is ten minutes at 9 litres a minute, which is an ordinary (not a low-flow) showerhead; the assumption is stated here rather than hidden in the factor so that replacing it is one number in one row. Both halves are assumptions: how long a shower runs and how fast.",
+      "sort_order": 22
     },
     {
       "code": "meals",
@@ -4907,6 +4947,7 @@
       "source_metric": "mass",
       "value_per_unit": "2.2222222222",
       "label_template": "Equivalent to {value} meals",
+      "label_template_one": "Equivalent to {value} meal",
       "source_note": "Client, Data sources for impact calculator (2026-08-29): \"Meals: 450g per meal\".",
       "sort_order": 30
     }

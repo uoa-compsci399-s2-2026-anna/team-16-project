@@ -378,7 +378,7 @@ the match is by *shape*, not by a similar-sounding name. ReFED publishes it
 per (sector, food category); this draft's own downstream rows carry no such
 breakdown (matching every other destination here), so `co2e` is an
 unweighted mean across all 39 published (sector, food category) rows:
-**-0.0331166624** (min -0.3177516707, max 0.0000000000 -- a small net
+**-0.0331116624** (min -0.3177516707, max 0.0000000000 -- a small net
 *offset*, consistent with biodiesel/rendering displacing an emission
 elsewhere). ReFED's own water figure for "Industrial Uses" is **exactly
 zero** in every one of those 39 rows, so `water` is **0.0000000000**, taken

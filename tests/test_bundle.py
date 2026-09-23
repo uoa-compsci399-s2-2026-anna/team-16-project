@@ -276,9 +276,28 @@ def test_metrics_and_equivalences_arrive_sorted_by_sort_order():
         "water",
         "cost",
         "mass",
+        "land",
     ]
     assert loaded.metrics[0].unit == "kg CO2e"
     assert loaded.metrics[0].display_precision == 1
+    #: `land` is last because its `sort_order` is 60, and it is the reason this
+    #: list is spelled out rather than compared against `len()`: the fixture
+    #: taxonomy gained it at v1.70 and the sort had to be re-proved on a list
+    #: whose new member sorts to the end, which is where a comparison that
+    #: stops early would never look.
+    assert loaded.metrics[-1].code == "land"
+    assert loaded.metrics[-1].unit == "m2"
+
+    #: And the set this bundle is composed from carries no `land` formula and
+    #: no `land` factor row, so the engine does not report it (v1.70). The
+    #: whole vocabulary is in `metrics`; what this set computes is narrower.
+    assert [metric.code for metric in loaded.computed_metrics] == [
+        "co2e",
+        "ch4",
+        "water",
+        "cost",
+        "mass",
+    ]
 
 
 def test_from_json_accepts_the_json_text_and_never_opens_a_file():

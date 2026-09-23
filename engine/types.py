@@ -479,3 +479,50 @@ class EquivalenceSpec:
     label_template: str
     name: str = ""
     source_note: str | None = None
+    #: v1.71. Which ladder this row is a rung of, or `None` for a row that is
+    #: not a rung of anything and is therefore always shown. **Defaulted, and
+    #: `None` is the answer rather than a stand-in for one**: every bundle
+    #: written before v1.71 carries no families, and a bundle with no families
+    #: produces exactly the equivalence list it produced before the slot
+    #: existed. That is what makes this landing inert by data.
+    #:
+    #: `source_metric_code` cannot serve as this. A vehicle kilometre, a
+    #: vehicle-day and a vehicle-year are all conversions of `co2e` and *are*
+    #: one ladder; two different framings of `co2e` would share the source
+    #: metric too and must not displace each other.
+    family: str | None = None
+    #: v1.71. The half-open band `[min_value, max_value)` of **this row's own
+    #: converted value** within which this rung is eligible. `None` on either
+    #: side is unbounded there, and a rung with neither is its family's
+    #: catch-all. See `admits` below.
+    min_value: Decimal | None = None
+    max_value: Decimal | None = None
+    #: v1.71. The sentence to use when the interpolated whole number is
+    #: exactly `1`; `None` means none was given and `label_template` is used.
+    #: A second staff-typed string rather than a pluralisation rule in the
+    #: engine -- §7.6 rule 9 forbids reworking these sentences at all, and
+    #: English grammar in a module that serves twenty languages would be
+    #: wrong in most of them.
+    label_template_one: str | None = None
+
+    def admits(self, value: Decimal) -> bool:
+        """Whether this rung's band contains `value` -- this row's own
+        converted value, never the metric total it came from.
+
+        Half-open: `min_value <= value < max_value`. Half-open rather than
+        closed so that two adjacent rungs written `[0, 1)` and `[1, ...)`
+        cover the line exactly once between them; with a closed upper bound
+        the shared endpoint would be admitted by both and the answer would
+        depend on which row a loop happened to reach first.
+
+        A row with no bounds admits everything, which is what makes it a
+        catch-all rather than a rung that is never chosen. That is also why
+        this is a method on the spec rather than a branch at the selection
+        site: the rule is a property of the row, and the one place that reads
+        it should not also be the place that knows what an absent bound means.
+        """
+        if self.min_value is not None and value < self.min_value:
+            return False
+        if self.max_value is not None and value >= self.max_value:
+            return False
+        return True

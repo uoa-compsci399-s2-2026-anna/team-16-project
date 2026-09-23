@@ -812,6 +812,310 @@ def test_no_equivalence_code_appears_in_the_engine(code):
         )
 
 
+# ------------------------------------------------- the ladder (v1.71)
+#
+# Three things have to be right and they fail differently. **Which rung** is
+# `_select_rungs`: the largest unit that still comes to at least one, falling
+# back to the family's first row. **Which scenario decides it** is `calculate`:
+# the whole submission's current scenario, once, binding on every scenario in
+# the result -- a per-scenario choice would put two units for one family on one
+# page, and `web/js/improvement.js` merges the two sides BY CODE, so it would
+# have rendered two half-populated rows rather than one comparison. **Which
+# sentence** is §3 rule 5's singular form.
+
+
+#: A three-rung ladder over `mass`, plus one row that is not a rung of
+#: anything. The units are a thousandth, a unit and a thousand of the metric,
+#: so a test can put the chosen rung anywhere on the ladder by choosing a mass.
+#:
+#: Every rung above the bottom one carries `min_value = 1` and nothing else,
+#: which is the shape both shipped ladders have: the bands overlap and
+#: `sort_order` within the family settles it, so the rule reads "the largest
+#: unit that still comes to at least one".
+LADDER = [
+    {"code": "rung_big", "name": "Big", "source_metric": "mass", "family": "size",
+     "value_per_unit": "0.0010000000", "label_template": "{value} big",
+     "min_value": "1.0000000000", "sort_order": 10},
+    {"code": "not_a_rung", "name": "Plain", "source_metric": "mass",
+     "value_per_unit": "1.0000000000", "label_template": "{value} plain",
+     "sort_order": 15},
+    {"code": "rung_mid", "name": "Mid", "source_metric": "mass", "family": "size",
+     "value_per_unit": "1.0000000000", "label_template": "{value} mid",
+     "min_value": "1.0000000000", "sort_order": 20},
+    {"code": "rung_small", "name": "Small", "source_metric": "mass", "family": "size",
+     "value_per_unit": "1000.0000000000", "label_template": "{value} small",
+     "sort_order": 30},
+]
+
+
+def ladder_bundle(rows=None):
+    return one_metric_bundle(copy.deepcopy(rows if rows is not None else LADDER))
+
+
+def ladder_request(current_kg, alternative_kg=None):
+    alternative = (
+        None if alternative_kg is None else (line("landfill", alternative_kg),)
+    )
+    return CalculationRequest(
+        entries=(dairy_entry((line("landfill", current_kg),), alternative),),
+        gwp_horizon=100,
+    )
+
+
+@pytest.mark.parametrize("qty,expected", [
+    #: 5,000 kg is 5 big, 5,000 mid and 5,000,000 small. All three bands admit
+    #: -- overlap is the design -- and the first in sort order wins.
+    ("5000.000", "rung_big"),
+    #: 999 kg is 0.999 big, which does not reach one. The lower edge is IN, so
+    #: this is the row below the boundary failing by a thousandth of a unit.
+    ("999.000", "rung_mid"),
+    ("1000.000", "rung_big"),
+    #: 0.5 kg reaches neither, and falls to the family's unbanded catch-all.
+    ("0.500", "rung_small"),
+])
+def test_a_ladder_shows_the_largest_rung_that_reaches_one(qty, expected):
+    loaded = ladder_bundle()
+    result = calculate(ladder_request(qty), loaded)
+
+    codes = [item.code for item in result.totals.current.equivalences]
+    assert codes == [expected, "not_a_rung"]
+
+
+def test_a_ladder_shows_exactly_one_rung_and_never_two():
+    """The failure this whole mechanism exists to prevent is three sentences
+    saying the same thing at three sizes. Asserted as a count per family so
+    that it fails on *two* as loudly as on none."""
+    loaded = ladder_bundle()
+    result = calculate(ladder_request("5000.000"), loaded)
+
+    rungs = [item.code for item in result.totals.current.equivalences
+             if item.code.startswith("rung_")]
+    assert len(rungs) == 1
+
+
+def test_a_ladder_keeps_the_page_position_of_its_first_row():
+    """A submission that drops a rung must not also move the card. The ladder
+    occupies the slot of its first row (`sort_order` 10), so the row that is
+    not a rung of anything (15) stays after it whichever rung is chosen --
+    even the one whose own `sort_order` is 30."""
+    loaded = ladder_bundle()
+
+    big = calculate(ladder_request("5000.000"), loaded)
+    small = calculate(ladder_request("0.500"), loaded)
+
+    assert [item.code for item in big.totals.current.equivalences] == [
+        "rung_big", "not_a_rung"]
+    assert [item.code for item in small.totals.current.equivalences] == [
+        "rung_small", "not_a_rung"]
+
+
+def test_a_family_no_band_admits_falls_back_to_its_first_row():
+    """A ladder somebody has misconfigured degrades to the figure that was
+    there before ladders existed -- in both shipped families, the client's own
+    unit -- rather than to silence or to a teaspoon."""
+    rows = copy.deepcopy(LADDER)
+    #: Every rung banded, and no value satisfies any of them.
+    rows[3]["min_value"] = "1000000.0000000000"
+    loaded = ladder_bundle(rows)
+
+    result = calculate(ladder_request("0.500"), loaded)
+
+    codes = [item.code for item in result.totals.current.equivalences]
+    assert codes == ["rung_big", "not_a_rung"]
+    #: And the reported value is that row's own, not the rung that lost.
+    assert result.totals.current.equivalences[0].value == Decimal("0.0005000000")
+
+
+def test_a_row_with_no_family_is_never_selected_against():
+    """Inertness. A bundle whose equivalences carry no family at all produces
+    every one of them, which is every factor set written before v1.71 and all
+    thirteen golden cases."""
+    rows = [dict(row) for row in LADDER]
+    for row in rows:
+        row.pop("family", None)
+        row.pop("min_value", None)
+    loaded = ladder_bundle(rows)
+
+    result = calculate(ladder_request("5000.000"), loaded)
+
+    assert [item.code for item in result.totals.current.equivalences] == [
+        "rung_big", "not_a_rung", "rung_mid", "rung_small"]
+
+
+# --------------------------------- which value chooses the rung
+
+
+def test_the_current_scenario_chooses_the_rung_for_the_alternative_too():
+    """**The decision, and the test that pins it.** The alternative here is
+    0.5 kg against a current of 5,000 kg: selecting per scenario would show
+    `big` on one side and `small` on the other, for one family, on one page.
+
+    `web/js/improvement.js` is the surface that would have shown it. It merges
+    the current and alternative lists **by `code`**, so two different rungs
+    produce two rows, each with one side filled in -- a comparison with
+    nothing to compare, which is worse than the zero the ladder replaces."""
+    loaded = ladder_bundle()
+
+    result = calculate(ladder_request("5000.000", "0.500"), loaded)
+
+    assert [item.code for item in result.totals.current.equivalences][0] == "rung_big"
+    assert [item.code for item in result.totals.alternative.equivalences][0] == "rung_big"
+    #: The alternative's own value is reported on the chosen rung's terms --
+    #: 0.5 kg is 0.0005 big. A small number in a big unit is honest; two units
+    #: for one family is not.
+    assert result.totals.alternative.equivalences[0].value == Decimal("0.0005000000")
+
+
+def test_one_rung_per_family_across_every_scenario_in_one_result():
+    """Swept over the whole response rather than asserted at one site, because
+    §6.2 carries `equivalences[]` in six places for a two-entry submission
+    (totals x 2, entries x 2 x 2) and the guarantee is about the page, not
+    about one array."""
+    loaded = ladder_bundle()
+    request = CalculationRequest(entries=(
+        dairy_entry((line("landfill", "5000.000"),), (line("landfill", "0.500"),)),
+        EntryInput(
+            sector_code="primary_production", food_category_code="vegetables",
+            current=(line("compost", "0.100"),),
+            alternative=(line("prevention", "0.100"),),
+        ),
+    ), gwp_horizon=100)
+
+    result = calculate(request, loaded)
+
+    scenarios = [result.totals.current, result.totals.alternative]
+    for entry in result.entries:
+        scenarios.append(entry.current)
+        scenarios.append(entry.alternative)
+    chosen = set()
+    for one in scenarios:
+        rungs = [item.code for item in one.equivalences
+                 if item.code.startswith("rung_")]
+        assert len(rungs) == 1, f"{rungs} rungs of one family in one scenario"
+        chosen.add(rungs[0])
+    assert chosen == {"rung_big"}, (
+        "one calculation chose more than one rung of one family: "
+        f"{sorted(chosen)}"
+    )
+
+
+def test_the_net_benefit_does_not_choose_the_rung():
+    """A submission whose two scenarios are identical has a net benefit of
+    zero on every metric and is not a small submission. Selecting on the net
+    benefit would drive every ladder to its bottom rung while the page beside
+    it reads in tonnes."""
+    loaded = ladder_bundle()
+
+    result = calculate(ladder_request("5000.000", "5000.000"), loaded)
+
+    assert result.totals.net_benefit["mass"] == Decimal("0")
+    assert [item.code for item in result.totals.current.equivalences][0] == "rung_big"
+
+
+def test_a_scenario_evaluated_on_its_own_selects_from_itself():
+    """`calculate_scenario` is internal to the engine (§4.2) and has no other
+    context to select from. Documented as the degenerate case, and pinned so
+    that it is a decision rather than an accident."""
+    loaded = ladder_bundle()
+
+    assert [item.code for item in
+            scenario(loaded, (line("landfill", "0.500"),)).equivalences][0] == "rung_small"
+
+
+# --------------------------------- the singular sentence
+
+
+@pytest.mark.parametrize("qty,expected", [
+    #: The whole number is what decides, not the raw value: 1.4 prints as 1
+    #: and must read as one, or the sentence and the number in it disagree.
+    ("1.000", "Equivalent to 1 shower"),
+    ("1.400", "Equivalent to 1 shower"),
+    ("0.600", "Equivalent to 1 shower"),
+    ("1.500", "Equivalent to 2 showers"),
+    ("2.000", "Equivalent to 2 showers"),
+    #: Zero takes the plural, which is English and is also what every label
+    #: printed before this column existed.
+    ("0.400", "Equivalent to 0 showers"),
+])
+def test_the_singular_template_is_chosen_off_the_printed_number(qty, expected):
+    loaded = one_metric_bundle([
+        {"code": "showers_test", "name": "Showers", "source_metric": "mass",
+         "value_per_unit": "1.0000000000",
+         "label_template": "Equivalent to {value} showers",
+         "label_template_one": "Equivalent to {value} shower",
+         "sort_order": 10},
+    ])
+
+    result = scenario(loaded, (line("landfill", qty),))
+
+    assert result.equivalences[0].label == expected
+
+
+def test_minus_one_takes_the_plural():
+    """`_whole_units` produces `-1`, not `1`. English is not settled on
+    negative ones, the sign is a real signal (a metric total can be negative
+    when a downstream offset dominates), and a staff member who wants a
+    negative singular can write it into the plural template. A rule nobody can
+    predict is worse than one that is slightly coarse."""
+    loaded = one_metric_bundle(
+        [
+            {"code": "showers_test", "name": "Showers", "source_metric": "mass",
+             "value_per_unit": "-1.0000000000",
+             "label_template": "Equivalent to {value} showers",
+             "label_template_one": "Equivalent to {value} shower",
+             "sort_order": 10},
+        ]
+    )
+
+    result = scenario(loaded, (line("landfill", "1.000"),))
+
+    assert result.equivalences[0].label == "Equivalent to -1 showers"
+
+
+def test_a_row_with_no_singular_template_keeps_printing_the_plural():
+    """Inertness again, and the defect this column was added for: every
+    equivalence in every factor set today prints `1 Olympic swimming pools`,
+    and does so after this revision too until a staff member types the
+    singular in."""
+    item = equivalence_for("1.000", template="{value} pools")
+
+    assert item.label == "1 pools"
+
+
+#: The six equivalence codes the draft factor set ships as rungs, and the two
+#: family names that group them.
+SHIPPED_LADDER_NAMES = (
+    "vehicles_year", "vehicles_day", "vehicles_hour",
+    "olympic_pools", "backyard_pools", "showers",
+    "vehicles", "water_volume",
+)
+
+
+@pytest.mark.parametrize("name", SHIPPED_LADDER_NAMES)
+def test_no_rung_or_family_name_appears_in_the_engine_the_api_or_the_page(name):
+    """**The v1.71 form of "equivalences are data".** Selecting between them
+    is data too: which ladder a row belongs to and which sizes it is right for
+    are columns, so adding a rung is an INSERT and re-tuning one is an UPDATE.
+
+    Walks `web/js/` as well as `engine/` and `api/`, because the front end is
+    where a "if this is the pools one" would be cheapest to write and hardest
+    to see -- §7.3a already records three hard-coded equivalence labels that
+    had to be removed from `results.js` for exactly this reason."""
+    literal = re.compile(f"""['"]{re.escape(name)}['"]""")
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        *sorted(root.joinpath("engine").glob("*.py")),
+        *sorted(root.joinpath("api").glob("*.py")),
+        *sorted(root.joinpath("web", "js").glob("*.js")),
+    ]
+    for path in paths:
+        source = path.read_text(encoding="utf-8")
+        assert not literal.search(source), (
+            f"{path.name} names {name!r}. Which equivalence a reader sees is "
+            "chosen from rows, never from a call site."
+        )
+
+
 def test_an_equivalence_naming_a_metric_the_bundle_does_not_compute_is_skipped():
     """`validate()` (§4.1) reports a dangling `source_metric`, which is where
     that belongs. A calculation drops the equivalence rather than raising

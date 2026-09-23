@@ -309,7 +309,7 @@ class FactorBundle:
         a global table with no `factor_set_id`, and §5.1 keeps
         `get_taxonomy_for_bundle` a deliberate superset. A *factor set* is a
         narrower thing: it computes a metric when it says something about it,
-        which is a `formula` row, an `factor_upstream` row or a
+        which is a `formula` row, a `factor_upstream` row or a
         `factor_downstream` row of its own.
 
         **Why this exists.** Without it, adding one row to the global `metric`
@@ -320,14 +320,14 @@ class FactorBundle:
         page, both downloads and the PDF, and on screen it is indistinguishable
         from a measurement of none. It is also retroactive: a rollback to an
         older set shows the same zero. Measured on `case_01`'s own bundle with
-        one extra `metrics[]` row and no formula: `land` came back with a total
-        of `0E-10` and three by-destination rows.
+        one extra `metrics[]` row and no formula: the new metric came back with
+        a total of `0E-10` and three by-destination rows.
 
-        **`DEFAULT_FORMULA` is not weakened by this.** A set that carries land
-        factor rows but no land formula still computes land, through the
-        default expression, exactly as §4.1 and §4.3 say -- that is the case
-        the default was written for. What is excluded is the set that carries
-        neither, which has nothing to compute from.
+        **`DEFAULT_FORMULA` is not weakened by this.** A set that carries
+        factor rows for a metric but no formula for it still computes it,
+        through the default expression, exactly as §4.1 and §4.3 say -- that is
+        the case the default was written for. What is excluded is the set that
+        carries neither, which has nothing to compute from.
 
         **No metric code appears here**, and none may: the rule is about what a
         factor set contains, not about which metric it is.

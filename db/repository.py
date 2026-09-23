@@ -211,9 +211,10 @@ def _covered_by(session: Session, factor_set_id: int) -> dict[str, set[int]]:
     offered its category's average and the figure is as good as the one the
     visitor would have got by naming the category instead. Requiring an item to
     carry rows of its own would therefore hide almost the whole vocabulary from
-    the moment step 2.5 is released — 19 items x 6 sectors x 5 metrics = 570
-    rows is full coverage, and no data that will exist comes close — while the
-    thing it would be protecting against cannot happen.
+    the moment step 2.5 is released — full coverage is 19 items x 6 sectors x
+    every metric the set prices, which was 570 rows at the five metrics of the
+    day and is 684 since v1.70 added a sixth, and no data that will exist comes
+    close — while the thing it would be protecting against cannot happen.
 
     The union is not redundant in one case, which is why it is a union. An item
     row carries a NOT NULL ``food_category_id``, so an item priced under its own
@@ -1228,9 +1229,9 @@ def item_level_coverage(session: Session, factor_set_id: int) -> tuple[int, int]
     carries numbers and a boolean cannot carry that. "3 of 19" and "19 of 19"
     are both legal (the guard is soft, §3.5) and they are not the same decision.
 
-    Counts **distinct foods**, not rows: one food priced for five metrics
-    across six sectors is thirty rows and one food, and the number a staff
-    member is weighing is how many of the foods on the new screen will be
+    Counts **distinct foods**, not rows: one food priced for every metric
+    across six sectors is six rows per metric and one food, and the number a
+    staff member is weighing is how many of the foods on the new screen will be
     answered with something better than their category's average.
 
     The denominator is the **active** vocabulary, matching what the calculator
@@ -1262,7 +1263,8 @@ def refuse_item_level_without_item_rows(session: Session, factor_set_id: int) ->
     placeholder banner is already struggling to say.
 
     **Soft, and deliberately so.** One item row is enough. Full coverage is 19
-    items x 6 sectors x 5 metrics = 570 rows and is unreachable from any data
+    items x 6 sectors x every metric the set prices (570 rows at five, 684
+    since v1.70 added a sixth) and is unreachable from any data
     that will exist, and a partly-covered set is coherent because everything
     else falls back to the category average — see `_covered_by`. A guard
     demanding more would make the flag unusable and would be arguing with

@@ -355,9 +355,11 @@ def test_the_flag_is_refused_on_a_set_with_no_item_rows(seeded_session):
 
 def test_one_item_row_is_enough_for_the_flag(seeded_session):
     """The guard is **soft** by design (§3.5), and this is the assertion that
-    keeps it soft. Full coverage is 19 items x 6 sectors x 5 metrics = 570
-    rows and is unreachable from any data that will exist; one item row is
-    coherent because every other food falls back to its category average."""
+    keeps it soft. Full coverage is 19 items x 6 sectors x every metric the
+    set prices -- 570 rows at the five metrics of the day, 684 since v1.70
+    added a sixth -- and is unreachable from any data that will exist; one item
+    row is coherent because every other food falls back to its category
+    average."""
     published = get_published_factor_set_id(seeded_session)
     cheese = _add_item(seeded_session, "cheese", "Cheese", "dairy")
     _add_item_factor(seeded_session, published, cheese, value="3.4")

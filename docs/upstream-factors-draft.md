@@ -1,7 +1,8 @@
 ---
 title: "Draft New Zealand upstream and downstream factors (O-1, first movement)"
 date: "2026-09-05"
-status: "DRAFT factor set. is_mock = true. Never published. Not the deliverable's live data."
+revised: "2026-09-21 — the client's corrected table 2 CO2-eq column (§4.1)"
+status: "DRAFT factor set. is_mock = true. O-1 still open. Not the deliverable's confirmed data."
 ---
 
 # Draft New Zealand factors, derived from the client's Rawtec tables
@@ -29,6 +30,21 @@ changed is the *form*: `get_taxonomy` narrows the offered vocabulary to what
 the published set prices, so where `MOCK-v0` priced 6 destinations of 14 and
 3 sectors of 6, this set prices all of them, and the silent zeros that
 narrowing existed to hide are gone.
+
+**The client corrected table 2's CO2-eq column on 2026-09-21, and this
+document describes the corrected data.** The column the rest of this
+document used to defend — a verbatim copy of table 1's CO2-eq column, food
+figures sitting in destination rows — has been withdrawn and replaced by the
+client. §4.1 holds the whole record: what was wrong, what the owner ruled on
+2026-09-05, what the client sent on 2026-09-21, and what it changes. The
+record is kept rather than deleted, because a reader who finds only the
+corrected column cannot otherwise tell a defect that was found and fixed from
+one nobody ever noticed.
+
+**What it does not change: O-1 is still open.** These remain the client's own
+draft figures. `is_mock` stays `true`, the placeholder banner stays
+mandatory, and the set built from the corrected column is a **draft** that
+this revision does not publish.
 
 **Everything here traces to one of four places**: the client's own Rawtec
 tables (transcribed, not re-measured); ReFED's already-published,
@@ -90,16 +106,24 @@ column does real work: it decides which of our sectors is the *anchor* each
 food category's total is pinned to (§5.2).
 
 **Table 2**, "Impact values of food from bin to destination": seventeen
-destination rows, CO2-eq and L water/kg. **Its CO2-eq column is a verbatim
-copy of table 1's CO2-eq column, in table-1 row order** -- not a measurement
-about the destination at all. The repository owner's original brief to this
-draft excluded table 2 entirely on that basis. **That was overruled on
-2026-09-05, ahead of the client meeting**: the client's own figures are
-themselves a draft, no better destination-side column exists yet, and the
-owner will raise the defect with the client directly. Table 2 is used here,
-CO2-eq column included, exactly as printed. Nothing is substituted, corrected
-or dropped. §4 documents the correspondence in full and §8 is explicit that
-this is a recorded, deliberate choice, not an oversight.
+destination rows, CO2-eq and L water/kg. **Its CO2-eq column was corrupt in
+the client's 2026-09-05 document and the client replaced it on 2026-09-21.**
+In the first revision it was a verbatim copy of table 1's CO2-eq column, in
+table-1 row order -- not a measurement about the destination at all. The
+repository owner's original brief to this draft excluded table 2 entirely on
+that basis; that was overruled on 2026-09-05, ahead of the client meeting,
+and the column was used exactly as printed because no better one existed. The
+client's revised document supplies a real destination-side column, and this
+draft now builds from it. §4.1 documents both columns in full, and §8 is
+explicit about how the client's own files reach version control.
+
+The 2026-09-21 document was diffed against the committed transcription cell
+by cell before anything was changed: **table 1 showed zero differences**
+across all 26 rows and all six columns, and so did table 2's destination
+labels, "Life cycle covered" column and water column. All seventeen CO2-eq
+values moved. That measurement is re-run on every build by
+`_assert_only_table2_co2_moved()` (§6) rather than resting on this
+paragraph.
 
 ## 3. Table 1: New Zealand food categories
 
@@ -184,47 +208,109 @@ as unverified until the client confirms or corrects them.
 
 ## 4. Table 2: New Zealand destinations
 
-### 4.1 The CO2-eq column is a verbatim copy of table 1 -- the correspondence, in full
+### 4.1 The CO2-eq column: a defect, a ruling, and the client's correction
 
-Every one of table 2's seventeen CO2-eq values equals a table 1 row's CO2-eq
-value, in table-1's own row order:
+This section is kept in full after the defect was fixed, not trimmed down to
+the answer. A reader who finds only the corrected column has no way to tell a
+defect that was found and fixed from one nobody ever noticed.
 
-| Table 2 destination | CO2-eq | = table 1 row |
-| --- | --- | --- |
-| Anaerobic Digestion | 1.46 | Bread |
-| BioBased | 4.28 | Bakery |
-| Compost | 10.13 | Cheese |
-| Incineration | 1.51 | Milk |
-| Landfill | 4.95 | Cream |
-| Landspread | 11.39 | Butter |
-| Not Harvested | 3.29 | Yoghurt |
-| Other Food Waste | 1.19 | Other dairy |
-| Refuse | 4.93 | Eggs |
-| Sewer/Wastewater Treatment | 2.01 | Drinks/Beverages (excl. dairy) |
-| Unknown Food Waste | 1.78 | Fruit |
-| Charity Redistribution | 1.82 | Vegetable |
-| Commercial Redistribution | 20.28 | Red Meat |
-| Stock Feed | 10.62 | Pork |
-| Upcycled | 3.98 | Poultry |
-| Unknown Repurposed | 11.63 | Other meat |
-| Pet Food | 5.94 | Seafood |
+#### What was wrong (the client's 2026-09-05 document)
 
-`build_upstream_factors_draft.py` asserts this correspondence mechanically
-against the transcribed data (`TABLE2_CO2_COPY_SOURCE`) before it will write
-a file, so this table cannot silently drift from the data behind it.
+Every one of table 2's seventeen CO2-eq values equalled a table 1 row's
+CO2-eq value, in table-1's own row order -- food figures sitting in
+destination rows:
 
-**This column is used anyway, exactly as printed, on the repository owner's
+| Table 2 destination | withdrawn CO2-eq | = table 1 row | corrected CO2-eq |
+| --- | ---: | --- | ---: |
+| Anaerobic Digestion | 1.46 | Bread | **-0.04** |
+| BioBased | 4.28 | Bakery | **-0.56** |
+| Compost | 10.13 | Cheese | **-0.11** |
+| Incineration | 1.51 | Milk | **-0.12** |
+| Landfill | 4.95 | Cream | **0.60** |
+| Landspread | 11.39 | Butter | **0.00** |
+| Not Harvested | 3.29 | Yoghurt | **0.00** |
+| Other Food Waste | 1.19 | Other dairy | **0.60** |
+| Refuse | 4.93 | Eggs | **0.60** |
+| Sewer/Wastewater Treatment | 2.01 | Drinks/Beverages (excl. dairy) | **0.00** |
+| Unknown Food Waste | 1.78 | Fruit | **0.60** |
+| Charity Redistribution | 1.82 | Vegetable | **0.04** |
+| Commercial Redistribution | 20.28 | Red Meat | **0.04** |
+| Stock Feed | 10.62 | Pork | **-0.19** |
+| Upcycled | 3.98 | Poultry | **-0.15** |
+| Unknown Repurposed | 11.63 | Other meat | **-0.19** |
+| Pet Food | 5.94 | Seafood | **-0.19** |
+
+Read as destination factors, the withdrawn column inverted this tool's
+central message. Compost was priced at 10.13 kg CO2-eq/kg against Landfill's
+4.95, so composting came out twice as bad as landfilling, and every recovery
+route was a cost rather than a saving.
+
+#### What was ruled (2026-09-05)
+
+**The column was used anyway, exactly as printed, on the repository owner's
 explicit instruction of 2026-09-05**, ahead of the client meeting: the
-client's own figures are themselves a draft, no better destination-side CO2
-column exists yet, and the owner intends to raise the defect with the client
+client's own figures were themselves a draft, no better destination-side CO2
+column existed, and the owner intended to raise the defect with the client
 directly rather than have this draft quietly paper over it. Every downstream
-`co2e` row's `source_note` in `upstream_factors_draft.json` repeats this
-caution in full. **Anyone reading the loaded factor set must be able to see
-that this is a known, recorded choice and not an oversight** -- that
-sentence is the whole reason this section exists.
+`co2e` row's `source_note` carried the caution in full, and
+`build_upstream_factors_draft.py` asserted the copy-paste correspondence
+mechanically (`TABLE2_CO2_COPY_SOURCE`) so this document could not describe a
+defect the data no longer had.
 
-**The water column is not implicated in that defect and looks genuine by
-contrast**: negative offsets (water returned to use, not consumed) for
+That set **was published**, on 2026-09-06, on the local development stack and
+on the 10.0.0.130 deployment (§1). So the inverted column was live, behind the
+placeholder banner, for the fortnight between the two revisions. That is why
+this correction is not tidy-up.
+
+#### What the client sent (2026-09-21)
+
+The revised *Rawtec calculations* document replaces exactly this column and
+nothing else. The corrected values read as a proper bin-to-destination
+balance: small numbers, several negative (an avoided-burden credit), 0.60 for
+every landfill-bound row, a flat 0.00 for the two on-farm breakdown rows and
+for sewer, and 0.04 for the two redistribution rows. Compost at -0.11 against
+Landfill's 0.60 now prices composting as a saving.
+
+`TABLE2_CO2_COPY_SOURCE` and the check that asserted the copy are **gone**:
+the copy they assert no longer exists, so that check would fail on correct
+data. What replaces it keeps the purpose rather than the letter --
+`_assert_only_table2_co2_moved()` re-runs the cell-by-cell measurement the
+correction was made on (table 1 unchanged, table 2's labels, life cycle and
+water unchanged) against a frozen copy of the 2026-09-05 transcription, and
+refuses to write a factor set if anything else has drifted or if any
+destination still carries a withdrawn value. `tests/test_upstream_factors_
+draft_build.py` exercises it.
+
+**What it does not settle: O-1 stays open.** These are still the client's
+draft figures, `is_mock` stays `true`, and the set built from them is a draft
+this revision does not publish.
+
+#### What it changes on a real calculation
+
+Measured, not asserted: one submission run end to end through
+`build_bundle_data` and `engine.calculate` against a real load of each JSON
+into MySQL. **1,000 kg of mixed food waste at `consumer_household`, current
+all to `landfill`, alternative all to `compost`**, `gwp_horizon = 100`:
+
+| | withdrawn column | corrected column |
+| --- | ---: | ---: |
+| `landfill` downstream `co2e` | 4.95 | 0.60 |
+| `compost` downstream `co2e` | 10.13 | -0.11 |
+| current total (landfill) | 10,990.0 kg CO2e | 6,640.0 kg CO2e |
+| alternative total (compost) | 16,170.0 kg CO2e | 5,930.0 kg CO2e |
+| **net benefit** | **-5,180.0 kg CO2e** | **+710.0 kg CO2e** |
+| headline equivalence, current | "running 5 passenger vehicles for a year" | "running 3" |
+
+The withdrawn column said composting a tonne of mixed food waste was 5,180 kg
+CO2e **worse** than landfilling it. The corrected one says it is 710 kg CO2e
+better. `water`, `ch4`, `cost` and `mass` are identical in both runs, as the
+cell-by-cell diff predicted: the only rows that moved are twelve downstream
+`co2e` values (the twelve destinations with a client mapping;
+`other_recovery` is ReFED-filled and `prevention` is a definitional zero).
+
+**The water column was never implicated in that defect** -- it is identical,
+cell for cell, in both revisions of the client's document -- **and looks
+genuine by contrast**: negative offsets (water returned to use, not consumed) for
 Anaerobic Digestion (-1.50), BioBased (-2.20), Compost (-2.40), Landspread
 (-2.40), Not Harvested (-1.20), Stock Feed (-1.95), Upcycled (-2.80), Pet
 Food (-1.95) and Unknown Repurposed (-1.95); a small positive value (+0.06)
@@ -264,18 +350,21 @@ it.
   "Unknown Food Waste" (both published as *Bin to Landfill*, the same
   disposal life cycle as "Refuse" and "Landfill" themselves). "Landfill" is
   kept separate and maps 1:1 to our `landfill`, because it is the one row
-  literally named that. co2e mean of 1.19, 4.93, 1.78 = **2.6333333...**;
-  water mean of 0.06, 0.06, 0.06 = **0.06**.
+  literally named that. co2e mean of 0.60, 0.60, 0.60 = **0.60**; water mean
+  of 0.06, 0.06, 0.06 = **0.06**. (Under the withdrawn 2026-09-05 column the
+  co2e mean was 1.19, 4.93, 1.78 = 2.6333333...)
 - **`food_redistribution`** takes "Charity Redistribution" and "Commercial
   Redistribution" -- this system has one redistribution destination where
-  the client has two. co2e mean of 1.82, 20.28 = **11.05**; water mean of
-  0.06, 0.06 = **0.06**.
+  the client has two. co2e mean of 0.04, 0.04 = **0.04**; water mean of
+  0.06, 0.06 = **0.06**. (Under the withdrawn column: 1.82, 20.28 = 11.05 --
+  the single largest distortion the correction removes, since it priced
+  giving food away at more than eleven kilograms of CO2e per kilogram.)
 - **`animal_feed`** takes "Stock Feed", "Pet Food" (both *Bin to Farm*) and
   "Unknown Repurposed" (also *Bin to Farm* -- the shared life-cycle
   description is the basis for including it here rather than leaving it
-  unmapped; this is a judgement call, stated as one). co2e mean of 10.62,
-  5.94, 11.63 = **9.3966666...**; water mean of -1.95, -1.95, -1.95 =
-  **-1.95**.
+  unmapped; this is a judgement call, stated as one). co2e mean of -0.19,
+  -0.19, -0.19 = **-0.19**; water mean of -1.95, -1.95, -1.95 = **-1.95**.
+  (Under the withdrawn column: 10.62, 5.94, 11.63 = 9.3966666...)
 
 **`other_recovery`** ("Other recovery, including biodiesel") has no
 comparably-shaped client destination. The client's "Other Food Waste" is a
@@ -786,7 +875,22 @@ live/mock set). It raises `SystemExit` naming the exact missing (or
 duplicated) cell if a future edit ever drops one -- this is what closed the
 `upcycling`/`ch4` gap this section used to describe: it was found by a
 by-hand row count, and this check is what stops that class of defect coming
-back silently. What remains genuinely unfilled after this revision: `land`
+back silently.
+
+**A second mechanical check joins it as of the 2026-09-21 revision.**
+`_assert_only_table2_co2_moved()` re-runs the measurement that revision was
+made on -- table 1 unchanged across all 26 rows and all six columns, table 2's
+destination labels, life-cycle column and water column unchanged, only its
+CO2-eq column replaced -- against `PRIOR_REVISION_TABLE1` and
+`PRIOR_REVISION_TABLE2_EXCEPT_CO2` in `rawtec_source_data.py`, which freeze
+those cells exactly as the 2026-09-05 transcription held them. It also refuses
+a table 2 still carrying any value from the withdrawn column, which is what a
+half-applied revision looks like. It replaces `TABLE2_CO2_COPY_SOURCE`'s check
+(§4.1) and keeps its purpose: no silent drift between the client's document,
+the transcription and the prose about it. Both checks are exercised by
+`tests/test_upstream_factors_draft_build.py`.
+
+What remains genuinely unfilled after this revision: `land`
 (no metric exists), gate fees beyond the statutory levy (no public source
 found), and `eggs`/`staples`' still-unresolved status as noted in §3.2
 (`staples` itself *is* seeded, from ReFED alone, per the owner's ruling;

@@ -1501,7 +1501,7 @@ def _build_land_upstream_rows() -> list[dict]:
         _assert_non_decreasing(nz_food, metric, final)
 
         data_quality = (
-            "derived-client-public-substituted"
+            "derived-public-substituted"
             if any(land_comparison(name).taken == "public" for name in client_foods)
             else "derived-client"
         )
@@ -1688,6 +1688,22 @@ def _assert_completeness(data: dict) -> None:
                 f"equivalence {code}: source_note is missing -- every "
                 "shipped equivalence must record where its factor came from"
             )
+
+    #: `factor_upstream.data_quality` and `factor_downstream.data_quality` are
+    #: both `VARCHAR(32)`. A longer tag writes a perfectly valid JSON file that
+    #: the loader then refuses at INSERT time with a MySQL `Data too long`
+    #: error, several minutes into a load -- which is how this check came to
+    #: exist. Checked here so the build stops instead.
+    for section in ("upstream", "downstream"):
+        for row in data[section]:
+            tag = row.get("data_quality") or ""
+            if len(tag) > 32:
+                missing.append(
+                    f"{section} {row.get('food_category') or row.get('destination')}"
+                    f"/{row['metric']}: data_quality {tag!r} is {len(tag)} "
+                    "characters; the column is VARCHAR(32) and the loader "
+                    "would refuse this row"
+                )
 
     if missing:
         raise SystemExit(

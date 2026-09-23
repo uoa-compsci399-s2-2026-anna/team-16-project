@@ -407,3 +407,23 @@ def test_a_downstream_land_row_stops_the_build():
         build_module._assert_no_land_downstream_rows(data)
 
     assert "downstream `land` rows for ['landfill']" in str(caught.value)
+
+
+def test_a_data_quality_tag_too_long_for_its_column_stops_the_build():
+    """A valid JSON file the loader cannot load is still a broken build.
+
+    `factor_upstream.data_quality` is `VARCHAR(32)`. This check exists because
+    a thirty-three-character tag got as far as a MySQL `Data too long` error
+    inside `tests/db/test_load_upstream_factors_draft.py`, several minutes into
+    a load, with nothing between the build and that point saying anything was
+    wrong. The build is where it can be said cheaply.
+    """
+    data = build_module.build()
+    data["upstream"][0]["data_quality"] = "x" * 33
+
+    with pytest.raises(SystemExit) as caught:
+        build_module._assert_completeness(data)
+
+    message = str(caught.value)
+    assert "is 33 characters" in message
+    assert "VARCHAR(32)" in message

@@ -25,7 +25,7 @@ This document defines **what every person's code receives and what it returns.**
 
 ## 0.1 Change Log
 
-### v1.70 — 2026-09-23 (a sixth metric, and the rule that stops it reaching the five factor sets that never heard of it; affects A, B, C, D and E)
+### v1.70 — 2026-09-23 (a sixth metric, and the rule that stops it reaching every factor set that never heard of it; affects A, B, C, D and E)
 
 The client's *Rawtec calculations* document has published a land column since the first revision and this calculator has never reported it. The owner has ruled that it is introduced. `land` is that metric, and everything else in this revision is what introducing it turned out to cost.
 

@@ -1672,7 +1672,17 @@ def build() -> dict:
     data = {
         "version_label": (
             "CLIENT-DRAFT-2026-09-21 (Rawtec revised table 2 + ReFED "
-            "cumulative footprint, plus ch4 and cost) - NOT PUBLISHED"
+            #: **The suffix describes the DATA, not the publication state**, and
+        #: that is a correction. It read "- NOT PUBLISHED", which was true of
+        #: this file and became false the moment the owner published the set
+        #: (2026-09-23). `version_label` is not an internal note:
+        #: `results.js` prints it as "Factor version" on the results page and
+        #: in the text download, and `methodology.js` prints it as "Version",
+        #: so a published set announcing itself as not published tells a
+        #: visitor something untrue. What has NOT changed is that these
+        #: figures are a draft the client has not confirmed -- that is O-1,
+        #: and it is what `is_mock` already drives the mandatory banner from.
+        "cumulative footprint, plus ch4 and cost) - NOT CLIENT-CONFIRMED"
         ),
         "is_mock": True,
         "notes": (
@@ -1709,8 +1719,9 @@ def build() -> dict:
             "the 2026-09-05 column was a verbatim copy of table 1's food "
             "figures, which priced composting worse than landfill. The set "
             "built from that column was published on 2026-09-06 on the "
-            "owner's instruction; this one is built as a DRAFT and is NOT "
-            "published. Publishing archives rather than deletes, so rollback "
+            "owner's instruction and stayed live until this one replaced "
+            "it on 2026-09-23, also on the owner's instruction. "
+            "Publishing archives rather than deletes, so rollback "
             "remains available either way. Full provenance: "
             "docs/upstream-factors-draft.md and "
             "data/upstream-factors-draft/build_upstream_factors_draft.py."

@@ -42,9 +42,22 @@ corrected column cannot otherwise tell a defect that was found and fixed from
 one nobody ever noticed.
 
 **What it does not change: O-1 is still open.** These remain the client's own
-draft figures. `is_mock` stays `true`, the placeholder banner stays
-mandatory, and the set built from the corrected column is a **draft** that
-this revision does not publish.
+draft figures. `is_mock` stays `true` and the placeholder banner stays
+mandatory.
+
+**Which set is live, as of 2026-09-23.** Three now exist and it is worth
+being exact about them, because this document has described each in turn.
+The set built from the *withdrawn* column was published on 2026-09-06 and
+was **archived** on 2026-09-23. The set built from the *corrected* column
+took its place and is the one **published** today (local stack `factor_set`
+id 15) -- on the owner's instruction, not by default; the sentence here
+previously said it was a draft that would not be published, and that was
+written before the instruction. The set that adds `land` (§5.8, contract
+v1.70) is loaded as a **draft** (local stack id 17) and is **not**
+published; whether it goes live is the owner's decision. Publishing archives
+rather than deletes, so every one of them remains available to roll back to,
+and every submission stamps its own `factor_set_id`, so results computed
+under any of them still reproduce exactly.
 
 **Everything here traces to one of four places**: the client's own Rawtec
 tables (transcribed, not re-measured); ReFED's already-published,

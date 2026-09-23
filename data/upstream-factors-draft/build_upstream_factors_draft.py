@@ -39,8 +39,9 @@ supplied a usable total, **plus** ``staples`` (no client total exists for it
 ``ch4``** (the client's table has no ``ch4`` column at all, so every food
 category's ``ch4`` is filled the unanchored way -- see "CH4: FILLED FROM
 REFED ALONE" below). ``cost`` has no upstream row (see "COST" below -- it is
-a downstream-only figure). The client's ``land`` column still has no metric
-to attach to -- see "WHAT IS NOT REPRESENTED" below. Plus a zero override at
+a downstream-only figure). **And, as of this revision, ``land``** -- the
+client's own t/ha column, which is a *yield* and has to be inverted before it
+can be used as a factor at all; see "LAND" below. Plus a zero override at
 ``destination = prevention`` for every one of those rows, so the set is
 consistent with the other New Zealand-style sets in this repository even
 though it is never published (§O-7).
@@ -337,12 +338,71 @@ not disposed of at all), and `sewer` (trade-waste discharge is charged under
 a separate regime, not the Waste Minimisation Act's disposal levy).
 `prevention` keeps its existing zero-by-definition override.
 
+LAND: THE CLIENT'S YIELD COLUMN, INVERTED, AND CHECKED ROW BY ROW
+--------------------------------------------------------------------
+The client's table 1 gives a land column for every food row, and until this
+revision this system had no `land` metric to receive it. The owner has ruled
+that one is introduced, so it is built here.
+
+**The client publishes t/ha, which is a yield, not a footprint.** Used as a
+factor exactly as printed it would be upside down -- a bigger number would
+mean more land. What the metric reports is land occupation per kilogram:
+
+    1 kg                      = 0.001 t
+    0.001 t / (Y t/ha)        = 0.001/Y ha
+    0.001/Y ha x 10,000 m2/ha = 10/Y  m2
+
+so `land_m2_per_kg = 10 / yield_t_per_ha`. That conversion is
+`land_m2_per_kg_from_yield()` below, and the derivation is written out beside
+the line that performs it. It is done entirely on `Decimal`.
+
+**The land column is the loosest thing in the client's document**, and
+several rows are implausible once inverted -- `Poultry` at 57.48 t/ha becomes
+0.17 m2/kg, a vegetable's footprint rather than a chicken's, and `Nuts and
+seeds` carries Red Meat's `0.22` to two decimal places, which is a copy
+rather than a measurement. So every client row is checked against a public
+source: Poore & Nemecek (2018), the same study this draft already uses for
+the co2e farm share, whose land-use-per-kilogram table is transcribed in
+`public_land_use_source_data.py` with its own URL and read date.
+
+**One stated rule decides each row, and the row says which way it went.**
+Where the client-derived figure and the public one differ by a factor of ten
+or more, the public figure is taken; otherwise the client's is kept. Nothing
+is averaged between them, and no implausible client figure is kept silently:
+every `source_note` names which of the two it is, both numbers, the ratio
+and why. `print_land_comparison()` prints the whole table on every build.
+Four rows cross the threshold -- `Poultry` (70x), `Other meat` (352x),
+`Eggs` (16x, and not used by any New Zealand category) and `Sweeteners`
+(16x). One row the owner flagged does NOT cross it and is reported rather
+than quietly fixed: `Nuts and seeds` is 4.1x from the public figure, so the
+stated rule keeps the client's 45.45 m2/kg even though its cell is a known
+duplicate of Red Meat's; its `source_note` records both.
+
+**Land is flat across all six sectors**, unlike every other metric here.
+co2e, water and ch4 are cumulative footprints -- a kilogram wasted at retail
+carries processing and transport a kilogram wasted at the farm gate does not.
+Land does not accumulate that way: the land was occupied to grow the food,
+and the same kilogram carries the same land wherever it is thrown away. Both
+sources are farm-gate quantities and neither publishes a downstream land
+term, so there is nothing to escalate a later stage with. This is very likely
+a slight understatement for the later stages (a kilogram on a shelf embodies
+more than a kilogram of farm output) and every row says so.
+
+**`factor_downstream` carries no land row at all, and that is correct rather
+than an omission.** The client's table 2 has no land column and should not
+have one: sending a kilogram to landfill, to compost or to an anaerobic
+digester returns no land and occupies none. An absent row resolves to zero
+through the documented three-step lookup order, so the absence *is* the
+answer. `_assert_no_land_downstream_rows()` checks it mechanically, so a
+future edit that adds one has to argue for it.
+
+`staples` has no client row and ReFED publishes no land figure for anything,
+so neither of the two routes the other metrics use exists. It is built from
+the six client rows `admin/seed.py`'s own `FOOD_ITEMS` files under `staples`
+-- see `LAND_STAPLES_CLIENT_ROWS` for which, and why `Eggs` is excluded.
+
 WHAT IS NOT REPRESENTED
 -------------------------
-  * `land` -- the client's table gives t/ha for every food row, and this
-    system has no `land` metric to receive it. Adding one is a metric-table
-    change with system-wide effect (every existing result would gain a
-    `land` line at zero); left for the owner to decide, not done here.
   * `upcycling`'s `ch4` -- no ReFED destination matches its shape; filled
     with a stated stand-in rather than left a gap; see "CH4" above.
   * The waste levy's own "disposal cost" component beyond the statutory levy
@@ -357,6 +417,7 @@ import json
 import sys
 from decimal import Decimal, ROUND_HALF_EVEN
 from pathlib import Path
+from typing import NamedTuple
 
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parents[1]
@@ -375,6 +436,7 @@ from rawtec_source_data import (  # noqa: E402
     food_row,
 )
 from public_farm_share_source_data import farm_share as owid_farm_share  # noqa: E402
+from public_land_use_source_data import land_use as owid_land_use  # noqa: E402
 
 SCALE = Decimal("0.0000000001")  # factor_upstream/downstream.value_per_kg: DECIMAL(20,10)
 
@@ -1130,13 +1192,421 @@ def _build_ch4_upstream_rows(refed_upstream: dict[tuple[str, str, str], Decimal]
     return rows
 
 
+# ---------------------------------------------------------------------------
+# `land`: the client's own column, inverted, checked against a public source.
+# ---------------------------------------------------------------------------
+#: Square metres in a hectare, and kilograms in a tonne. Named rather than
+#: inlined so the derivation below reads as the arithmetic it is.
+M2_PER_HA = Decimal(10000)
+KG_PER_TONNE = Decimal(1000)
+
+
+def land_m2_per_kg_from_yield(yield_t_per_ha: Decimal) -> Decimal:
+    """The client's land column is a YIELD, not a footprint. Invert it.
+
+    Table 1 publishes land as **t/ha** -- tonnes of food produced per hectare.
+    Used as a factor exactly as printed it would be upside down: a *higher*
+    number would mean *more* land, when it means the opposite. What the
+    `land` metric reports is land occupation per kilogram of food, so:
+
+        1 kg                        = 0.001 t
+        0.001 t / (Y t/ha)          = 0.001/Y ha
+        0.001/Y ha x 10,000 m2/ha   = 10/Y  m2
+
+    so ``land_m2_per_kg = 10 / yield_t_per_ha``. The line below performs it in
+    those three steps rather than as the collapsed ``10 / Y`` so that each
+    factor can be read against the sentence above it, and entirely on
+    ``Decimal`` -- never through ``float`` (contract section 1.2).
+
+    A yield of zero is not a number this can invert, and the client publishes
+    none; it raises rather than producing an infinity that would propagate as
+    a plausible-looking factor.
+    """
+    if yield_t_per_ha <= 0:
+        raise SystemExit(
+            f"Land yield {yield_t_per_ha} t/ha cannot be inverted into a "
+            "per-kilogram footprint. The client publishes no zero or negative "
+            "yield; if one now exists, it needs a ruling, not a division."
+        )
+    return (Decimal(1) / KG_PER_TONNE) / yield_t_per_ha * M2_PER_HA
+
+
+#: The client food row -> the Our World in Data product row(s) whose published
+#: land use is used to check it (`public_land_use_source_data.py`). Several
+#: rows: unweighted mean, the same rule and the same stated reason as every
+#: other aggregation in this draft -- no production weights exist.
+#:
+#: Chosen by the closest available match, and two of them deliberately reuse a
+#: mapping this script already makes elsewhere: the beverages row draws Wine,
+#: Coffee and Soy milk, exactly as `FOOD_CO2E_FARM_SHARE_SOURCES` does, and
+#: `Other meat` -- the client's own catch-all -- draws the unweighted mean of
+#: all four named meats, which is the same construction
+#: `NZ_FOOD_CATEGORY_SOURCES["meat"]` uses for a meat not otherwise specified.
+#:
+#: **A client row absent from this mapping has no public counterpart**, not a
+#: missing entry: `Fats`, `Sauces Spreads Dips`, `Herbs/Spices`, `Snack Foods
+#: and desserts`, `Other Food Types` and `General mixed food product` are
+#: composites or catch-alls with no single published product behind them, and
+#: inventing a basket for each would be the invention this whole comparison
+#: exists to avoid. Those rows keep the client's figure and their `source_note`
+#: says that no public figure was available to check it against.
+LAND_PUBLIC_PROXIES: dict[str, tuple[str, ...]] = {
+    "Bread": ("Wheat & Rye",),
+    "Bakery": ("Wheat & Rye",),
+    "Grains": ("Wheat & Rye", "Rice", "Maize", "Barley", "Oatmeal"),
+    "Cheese": ("Cheese",),
+    "Milk": ("Milk",),
+    "Cream": ("Milk",),
+    "Butter": ("Milk",),
+    "Yoghurt": ("Milk",),
+    "Other dairy": ("Milk",),
+    "Eggs": ("Eggs",),
+    "Drinks/Beverages (excluding dairy)": ("Wine", "Coffee", "Soy milk"),
+    "Fruit": ("Apples", "Bananas", "Berries & Grapes", "Citrus Fruit", "Other Fruit"),
+    "Vegetable": ("Brassicas", "Onions & Leeks", "Other Vegetables",
+                  "Root Vegetables", "Tomatoes"),
+    "Red Meat": ("Beef (beef herd)", "Lamb & Mutton"),
+    "Pork": ("Pig Meat",),
+    "Poultry": ("Poultry Meat",),
+    "Other meat": ("Beef (beef herd)", "Lamb & Mutton", "Pig Meat", "Poultry Meat"),
+    "Seafood": ("Fish (farmed)", "Prawns (farmed)"),
+    "Nuts and seeds": ("Nuts", "Groundnuts"),
+    "Sweeteners": ("Beet Sugar", "Cane Sugar"),
+}
+
+#: The one stated rule. Where the client-derived figure and the public one
+#: differ by this factor or more, the public one is taken; otherwise the
+#: client's is kept. Either way the row's `source_note` names which it is and
+#: why, because a quiet average and a quietly-kept implausible figure hide the
+#: same decision.
+LAND_SUBSTITUTION_RATIO = Decimal(10)
+
+#: `staples` has no client row of its own for co2e or water and is filled from
+#: ReFED there -- but ReFED publishes no land figure at all, for any category,
+#: so that route does not exist here.
+#:
+#: What does exist is this repository's own item vocabulary. `admin/seed.py`'s
+#: `FOOD_ITEMS` files the client's six home-less pantry rows under `staples`
+#: -- Fats, Sauces/Spreads/Dips, Herbs/Spices, Snack Foods and desserts,
+#: Sweeteners and Other Food Types -- and says so in its own comment. So
+#: `staples`' land is the unweighted mean of those six client rows, resolved
+#: the same way every other row is (client figure unless the public one
+#: disagrees by ten times or more). That is the client's own data reaching
+#: `staples` through this repository's own documented mapping, which is a
+#: better answer than a basket invented here.
+#:
+#: **`Eggs` is excluded, deliberately.** `seed.py` files the `eggs` *item*
+#: under `staples` as well, but this draft's co2e and water leave the client's
+#: Eggs row out of every category (section 3.2 of the provenance document:
+#: reported, not silently absorbed into a neighbour), and pulling it into
+#: `staples` for land alone would price one metric on a membership the other
+#: two do not use. Its comparison is computed and printed anyway, so the
+#: exclusion is visible rather than inferred.
+LAND_STAPLES_CLIENT_ROWS = (
+    "Fats", "Sauces Spreads Dips", "Herbs/Spices",
+    "Snack Foods and desserts", "Sweeteners", "Other Food Types",
+)
+
+
+class LandComparison(NamedTuple):
+    """One client food row, both figures, and which was taken."""
+    food: str
+    yield_t_per_ha: Decimal
+    client_m2_per_kg: Decimal
+    public_m2_per_kg: Decimal | None
+    public_sources: tuple[str, ...]
+    ratio: Decimal | None
+    taken: str  # "client" or "public"
+
+
+def land_cell_duplicates(food: str) -> tuple[str, ...]:
+    """Other client food rows printing the identical land cell.
+
+    Detected mechanically rather than listed by hand, because the reason it
+    matters is not that somebody once noticed one: several of the client's
+    water and land cells are identical to the last decimal across unrelated
+    foods, and `Red Meat` and `Nuts and seeds` sharing `0.22` is a copy rather
+    than a measurement. A duplicate is not by itself wrong -- Cheese, Cream,
+    Butter and Yoghurt sharing a dairy figure is plausible -- so this does not
+    change any value. It puts the fact in the row's own `source_note` so that
+    a reader can weigh it.
+    """
+    this = food_row(food).land_t_per_ha
+    return tuple(
+        other.food for other in TABLE1
+        if other.food != food and other.land_t_per_ha == this
+    )
+
+
+def land_comparison(food: str) -> LandComparison:
+    """Both figures for one client food row, and the stated rule applied."""
+    row = food_row(food)
+    client = land_m2_per_kg_from_yield(row.land_t_per_ha)
+    sources = LAND_PUBLIC_PROXIES.get(food, ())
+    if not sources:
+        return LandComparison(food, row.land_t_per_ha, client, None, (), None, "client")
+    public = mean([owid_land_use(name) for name in sources])
+    if public <= 0:
+        raise SystemExit(
+            f"Public land figure for {food!r} resolved to {public}; a zero "
+            "cannot be compared by ratio and must not be seeded."
+        )
+    ratio = max(client, public) / min(client, public)
+    taken = "public" if ratio >= LAND_SUBSTITUTION_RATIO else "client"
+    return LandComparison(food, row.land_t_per_ha, client, public, sources, ratio, taken)
+
+
+def land_value_for(food: str) -> tuple[Decimal, str]:
+    """The land figure this draft seeds for one client food, and its note."""
+    c = land_comparison(food)
+    duplicates = land_cell_duplicates(food)
+    derivation = (
+        f"Client (Rawtec) table 1 land column for {food!r}: "
+        f"{c.yield_t_per_ha} t/ha, which is a YIELD, not a footprint. "
+        f"Inverted to land occupation per kilogram: "
+        f"1 kg = 0.001 t; 0.001 t / {c.yield_t_per_ha} t/ha = "
+        f"{Decimal(1) / KG_PER_TONNE / c.yield_t_per_ha} ha; "
+        f"x 10,000 m2/ha = {c.client_m2_per_kg} m2/kg."
+    )
+    if duplicates:
+        derivation += (
+            f" NOTE: the client prints this identical land cell "
+            f"({c.yield_t_per_ha} t/ha) for {', '.join(repr(d) for d in duplicates)} "
+            "as well. Agreement to the last decimal across foods that are not "
+            "the same thing reads as a copy rather than a measurement. No "
+            "value is changed on that basis -- only the stated ratio rule "
+            "below decides -- but it is recorded here so a reader can weigh "
+            "it."
+        )
+    if c.public_m2_per_kg is None:
+        note = (
+            f"{derivation} KEPT, UNCHECKED: no single public product row "
+            "corresponds to this client row -- it is a composite or a "
+            "catch-all -- so the client figure could not be compared against "
+            "Poore & Nemecek (2018) the way the other rows were. It is the "
+            "client's own figure and nothing here corroborates it."
+        )
+        return c.client_m2_per_kg, note
+    comparison = (
+        f"Checked against Poore & Nemecek (2018) via Our World in Data "
+        f"(public_land_use_source_data.py, read 2026-09-23): "
+        f"{', '.join(c.public_sources)} = "
+        f"{', '.join(str(owid_land_use(n)) for n in c.public_sources)} m2/kg "
+        f"-> unweighted mean {c.public_m2_per_kg} m2/kg. The two differ by a "
+        f"factor of {c.ratio}."
+    )
+    if c.taken == "public":
+        note = (
+            f"{derivation} {comparison} That is at or beyond the stated "
+            f"{LAND_SUBSTITUTION_RATIO}x threshold, so THE PUBLIC FIGURE IS "
+            "TAKEN and the client's inverted figure is not seeded: a "
+            "disagreement this large is a defect in one of the two columns, "
+            "and the public one is the one that can be checked. It is a "
+            "GLOBAL MEAN, not a New Zealand measurement."
+        )
+        return c.public_m2_per_kg, note
+    note = (
+        f"{derivation} {comparison} That is below the stated "
+        f"{LAND_SUBSTITUTION_RATIO}x threshold, so THE CLIENT'S FIGURE IS "
+        "KEPT. The public figure is a global mean and this is the client's "
+        "own New Zealand-facing document; where the two broadly agree the "
+        "client's is the one this draft is built from."
+    )
+    return c.client_m2_per_kg, note
+
+
+def _build_land_upstream_rows() -> list[dict]:
+    """`land` upstream, all ten New Zealand food categories.
+
+    **Flat across all six sectors, and that is the modelling decision this
+    function turns on.** co2e, water and ch4 are built as a *cumulative*
+    footprint -- a kilogram wasted at retail carries the emissions of
+    processing and transport that a kilogram wasted at the farm gate does not.
+    Land does not accumulate that way: the land was occupied to grow the food,
+    and the same kilogram carries the same land wherever along the chain it is
+    thrown away. Both sources here are farm-gate quantities (the client's t/ha
+    is a field yield; Poore & Nemecek's m2/kg is land used to produce one
+    kilogram) and neither publishes a downstream land term at all, so there is
+    nothing to escalate a later stage with.
+
+    This is very likely a slight UNDERSTATEMENT for the later stages, for the
+    reason the cumulative construction exists: a kilogram that reaches a
+    supermarket shelf embodies rather more than a kilogram of farm output,
+    because some was lost on the way. No source here quantifies that for land,
+    so it is flagged in every row's `source_note` rather than estimated.
+
+    There is no ReFED shape to anchor against either -- ReFED publishes no
+    land figure for any category or destination -- so none of the anchoring,
+    scaling or clamping machinery the other metrics use applies. The
+    non-decreasing invariant is satisfied trivially and is still asserted.
+    """
+    rows: list[dict] = []
+    metric = "land"
+
+    for nz_food in NZ_TO_REFED_FOOD_SHAPE:  # the canonical ten
+        if nz_food == "staples":
+            client_foods = list(LAND_STAPLES_CLIENT_ROWS)
+            basis = (
+                "'staples' has no client (Rawtec) row of its own and ReFED "
+                "publishes no land figure for any category, so the route used "
+                "for its co2e and water does not exist here. It is built "
+                "instead from the six client rows admin/seed.py's FOOD_ITEMS "
+                "files under 'staples' (Fats, Sauces Spreads Dips, "
+                "Herbs/Spices, Snack Foods and desserts, Sweeteners, Other "
+                "Food Types) -- the client's own data reaching 'staples' "
+                "through this repository's own item mapping. The client's "
+                "Eggs row is filed there too and is deliberately excluded, "
+                "because this draft's co2e and water leave Eggs out of every "
+                "category (provenance document section 3.2) and pricing one "
+                "metric on a membership the other two do not use would be "
+                "inconsistent."
+            )
+        else:
+            client_foods = list(NZ_FOOD_CATEGORY_SOURCES[nz_food])
+            basis = ""
+
+        resolved = [land_value_for(name) for name in client_foods]
+        values = [value for value, _ in resolved]
+        value = mean(values)
+        if value <= 0:
+            raise SystemExit(
+                f"{nz_food}/{metric}: resolved to {value}; a gap must be "
+                "filled from a source, never a silent zero."
+            )
+
+        components = "; ".join(
+            f"[{name}] {note}" for name, (_, note) in zip(client_foods, resolved)
+        )
+        aggregation = (
+            f"Unweighted mean of {len(values)} client row(s) -- no production "
+            f"weights were supplied, the same stated reason as every other "
+            f"aggregation in this draft -- = {value} m2/kg."
+            if len(values) > 1
+            else "Single client row, used directly with no aggregation."
+        )
+        note = (
+            f"{basis + ' ' if basis else ''}"
+            f"{aggregation} SAME VALUE FOR ALL SIX SECTORS: land occupation "
+            "is a property of growing the food, not of how far down the "
+            "supply chain it is wasted, so unlike co2e, water and ch4 it is "
+            "not built as a cumulative footprint. Both sources are farm-gate "
+            "quantities and neither publishes a downstream land term. This is "
+            "very likely a slight understatement for the later stages, since "
+            "a kilogram on a shelf embodies more than a kilogram of farm "
+            "output; nothing available quantifies that for land, so it is "
+            "flagged rather than estimated. Per-row working: " + components
+        )
+
+        final = {nz_sector: value for nz_sector in ALL_NZ_SECTORS}
+        _assert_non_decreasing(nz_food, metric, final)
+
+        data_quality = (
+            "derived-client-public-substituted"
+            if any(land_comparison(name).taken == "public" for name in client_foods)
+            else "derived-client"
+        )
+
+        for nz_sector in ALL_NZ_SECTORS:
+            rows.append({
+                "sector": nz_sector,
+                "food_category": nz_food,
+                "destination": None,
+                "metric": metric,
+                "value_per_kg": q(value),
+                "source_note": note,
+                "data_quality": data_quality,
+            })
+
+        for nz_sector in ALL_NZ_SECTORS:
+            rows.append({
+                "sector": nz_sector,
+                "food_category": nz_food,
+                "destination": "prevention",
+                "metric": metric,
+                "value_per_kg": q(Decimal(0)),
+                "source_note": (
+                    "Zero by definition. 'prevention' is the mandatory "
+                    "100% offset (contract O-7): food that was never "
+                    "produced in excess occupies no land. Not a client or "
+                    "public figure."
+                ),
+                "data_quality": "definitional",
+            })
+    return rows
+
+
+def _assert_no_land_downstream_rows(data: dict) -> None:
+    """The absence of a downstream `land` row is checked, not merely described.
+
+    The client's table 2 has no land column and should not have one: sending a
+    kilogram to landfill, to compost or to an anaerobic digester returns no
+    land and occupies none, so every destination's downstream land term is
+    zero, and an absent row already resolves to zero through the documented
+    three-step lookup order. Writing seventeen explicit zeroes would say the
+    same thing at more length.
+
+    What makes that a decision rather than an oversight is this check. A future
+    edit that adds a downstream land row -- a loop widened by one metric, a
+    copied block -- stops here and has to argue for it.
+    """
+    offenders = sorted(
+        row["destination"] for row in data["downstream"] if row["metric"] == "land"
+    )
+    if offenders:
+        raise SystemExit(
+            "This draft carries downstream `land` rows for "
+            f"{offenders}. The client's table 2 has no land column, and land "
+            "occupation is a property of growing the food rather than of "
+            "where it is sent afterwards. An absent row already resolves to "
+            "zero through the three-step lookup order. If a real "
+            "destination-side land figure now exists, it needs a source and a "
+            "note in the provenance document, and this check needs removing "
+            "deliberately in the same commit."
+        )
+
+
+def print_land_comparison() -> None:
+    """Every client food row, both figures, and which was taken.
+
+    Printed on every build rather than recorded once in a document, because
+    the decision it reports is the one the owner asked to see and a table
+    nobody regenerates is a table that stops matching the data.
+    """
+    print()
+    print("land: the client's t/ha column inverted (10/Y m2/kg), against "
+          "Poore & Nemecek (2018) via Our World in Data, read 2026-09-23")
+    print(f"  {'client food row':36s} {'t/ha':>8s} {'client':>12s} "
+          f"{'public':>12s} {'ratio':>8s}  taken")
+    used = {
+        food for foods in NZ_FOOD_CATEGORY_SOURCES.values() for food in foods
+    } | set(LAND_STAPLES_CLIENT_ROWS)
+    for row in TABLE1:
+        c = land_comparison(row.food)
+        public = "-" if c.public_m2_per_kg is None else f"{c.public_m2_per_kg:.4f}"
+        ratio = "-" if c.ratio is None else f"{c.ratio:.2f}"
+        mark = " " if row.food in used else "*"
+        print(f"{mark} {row.food:36s} {c.yield_t_per_ha:>8} "
+              f"{c.client_m2_per_kg:>12.4f} {public:>12s} {ratio:>8s}  {c.taken}")
+    print("  * not used by any New Zealand food category in this draft.")
+    print()
+
+
 #: Metrics that carry factor rows at all in this draft. `mass` never does --
 #: its formula (`qty_kg`) needs no upstream/downstream lookup, matching the
 #: live/mock set -- so it is deliberately excluded from both checks below.
-UPSTREAM_METRICS = ("co2e", "water", "ch4")
+UPSTREAM_METRICS = ("co2e", "water", "ch4", "land")
 #: `cost` has no upstream row anywhere (see module docstring, "COST" -- it
 #: is a downstream-only figure), so it is absent from UPSTREAM_METRICS but
 #: present here.
+#:
+#: **`land` is absent here, and that is a decision rather than an omission.**
+#: The client's table 2 has no land column, and it should not have one: land
+#: occupation is a property of growing the food, and sending a kilogram to
+#: landfill, to compost or to an anaerobic digester returns no land and
+#: occupies none. An absent row resolves to zero through the documented
+#: three-step lookup order, which is the correct answer here rather than a
+#: gap. `_assert_no_land_downstream_rows()` below checks the absence
+#: mechanically, so that a future edit which adds one has to argue for it.
 DOWNSTREAM_METRICS = ("co2e", "water", "ch4", "cost")
 
 
@@ -1330,6 +1800,7 @@ def build_upstream(refed_upstream) -> list[dict]:
         rows.extend(_build_category_rows(nz_food, client_foods, refed_upstream))
     rows.extend(_build_staples_rows(refed_upstream))
     rows.extend(_build_ch4_upstream_rows(refed_upstream))
+    rows.extend(_build_land_upstream_rows())
     return rows
 
 
@@ -1682,7 +2153,7 @@ def build() -> dict:
         #: visitor something untrue. What has NOT changed is that these
         #: figures are a draft the client has not confirmed -- that is O-1,
         #: and it is what `is_mock` already drives the mandatory banner from.
-        "cumulative footprint, plus ch4 and cost) - NOT CLIENT-CONFIRMED"
+        "cumulative footprint, plus ch4, cost and land) - NOT CLIENT-CONFIRMED"
         ),
         "is_mock": True,
         "notes": (
@@ -1778,6 +2249,26 @@ def build() -> dict:
                  "cost is a downstream-only figure here (see 'COST' in the "
                  "module docstring); the upstream term is zero throughout."
              )},
+            {"metric": "land", "expression": "qty_kg * (upstream + downstream)",
+             "notes": (
+                 "Section 4.3's shape, unchanged -- the same expression co2e "
+                 "and water use. The downstream term is always zero for land "
+                 "because this set carries no downstream land row at all: the "
+                 "client's table 2 has no land column, and sending food to "
+                 "landfill or to compost returns no land and occupies none. "
+                 "An absent row resolves to zero through the documented "
+                 "three-step lookup order, so the absence is the correct "
+                 "answer rather than a gap, and "
+                 "_assert_no_land_downstream_rows() checks it on every build. "
+                 "The upstream figure is the client's own t/ha yield column "
+                 "INVERTED into land occupation per kilogram (10/Y m2/kg -- "
+                 "see land_m2_per_kg_from_yield()), checked row by row "
+                 "against Poore & Nemecek (2018) and replaced by the public "
+                 "figure wherever the two differ by ten times or more. This "
+                 "is the only factor set in this repository that carries a "
+                 "land formula, and that is what keeps every other set from "
+                 "reporting land at a silent zero (contract v1.70)."
+             )},
             {"metric": "mass", "expression": "qty_kg",
              "notes": "Same expression as the live/mock set."},
         ],
@@ -1835,12 +2326,14 @@ def build() -> dict:
     ]
 
     _assert_completeness(data)
+    _assert_no_land_downstream_rows(data)
     return data
 
 
 def main() -> int:
     out_path = HERE / "upstream_factors_draft.json"
     data = build()
+    print_land_comparison()
     out_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     n_food = len(NZ_FOOD_CATEGORY_SOURCES) + 1  # + staples
     n_sector = len(ALL_NZ_SECTORS)
@@ -1848,7 +2341,8 @@ def main() -> int:
     print(
         f"{out_path.name}: {len(data['upstream'])} upstream rows "
         f"({n_food} food categories x {n_sector} sectors x 2 metrics "
-        f"(co2e, water) + ch4 (unanchored), plus prevention overrides), "
+        f"(co2e, water) + ch4 (unanchored) + land (the client's t/ha column "
+        f"inverted, flat across sectors), plus prevention overrides), "
         f"{len(data['downstream'])} downstream rows "
         f"({n_ch4_matched} destinations matched directly to a ReFED "
         f"destination for ch4, 1 (upcycling) a stated stand-in, "

@@ -186,3 +186,224 @@ def test_a_dropped_downstream_row_stops_the_build():
 
     message = str(caught.value)
     assert "downstream compost/co2e: found 0, expected 1" in message
+
+
+# ------------------------------------------------------------------- `land`
+
+
+def test_the_yield_column_is_inverted_rather_than_used_as_printed():
+    """The one conversion nobody may skip, checked on its own arithmetic.
+
+    The client publishes land as **t/ha**, a yield. Used as a factor exactly
+    as printed it is upside down -- a bigger number would mean more land. The
+    metric reports land occupation per kilogram, so the figure is
+    ``10 / yield``, and the direction is the whole point: a high-yielding crop
+    must come out with a *small* footprint.
+
+    Three assertions, and each would survive without the other two. The
+    identity ``10/Y`` pins the value; ``Poultry`` at 57.48 t/ha against
+    ``Red Meat`` at 0.22 pins the *direction*, which an inverted conversion
+    (``Y/10``) would reverse while still producing plausible-looking numbers;
+    and the exactness check pins that it is done on ``Decimal`` -- 10/0.22 has
+    no finite binary representation, so a float round trip lands somewhere
+    near 45.454545454545453 rather than on the repeating decimal.
+    """
+    invert = build_module.land_m2_per_kg_from_yield
+
+    assert invert(Decimal("0.22")) == Decimal(10) / Decimal("0.22")
+    assert invert(Decimal("57.48")) == Decimal(10) / Decimal("57.48")
+
+    #: 57.48 t/ha is a high yield and must price LOW per kilogram; 0.22 t/ha
+    #: is a low yield and must price HIGH. `Y / 10` gets this backwards.
+    assert invert(Decimal("57.48")) < invert(Decimal("0.22"))
+
+    #: Exact, not merely close: `Decimal` arithmetic throughout (contract 1.2).
+    assert invert(Decimal("0.22")) == Decimal("45.45454545454545454545454545")
+    assert invert(Decimal("100")) == Decimal("0.1")
+
+
+def test_a_yield_of_zero_is_refused_rather_than_divided_by():
+    """An infinity here would propagate through the unweighted mean into a
+    stored factor and read on screen as a very large but ordinary number."""
+    with pytest.raises(SystemExit) as caught:
+        build_module.land_m2_per_kg_from_yield(Decimal("0"))
+    assert "cannot be inverted" in str(caught.value)
+
+
+def test_the_stated_rule_takes_the_public_figure_only_past_ten_times():
+    """The rule the owner set, on the four rows that cross it and one that
+    does not.
+
+    `Poultry` is the row the whole check exists for: 57.48 t/ha inverts to
+    0.17 m2/kg, a vegetable's footprint rather than a chicken's, and the
+    public figure is seventy times larger. `Pork` is the control -- the two
+    sources agree to within one percent, so nothing is substituted.
+
+    `Nuts and seeds` is reported rather than fixed, and this test says so in
+    executable form: its land cell is a known duplicate of Red Meat's, but it
+    sits 4.1x from the public figure, which is inside the stated threshold, so
+    the client's figure is kept. The rule is one rule; it is not re-argued per
+    row.
+    """
+    poultry = build_module.land_comparison("Poultry")
+    assert poultry.taken == "public"
+    assert poultry.public_m2_per_kg == Decimal("12.22")
+    assert poultry.ratio > Decimal(10)
+
+    pork = build_module.land_comparison("Pork")
+    assert pork.taken == "client"
+    assert pork.ratio < Decimal(10)
+
+    nuts = build_module.land_comparison("Nuts and seeds")
+    assert nuts.taken == "client", (
+        "the stated rule keeps the client's figure here; if this is to change "
+        "it is the threshold that changes, not this one row"
+    )
+    assert build_module.land_cell_duplicates("Nuts and seeds") == ("Red Meat",)
+
+    substituted = sorted(
+        row.food for row in build_module.TABLE1
+        if build_module.land_comparison(row.food).taken == "public"
+    )
+    assert substituted == ["Eggs", "Other meat", "Poultry", "Sweeteners"]
+
+
+def test_every_land_row_says_which_of_the_two_figures_it_is():
+    """"Do not quietly average them, and do not silently keep an implausible
+    client figure." Both are hidden by an unannotated number, so every row's
+    note has to name the decision.
+
+    Checked on the built set rather than on the note-building function, so a
+    row that reached the file by some other path is covered too.
+    """
+    data = build_module.build()
+    land_rows = [
+        row for row in data["upstream"]
+        if row["metric"] == "land" and row["destination"] is None
+    ]
+    assert len(land_rows) == 60, "ten food categories x six sectors"
+
+    for row in land_rows:
+        note = row["source_note"]
+        where = f"{row['food_category']}/{row['sector']}"
+        assert "YIELD, not a footprint" in note, where
+        assert "x 10,000 m2/ha" in note, where
+        assert (
+            "THE CLIENT'S FIGURE IS KEPT" in note
+            or "THE PUBLIC FIGURE IS TAKEN" in note
+            or "KEPT, UNCHECKED" in note
+        ), f"{where} does not say which of the two figures it carries"
+
+
+def test_the_client_and_public_figures_reach_the_built_categories():
+    """The comparison is only half the job: the chosen figure has to survive
+    the unweighted mean into a New Zealand category.
+
+    `vegetables` and `nuts_seeds` are one-to-one, so the built figure must
+    equal the inverted client cell exactly. `meat` is the mixed case -- two
+    client figures and two public substitutions in one mean -- and is the row
+    a change to either side would move.
+    """
+    data = build_module.build()
+    built = {
+        row["food_category"]: Decimal(row["value_per_kg"])
+        for row in data["upstream"]
+        if row["metric"] == "land" and row["destination"] is None
+    }
+
+    assert built["vegetables"] == Decimal("0.1683501684")   # 10 / 59.40
+    assert built["nuts_seeds"] == Decimal("45.4545454545")  # 10 / 0.22
+    #: mean(10/0.22, 10/0.58, 12.22 public, 181.40 public)
+    assert built["meat"] == Decimal("64.0789811912")
+
+    #: Flat across all six sectors -- land is occupied at the farm and the
+    #: same kilogram carries it wherever it is wasted.
+    for food in built:
+        values = {
+            row["value_per_kg"] for row in data["upstream"]
+            if row["metric"] == "land"
+            and row["destination"] is None
+            and row["food_category"] == food
+        }
+        assert len(values) == 1, f"{food} varies by sector: {sorted(values)}"
+
+
+def test_every_land_row_has_a_prevention_offset_at_zero():
+    """O-7's machinery, for the new metric.
+
+    `find_missing_prevention_upstream` refuses to publish a set in which any
+    (sector, food_category, metric) has a general upstream row and no
+    prevention row at zero. A land row without one would charge a prevented
+    line its full land footprint and understate the benefit of wasting less --
+    and the refusal would arrive at publication, long after the build.
+    """
+    data = build_module.build()
+    general = {
+        (row["sector"], row["food_category"])
+        for row in data["upstream"]
+        if row["metric"] == "land" and row["destination"] is None
+    }
+    offsets = {
+        (row["sector"], row["food_category"]): row["value_per_kg"]
+        for row in data["upstream"]
+        if row["metric"] == "land" and row["destination"] == "prevention"
+    }
+
+    assert general, "no general land rows at all; fix this test"
+    missing = sorted(general - set(offsets))
+    assert not missing, f"land rows with no prevention offset: {missing}"
+    assert set(offsets.values()) == {"0.0000000000"}
+
+
+def test_a_missing_land_prevention_row_stops_the_build():
+    """The completeness check reaches the new metric, not only the old three.
+
+    Dropping a prevention row is the mutation that matters here: nothing else
+    in the build notices it, and the failure it causes arrives at publication
+    time with a message about O-7 rather than at build time with a message
+    about a missing row.
+    """
+    data = build_module.build()
+    before = len(data["upstream"])
+    data["upstream"] = [
+        row for row in data["upstream"]
+        if not (
+            row["metric"] == "land"
+            and row["destination"] == "prevention"
+            and row["food_category"] == "dairy"
+            and row["sector"] == "consumer_household"
+        )
+    ]
+    assert len(data["upstream"]) == before - 1, "nothing was dropped; fix this test"
+
+    with pytest.raises(SystemExit) as caught:
+        build_module._assert_completeness(data)
+
+    assert (
+        "upstream prevention-override dairy/consumer_household/land: found 0"
+        in str(caught.value)
+    )
+
+
+def test_a_downstream_land_row_stops_the_build():
+    """The absence of a downstream land row is a decision, so it is checked.
+
+    Table 2 has no land column and should not have one -- sending a kilogram
+    to landfill returns no land and occupies none -- and an absent row already
+    resolves to zero through the documented lookup order. Without this check
+    the difference between "deliberately absent" and "somebody forgot" is a
+    paragraph in a docstring.
+    """
+    data = build_module.build()
+    assert not [row for row in data["downstream"] if row["metric"] == "land"]
+
+    data["downstream"].append({
+        "destination": "landfill", "sector": None, "food_category": None,
+        "metric": "land", "value_per_kg": "0.5000000000",
+        "source_note": "invented", "data_quality": "invented",
+    })
+
+    with pytest.raises(SystemExit) as caught:
+        build_module._assert_no_land_downstream_rows(data)
+
+    assert "downstream `land` rows for ['landfill']" in str(caught.value)

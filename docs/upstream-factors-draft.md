@@ -203,8 +203,13 @@ source spreadsheet, of the same kind that produced table 2's CO2-eq column
 (§4). It has **not** been corrected, adjusted, or excluded: the brief for
 this draft is explicit that recording provenance matters more than deciding
 which number is right, and the client's meeting is the right place to settle
-it. `nuts_seeds`'s upstream water and (unused) land figures should be treated
-as unverified until the client confirms or corrects them.
+it. `nuts_seeds`'s upstream water and land figures should be treated as
+unverified until the client confirms or corrects them. **The land half is no
+longer unused** -- §5.8 builds a `land` metric from that column, and it
+checks every cell against a public source. `Nuts and seeds` sits 4.1x from
+the public figure, inside the stated ten-times threshold, so the draft
+carries the client's 45.45 m2/kg and says in the row's own `source_note` both
+that the cell duplicates Red Meat's and what the public figure was.
 
 ## 4. Table 2: New Zealand destinations
 
@@ -831,16 +836,216 @@ understatement** for those five categories, and every affected row's
 from ReFED (0.0008804519, well below every later stage) and needs no such
 floor.
 
+### 5.8 `land` upstream: the client's yield column, inverted and checked
+
+The client's table 1 has carried a land column since the first revision and
+nothing has ever read it. The owner has ruled that `land` is introduced, so
+this revision builds it. It is contract **v1.70**; `admin/seed.py` `METRICS`
+gains one row and this draft set gains one formula.
+
+**What a new global metric cost, and what it would have cost.** `metric` has
+no `factor_set_id` -- it is global taxonomy -- so the row reaches every
+factor set, including the published one. Before v1.70 that meant the
+published set reported `land` at exactly `0E-10`, with a full set of
+by-destination rows, on the results page, in both downloads and on the PDF,
+and on a rollback to any older set as well. That was measured on
+`case_01_canonical_two_entry`'s own bundle before anything was changed.
+`FactorBundle.computed_metrics` is the rule that stops it: a set reports a
+metric when it carries a formula row, an upstream row or a downstream row for
+it. **Verified on the live stack**: the published set's answer to a 1,200 kg
+dairy submission is byte-identical before and after the metric row exists,
+and its bundle carries `land` in `metrics[]` while `computed_metrics` does
+not.
+
+#### The conversion
+
+**The client publishes `t/ha of land`, which is a yield, not a footprint.**
+Used as a factor exactly as printed it would be upside down: a bigger number
+would mean *more* land. What the metric reports is land occupation per
+kilogram of food, so
+
+```
+1 kg                        = 0.001 t
+0.001 t / (Y t/ha)          = 0.001/Y ha
+0.001/Y ha x 10,000 m2/ha   = 10/Y  m2
+```
+
+and `land_m2_per_kg = 10 / yield_t_per_ha`. That is
+`land_m2_per_kg_from_yield()` in `build_upstream_factors_draft.py`, with the
+derivation written beside the line that performs it, on `Decimal` throughout
+(contract §1.2) and refusing a zero yield rather than producing an infinity
+that would propagate as a plausible-looking factor.
+
+#### The client's land column is the loosest thing in the document
+
+Several rows are implausible once inverted. `Poultry` at 57.48 t/ha becomes
+**0.17 m2/kg**, a vegetable's footprint rather than a chicken's. `Nuts and
+seeds` carries Red Meat's `0.22` to two decimal places (§3.3), which is a
+copy rather than a measurement.
+
+So every client row is checked against a public source: **Poore & Nemecek
+(2018), *Science* 360(6392):987-992**, republished by Our World in Data as
+"Land use per kilogram of food product"
+(<https://ourworldindata.org/grapher/land-use-per-kg-poore>), fetched as CSV
+on **2026-09-23** and transcribed in full -- all thirty-eight published rows
+-- in `data/upstream-factors-draft/public_land_use_source_data.py`. Its unit
+was read from the source's own metadata document rather than inferred from
+the chart title: `m² per kilogram`, which is the same quantity this metric
+reports, so nothing in that file is converted. The figures are **global
+means, not New Zealand measurements**, and every `source_note` that uses one
+says so.
+
+Which public product row(s) stand for which client food is
+`LAND_PUBLIC_PROXIES`; several rows are an unweighted mean, for the same
+stated reason as every other aggregation in this draft (no production weights
+exist). Two of them deliberately reuse a mapping this script already makes:
+the beverages row draws Wine, Coffee and Soy milk exactly as the co2e farm
+share does, and `Other meat` -- the client's own catch-all -- draws the mean
+of all four named meats, the same construction `NZ_FOOD_CATEGORY_SOURCES`
+uses for `meat`.
+
+#### One stated rule, and every row says which way it went
+
+**Where the client-derived figure and the public one differ by a factor of
+ten or more, the public figure is taken; otherwise the client's is kept.**
+Nothing is averaged between them and no row is silent about which it carries:
+every `source_note` gives both numbers, the ratio, the threshold and the
+outcome. `print_land_comparison()` prints the whole table on every build, so
+it cannot drift from the data.
+
+| client food row | t/ha | client-derived m²/kg | public m²/kg | ratio | taken |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Bread | 9.36 | 1.0684 | 3.8500 | 3.60 | client |
+| Bakery | 9.36 | 1.0684 | 3.8500 | 3.60 | client |
+| Cheese | 0.95 | 10.5263 | 87.7900 | 8.34 | client |
+| Milk | 9.74 | 1.0267 | 8.9500 | 8.72 | client |
+| Cream | 0.95 | 10.5263 | 8.9500 | 1.18 | client |
+| Butter | 0.95 | 10.5263 | 8.9500 | 1.18 | client |
+| Yoghurt | 0.95 | 10.5263 | 8.9500 | 1.18 | client |
+| Other dairy | 9.74 | 1.0267 | 8.9500 | 8.72 | client |
+| Eggs *(used by no category)* | 26.00 | 0.3846 | 6.2700 | 16.30 | **public** |
+| Drinks/Beverages (excluding dairy) | 5.95 | 1.6807 | 8.0200 | 4.77 | client |
+| Fruit | 11.81 | 0.8467 | 1.3440 | 1.59 | client |
+| Vegetable | 59.40 | 0.1684 | 0.4900 | 2.91 | client |
+| Red Meat | 0.22 | 45.4545 | 348.0100 | 7.66 | client |
+| Pork | 0.58 | 17.2414 | 17.3600 | 1.01 | client |
+| Poultry | 57.48 | 0.1740 | 12.2200 | **70.24** | **public** |
+| Other meat | 19.42 | 0.5149 | 181.4000 | **352.28** | **public** |
+| Seafood | 1.19 | 8.4034 | 5.6900 | 1.48 | client |
+| Grains | 9.06 | 1.1038 | 3.6600 | 3.32 | client |
+| Nuts and seeds | 0.22 | 45.4545 | 11.0350 | 4.12 | client |
+| Fats | 35.61 | 0.2808 | — | — | client, unchecked |
+| Sauces Spreads Dips | 59.40 | 0.1684 | — | — | client, unchecked |
+| Herbs/Spices | 45.68 | 0.2189 | — | — | client, unchecked |
+| Snack Foods and desserts | 0.93 | 10.7527 | — | — | client, unchecked |
+| Sweeteners | 82.00 | 0.1220 | 1.9350 | **15.87** | **public** |
+| Other Food Types | 17.59 | 0.5685 | — | — | client, unchecked |
+| General mixed food product | 18 | 0.5556 | — | — | client, unchecked |
+
+A dash means no single public product row corresponds to that client row --
+it is a composite or a catch-all -- so the client figure could not be checked
+and its `source_note` says so rather than implying corroboration that does
+not exist. `General mixed food product` is the one that matters most, because
+`standard_mix` is the category a visitor who does not break their waste down
+by type receives.
+
+**`Nuts and seeds` is reported rather than fixed, and that is the rule
+working rather than failing.** Its land cell is a verbatim duplicate of Red
+Meat's, which §3.3 already flags as a probable copy-paste -- but it sits 4.1×
+from the public figure, inside the stated threshold, so the client's 45.45
+m²/kg is what the draft carries. Changing that means changing the threshold,
+not this one row. `land_cell_duplicates()` detects duplicate land cells
+mechanically across the whole table and every affected row's `source_note`
+names the other rows sharing the cell, so a reader has both facts. The other
+duplicate groups it finds are Cheese/Cream/Butter/Yoghurt at 0.95 and
+Milk/Other dairy at 9.74 -- plausible for a shared dairy base -- and
+Vegetable/Sauces Spreads Dips at 59.40.
+
+#### Flat across all six sectors
+
+Unlike `co2e`, `water` and `ch4`, `land` is **not** built as a cumulative
+footprint. Those accumulate along the chain: a kilogram wasted at retail
+carries the processing and transport a kilogram wasted at the farm gate does
+not. Land does not. The land was occupied to grow the food, and the same
+kilogram carries the same land wherever along the chain it is thrown away.
+Both sources here are farm-gate quantities -- the client's t/ha is a field
+yield, Poore & Nemecek's m²/kg is land used to produce one kilogram -- and
+neither publishes a downstream land term, so there is nothing to escalate a
+later stage with. There is also no ReFED shape to anchor against: ReFED
+publishes no land figure for any category or destination, so none of §5.2's
+anchoring, scaling or clamping machinery applies.
+
+This is very likely a slight **understatement** for the later stages, for the
+same reason the cumulative construction exists elsewhere: a kilogram that
+reaches a supermarket shelf embodies rather more than a kilogram of farm
+output, because some was lost on the way. Nothing available quantifies that
+for land, so every row's `source_note` flags it rather than estimating it.
+
+#### What the ten categories come out at
+
+| food category | m²/kg | built from |
+| --- | ---: | --- |
+| `vegetables` | 0.1684 | Vegetable (client) |
+| `standard_mix` | 0.5556 | General mixed food product (client, unchecked) |
+| `fruit` | 0.8467 | Fruit (client) |
+| `bakery_grains` | 1.0802 | Bread, Bakery, Grains (all client) |
+| `beverages` | 1.6807 | Drinks/Beverages (client) |
+| `staples` | 2.3207 | the six pantry rows; Sweeteners public, five client |
+| `dairy` | 7.3598 | six client rows |
+| `seafood` | 8.4034 | Seafood (client) |
+| `nuts_seeds` | 45.4545 | Nuts and seeds (client; see the note above) |
+| `meat` | 64.0790 | Red Meat and Pork client, Poultry and Other meat public |
+
+`display_precision` is **1**, chosen from that range rather than copied from a
+neighbour: `qty_kg` accepts three decimal places, so at precision 0 a
+`vegetables` entry under 2.97 kg would print `0` -- a real measurement
+rendered as none, the defect class this whole draft exists to remove. At
+precision 1 that floor is 0.30 kg. Measured on the loaded set: 1 kg of
+vegetables is 0.1684 m², 23 kg of mixed waste 12.8 m², 500 kg of meat
+32,039.5 m².
+
+`staples` has no client row of its own and ReFED publishes no land at all, so
+neither of the two routes §5.4 and §5.7 use exists. It is built instead from
+the six client rows `admin/seed.py`'s own `FOOD_ITEMS` files under `staples`
+-- Fats, Sauces Spreads Dips, Herbs/Spices, Snack Foods and desserts,
+Sweeteners and Other Food Types -- which is the client's own data reaching
+`staples` through this repository's own documented item mapping. The `eggs`
+item is filed there too and is **deliberately excluded**: §3.2 leaves the
+client's Eggs row out of every category for `co2e` and `water`, and pricing
+one metric on a membership the other two do not use would be inconsistent.
+Its comparison is computed and printed anyway, marked as used by nothing.
+
+#### No downstream land row, and that is the answer
+
+`factor_downstream` carries **no** `land` row for any destination. The
+client's table 2 has no land column and should not have one: sending a
+kilogram to landfill, to compost or to an anaerobic digester returns no land
+and occupies none. An absent row already resolves to zero through §2.2's
+documented three-step lookup order, so writing seventeen explicit zeroes
+would say the same thing at more length. What makes it a decision rather than
+an oversight is `_assert_no_land_downstream_rows()`, which refuses a build
+that adds one.
+
+`prevention` keeps the whole-offset treatment (O-7): sixty upstream rows at
+zero against the prevention destination, one per (sector, food category), so
+a prevented line carries no land burden. `find_missing_prevention_upstream()`
+returns empty for the loaded set, which is the check that would otherwise
+refuse the publication.
+
 ## 6. What is not represented, and why
 
-- **`land`** -- the client's table 1 gives t/ha for every food row. This
-  system has no `land` metric to receive it (`admin/seed.py` `METRICS`:
-  `co2e`, `ch4`, `water`, `cost`, `mass`). Adding one is a metric-table
-  change with system-wide effect (every existing result, on every factor
-  set, would gain a `land` line at zero the moment the row exists -- §4.1 of
-  `docs/architecture.md`, "metrics are data, not code" and "the engine
-  iterates every active row"). That decision belongs to the owner, and is
-  not taken here.
+- **`land` was in this list and no longer is.** The owner has ruled that the
+  metric is introduced, and §5.8 is the whole construction: the client's t/ha
+  yield column inverted into m2/kg, checked row by row against Poore &
+  Nemecek (2018), with four rows replaced where the two disagreed by a factor
+  of ten or more. The system-wide effect this bullet warned about was real and
+  was measured -- a `land` line at zero on every set that has no land formula,
+  including the published one -- and contract v1.70's
+  `FactorBundle.computed_metrics` is what removes it. What is **not**
+  represented for land: any figure that is a New Zealand measurement rather
+  than the client's own draft column or a global mean, and any downstream
+  land term (§5.8's last subsection -- an absence that is the answer rather
+  than a gap).
 - **The waste levy's own "disposal cost" component beyond the statutory
   levy itself** -- landfill gate fees vary by facility and contract and no
   New-Zealand-wide public figure was found for them, so `cost` in this
@@ -868,7 +1073,8 @@ cell that found an actual matching ReFED destination (§4.4).
 `_assert_completeness()` in `build_upstream_factors_draft.py` checks that
 every one of the ten food categories carries a generic AND a
 prevention-override upstream row, for every one of the six sectors, for
-`co2e`, `water` and `ch4`; and that every one of the fourteen destinations
+`co2e`, `water`, `ch4` and (as of v1.70) `land`; and that every one of the
+fourteen destinations
 carries exactly one downstream row for `co2e`, `water`, `ch4` and `cost`
 (`mass` is exempt -- its formula needs no factor lookup at all, matching the
 live/mock set). It raises `SystemExit` naming the exact missing (or
@@ -890,8 +1096,9 @@ half-applied revision looks like. It replaces `TABLE2_CO2_COPY_SOURCE`'s check
 the transcription and the prose about it. Both checks are exercised by
 `tests/test_upstream_factors_draft_build.py`.
 
-What remains genuinely unfilled after this revision: `land`
-(no metric exists), gate fees beyond the statutory levy (no public source
+What remains genuinely unfilled after this revision: a New Zealand land
+measurement (§5.8 carries the client's own draft column and, for four rows,
+a global mean), gate fees beyond the statutory levy (no public source
 found), and `eggs`/`staples`' still-unresolved status as noted in §3.2
 (`staples` itself *is* seeded, from ReFED alone, per the owner's ruling;
 `eggs` remains an unseeded gap pending a taxonomy or client decision).

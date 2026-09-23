@@ -162,6 +162,27 @@ METRICS = [
     ("water", "Water", "L", "L", 0, 30),
     ("cost", "Cost", "NZD", None, 0, 40),
     ("mass", "Mass", "kg", "kg", 1, 50),
+    #: v1.70. The sixth metric, and the one column the client has supplied all
+    #: along that this calculator did not report.
+    #:
+    #: **`m2` in `unit`, `m²` in `display_unit`**, which is exactly the shape
+    #: `co2e` above uses for `kg CO2e` / `kg CO₂e`: same quantity, same scale,
+    #: a typographic difference and nothing more. `unit` is what §6.2 puts on
+    #: the wire beside every total and what `results.js` prints; `display_unit`
+    #: is what the PDF prints. Measured rather than assumed: `²` (U+00B2) has a
+    #: glyph in Geologica Bold, Kumbh Sans, Noto Sans and all four CJK subsets
+    #: -- the CJK recut script includes the printable half of Latin-1
+    #: Supplement for exactly this kind of character -- and a PDF carrying it
+    #: was rendered and looked at rather than inferred from a cmap.
+    #:
+    #: **Precision 1, from the magnitudes the conversion actually produces.**
+    #: The draft set's land factors span 0.1684 m²/kg (vegetables) to 64.0790
+    #: (meat). `qty_kg` accepts three decimal places, so at precision 0 a
+    #: vegetables entry below 2.97 kg would read `0 m2` -- a real measurement
+    #: printed as none, which is the failure this project keeps finding. At
+    #: precision 1 that floor is 0.30 kg. One place also matches `co2e`, whose
+    #: per-kilogram factors sit in the same range.
+    ("land", "Land use", "m2", "m²", 1, 60),
 ]
 
 #: The one bulk density every row below is built from, in kg per litre.

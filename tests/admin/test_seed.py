@@ -139,11 +139,40 @@ def test_every_food_category_the_contract_names_is_present(session):
 
 
 def test_every_metric_the_contract_names_is_present(session):
+    """Six since contract v1.70, when `land` was added.
+
+    `land` is the one column the client's own document has always carried and
+    this calculator never reported. It is a plain equality rather than a
+    superset check for the same reason the food-category test above is: a
+    metric added without a contract revision is a metric no other stream knows
+    about, and `metric` is global, so it lands in every factor set.
+    """
     seed_taxonomy(session)
     session.flush()
 
     codes = {m.code for m in session.scalars(select(Metric)).all()}
-    assert codes == {"co2e", "ch4", "water", "cost", "mass"}
+    assert codes == {"co2e", "ch4", "water", "cost", "mass", "land"}
+
+
+def test_the_land_unit_is_ascii_and_its_display_unit_is_typographic(session):
+    """v1.70. The same split `co2e` uses, and it is not decoration.
+
+    §6.1 rules `display_unit` a presentation variant of `unit` AT THE SAME
+    SCALE. `m2` and `m²` are the same quantity written two ways -- exactly
+    like `kg CO2e` and `kg CO₂e` -- so this pair is legal where `t` against a
+    `kg` unit would not be. `unit` is what §6.2 puts on the wire beside every
+    total; `display_unit` is what `api/pdf_render.py` prints, and a PDF
+    carrying it was rendered and looked at rather than inferred from a cmap.
+    """
+    seed_taxonomy(session)
+    session.flush()
+
+    land = session.scalar(select(Metric).where(Metric.code == "land"))
+    assert (land.name, land.unit, land.display_unit) == ("Land use", "m2", "m²")
+    #: Chosen from the magnitudes the draft set's conversion produces
+    #: (0.1684 m²/kg for vegetables through 64.0790 for meat): at 0 places a
+    #: vegetables entry under 2.97 kg would print as no land at all.
+    assert land.display_precision == 1
 
 
 def test_unit_presets_are_marked_as_placeholder_data(session):

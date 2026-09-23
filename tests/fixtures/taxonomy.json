@@ -175,7 +175,8 @@
     { "code": "ch4", "name": "Methane", "unit": "kg CH4", "display_unit": null, "display_precision": 1, "sort_order": 20 },
     { "code": "water", "name": "Water", "unit": "L", "display_unit": "L", "display_precision": 0, "sort_order": 30 },
     { "code": "cost", "name": "Cost", "unit": "NZD", "display_unit": null, "display_precision": 0, "sort_order": 40 },
-    { "code": "mass", "name": "Mass", "unit": "kg", "display_unit": "kg", "display_precision": 1, "sort_order": 50 }
+    { "code": "mass", "name": "Mass", "unit": "kg", "display_unit": "kg", "display_precision": 1, "sort_order": 50 },
+    { "code": "land", "name": "Land use", "unit": "m2", "display_unit": "m²", "display_precision": 1, "sort_order": 60 }
   ],
   "unit_presets": [
     { "code": "bucket_10l_full", "label": "10 L bucket (full)", "food_category": null, "kg_per_unit": "2.9000" },

@@ -424,6 +424,15 @@ function summaryCards(totals, taxonomy) {
 // `value` across entries and then rendered three hard-coded English labels of its own for
 // three hard-coded codes, so a new equivalence never appeared and the client's approved
 // wording was overridden (§7.6.5).
+//
+// **§6.2 (v1.71): this array is not every equivalence the factor set publishes.** Where
+// several rows share a `family` they are rungs of one ladder -- the same comparison at
+// several sizes -- and the response carries the ONE the engine chose for this submission,
+// so that a small result reads "500 ten-minute showers" instead of "0 Olympic swimming
+// pools". Nothing here selects, filters or re-orders: the array is already the answer, in
+// the order it should be drawn. A `family` is not on the wire and must not be inferred --
+// which rung a reader sees is a server-side decision (§7.6 rule 1), exactly as the number
+// inside the sentence is.
 function equivalences(totals, isMock) {
   const rows = totals.current?.equivalences || []
   if (!rows.length) return `<p class="empty-state">${escapeHtml(t('Tangible equivalents are available once approved conversion factors are supplied.'))}</p>`

@@ -739,6 +739,21 @@ def build_bundle_data(session: Session, factor_set_id: int) -> dict[str, Any]:
                 "source_metric": metric,
                 "value_per_unit": str(x.value_per_unit),
                 "label_template": x.label_template,
+                #: v1.71's four ladder columns. Present-and-null rather than
+                #: omitted when unset, on the same terms as `source_note`
+                #: beside them: §6.3 is the public factor export and a
+                #: consumer has to be able to tell "this row is not a rung of
+                #: anything" from "this endpoint does not report ladders".
+                #:
+                #: Unlike `source_note`, these are **read by the engine** --
+                #: §10.2 makes them optional in a bundle and the engine
+                #: selects on them, so a projection that dropped them would
+                #: not merely hide provenance, it would silently un-ladder
+                #: every set a staff member pastes into the dry-run box.
+                "family": x.family,
+                "min_value": None if x.min_value is None else str(x.min_value),
+                "max_value": None if x.max_value is None else str(x.max_value),
+                "label_template_one": x.label_template_one,
                 "source_note": x.source_note,
                 "sort_order": x.sort_order,
             }

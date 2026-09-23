@@ -174,6 +174,24 @@ def load_factor_set(session: Session, data: dict) -> tuple[int, dict[str, int]]:
                 metrics, row["source_metric"], "metric", where),
             value_per_unit=Decimal(str(row["value_per_unit"])),
             label_template=row["label_template"],
+            #: v1.71's ladder columns. Named individually rather than
+            #: splatted, for the reason the section check below exists: a key
+            #: this loader does not read is a key the JSON carries and the
+            #: database never sees, and the `equivalences` section itself was
+            #: silently dropped that way once already. Dropping these four
+            #: would land a set whose rungs are all shown at once -- three
+            #: sentences saying the same thing at three sizes -- with nothing
+            #: saying so.
+            label_template_one=row.get("label_template_one"),
+            family=row.get("family"),
+            min_value=(
+                None if row.get("min_value") is None
+                else Decimal(str(row["min_value"]))
+            ),
+            max_value=(
+                None if row.get("max_value") is None
+                else Decimal(str(row["max_value"]))
+            ),
             source_note=row.get("source_note"),
             sort_order=int(row.get("sort_order", 0)),
         ))

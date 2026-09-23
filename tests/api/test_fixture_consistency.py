@@ -268,6 +268,18 @@ def test_factor_rows_reference_the_taxonomy(taxonomy, factors):
         assert row["source_metric"] in metrics
         assert "{value}" in row["label_template"]
         assert "source_note" in row  # §6.3; equivalence has no data_quality
+        #: §6.3 (v1.71): the four ladder columns are present-and-null, never
+        #: omitted, on the same terms as `source_note` above and for the same
+        #: reason -- a consumer has to be able to tell "this row is not a rung
+        #: of anything" from "this endpoint does not report ladders". `in row`
+        #: separately from the value, because `row.get("family")` would pass
+        #: on a row that omits the key entirely.
+        for key in ("family", "min_value", "max_value", "label_template_one"):
+            assert key in row, f"equivalence {row['code']} omits {key}"
+        #: Mirrors `ck_equivalence_band_needs_family` (alembic 0019). A band on
+        #: a row with no family is a rule that can never fire.
+        if row["family"] is None:
+            assert row["min_value"] is None and row["max_value"] is None
 
     # §2.1: prevention contributes no downstream impact, in every metric that
     # names it at all.
@@ -716,14 +728,55 @@ def test_every_equivalence_is_derived_from_the_metric_total_it_names(name, facto
     """
     fixture = load(name)
     specs = {row["code"]: row for row in factors["equivalences"]}
+    ordered = sorted(factors["equivalences"], key=lambda r: (r["sort_order"], r["code"]))
+
+    #: §2.2/§4.2 (v1.71): one rung per ladder, and **the whole submission's
+    #: CURRENT scenario chooses it** -- for the alternative and for every
+    #: entry as well as for the totals. Re-derived here from the factor
+    #: export rather than read off the response, on the same terms as every
+    #: other number this file checks: a response that chose its rungs some
+    #: other way has to fail, and one that chose a *different* rung per
+    #: scenario has to fail too, which is the failure this list being
+    #: computed once rather than per scenario is what catches.
+    def chosen_rung(family):
+        rungs = [row for row in ordered if row["family"] == family]
+        current = fixture["totals"]["current"]
+        for row in rungs:
+            source = current["metrics"].get(row["source_metric"])
+            if source is None:
+                continue
+            value = Decimal(source["total"]) * Decimal(row["value_per_unit"])
+            low = row["min_value"]
+            high = row["max_value"]
+            if low is not None and value < Decimal(low):
+                continue
+            if high is not None and value >= Decimal(high):
+                continue
+            return row["code"]
+        #: The family's first row is the fallback -- the top of the ladder,
+        #: which is the figure that was there before ladders existed.
+        return rungs[0]["code"]
+
+    expected_codes = []
+    placed = set()
+    for row in ordered:
+        if row["family"] is None:
+            expected_codes.append(row["code"])
+        elif row["family"] not in placed:
+            #: A ladder occupies the page position of its FIRST row, not of
+            #: the rung that won, so a submission that drops a rung does not
+            #: also move the card.
+            expected_codes.append(chosen_rung(row["family"]))
+            placed.add(row["family"])
 
     def check(scenario, where):
         if scenario is None:
             return
         assert scenario["equivalences"], f"{where}: no equivalences at all"
-        assert [item["code"] for item in scenario["equivalences"]] == [
-            row["code"] for row in sorted(specs.values(), key=lambda r: r["sort_order"])
-        ], f"{where}: equivalences are not the published set, in sort_order"
+        assert [item["code"] for item in scenario["equivalences"]] == expected_codes, (
+            f"{where}: equivalences are not the published set, in sort_order, "
+            "with one rung per ladder"
+        )
         for item in scenario["equivalences"]:
             spec = specs[item["code"]]
             source = item["source_metric"]
@@ -735,10 +788,20 @@ def test_every_equivalence_is_derived_from_the_metric_total_it_names(name, facto
                 f"{total} x {spec['value_per_unit']} is {expected}"
             )
             shown = f"{expected.quantize(Decimal('1'), rounding=ROUND_HALF_UP):,}"
-            assert item["label"] == spec["label_template"].replace("{value}", shown), (
+            #: §3 rule 5 (v1.71): the singular template when the PRINTED
+            #: number is exactly 1. Written out here although no value in
+            #: this set lands on it, for the same reason `ROUND_HALF_UP` is:
+            #: both branches pass on today's fixtures and only one of them is
+            #: the rule, so leaving it implicit would pin the wrong one the
+            #: first time a ladder drove a figure to one -- which a ladder
+            #: does by design.
+            template = spec["label_template"]
+            if shown == "1" and spec.get("label_template_one"):
+                template = spec["label_template_one"]
+            assert item["label"] == template.replace("{value}", shown), (
                 f"{where}.{item['code']}: label is {item['label']!r}, the "
                 f"template interpolates to "
-                f"{spec['label_template'].replace('{value}', shown)!r}"
+                f"{template.replace('{value}', shown)!r}"
             )
 
     for scenario in ("current", "alternative"):

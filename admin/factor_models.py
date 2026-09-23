@@ -15,8 +15,8 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import (
-    DECIMAL, Boolean, DateTime, Enum, ForeignKey, Index, Integer, String,
-    Text, UniqueConstraint, text,
+    DECIMAL, Boolean, CheckConstraint, DateTime, Enum, ForeignKey, Index,
+    Integer, String, Text, UniqueConstraint, text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -384,11 +384,40 @@ class Equivalence(Base):
     `label_template` lives in the row, not in a front-end template, so staff
     can add a fourth equivalence or reword an existing one without a code
     change — the same reasoning as the metric table.
+
+    **`family`, `min_value` and `max_value` make a set of rows into a ladder**
+    (v1.71). Measured against the published set, "Olympic swimming pools" reads
+    `0` for any submission below 638.755 kg and "passenger vehicles for a year"
+    below 403.737 kg, so a 23 kg café's week showed two of three cards reading
+    zero. The rungs below those units are rows here rather than code, for the
+    same reason the equivalences themselves are: adding one is an INSERT.
+    `engine/calculate.py::_select_rungs` does the choosing and names no family,
+    no code and no band anywhere.
     """
 
     __tablename__ = "equivalence"
     __table_args__ = (
         UniqueConstraint("factor_set_id", "code", name="uq_equivalence_code"),
+        #: v1.71, and both are in the schema as well as in the panel's form
+        #: for the reason `ck_submission_period` is: a rule the panel holds
+        #: and the schema does not is a rule that lasts until the first write
+        #: that does not go through the panel — the loader in
+        #: `data/upstream-factors-draft/`, a CLI, a correction made by hand.
+        #:
+        #: A band on a row with no family is a rule that can never fire,
+        #: because selection only ever happens within a family. Refused rather
+        #: than ignored, so "I set a minimum and nothing happened" is
+        #: unreachable.
+        CheckConstraint(
+            "family IS NOT NULL OR (min_value IS NULL AND max_value IS NULL)",
+            name="ck_equivalence_band_needs_family",
+        ),
+        #: An inverted band admits nothing, and a rung that can never be
+        #: chosen is a rung that silently is not there.
+        CheckConstraint(
+            "min_value IS NULL OR max_value IS NULL OR min_value < max_value",
+            name="ck_equivalence_band_ordered",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -402,6 +431,40 @@ class Equivalence(Base):
     )
     value_per_unit: Mapped[Decimal] = mapped_column(DECIMAL(20, 10), nullable=False)
     label_template: Mapped[str] = mapped_column(String(255), nullable=False)
+    #: v1.71. Which ladder this row is a rung of, or NULL for a row that is
+    #: not a rung of anything and is therefore always shown — the pre-v1.71
+    #: meaning, and what every row in every database carried before this
+    #: column existed.
+    #:
+    #: **`source_metric_id` cannot serve as this.** A vehicle kilometre, a
+    #: vehicle-day and a vehicle-year are all conversions of `co2e` and *are*
+    #: one ladder; two different framings of `co2e` would share the source
+    #: metric too and must not displace each other. "Same source metric" and
+    #: "same ladder" are different claims and only the second one selects.
+    family: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    #: v1.71. The half-open band `[min_value, max_value)` of **this row's own
+    #: converted value** — not of the metric total — within which this rung is
+    #: eligible. NULL on either side means unbounded there; a rung with
+    #: neither is its family's catch-all.
+    #:
+    #: On the converted value because a ten-minute shower is 90 litres
+    #: whatever a kilogram of waste costs in water: real factors (open item
+    #: O-1) change which rung a submission lands on and change nothing about
+    #: where the rungs are.
+    min_value: Mapped[Decimal | None] = mapped_column(DECIMAL(20, 10), nullable=True)
+    max_value: Mapped[Decimal | None] = mapped_column(DECIMAL(20, 10), nullable=True)
+    #: v1.71. The sentence to use when the interpolated whole number is
+    #: exactly `1`. NULL means none was given and `label_template` is used as
+    #: before.
+    #:
+    #: A second staff-typed string rather than a pluralisation rule in the
+    #: engine: §7.6 rule 9 already forbids translating or rewording these
+    #: sentences, which are the client's approved wording, and English
+    #: grammar in a module that serves twenty languages is a rule that would
+    #: be wrong in most of them. `Equivalent to 1 Olympic swimming pools of
+    #: water` is what this repository printed before the column existed, and
+    #: a ladder drives the displayed number toward 1 by design.
+    label_template_one: Mapped[str | None] = mapped_column(String(255), nullable=True)
     #: Open item O-3: the New Zealand basis for km driven, meals and showers
     #: is unsettled, and an equivalence with no stated source is the figure
     #: most likely to be challenged in public.

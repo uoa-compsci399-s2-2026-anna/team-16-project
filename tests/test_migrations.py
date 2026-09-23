@@ -404,6 +404,36 @@ def test_the_chain_creates_the_check_constraints_compare_metadata_cannot_see(
             f"Clause: {clauses['ck_submission_period']}"
         )
 
+    #: 0019's two CHECKs (contract §2.2, v1.71), and the blind spot a third
+    #: time: tests/db/test_equivalence_bands.py proves both refusals
+    #: behaviourally off the create_all() schema and would stay green if
+    #: either op.execute in 0019 were dropped.
+    assert "ck_equivalence_band_needs_family" in clauses, (
+        "alembic upgrade head did not create ck_equivalence_band_needs_family. "
+        "Without it a staff member can set a band on a row with no family, "
+        "where selection never looks at it -- a minimum that is stored, "
+        f"audited and can never fire. Found: {sorted(clauses)}"
+    )
+    for column in ("family", "min_value", "max_value"):
+        assert column in clauses["ck_equivalence_band_needs_family"], (
+            f"ck_equivalence_band_needs_family no longer mentions {column}; "
+            "the rule spans all three and a clause that dropped one would "
+            "still be a constraint that exists, is named right and enforces "
+            f"less than it says. Clause: "
+            f"{clauses['ck_equivalence_band_needs_family']}"
+        )
+    assert "ck_equivalence_band_ordered" in clauses, (
+        "alembic upgrade head did not create ck_equivalence_band_ordered. "
+        "Without it a band may be inverted or empty, which makes a rung that "
+        f"can never be chosen look exactly like one nobody added. Found: "
+        f"{sorted(clauses)}"
+    )
+    for column in ("min_value", "max_value"):
+        assert column in clauses["ck_equivalence_band_ordered"], (
+            f"ck_equivalence_band_ordered no longer mentions {column}. "
+            f"Clause: {clauses['ck_equivalence_band_ordered']}"
+        )
+
 
 @pytest.mark.db
 def test_the_chain_gives_the_submission_its_period_columns(migrated_engine):

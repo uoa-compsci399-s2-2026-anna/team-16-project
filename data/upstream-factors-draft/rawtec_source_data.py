@@ -96,8 +96,9 @@ rows and for sewer, and 0.04 for the two redistribution rows. Compost at
 direction the underlying question actually runs.
 
 *What this does not settle.* O-1 stays open. These are still the client's
-draft figures, ``is_mock`` stays ``true``, the set stays unpublished, and the
-placeholder banner stays mandatory. The correction removes a defect; it does
+draft figures, ``is_mock`` stays ``true``, the set built from the corrected
+column is loaded as a draft and is **not** published, and the placeholder
+banner stays mandatory. The correction removes a defect; it does
 not make the data confirmed.
 
 The water column is not implicated in that copy-paste -- it was identical in

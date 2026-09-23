@@ -300,9 +300,70 @@ def test_a_metric_added_to_the_bundle_needs_no_code_change(bundle):
     assert after.metrics["co2e"].total == before.metrics["co2e"].total
 
 
-#: The five metric codes `admin/seed.py` ships. None of them may appear as a
+def test_a_metric_the_set_says_nothing_about_is_not_reported_at_zero(bundle):
+    """v1.70. `metric` is global; a factor set is not.
+
+    The defect this closes, measured before it was: `metric` has no
+    `factor_set_id` (§2.1) and `get_taxonomy_for_bundle` is a deliberate
+    superset (§5.1), so one INSERT into the global table put the new metric in
+    **every** bundle -- including a set published months earlier that has never
+    heard of it. `formula()` then fell back to `DEFAULT_FORMULA`, every factor
+    lookup fell through §4.1's chain to `Decimal('0')`, and the engine returned
+    a real-looking total of `0E-10` with a full set of by-destination rows. On
+    the results page, in both downloads and on the PDF that is indistinguishable
+    from a measurement of none, and a rollback to an older set shows it too.
+
+    A metric row is a word in the vocabulary. A factor set computes it only
+    when the set itself says something about it.
+    """
+    document = copy.deepcopy(BUNDLE_JSON)
+    document["metrics"].append(
+        {"code": "land", "name": "Land use", "unit": "m2",
+         "display_precision": 1, "sort_order": 60}
+    )
+    widened = FactorBundle.from_json(document)
+    assert widened.validate() == []
+
+    before = scenario(bundle, (line("landfill", "1000.000"),))
+    after = scenario(widened, (line("landfill", "1000.000"),))
+
+    assert "land" not in after.metrics, (
+        "a metric this factor set carries no formula and no factor row for was "
+        "reported anyway, at zero"
+    )
+    assert list(after.metrics) == list(before.metrics)
+
+
+def test_a_factor_row_alone_still_reaches_the_default_formula(bundle):
+    """The other half of v1.70's rule, and the reason it is not "formula only".
+
+    §4.1's `DEFAULT_FORMULA` exists so a set need not restate the standard
+    expression for a metric it prices in the ordinary way. Narrowing to
+    *formula* rows alone would have deleted that, silently, for any set that
+    relied on it. The rule is **formula row or factor row**, and this is the
+    case that distinguishes the two.
+    """
+    document = copy.deepcopy(BUNDLE_JSON)
+    document["metrics"].append(
+        {"code": "land", "name": "Land use", "unit": "m2",
+         "display_precision": 1, "sort_order": 60}
+    )
+    document["upstream"].append(
+        {"sector": "processing", "food_category": "dairy", "destination": None,
+         "metric": "land", "value_per_kg": "7.3598000000"}
+    )
+    widened = FactorBundle.from_json(document)
+    assert widened.validate() == []
+
+    after = scenario(widened, (line("landfill", "1000.000"),))
+    assert "land" in after.metrics
+    #: 1000 x (7.3598 + 0) -- `qty_kg * (upstream + downstream)`, the default.
+    assert after.metrics["land"].total == Decimal("7359.8000000000")
+
+
+#: The six metric codes `admin/seed.py` ships. None of them may appear as a
 #: string literal anywhere in `engine/`.
-SHIPPED_METRIC_CODES = ("co2e", "ch4", "water", "cost", "mass")
+SHIPPED_METRIC_CODES = ("co2e", "ch4", "water", "cost", "mass", "land")
 
 
 @pytest.mark.parametrize("code", SHIPPED_METRIC_CODES)

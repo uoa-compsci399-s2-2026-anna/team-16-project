@@ -5,10 +5,15 @@ entry point outside `engine/` (§4.2 names this module for that reason).
 Four properties of this file are load-bearing, and each of them replaced a
 walking-skeleton shortcut whose failure mode was silent:
 
-**No metric code appears here.** The loop iterates `bundle.metrics` and
-evaluates each metric's stored formula. Adding a metric costs one INSERT and
-one expression, never a call site -- and `tests/test_calculator.py` proves it
-by adding a metric *row* rather than by checking that today's metrics render.
+**No metric code appears here.** The loop iterates `bundle.computed_metrics`
+and evaluates each metric's stored formula. Adding a metric costs one INSERT
+and one expression, never a call site -- and `tests/test_calculator.py` proves
+it by adding a metric *row* rather than by checking that today's metrics
+render. `computed_metrics` rather than `metrics` since v1.70: `metric` is a
+global table, so the vocabulary is wider than any one factor set, and a set
+that carries neither a formula nor a factor row for a metric has nothing to
+compute from -- see `FactorBundle.computed_metrics` for what reporting it
+anyway looked like on screen.
 
 **A formula computes one line; the engine performs the summation** (§4.3):
 
@@ -239,7 +244,7 @@ def calculate_scenario(
     constants = _constant_bindings(bundle, gwp_horizon)
 
     metrics: dict[str, MetricResult] = {}
-    for spec in bundle.metrics:
+    for spec in bundle.computed_metrics:
         formula = bundle.formula(spec.code)
         rows: list[BreakdownRow] = []
         total = Decimal("0")

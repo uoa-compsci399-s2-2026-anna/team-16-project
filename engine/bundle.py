@@ -301,6 +301,42 @@ class FactorBundle:
             return self.formulas[metric]
         return DEFAULT_FORMULA
 
+    @property
+    def computed_metrics(self) -> tuple[MetricSpec, ...]:
+        """The metrics THIS factor set computes, in `metrics` order (v1.70).
+
+        `metrics` is the whole active metric vocabulary -- §2.1 makes `metric`
+        a global table with no `factor_set_id`, and §5.1 keeps
+        `get_taxonomy_for_bundle` a deliberate superset. A *factor set* is a
+        narrower thing: it computes a metric when it says something about it,
+        which is a `formula` row, an `factor_upstream` row or a
+        `factor_downstream` row of its own.
+
+        **Why this exists.** Without it, adding one row to the global `metric`
+        table makes every factor set that has never heard of that metric report
+        it at exactly zero -- `formula()` falls back to `DEFAULT_FORMULA`,
+        every factor lookup falls through §4.1's chain to `Decimal('0')`, and
+        the engine returns a real-looking `0.0` line. That reaches the results
+        page, both downloads and the PDF, and on screen it is indistinguishable
+        from a measurement of none. It is also retroactive: a rollback to an
+        older set shows the same zero. Measured on `case_01`'s own bundle with
+        one extra `metrics[]` row and no formula: `land` came back with a total
+        of `0E-10` and three by-destination rows.
+
+        **`DEFAULT_FORMULA` is not weakened by this.** A set that carries land
+        factor rows but no land formula still computes land, through the
+        default expression, exactly as §4.1 and §4.3 say -- that is the case
+        the default was written for. What is excluded is the set that carries
+        neither, which has nothing to compute from.
+
+        **No metric code appears here**, and none may: the rule is about what a
+        factor set contains, not about which metric it is.
+        """
+        known = set(self.formulas)
+        known.update(key[4] for key in self.upstream_factors)
+        known.update(key[3] for key in self.downstream_factors)
+        return tuple(spec for spec in self.metrics if spec.code in known)
+
     def has_destination(self, code):
         return code in self.destinations
 

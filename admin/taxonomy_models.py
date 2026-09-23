@@ -169,10 +169,14 @@ class FoodItem(Base):
     and that parent is what an item with no factor row of its own falls back to
     — a defined, meaningful average rather than a silent zero.
 
-    Nothing seeds this table. Mapping the client's ~20 foods onto our
-    categories is a data-authoring task with client-facing consequences (seven
-    of their rows have no New Zealand category at all) and gets its own review;
-    an empty table is what keeps this revision inert.
+    `admin/seed.py` seeds this table: twenty foods from the client's own table
+    1, and twenty-seven more (v1.72) for the five categories the client
+    subdivided no further than their own name. Mapping them onto our categories
+    was a data-authoring task with client-facing consequences -- seven of the
+    client's rows have no New Zealand category at all -- and every row that is
+    not the client's names its source in `admin.seed.FOOD_ITEM_SOURCES`. None of
+    the forty-seven carries a factor row of its own: an unpriced food is priced
+    at its category's average and §7.3c discloses that it was.
     """
 
     __tablename__ = "food_item"

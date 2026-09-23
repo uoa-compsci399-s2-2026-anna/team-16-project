@@ -261,9 +261,9 @@ const itemTickRefused = (category, item) =>
  *   the flag says the numbers behind the finer question can answer it. Asking a
  *   more specific question than the factors can answer is what the flag exists to
  *   prevent.
- * * **a non-empty vocabulary** -- there is something to offer. `admin/seed.py`
- *   seeds no `food_item` in some deployments, and a screen of empty groups is
- *   worse than no screen.
+ * * **a non-empty vocabulary** -- there is something to offer. A deployment may
+ *   have deactivated every `food_item`, or be running a seed older than the one
+ *   that grew a vocabulary, and a screen of empty groups is worse than no screen.
  * * **at least one category chosen** -- step 2.5 refines step 2 (`spec.md` §3.3).
  *   A visitor who skipped the categories, or answered "I do not know", has nothing
  *   to refine, and the step is skipped rather than shown empty.
@@ -272,10 +272,13 @@ function itemStepOffered() {
   if (!state.taxonomy?.factor_set?.item_level_enabled) return false
   // **At least one CHOSEN category must have foods, not just the vocabulary.**
   // Asking `food_items.length > 0` was asking whether the deployment has a
-  // vocabulary at all, and the seed gives one to four of its ten categories --
-  // so ticking any of the other six opened a panel headed *Do you know which
+  // vocabulary at all, and the seed then gave one to four of its ten categories
+  // -- so ticking any of the other six opened a panel headed *Do you know which
   // foods these were?* whose every group read "No specific foods are listed for
   // this category", with nothing on it to tick and Continue the only way out.
+  // Contract v1.72 gave foods to five more categories, which shrinks the case
+  // this guard is for without removing it: `standard_mix` still has none, and
+  // it is the category a visitor who does not know the composition ticks.
   //
   // `itemStep`'s own note is about an empty group BESIDE full ones, and that
   // still holds: hiding it would leave the group list disagreeing with step 2's

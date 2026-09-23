@@ -1371,11 +1371,13 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
             #: preparing rather than the one already live — and on a fresh
             #: deployment there is no published set at all.
             #:
-            #: "Item-level factors for 3 of 19 foods" is the whole point:
+            #: "Item-level factors for 3 of 47 foods" is the whole point:
             #: `item_level_enabled` is a boolean and the decision behind it is
-            #: not. Both figures are zero everywhere today, which is why the
-            #: template says nothing when the vocabulary is empty rather than
-            #: printing "0 of 0" beside every row.
+            #: not. The numerator is zero on every set in every database today,
+            #: and the denominator has been the whole active vocabulary since
+            #: the seed grew one; the template still says nothing when the
+            #: vocabulary is empty rather than printing "0 of 0" beside every
+            #: row, because a deployment may have deactivated all of it.
             item_coverage = [
                 {
                     "version_label": row.version_label,

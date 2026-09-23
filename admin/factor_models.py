@@ -161,9 +161,10 @@ class FactorUpstream(Base):
     #: **There is no silent-zero trap here**, and that is what separates this
     #: dimension from the one O-7 closed. An item with no row of its own falls
     #: through to its category's row — a defined, meaningful average — so a set
-    #: carrying item factors for twenty foods and category factors for
+    #: carrying item factors for a handful of foods and category factors for
     #: everything else is coherent, and the switch needs no full-coverage
-    #: guard.
+    #: guard. That is what lets the vocabulary grow — forty-seven foods since
+    #: v1.72 — without any set having to grow a row for each.
     #:
     #: `factor_downstream` gains no item dimension: the destination split is
     #: shared across the leaves a chain forks into (design decision 1), and

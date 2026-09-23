@@ -213,13 +213,19 @@ def test_taxonomy_is_internally_consistent(taxonomy):
         "question than the numbers can answer is what design section 8 warns "
         "about"
     )
-    #: Empty today, and the fixture says so honestly rather than inventing a
-    #: vocabulary: `admin/seed.py` seeds no `food_item`, so this is what every
-    #: deployment returns. Design section 9 leaves "are the ~20 foods in the
-    #: client's table 1 the full list or a sample?" open, and a fixture that
-    #: answered it for them would put codes in front of C and D that no
-    #: database holds. The rule each row must satisfy is asserted anyway, so
-    #: the day the rows arrive they are checked rather than merely added.
+    #: Empty until v1.72, and for a reason that has expired: `admin/seed.py`
+    #: seeded no `food_item`, so `[]` was what every deployment returned and a
+    #: fixture that invented a vocabulary would have put codes in front of C
+    #: and D that no database held. The seed has had twenty foods since the
+    #: vocabulary landed and has forty-seven since v1.72, so `[]` had become
+    #: the invention -- a front end built against this file would have been
+    #: built against a deployment that does not exist. The set equality lives
+    #: in `test_taxonomy_codes_and_names_are_the_shipped_seeds` with every
+    #: other section's; what is asserted here is the shape of each row.
+    assert taxonomy["food_items"], (
+        "the seed has a food vocabulary, so an empty array here describes no "
+        "deployment"
+    )
     for row in taxonomy["food_items"]:
         assert set(row) == {"code", "name", "food_category", "sort_order"}, row
         assert row["food_category"] in {
@@ -884,6 +890,7 @@ def test_taxonomy_codes_and_names_are_the_shipped_seeds(taxonomy):
         DESTINATION_GROUPS,
         DESTINATIONS,
         FOOD_CATEGORIES,
+        FOOD_ITEMS,
         METRICS,
         SECTORS,
         UNIT_PRESETS,
@@ -919,6 +926,23 @@ def test_taxonomy_codes_and_names_are_the_shipped_seeds(taxonomy):
         code: (group_code, name, is_prevention, sort_order)
         for group_code, code, name, is_prevention, sort_order in DESTINATIONS
     }
+    #: v1.72. The vocabulary is `FOOD_ITEMS`, parent and order included: the
+    #: parent is what step 2.5 groups by and a food filed under the wrong
+    #: heading is offered under a category step 2 may not even show, and the
+    #: order is what `get_taxonomy` sorts by (`sort_order`, then `code`).
+    assert {
+        row["code"]: (row["name"], row["food_category"], row["sort_order"])
+        for row in taxonomy["food_items"]
+    } == {
+        code: (name, parent, sort_order)
+        for code, name, parent, sort_order in FOOD_ITEMS
+    }
+    assert [row["code"] for row in taxonomy["food_items"]] == [
+        code for code, _, _, _ in sorted(FOOD_ITEMS, key=lambda r: (r[3], r[0]))
+    ], (
+        "tests/fixtures/taxonomy.json lists the foods in an order no "
+        "deployment serves; get_taxonomy orders them by sort_order then code"
+    )
     assert {
         row["code"]: (
             row["name"],
@@ -960,11 +984,12 @@ def test_the_codes_the_fixtures_calculate_with_are_shipped_codes():
     and would otherwise only ever be checked against the taxonomy file that
     was renamed alongside them.
     """
-    from admin.seed import DESTINATIONS, FOOD_CATEGORIES, SECTORS
+    from admin.seed import DESTINATIONS, FOOD_CATEGORIES, FOOD_ITEMS, SECTORS
 
     sectors = {code for code, _, _ in SECTORS}
     foods = {code for code, _, _, _ in FOOD_CATEGORIES}
     destinations = {code for _, code, _, _, _ in DESTINATIONS}
+    items = {code for code, _, _, _ in FOOD_ITEMS}
 
     for name in (
         "calculate_request.json",
@@ -982,22 +1007,21 @@ def test_the_codes_the_fixtures_calculate_with_are_shipped_codes():
             key = path.rsplit(".", 1)[-1].split("[")[0]
             if value is None or not isinstance(value, str):
                 continue
-            #: v1.58: `food_item` is **not** in this list, and that is the
-            #: one deliberate hole in it. `admin/seed.py` seeds no
-            #: `food_item` row at all -- mapping the client's ~20 foods onto
-            #: our categories is a data-authoring task with client-facing
-            #: consequences and seven of their rows have no New Zealand
-            #: category -- so there is no pool to check against, and adding an
-            #: empty one would forbid every food rather than validate it. The
-            #: fixtures name no food for exactly that reason (every
-            #: `food_item` in them is `null`, and the `is None` guard above
-            #: skips those), so nothing is currently unchecked. **Add
-            #: `food_item` to this list the moment the seed grows one.**
-            if key in {"sector", "destination", "food_category"}:
+            #: v1.58 left `food_item` out of this list as the one deliberate
+            #: hole in it, because `admin/seed.py` seeded no `food_item` row
+            #: and an empty pool would have forbidden every food rather than
+            #: validated it. That note ended "add `food_item` to this list the
+            #: moment the seed grows one", and **v1.72 is that moment**: the
+            #: seed carries forty-seven foods. Every `food_item` in these
+            #: fixtures is still `null` and skipped by the `is None` guard
+            #: above, so this changes nothing today and catches the first
+            #: fixture that names a food the seed does not create.
+            if key in {"sector", "destination", "food_category", "food_item"}:
                 pool = {
                     "sector": sectors,
                     "destination": destinations,
                     "food_category": foods,
+                    "food_item": items,
                 }[key]
                 assert value in pool, f"{name} {path}: {value!r} is not a seeded code"
 

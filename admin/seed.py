@@ -88,18 +88,36 @@ FOOD_CATEGORIES = [
     ("beverages", "Beverages (non-dairy)", False, 90),
 ]
 
-#: The food-item vocabulary (§2.1), and every row is a row of the client's own
-#: table 1 -- transcribed in `data/upstream-factors-draft/rawtec_source_data.py`
+#: The food-item vocabulary (§2.1). **Twenty of its rows are the client's own
+#: table 1** -- transcribed in `data/upstream-factors-draft/rawtec_source_data.py`
 #: and already mapped to these categories by `NZ_FOOD_CATEGORY_SOURCES`, which is
-#: what the nine category factors were averaged from. The parentage is therefore
-#: not invented here; it is read off the mapping the category figures already use.
+#: what the nine category factors were averaged from. The parentage of those
+#: twenty is therefore not invented here; it is read off the mapping the category
+#: figures already use.
 #:
 #: **Six of table 1's twenty-six rows are deliberately absent.** `Fruit`,
 #: `Vegetable`, `Seafood`, `Nuts and seeds`, `Drinks/Beverages` and `General mixed
 #: food product` ARE the categories they sit under -- offering "Fruit -> Fruit"
 #: asks the visitor to refine an answer into itself. What is left is exactly the
-#: twenty rows that say something finer than the category they belong to, which is
-#: what makes twenty the number rather than an estimate.
+#: twenty rows that say something finer than the category they belong to.
+#:
+#: **The other twenty-seven rows exist because the client subdivided five
+#: categories no further than their own name** (v1.72). Fruit, Vegetable,
+#: Seafood, Nuts and seeds and Drinks/Beverages are one table-1 row each, so
+#: until this revision step 2.5 offered nothing at all under half the
+#: vocabulary's categories and `itemStepOffered()` hid the step outright for a
+#: visitor who ticked only those. Adding a food with no factor row of its own is
+#: safe by construction and the machinery is already built: §2.2's upstream chain
+#: falls it through to its category's factor, which is a defined, meaningful
+#: average -- the category factors *are* the averages of these foods -- and
+#: §7.3c's fallback disclosure then says so on the page, in the text download and
+#: on the PDF. **Every one of the twenty-seven names its source in
+#: `FOOD_ITEM_SOURCES` below**, and nothing is generated or combinatorial: this
+#: table is *global taxonomy*, shared by every factor set and every stored
+#: submission, and this repository already carries what happens when a loader
+#: writes its own vocabulary into a global table -- 48 `refed_*` rows sit in
+#: `food_category` today, invisible only because `GET /taxonomy` narrows
+#: categories to what the published set prices.
 #:
 #: **The seven rows the client's table gives no New Zealand home go to
 #: `staples`.** `docs/upstream-factors-draft.md` §3.2 defines `staples` as the
@@ -126,16 +144,37 @@ FOOD_ITEMS = [
     ("bread", "Bread", "bakery_grains", 10),
     ("bakery", "Bakery", "bakery_grains", 20),
     ("grains", "Grains", "bakery_grains", 30),
+    ("coffee", "Coffee", "beverages", 10),
+    ("tea", "Tea", "beverages", 20),
+    ("beer", "Beer", "beverages", 30),
+    ("wine", "Wine", "beverages", 40),
+    ("fruit_juice", "Fruit juice", "beverages", 50),
+    ("soft_drinks", "Soft drinks", "beverages", 60),
     ("cheese", "Cheese", "dairy", 10),
     ("milk", "Milk", "dairy", 20),
     ("cream", "Cream", "dairy", 30),
     ("butter", "Butter", "dairy", 40),
     ("yoghurt", "Yoghurt", "dairy", 50),
     ("other_dairy", "Other dairy", "dairy", 60),
+    ("apples", "Apples", "fruit", 10),
+    ("kiwifruit", "Kiwifruit", "fruit", 20),
+    ("berries", "Berries", "fruit", 30),
+    ("citrus", "Citrus", "fruit", 40),
+    ("stone_fruit", "Stone fruit", "fruit", 50),
+    ("bananas", "Bananas", "fruit", 60),
     ("red_meat", "Red meat", "meat", 10),
     ("pork", "Pork", "meat", 20),
     ("poultry", "Poultry", "meat", 30),
     ("other_meat", "Other meat", "meat", 40),
+    ("almonds", "Almonds", "nuts_seeds", 10),
+    ("walnuts", "Walnuts", "nuts_seeds", 20),
+    ("peanuts", "Peanuts", "nuts_seeds", 30),
+    ("sunflower_seeds", "Sunflower seeds", "nuts_seeds", 40),
+    ("hoki", "Hoki", "seafood", 10),
+    ("snapper", "Snapper", "seafood", 20),
+    ("salmon", "Salmon", "seafood", 30),
+    ("mussels", "Mussels", "seafood", 40),
+    ("oysters", "Oysters", "seafood", 50),
     ("eggs", "Eggs", "staples", 10),
     ("fats", "Fats", "staples", 20),
     ("sauces_spreads_dips", "Sauces, spreads and dips", "staples", 30),
@@ -143,7 +182,143 @@ FOOD_ITEMS = [
     ("snack_foods_desserts", "Snack foods and desserts", "staples", 50),
     ("sweeteners", "Sweeteners", "staples", 60),
     ("other_food_types", "Other food types", "staples", 70),
+    ("potatoes", "Potatoes", "vegetables", 10),
+    ("kumara", "Kūmara", "vegetables", 20),
+    ("carrots", "Carrots", "vegetables", 30),
+    ("onions", "Onions", "vegetables", 40),
+    ("tomatoes", "Tomatoes", "vegetables", 50),
+    ("leafy_greens", "Leafy greens", "vegetables", 60),
 ]
+
+#: Where every food that is **not** a row of the client's table 1 came from
+#: (v1.72). One entry per such code, and `tests/admin/test_food_item_seed.py`
+#: refuses a food that is in neither this mapping nor the client's table -- so a
+#: name cannot reach the global vocabulary without a reader being able to find
+#: out who chose it and why.
+#:
+#: Two provenances, and they are kept apart on purpose:
+#:
+#: * **`Poore & Nemecek (2018)`** names a product row already transcribed in
+#:   this repository, in `data/upstream-factors-draft/public_land_use_source_data.py`
+#:   -- the same study `land` was filled from, republished by Our World in Data.
+#:   A name here is that source's own product label, shortened to what a New
+#:   Zealand staff member would type (`Citrus Fruit` -> `Citrus`, `Berries &
+#:   Grapes` -> `Berries`, `Groundnuts` -> `Peanuts`, `Root Vegetables` ->
+#:   `Carrots`, `Onions & Leeks` -> `Onions`). Nothing is imported wholesale:
+#:   the source publishes thirty-eight products and eleven of them are used.
+#: * **`Team's judgement`** is a New Zealand food with no row in either source,
+#:   chosen because a staff member in this country would recognise it and could
+#:   have typed it. Each entry says what makes it a New Zealand food rather than
+#:   asserting that it is one.
+#:
+#: **None of these foods carries a factor row anywhere**, and that is the point:
+#: §2.2's chain prices each at its category's average and §7.3c discloses that
+#: it did. A future staff member who authors an item-level factor for one of
+#: them changes the number and nothing else.
+#:
+#: `Kūmara` is spelled with its macron. `ū` is U+016B and neither brand subset
+#: has that code point, but `api/pdf_render.py::_is_drawable` accepts a
+#: character its face can compose out of the NFD decomposition and both Geologica
+#: Bold and Kumbh Sans carry `u` plus U+0304 -- measured on the shipped font
+#: files, and `tests/api/test_pdf_render.py::test_a_macron_survives_the_document`
+#: already uses this exact word as its example.
+FOOD_ITEM_SOURCES: dict[str, str] = {
+    # beverages
+    "coffee": "Poore & Nemecek (2018), product row 'Coffee'.",
+    "tea": (
+        "Team's judgement: the other hot drink every New Zealand workplace, café "
+        "and household makes, and the one a staff member would look for beside "
+        "coffee."
+    ),
+    "beer": (
+        "Team's judgement: New Zealand brewing, and the beverage a hospitality "
+        "venue pours away most of. Poore & Nemecek publish Barley but no beer row."
+    ),
+    "wine": "Poore & Nemecek (2018), product row 'Wine'. New Zealand's largest crop-based export.",
+    "fruit_juice": (
+        "Team's judgement: the packaged non-dairy drink after the two alcoholic "
+        "ones, and what a school or institution reports."
+    ),
+    "soft_drinks": (
+        "Team's judgement: the remaining supermarket and hospitality beverage "
+        "line, named as it is named on a shelf."
+    ),
+    # fruit
+    "apples": "Poore & Nemecek (2018), product row 'Apples'. New Zealand's largest pipfruit crop.",
+    "kiwifruit": (
+        "Team's judgement: New Zealand's largest horticultural export, and the "
+        "fruit a grower or packhouse here would name first. Neither source has a "
+        "row for it; Poore & Nemecek would file it under 'Other Fruit'."
+    ),
+    "berries": "Poore & Nemecek (2018), product row 'Berries & Grapes'.",
+    "citrus": "Poore & Nemecek (2018), product row 'Citrus Fruit'.",
+    "stone_fruit": (
+        "Team's judgement: Hawke's Bay and Central Otago summerfruit, which is "
+        "what a New Zealand grower calls this group. Poore & Nemecek file it "
+        "under 'Other Fruit'."
+    ),
+    "bananas": (
+        "Poore & Nemecek (2018), product row 'Bananas'. Imported rather than "
+        "grown here, and on every supermarket shelf in the country."
+    ),
+    # nuts and edible seeds
+    "almonds": "Poore & Nemecek (2018), product row 'Nuts', named as the nut a shelf names.",
+    "walnuts": (
+        "Team's judgement: a nut grown commercially in New Zealand, Canterbury "
+        "and Marlborough in particular. Poore & Nemecek's 'Nuts' row covers it."
+    ),
+    "peanuts": (
+        "Poore & Nemecek (2018), product row 'Groundnuts', under the name a New "
+        "Zealand staff member would type."
+    ),
+    "sunflower_seeds": (
+        "Team's judgement: the edible seed this category is half named after, and "
+        "the one sold on its own rather than as an ingredient."
+    ),
+    # seafood
+    "hoki": (
+        "Team's judgement: New Zealand's largest wild-capture fishery by volume "
+        "and the white fish behind most of its fish and chips."
+    ),
+    "snapper": (
+        "Team's judgement: the best-known inshore table fish in the North Island, "
+        "and what a fishmonger or restaurant here would name."
+    ),
+    "salmon": (
+        "Team's judgement: New Zealand's principal farmed finfish (king salmon). "
+        "Poore & Nemecek's nearest row is 'Fish (farmed)'."
+    ),
+    "mussels": (
+        "Team's judgement: green-lipped mussels, New Zealand's largest "
+        "aquaculture product, under the one-word name a kitchen uses."
+    ),
+    "oysters": (
+        "Team's judgement: Bluff and Pacific oysters, a New Zealand shellfish a "
+        "staff member would recognise immediately."
+    ),
+    # vegetables
+    "potatoes": "Poore & Nemecek (2018), product row 'Potatoes'.",
+    "kumara": (
+        "Team's judgement: the New Zealand sweet potato, grown in Northland, and "
+        "a vegetable this country names in te reo Māori rather than in English. "
+        "In neither source."
+    ),
+    "carrots": (
+        "Poore & Nemecek (2018), product row 'Root Vegetables', named as New "
+        "Zealand's principal root vegetable rather than as a group."
+    ),
+    "onions": (
+        "Poore & Nemecek (2018), product row 'Onions & Leeks'. Onions are a major "
+        "New Zealand vegetable export; leeks are not, so the name keeps the half "
+        "that is."
+    ),
+    "tomatoes": "Poore & Nemecek (2018), product row 'Tomatoes'.",
+    "leafy_greens": (
+        "Team's judgement: lettuce, spinach, silverbeet and the cabbage family "
+        "under one heading a visitor can scan. Poore & Nemecek split the same "
+        "ground across 'Brassicas' and 'Other Vegetables'."
+    ),
+}
 
 
 METRICS = [

@@ -538,11 +538,15 @@ class FoodItemAdmin(AuditedImport, _TaxonomyAdmin, model=FoodItem):
     round — the same asymmetry `FactorSetAdmin._require_admin_for_import` was
     careful to avoid arguing the other way.
 
-    **Nothing seeds this table.** Mapping the client's ~20 foods onto our
-    categories is a data-authoring task with client-facing consequences (seven
-    of their rows have no New Zealand category at all) and gets its own review.
-    An empty table is what keeps the item level inert, and this screen is how
-    it stops being empty.
+    **`admin/seed.py` seeds this table** -- twenty foods from the client's own
+    table 1, and twenty-seven more (v1.72) for the five categories the client
+    subdivided no further than their own name. Mapping them onto our categories
+    was a data-authoring task with client-facing consequences (seven of the
+    client's rows have no New Zealand category at all) and got its own review;
+    every row that is not the client's names its source in
+    `admin.seed.FOOD_ITEM_SOURCES`. This screen is how the vocabulary grows
+    afterwards, and a food typed here is inert until a set prices it or the
+    category it falls back to is priced.
     """
 
     name = "Food item"

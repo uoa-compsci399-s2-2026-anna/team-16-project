@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-09-21 (v1.68 draft)"
+date: "2026-09-24 (v1.71)"
 ---
 
 # 0. How to Use This Document

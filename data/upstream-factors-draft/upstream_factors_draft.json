@@ -1,7 +1,7 @@
 {
-  "version_label": "CLIENT-DRAFT-2026-09-05 (Rawtec + ReFED cumulative footprint, plus ch4 and cost) - NOT PUBLISHED",
+  "version_label": "CLIENT-DRAFT-2026-09-21 (Rawtec revised table 2 + ReFED cumulative footprint, plus ch4 and cost) - NOT PUBLISHED",
   "is_mock": true,
-  "notes": "Draft factor set derived from the client's own Rawtec tables (farm-to-fork/-shelf production footprint by food, and bin-to-destination footprint by destination). Upstream figures are built as a CUMULATIVE footprint per sector -- ReFED's own per-sector shape (tests/benchmark/refed/refed-benchmark-factors.json), anchored so the sector matching the client's own 'Life cycle covered' wording equals the client's own total exactly, with the client's farm stage for five categories ReFED does not publish one for filled from Poore & Nemecek (2018) via Our World in Data (co2e) or a stated assumption (water) -- see data/upstream-factors-draft/public_farm_share_source_data.py. This replaces an earlier construction (commit ba7fe93) that read ReFED's per-sector values as shares summing to the client's total, which understated every consumer-stage factor roughly fourfold; see docs/upstream-factors-draft.md. As of this revision, ch4 (raw methane mass, ReFED-only, every food category and all fourteen destinations -- thirteen matched directly to a ReFED destination, upcycling as a stated stand-in pooling ReFED's two reuse-group destinations) and cost (the New Zealand waste disposal levy at the rate in force 2026-09-05, landfill and refuse_discard only) are also seeded -- neither client table carries either column, so both are built entirely from ReFED or public New Zealand government sources; see docs/upstream-factors-draft.md. is_mock stays true: these values are derived, not yet the client's confirmed figures -- the placeholder banner must keep showing until the owner decides otherwise. Built as a DRAFT; published 2026-09-06 on the owner's instruction, which archived the set it replaced rather than deleting it, so rollback remains available. Full provenance: docs/upstream-factors-draft.md and data/upstream-factors-draft/build_upstream_factors_draft.py.",
+  "notes": "Draft factor set derived from the client's own Rawtec tables (farm-to-fork/-shelf production footprint by food, and bin-to-destination footprint by destination). Upstream figures are built as a CUMULATIVE footprint per sector -- ReFED's own per-sector shape (tests/benchmark/refed/refed-benchmark-factors.json), anchored so the sector matching the client's own 'Life cycle covered' wording equals the client's own total exactly, with the client's farm stage for five categories ReFED does not publish one for filled from Poore & Nemecek (2018) via Our World in Data (co2e) or a stated assumption (water) -- see data/upstream-factors-draft/public_farm_share_source_data.py. This replaces an earlier construction (commit ba7fe93) that read ReFED's per-sector values as shares summing to the client's total, which understated every consumer-stage factor roughly fourfold; see docs/upstream-factors-draft.md. As of this revision, ch4 (raw methane mass, ReFED-only, every food category and all fourteen destinations -- thirteen matched directly to a ReFED destination, upcycling as a stated stand-in pooling ReFED's two reuse-group destinations) and cost (the New Zealand waste disposal levy at the rate in force 2026-09-05, landfill and refuse_discard only) are also seeded -- neither client table carries either column, so both are built entirely from ReFED or public New Zealand government sources; see docs/upstream-factors-draft.md. is_mock stays true: these values are derived, not yet the client's confirmed figures -- the placeholder banner must keep showing until the owner decides otherwise. This revision carries the client's CORRECTED table 2 CO2-eq column, received 2026-09-21: the 2026-09-05 column was a verbatim copy of table 1's food figures, which priced composting worse than landfill. The set built from that column was published on 2026-09-06 on the owner's instruction; this one is built as a DRAFT and is NOT published. Publishing archives rather than deletes, so rollback remains available either way. Full provenance: docs/upstream-factors-draft.md and data/upstream-factors-draft/build_upstream_factors_draft.py.",
   "constants": [
     {
       "code": "GWP_CH4_100",
@@ -3297,9 +3297,9 @@
       "sector": null,
       "food_category": null,
       "metric": "co2e",
-      "value_per_kg": "1.4600000000",
-      "source_note": "Rawtec table 2 ('bin to destination'), client row: Anaerobic Digestion (Bin to AD Implementation) = 1.46 [CO2-eq copied from Rawtec table 1's Bread row -- see provenance doc] (used directly, no aggregation). CAUTION: the CO2-eq column of table 2 is a verbatim copy of table 1's CO2-eq column -- used here on the repository owner's explicit instruction of 2026-09-05, pending client confirmation. See docs/upstream-factors-draft.md.",
-      "data_quality": "client-table2-verbatim"
+      "value_per_kg": "-0.0400000000",
+      "source_note": "Rawtec table 2 ('bin to destination'), client row: Anaerobic Digestion (Bin to AD Implementation) = -0.04 [2026-09-21 revision; the withdrawn 2026-09-05 column printed 1.46 here, a copy of a table 1 food row -- see provenance doc] (used directly, no aggregation). This is the client's CORRECTED CO2-eq column, from the revised document of 2026-09-21. The 2026-09-05 revision printed a verbatim copy of table 1's CO2-eq column here -- food figures in destination rows, which priced composting worse than landfill -- and that column was used as printed on the repository owner's explicit instruction of 2026-09-05. It is withdrawn. Still not client-confirmed: O-1 stays open and is_mock stays true. See docs/upstream-factors-draft.md.",
+      "data_quality": "client-table2"
     },
     {
       "destination": "anaerobic_digestion",
@@ -3307,7 +3307,7 @@
       "food_category": null,
       "metric": "water",
       "value_per_kg": "-1.5000000000",
-      "source_note": "Rawtec table 2 ('bin to destination'), client row: Anaerobic Digestion (Bin to AD Implementation) = -1.50 (used directly, no aggregation). The water column does not share that defect and looks like an independent measurement -- see docs/upstream-factors-draft.md.",
+      "source_note": "Rawtec table 2 ('bin to destination'), client row: Anaerobic Digestion (Bin to AD Implementation) = -1.50 (used directly, no aggregation). The water column was never implicated in that defect and is identical in both revisions of the client's document -- see docs/upstream-factors-draft.md.",
       "data_quality": "client-table2"
     },
     {
@@ -3315,9 +3315,9 @@
       "sector": null,
       "food_category": null,
       "metric": "co2e",
-      "value_per_kg": "4.2800000000",
-      "source_note": "Rawtec table 2 ('bin to destination'), client row: BioBased (Bin to Meat Rendering Implementation) = 4.28 [CO2-eq copied from Rawtec table 1's Bakery row -- see provenance doc] (used directly, no aggregation). CAUTION: the CO2-eq column of table 2 is a verbatim copy of table 1's CO2-eq column -- used here on the repository owner's explicit instruction of 2026-09-05, pending client confirmation. See docs/upstream-factors-draft.md.",
-      "data_quality": "client-table2-verbatim"
+      "value_per_kg": "-0.5600000000",
+      "source_note": "Rawtec table 2 ('bin to destination'), client row: BioBased (Bin to Meat Rendering Implementation) = -0.56 [2026-09-21 revision; the withdrawn 2026-09-05 column printed 4.28 here, a copy of a table 1 food row -- see provenance doc] (used directly, no aggregation). This is the client's CORRECTED CO2-eq column, from the revised document of 2026-09-21. The 2026-09-05 revision printed a verbatim copy of table 1's CO2-eq column here -- food figures in destination rows, which priced composting worse than landfill -- and that column was used as printed on the repository owner's explicit instruction of 2026-09-05. It is withdrawn. Still not client-confirmed: O-1 stays open and is_mock stays true. See docs/upstream-factors-draft.md.",
+      "data_quality": "client-table2"
     },
     {
       "destination": "bioprocessing",
@@ -3325,7 +3325,7 @@
       "food_category": null,
       "metric": "water",
       "value_per_kg": "-2.2000000000",
-      "source_note": "Rawtec table 2 ('bin to destination'), client row: BioBased (Bin to Meat Rendering Implementation) = -2.20 (used directly, no aggregation). The water column does not share that defect and looks like an independent measurement -- see docs/upstream-factors-draft.md.",
+      "source_note": "Rawtec table 2 ('bin to destination'), client row: BioBased (Bin to Meat Rendering Implementation) = -2.20 (used directly, no aggregation). The water column was never implicated in that defect and is identical in both revisions of the client's document -- see docs/upstream-factors-draft.md.",
       "data_quality": "client-table2"
     },
     {
@@ -3333,9 +3333,9 @@
       "sector": null,
       "food_category": null,
       "metric": "co2e",
-      "value_per_kg": "10.1300000000",
-      "source_note": "Rawtec table 2 ('bin to destination'), client row: Compost (Bin to Compost used in Hort) = 10.13 [CO2-eq copied from Rawtec table 1's Cheese row -- see provenance doc] (used directly, no aggregation). CAUTION: the CO2-eq column of table 2 is a verbatim copy of table 1's CO2-eq column -- used here on the repository owner's explicit instruction of 2026-09-05, pending client confirmation. See docs/upstream-factors-draft.md.",
-      "data_quality": "client-table2-verbatim"
+      "value_per_kg": "-0.1100000000",
+      "source_note": "Rawtec table 2 ('bin to destination'), client row: Compost (Bin to Compost used in Hort) = -0.11 [2026-09-21 revision; the withdrawn 2026-09-05 column printed 10.13 here, a copy of a table 1 food row -- see provenance doc] (used directly, no aggregation). This is the client's CORRECTED CO2-eq column, from the revised document of 2026-09-21. The 2026-09-05 revision printed a verbatim copy of table 1's CO2-eq column here -- food figures in destination rows, which priced composting worse than landfill -- and that column was used as printed on the repository owner's explicit instruction of 2026-09-05. It is withdrawn. Still not client-confirmed: O-1 stays open and is_mock stays true. See docs/upstream-factors-draft.md.",
+      "data_quality": "client-table2"
     },
     {
       "destination": "compost",
@@ -3343,7 +3343,7 @@
       "food_category": null,
       "metric": "water",
       "value_per_kg": "-2.4000000000",
-      "source_note": "Rawtec table 2 ('bin to destination'), client row: Compost (Bin to Compost used in Hort) = -2.40 (used directly, no aggregation). The water column does not share that defect and looks like an independent measurement -- see docs/upstream-factors-draft.md.",
+      "source_note": "Rawtec table 2 ('bin to destination'), client row: Compost (Bin to Compost used in Hort) = -2.40 (used directly, no aggregation). The water column was never implicated in that defect and is identical in both revisions of the client's document -- see docs/upstream-factors-draft.md.",
       "data_quality": "client-table2"
     },
     {
@@ -3351,18 +3351,18 @@
       "sector": null,
       "food_category": null,
       "metric": "co2e",
-      "value_per_kg": "1.5100000000",
-      "source_note": "Rawtec table 2 ('bin to destination'), client row: Incineration (Bin to Energy From Waste) = 1.51 [CO2-eq copied from Rawtec table 1's Milk row -- see provenance doc] (used directly, no aggregation). CAUTION: the CO2-eq column of table 2 is a verbatim copy of table 1's CO2-eq column -- used here on the repository owner's explicit instruction of 2026-09-05, pending client confirmation. See docs/upstream-factors-draft.md.",
-      "data_quality": "client-table2-verbatim"
+      "value_per_kg": "-0.1200000000",
+      "source_note": "Rawtec table 2 ('bin to destination'), client row: Incineration (Bin to Energy From Waste) = -0.12 [2026-09-21 revision; the withdrawn 2026-09-05 column printed 1.51 here, a copy of a table 1 food row -- see provenance doc] (used directly, no aggregation). This is the client's CORRECTED CO2-eq column, from the revised document of 2026-09-21. The 2026-09-05 revision printed a verbatim copy of table 1's CO2-eq column here -- food figures in destination rows, which priced composting worse than landfill -- and that column was used as printed on the repository owner's explicit instruction of 2026-09-05. It is withdrawn. Still not client-confirmed: O-1 stays open and is_mock stays true. See docs/upstream-factors-draft.md.",
+      "data_quality": "client-table2"
     },
     {
       "destination": "landfill",
       "sector": null,
       "food_category": null,
       "metric": "co2e",
-      "value_per_kg": "4.9500000000",
-      "source_note": "Rawtec table 2 ('bin to destination'), client row: Landfill (Bin to Landfill) = 4.95 [CO2-eq copied from Rawtec table 1's Cream row -- see provenance doc] (used directly, no aggregation). CAUTION: the CO2-eq column of table 2 is a verbatim copy of table 1's CO2-eq column -- used here on the repository owner's explicit instruction of 2026-09-05, pending client confirmation. See docs/upstream-factors-draft.md.",
-      "data_quality": "client-table2-verbatim"
+      "value_per_kg": "0.6000000000",
+      "source_note": "Rawtec table 2 ('bin to destination'), client row: Landfill (Bin to Landfill) = 0.60 [2026-09-21 revision; the withdrawn 2026-09-05 column printed 4.95 here, a copy of a table 1 food row -- see provenance doc] (used directly, no aggregation). This is the client's CORRECTED CO2-eq column, from the revised document of 2026-09-21. The 2026-09-05 revision printed a verbatim copy of table 1's CO2-eq column here -- food figures in destination rows, which priced composting worse than landfill -- and that column was used as printed on the repository owner's explicit instruction of 2026-09-05. It is withdrawn. Still not client-confirmed: O-1 stays open and is_mock stays true. See docs/upstream-factors-draft.md.",
+      "data_quality": "client-table2"
     },
     {
       "destination": "landfill",
@@ -3370,7 +3370,7 @@
       "food_category": null,
       "metric": "water",
       "value_per_kg": "0.0600000000",
-      "source_note": "Rawtec table 2 ('bin to destination'), client row: Landfill (Bin to Landfill) = 0.06 (used directly, no aggregation). The water column does not share that defect and looks like an independent measurement -- see docs/upstream-factors-draft.md.",
+      "source_note": "Rawtec table 2 ('bin to destination'), client row: Landfill (Bin to Landfill) = 0.06 (used directly, no aggregation). The water column was never implicated in that defect and is identical in both revisions of the client's document -- see docs/upstream-factors-draft.md.",
       "data_quality": "client-table2"
     },
     {
@@ -3378,9 +3378,9 @@
       "sector": null,
       "food_category": null,
       "metric": "co2e",
-      "value_per_kg": "11.3900000000",
-      "source_note": "Rawtec table 2 ('bin to destination'), client row: Landspread (Breakdown on Farm) = 11.39 [CO2-eq copied from Rawtec table 1's Butter row -- see provenance doc] (used directly, no aggregation). CAUTION: the CO2-eq column of table 2 is a verbatim copy of table 1's CO2-eq column -- used here on the repository owner's explicit instruction of 2026-09-05, pending client confirmation. See docs/upstream-factors-draft.md.",
-      "data_quality": "client-table2-verbatim"
+      "value_per_kg": "0.0000000000",
+      "source_note": "Rawtec table 2 ('bin to destination'), client row: Landspread (Breakdown on Farm) = 0.00 [2026-09-21 revision; the withdrawn 2026-09-05 column printed 11.39 here, a copy of a table 1 food row -- see provenance doc] (used directly, no aggregation). This is the client's CORRECTED CO2-eq column, from the revised document of 2026-09-21. The 2026-09-05 revision printed a verbatim copy of table 1's CO2-eq column here -- food figures in destination rows, which priced composting worse than landfill -- and that column was used as printed on the repository owner's explicit instruction of 2026-09-05. It is withdrawn. Still not client-confirmed: O-1 stays open and is_mock stays true. See docs/upstream-factors-draft.md.",
+      "data_quality": "client-table2"
     },
     {
       "destination": "land_application",
@@ -3388,7 +3388,7 @@
       "food_category": null,
       "metric": "water",
       "value_per_kg": "-2.4000000000",
-      "source_note": "Rawtec table 2 ('bin to destination'), client row: Landspread (Breakdown on Farm) = -2.40 (used directly, no aggregation). The water column does not share that defect and looks like an independent measurement -- see docs/upstream-factors-draft.md.",
+      "source_note": "Rawtec table 2 ('bin to destination'), client row: Landspread (Breakdown on Farm) = -2.40 (used directly, no aggregation). The water column was never implicated in that defect and is identical in both revisions of the client's document -- see docs/upstream-factors-draft.md.",
       "data_quality": "client-table2"
     },
     {
@@ -3396,9 +3396,9 @@
       "sector": null,
       "food_category": null,
       "metric": "co2e",
-      "value_per_kg": "3.2900000000",
-      "source_note": "Rawtec table 2 ('bin to destination'), client row: Not Harvested (Breakdown on Farm) = 3.29 [CO2-eq copied from Rawtec table 1's Yoghurt row -- see provenance doc] (used directly, no aggregation). CAUTION: the CO2-eq column of table 2 is a verbatim copy of table 1's CO2-eq column -- used here on the repository owner's explicit instruction of 2026-09-05, pending client confirmation. See docs/upstream-factors-draft.md.",
-      "data_quality": "client-table2-verbatim"
+      "value_per_kg": "0.0000000000",
+      "source_note": "Rawtec table 2 ('bin to destination'), client row: Not Harvested (Breakdown on Farm) = 0.00 [2026-09-21 revision; the withdrawn 2026-09-05 column printed 3.29 here, a copy of a table 1 food row -- see provenance doc] (used directly, no aggregation). This is the client's CORRECTED CO2-eq column, from the revised document of 2026-09-21. The 2026-09-05 revision printed a verbatim copy of table 1's CO2-eq column here -- food figures in destination rows, which priced composting worse than landfill -- and that column was used as printed on the repository owner's explicit instruction of 2026-09-05. It is withdrawn. Still not client-confirmed: O-1 stays open and is_mock stays true. See docs/upstream-factors-draft.md.",
+      "data_quality": "client-table2"
     },
     {
       "destination": "not_harvested",
@@ -3406,7 +3406,7 @@
       "food_category": null,
       "metric": "water",
       "value_per_kg": "-1.2000000000",
-      "source_note": "Rawtec table 2 ('bin to destination'), client row: Not Harvested (Breakdown on Farm) = -1.20 (used directly, no aggregation). The water column does not share that defect and looks like an independent measurement -- see docs/upstream-factors-draft.md.",
+      "source_note": "Rawtec table 2 ('bin to destination'), client row: Not Harvested (Breakdown on Farm) = -1.20 (used directly, no aggregation). The water column was never implicated in that defect and is identical in both revisions of the client's document -- see docs/upstream-factors-draft.md.",
       "data_quality": "client-table2"
     },
     {
@@ -3414,9 +3414,9 @@
       "sector": null,
       "food_category": null,
       "metric": "co2e",
-      "value_per_kg": "2.6333333333",
-      "source_note": "Rawtec table 2 ('bin to destination'), mean of 3 client row(s): Other Food Waste (Bin to Landfill) = 1.19 [CO2-eq copied from Rawtec table 1's Other dairy row -- see provenance doc]; Refuse (Bin to Landfill) = 4.93 [CO2-eq copied from Rawtec table 1's Eggs row -- see provenance doc]; Unknown Food Waste (Bin to Landfill) = 1.78 [CO2-eq copied from Rawtec table 1's Fruit row -- see provenance doc] -> unweighted mean 2.633333333333333333333333333. CAUTION: the CO2-eq column of table 2 is a verbatim copy of table 1's CO2-eq column -- used here on the repository owner's explicit instruction of 2026-09-05, pending client confirmation. See docs/upstream-factors-draft.md.",
-      "data_quality": "client-table2-verbatim"
+      "value_per_kg": "0.6000000000",
+      "source_note": "Rawtec table 2 ('bin to destination'), mean of 3 client row(s): Other Food Waste (Bin to Landfill) = 0.60 [2026-09-21 revision; the withdrawn 2026-09-05 column printed 1.19 here, a copy of a table 1 food row -- see provenance doc]; Refuse (Bin to Landfill) = 0.60 [2026-09-21 revision; the withdrawn 2026-09-05 column printed 4.93 here, a copy of a table 1 food row -- see provenance doc]; Unknown Food Waste (Bin to Landfill) = 0.60 [2026-09-21 revision; the withdrawn 2026-09-05 column printed 1.78 here, a copy of a table 1 food row -- see provenance doc] -> unweighted mean 0.60. This is the client's CORRECTED CO2-eq column, from the revised document of 2026-09-21. The 2026-09-05 revision printed a verbatim copy of table 1's CO2-eq column here -- food figures in destination rows, which priced composting worse than landfill -- and that column was used as printed on the repository owner's explicit instruction of 2026-09-05. It is withdrawn. Still not client-confirmed: O-1 stays open and is_mock stays true. See docs/upstream-factors-draft.md.",
+      "data_quality": "client-table2"
     },
     {
       "destination": "refuse_discard",
@@ -3424,7 +3424,7 @@
       "food_category": null,
       "metric": "water",
       "value_per_kg": "0.0600000000",
-      "source_note": "Rawtec table 2 ('bin to destination'), mean of 3 client row(s): Other Food Waste (Bin to Landfill) = 0.06; Refuse (Bin to Landfill) = 0.06; Unknown Food Waste (Bin to Landfill) = 0.06 -> unweighted mean 0.06. The water column does not share that defect and looks like an independent measurement -- see docs/upstream-factors-draft.md.",
+      "source_note": "Rawtec table 2 ('bin to destination'), mean of 3 client row(s): Other Food Waste (Bin to Landfill) = 0.06; Refuse (Bin to Landfill) = 0.06; Unknown Food Waste (Bin to Landfill) = 0.06 -> unweighted mean 0.06. The water column was never implicated in that defect and is identical in both revisions of the client's document -- see docs/upstream-factors-draft.md.",
       "data_quality": "client-table2"
     },
     {
@@ -3432,9 +3432,9 @@
       "sector": null,
       "food_category": null,
       "metric": "co2e",
-      "value_per_kg": "2.0100000000",
-      "source_note": "Rawtec table 2 ('bin to destination'), client row: Sewer/Wastewater Treatment (Bin to Biosolids) = 2.01 [CO2-eq copied from Rawtec table 1's Drinks/Beverages (excluding dairy) row -- see provenance doc] (used directly, no aggregation). CAUTION: the CO2-eq column of table 2 is a verbatim copy of table 1's CO2-eq column -- used here on the repository owner's explicit instruction of 2026-09-05, pending client confirmation. See docs/upstream-factors-draft.md.",
-      "data_quality": "client-table2-verbatim"
+      "value_per_kg": "0.0000000000",
+      "source_note": "Rawtec table 2 ('bin to destination'), client row: Sewer/Wastewater Treatment (Bin to Biosolids) = 0.00 [2026-09-21 revision; the withdrawn 2026-09-05 column printed 2.01 here, a copy of a table 1 food row -- see provenance doc] (used directly, no aggregation). This is the client's CORRECTED CO2-eq column, from the revised document of 2026-09-21. The 2026-09-05 revision printed a verbatim copy of table 1's CO2-eq column here -- food figures in destination rows, which priced composting worse than landfill -- and that column was used as printed on the repository owner's explicit instruction of 2026-09-05. It is withdrawn. Still not client-confirmed: O-1 stays open and is_mock stays true. See docs/upstream-factors-draft.md.",
+      "data_quality": "client-table2"
     },
     {
       "destination": "sewer",
@@ -3442,7 +3442,7 @@
       "food_category": null,
       "metric": "water",
       "value_per_kg": "0.0000000000",
-      "source_note": "Rawtec table 2 ('bin to destination'), client row: Sewer/Wastewater Treatment (Bin to Biosolids) = 0.00 (used directly, no aggregation). The water column does not share that defect and looks like an independent measurement -- see docs/upstream-factors-draft.md.",
+      "source_note": "Rawtec table 2 ('bin to destination'), client row: Sewer/Wastewater Treatment (Bin to Biosolids) = 0.00 (used directly, no aggregation). The water column was never implicated in that defect and is identical in both revisions of the client's document -- see docs/upstream-factors-draft.md.",
       "data_quality": "client-table2"
     },
     {
@@ -3450,9 +3450,9 @@
       "sector": null,
       "food_category": null,
       "metric": "co2e",
-      "value_per_kg": "11.0500000000",
-      "source_note": "Rawtec table 2 ('bin to destination'), mean of 2 client row(s): Charity Redistribution (Bin to Fork) = 1.82 [CO2-eq copied from Rawtec table 1's Vegetable row -- see provenance doc]; Commercial Redistribution (Bin to Fork) = 20.28 [CO2-eq copied from Rawtec table 1's Red Meat row -- see provenance doc] -> unweighted mean 11.05. CAUTION: the CO2-eq column of table 2 is a verbatim copy of table 1's CO2-eq column -- used here on the repository owner's explicit instruction of 2026-09-05, pending client confirmation. See docs/upstream-factors-draft.md.",
-      "data_quality": "client-table2-verbatim"
+      "value_per_kg": "0.0400000000",
+      "source_note": "Rawtec table 2 ('bin to destination'), mean of 2 client row(s): Charity Redistribution (Bin to Fork) = 0.04 [2026-09-21 revision; the withdrawn 2026-09-05 column printed 1.82 here, a copy of a table 1 food row -- see provenance doc]; Commercial Redistribution (Bin to Fork) = 0.04 [2026-09-21 revision; the withdrawn 2026-09-05 column printed 20.28 here, a copy of a table 1 food row -- see provenance doc] -> unweighted mean 0.04. This is the client's CORRECTED CO2-eq column, from the revised document of 2026-09-21. The 2026-09-05 revision printed a verbatim copy of table 1's CO2-eq column here -- food figures in destination rows, which priced composting worse than landfill -- and that column was used as printed on the repository owner's explicit instruction of 2026-09-05. It is withdrawn. Still not client-confirmed: O-1 stays open and is_mock stays true. See docs/upstream-factors-draft.md.",
+      "data_quality": "client-table2"
     },
     {
       "destination": "food_redistribution",
@@ -3460,7 +3460,7 @@
       "food_category": null,
       "metric": "water",
       "value_per_kg": "0.0600000000",
-      "source_note": "Rawtec table 2 ('bin to destination'), mean of 2 client row(s): Charity Redistribution (Bin to Fork) = 0.06; Commercial Redistribution (Bin to Fork) = 0.06 -> unweighted mean 0.06. The water column does not share that defect and looks like an independent measurement -- see docs/upstream-factors-draft.md.",
+      "source_note": "Rawtec table 2 ('bin to destination'), mean of 2 client row(s): Charity Redistribution (Bin to Fork) = 0.06; Commercial Redistribution (Bin to Fork) = 0.06 -> unweighted mean 0.06. The water column was never implicated in that defect and is identical in both revisions of the client's document -- see docs/upstream-factors-draft.md.",
       "data_quality": "client-table2"
     },
     {
@@ -3468,9 +3468,9 @@
       "sector": null,
       "food_category": null,
       "metric": "co2e",
-      "value_per_kg": "9.3966666667",
-      "source_note": "Rawtec table 2 ('bin to destination'), mean of 3 client row(s): Stock Feed (Bin to Farm) = 10.62 [CO2-eq copied from Rawtec table 1's Pork row -- see provenance doc]; Pet Food (Bin to Farm) = 5.94 [CO2-eq copied from Rawtec table 1's Seafood row -- see provenance doc]; Unknown Repurposed (Bin to Farm) = 11.63 [CO2-eq copied from Rawtec table 1's Other meat row -- see provenance doc] -> unweighted mean 9.396666666666666666666666667. CAUTION: the CO2-eq column of table 2 is a verbatim copy of table 1's CO2-eq column -- used here on the repository owner's explicit instruction of 2026-09-05, pending client confirmation. See docs/upstream-factors-draft.md.",
-      "data_quality": "client-table2-verbatim"
+      "value_per_kg": "-0.1900000000",
+      "source_note": "Rawtec table 2 ('bin to destination'), mean of 3 client row(s): Stock Feed (Bin to Farm) = -0.19 [2026-09-21 revision; the withdrawn 2026-09-05 column printed 10.62 here, a copy of a table 1 food row -- see provenance doc]; Pet Food (Bin to Farm) = -0.19 [2026-09-21 revision; the withdrawn 2026-09-05 column printed 5.94 here, a copy of a table 1 food row -- see provenance doc]; Unknown Repurposed (Bin to Farm) = -0.19 [2026-09-21 revision; the withdrawn 2026-09-05 column printed 11.63 here, a copy of a table 1 food row -- see provenance doc] -> unweighted mean -0.19. This is the client's CORRECTED CO2-eq column, from the revised document of 2026-09-21. The 2026-09-05 revision printed a verbatim copy of table 1's CO2-eq column here -- food figures in destination rows, which priced composting worse than landfill -- and that column was used as printed on the repository owner's explicit instruction of 2026-09-05. It is withdrawn. Still not client-confirmed: O-1 stays open and is_mock stays true. See docs/upstream-factors-draft.md.",
+      "data_quality": "client-table2"
     },
     {
       "destination": "animal_feed",
@@ -3478,7 +3478,7 @@
       "food_category": null,
       "metric": "water",
       "value_per_kg": "-1.9500000000",
-      "source_note": "Rawtec table 2 ('bin to destination'), mean of 3 client row(s): Stock Feed (Bin to Farm) = -1.95; Pet Food (Bin to Farm) = -1.95; Unknown Repurposed (Bin to Farm) = -1.95 -> unweighted mean -1.95. The water column does not share that defect and looks like an independent measurement -- see docs/upstream-factors-draft.md.",
+      "source_note": "Rawtec table 2 ('bin to destination'), mean of 3 client row(s): Stock Feed (Bin to Farm) = -1.95; Pet Food (Bin to Farm) = -1.95; Unknown Repurposed (Bin to Farm) = -1.95 -> unweighted mean -1.95. The water column was never implicated in that defect and is identical in both revisions of the client's document -- see docs/upstream-factors-draft.md.",
       "data_quality": "client-table2"
     },
     {
@@ -3486,9 +3486,9 @@
       "sector": null,
       "food_category": null,
       "metric": "co2e",
-      "value_per_kg": "3.9800000000",
-      "source_note": "Rawtec table 2 ('bin to destination'), client row: Upcycled (Bin to Product) = 3.98 [CO2-eq copied from Rawtec table 1's Poultry row -- see provenance doc] (used directly, no aggregation). CAUTION: the CO2-eq column of table 2 is a verbatim copy of table 1's CO2-eq column -- used here on the repository owner's explicit instruction of 2026-09-05, pending client confirmation. See docs/upstream-factors-draft.md.",
-      "data_quality": "client-table2-verbatim"
+      "value_per_kg": "-0.1500000000",
+      "source_note": "Rawtec table 2 ('bin to destination'), client row: Upcycled (Bin to Product) = -0.15 [2026-09-21 revision; the withdrawn 2026-09-05 column printed 3.98 here, a copy of a table 1 food row -- see provenance doc] (used directly, no aggregation). This is the client's CORRECTED CO2-eq column, from the revised document of 2026-09-21. The 2026-09-05 revision printed a verbatim copy of table 1's CO2-eq column here -- food figures in destination rows, which priced composting worse than landfill -- and that column was used as printed on the repository owner's explicit instruction of 2026-09-05. It is withdrawn. Still not client-confirmed: O-1 stays open and is_mock stays true. See docs/upstream-factors-draft.md.",
+      "data_quality": "client-table2"
     },
     {
       "destination": "upcycling",
@@ -3496,7 +3496,7 @@
       "food_category": null,
       "metric": "water",
       "value_per_kg": "-2.8000000000",
-      "source_note": "Rawtec table 2 ('bin to destination'), client row: Upcycled (Bin to Product) = -2.80 (used directly, no aggregation). The water column does not share that defect and looks like an independent measurement -- see docs/upstream-factors-draft.md.",
+      "source_note": "Rawtec table 2 ('bin to destination'), client row: Upcycled (Bin to Product) = -2.80 (used directly, no aggregation). The water column was never implicated in that defect and is identical in both revisions of the client's document -- see docs/upstream-factors-draft.md.",
       "data_quality": "client-table2"
     },
     {

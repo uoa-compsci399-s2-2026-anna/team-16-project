@@ -188,8 +188,16 @@ weights -- see the provenance document for the full working. The client's
 reported, not silently absorbed into a neighbour.
 
 DESTINATION MAPPING (STEP 3, TABLE 2 -- IN SCOPE ON THE OWNER'S RULING OF
-2026-09-05)
+2026-09-05; CO2-eq COLUMN CORRECTED BY THE CLIENT 2026-09-21)
 ----------------------------------------------------------------------------
+Table 2's CO2-eq column was a verbatim copy of table 1's in the client's
+2026-09-05 document and was used as printed on the owner's ruling of that
+date. The client replaced it on 2026-09-21 and this script now builds from
+the corrected column; ``rawtec_source_data.py``'s module docstring holds the
+full record of the defect, the ruling and the correction, and
+``_assert_only_table2_co2_moved()`` below re-checks, on every build, that
+nothing else in either table moved with it.
+
 See ``NZ_DESTINATION_SOURCES`` below. `prevention` receives no client row --
 it is the mandatory 100% offset (§O-7) and giving it a factor would silently
 inflate every net-benefit figure the calculator reports.
@@ -358,9 +366,11 @@ REFED_FACTORS_PATH = (
 
 sys.path.insert(0, str(HERE))
 from rawtec_source_data import (  # noqa: E402
+    PRIOR_REVISION_TABLE1,
+    PRIOR_REVISION_TABLE2_EXCEPT_CO2,
     TABLE1,
     TABLE2,
-    TABLE2_CO2_COPY_SOURCE,
+    WITHDRAWN_2026_09_05_TABLE2_CO2,
     destination_row,
     food_row,
 )
@@ -1218,6 +1228,102 @@ def _assert_completeness(data: dict) -> None:
         )
 
 
+def _assert_only_table2_co2_moved() -> None:
+    """Re-run, on every build, the measurement this revision was made on.
+
+    The client's revised document of 2026-09-21 changed exactly one thing:
+    table 2's CO2-eq column. That was established by parsing the new document
+    and diffing it cell by cell against the committed 2026-09-05
+    transcription -- table 1 showed zero differences across all 26 rows and
+    all six columns, and so did table 2's destination labels, life-cycle
+    column and water column.
+
+    A measurement made once and then only described in prose is a claim. This
+    checks it. `rawtec_source_data.PRIOR_REVISION_TABLE1` and
+    `PRIOR_REVISION_TABLE2_EXCEPT_CO2` freeze the cells that did not move,
+    exactly as the 2026-09-05 transcription held them; if a later edit moves
+    one of them without moving the frozen record in the same commit, the
+    build stops here instead of writing a factor set whose provenance
+    document says something that is no longer true.
+
+    It also refuses a `TABLE2` that still carries any of the withdrawn
+    column's values, which is what a half-applied revision would look like.
+
+    This replaces the `TABLE2_CO2_COPY_SOURCE` check that stood here before.
+    That one asserted that table 2's CO2-eq column *was* a copy of table 1's,
+    so that the provenance document could not describe a defect the data no
+    longer had. The client has now removed the defect, so that check would
+    fail on correct data; what is kept is its purpose -- no silent drift
+    between the client's document, the transcription and the prose about it.
+    """
+    problems: list[str] = []
+
+    if len(TABLE1) != len(PRIOR_REVISION_TABLE1):
+        problems.append(
+            f"TABLE1 has {len(TABLE1)} rows; the 2026-09-05 transcription had "
+            f"{len(PRIOR_REVISION_TABLE1)}."
+        )
+    else:
+        for index, (row, frozen) in enumerate(zip(TABLE1, PRIOR_REVISION_TABLE1)):
+            f_cat, f_food, f_cycle, f_co2, f_water, f_land = frozen
+            for column, now, then in (
+                ("category", row.category, f_cat),
+                ("food", row.food, f_food),
+                ("life_cycle", row.life_cycle, f_cycle),
+                ("co2e_per_kg", row.co2e_per_kg, Decimal(f_co2)),
+                ("water_l_per_kg", row.water_l_per_kg, Decimal(f_water)),
+                ("land_t_per_ha", row.land_t_per_ha, Decimal(f_land)),
+            ):
+                if now != then:
+                    problems.append(
+                        f"TABLE1 row {index} ({f_food}) {column}: now {now!r}, "
+                        f"2026-09-05 transcription {then!r}"
+                    )
+
+    if len(TABLE2) != len(PRIOR_REVISION_TABLE2_EXCEPT_CO2):
+        problems.append(
+            f"TABLE2 has {len(TABLE2)} rows; the 2026-09-05 transcription had "
+            f"{len(PRIOR_REVISION_TABLE2_EXCEPT_CO2)}."
+        )
+    else:
+        for index, (row, frozen) in enumerate(
+            zip(TABLE2, PRIOR_REVISION_TABLE2_EXCEPT_CO2)
+        ):
+            f_dest, f_cycle, f_water = frozen
+            expected_water = None if f_water is None else Decimal(f_water)
+            for column, now, then in (
+                ("destination", row.destination, f_dest),
+                ("life_cycle", row.life_cycle, f_cycle),
+                ("water_l_per_kg", row.water_l_per_kg, expected_water),
+            ):
+                if now != then:
+                    problems.append(
+                        f"TABLE2 row {index} ({f_dest}) {column}: now {now!r}, "
+                        f"2026-09-05 transcription {then!r}"
+                    )
+
+    for row in TABLE2:
+        withdrawn = WITHDRAWN_2026_09_05_TABLE2_CO2.get(row.destination)
+        if withdrawn is not None and row.co2e_per_kg == Decimal(withdrawn):
+            problems.append(
+                f"TABLE2 row {row.destination!r} still carries the withdrawn "
+                f"2026-09-05 CO2-eq value {withdrawn} -- that column was a "
+                "copy of table 1's food figures and was replaced by the "
+                "client on 2026-09-21."
+            )
+
+    if problems:
+        raise SystemExit(
+            "The client's transcription has moved somewhere it was measured "
+            "not to. The 2026-09-21 revision changed table 2's CO2-eq column "
+            "and nothing else; if that is no longer true, the provenance in "
+            "rawtec_source_data.py and docs/upstream-factors-draft.md needs "
+            "rewriting in the same commit as the data, and PRIOR_REVISION_* "
+            "needs re-freezing deliberately rather than to make this pass:\n  "
+            + "\n  ".join(problems)
+        )
+
+
 def build_upstream(refed_upstream) -> list[dict]:
     rows: list[dict] = []
     for nz_food, client_foods in NZ_FOOD_CATEGORY_SOURCES.items():
@@ -1230,18 +1336,7 @@ def build_upstream(refed_upstream) -> list[dict]:
 def build_downstream() -> list[dict]:
     rows: list[dict] = []
 
-    # Mechanical check that the copy-paste correspondence this file's own
-    # docstring describes is actually what the transcribed data says --
-    # this is the check that keeps the provenance document's claim honest.
-    for label, (category, food) in TABLE2_CO2_COPY_SOURCE.items():
-        dest = destination_row(label)
-        src = food_row(food)
-        if src.category != category or dest.co2e_per_kg != src.co2e_per_kg:
-            raise SystemExit(
-                f"TABLE2_CO2_COPY_SOURCE claims {label!r} copies "
-                f"{category}/{food}, but the transcribed data disagrees "
-                f"({dest.co2e_per_kg} vs {src.co2e_per_kg})."
-            )
+    _assert_only_table2_co2_moved()
 
     for nz_dest, client_dests in NZ_DESTINATION_SOURCES.items():
         client_rows = [destination_row(name) for name in client_dests]
@@ -1258,7 +1353,9 @@ def build_downstream() -> list[dict]:
             components = "; ".join(
                 f"{r.destination} ({r.life_cycle}) = {getattr(r, attr)}"
                 + (
-                    f" [CO2-eq copied from Rawtec table 1's {TABLE2_CO2_COPY_SOURCE[r.destination][1]} row -- see provenance doc]"
+                    f" [2026-09-21 revision; the withdrawn 2026-09-05 column "
+                    f"printed {WITHDRAWN_2026_09_05_TABLE2_CO2[r.destination]} "
+                    f"here, a copy of a table 1 food row -- see provenance doc]"
                     if metric == "co2e" else ""
                 )
                 for r in present
@@ -1275,17 +1372,21 @@ def build_downstream() -> list[dict]:
 
             if metric == "co2e":
                 caution = (
-                    "CAUTION: the CO2-eq column of table 2 is a verbatim copy "
-                    "of table 1's CO2-eq column -- used here on the "
-                    "repository owner's explicit instruction of 2026-09-05, "
-                    "pending client confirmation. See "
-                    "docs/upstream-factors-draft.md."
+                    "This is the client's CORRECTED CO2-eq column, from the "
+                    "revised document of 2026-09-21. The 2026-09-05 revision "
+                    "printed a verbatim copy of table 1's CO2-eq column here "
+                    "-- food figures in destination rows, which priced "
+                    "composting worse than landfill -- and that column was "
+                    "used as printed on the repository owner's explicit "
+                    "instruction of 2026-09-05. It is withdrawn. Still not "
+                    "client-confirmed: O-1 stays open and is_mock stays true. "
+                    "See docs/upstream-factors-draft.md."
                 )
             else:
                 caution = (
-                    "The water column does not share that defect and looks "
-                    "like an independent measurement -- see "
-                    "docs/upstream-factors-draft.md."
+                    "The water column was never implicated in that defect and "
+                    "is identical in both revisions of the client's document "
+                    "-- see docs/upstream-factors-draft.md."
                 )
 
             rows.append({
@@ -1297,7 +1398,7 @@ def build_downstream() -> list[dict]:
                 "source_note": (
                     f"Rawtec table 2 ('bin to destination'), {agg_note}. {caution}"
                 ),
-                "data_quality": "client-table2-verbatim" if metric == "co2e" else "client-table2",
+                "data_quality": "client-table2",
             })
 
     # `other_recovery`: no client row -- filled from ReFED's "Industrial
@@ -1570,8 +1671,8 @@ def build() -> dict:
 
     data = {
         "version_label": (
-            "CLIENT-DRAFT-2026-09-05 (Rawtec + ReFED cumulative footprint, "
-            "plus ch4 and cost) - NOT PUBLISHED"
+            "CLIENT-DRAFT-2026-09-21 (Rawtec revised table 2 + ReFED "
+            "cumulative footprint, plus ch4 and cost) - NOT PUBLISHED"
         ),
         "is_mock": True,
         "notes": (
@@ -1603,10 +1704,14 @@ def build() -> dict:
             "sources; see docs/upstream-factors-draft.md. is_mock "
             "stays true: these values are derived, not yet the client's "
             "confirmed figures -- the placeholder banner must keep showing "
-            "until the owner decides otherwise. Built as a DRAFT; "
-            "published 2026-09-06 on the owner's instruction, which "
-            "archived the set it replaced rather than deleting it, so "
-            "rollback remains available. Full provenance: "
+            "until the owner decides otherwise. This revision carries the "
+            "client's CORRECTED table 2 CO2-eq column, received 2026-09-21: "
+            "the 2026-09-05 column was a verbatim copy of table 1's food "
+            "figures, which priced composting worse than landfill. The set "
+            "built from that column was published on 2026-09-06 on the "
+            "owner's instruction; this one is built as a DRAFT and is NOT "
+            "published. Publishing archives rather than deletes, so rollback "
+            "remains available either way. Full provenance: "
             "docs/upstream-factors-draft.md and "
             "data/upstream-factors-draft/build_upstream_factors_draft.py."
         ),

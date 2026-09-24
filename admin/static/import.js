@@ -38,6 +38,21 @@
  * is silently a NEW ROW. Nothing in the result of a successful import
  * distinguishes those two, and the preview is the only place a reader can.
  *
+ * EVERY WORD SHOWN HERE CAME FROM THE TEMPLATE. This file holds no English
+ * sentence of its own. Each string is rendered by
+ * admin/templates/sqladmin/modals/import.html through `_()`, put on the
+ * element it belongs to as a `data-*` attribute, and read back below - which
+ * is what `/admin/static/security.js` does and this panel's established
+ * pattern. It is not decoration: thirteen bare literals here were the half of
+ * the import dialog that stayed English on the Chinese panel after the
+ * template was translated, and a string in a `.js` file is a string no
+ * catalogue and no i18n test can see.
+ *
+ * `{count}`, `{key}`, `{line}` and `{error}` are substituted by `fill` below.
+ * They are braces rather than `%(name)s` because jinja2's newstyle `_()`
+ * applies `translated % variables` to everything it returns, so a `%()s` meant
+ * for later raises KeyError while the page renders.
+ *
  * EVERY NUMBER SHOWN HERE CAME FROM THE SERVER. This file computes nothing
  * about the file it is sending: it does not parse the CSV, it does not count
  * rows, it does not decide what is a create and what is an update. It renders
@@ -90,6 +105,31 @@
     show(element);
   }
 
+  /* THE TWO HELPERS THAT MAKE THIS FILE WORDLESS.
+   *
+   * `words` reads one translated string off the element it belongs to. An
+   * empty string when the attribute is absent, deliberately: an English
+   * fallback baked in here would be the defect this file just had, quietly
+   * restored - a dialog that looks translated until one attribute is dropped
+   * and then says one thing in English that nobody is looking for. Missing is
+   * visible; wrong is not. The page-level tests in
+   * tests/admin/test_i18n_pages.py assert each attribute onto its own element
+   * so that a dropped one fails there rather than on a staff member's screen.
+   */
+  function words(node, name) {
+    return node.getAttribute("data-" + name) || "";
+  }
+
+  /* `split`/`join` rather than a regular expression: a placeholder is a
+   * literal, and building a RegExp out of one would have to escape it. */
+  function fill(template, values) {
+    var text = template;
+    Object.keys(values).forEach(function (key) {
+      text = text.split("{" + key + "}").join(values[key]);
+    });
+    return text;
+  }
+
   function element(tag, className, text) {
     var node = document.createElement(tag);
     if (className) { node.className = className; }
@@ -114,7 +154,7 @@
       fileName.textContent = chosen.name;
       fileName.classList.remove("is-empty");
     } else {
-      fileName.textContent = fileName.getAttribute("data-empty");
+      fileName.textContent = words(fileName, "empty");
       fileName.classList.add("is-empty");
     }
     hide(message);
@@ -207,14 +247,15 @@
     busy = state;
     checkButton.disabled = state;
     confirmButton.disabled = state;
-    checkButton.textContent = state && label ? label : "Check this file";
+    checkButton.textContent =
+      state && label ? label : words(checkButton, "label");
   }
 
   /* --- the preview ------------------------------------------------------ */
 
-  function countPill(list, label, value, className) {
+  function countPill(list, template, value, className) {
     if (!value) { return; }
-    list.appendChild(element("li", className, value + " " + label));
+    list.appendChild(element("li", className, fill(template, { count: value })));
   }
 
   function rowList(node, heading, rows, describe) {
@@ -234,32 +275,42 @@
     preview.appendChild(element("p", "mb-0 fw-bold", plan.summary));
 
     var counts = element("ul", "kaicalc-import-counts");
-    countPill(counts, "to add", plan.counts.created, null);
-    countPill(counts, "to update", plan.counts.updated, null);
-    countPill(counts, "to deactivate", plan.counts.deactivated, "is-retiring");
-    countPill(counts, "to delete", plan.counts.deleted, "is-retiring");
-    countPill(counts, "rejected", plan.counts.rejected, "is-rejected");
+    countPill(counts, words(preview, "count-created"), plan.counts.created, null);
+    countPill(counts, words(preview, "count-updated"), plan.counts.updated, null);
+    countPill(
+      counts, words(preview, "count-deactivated"), plan.counts.deactivated,
+      "is-retiring"
+    );
+    countPill(
+      counts, words(preview, "count-deleted"), plan.counts.deleted, "is-retiring"
+    );
+    countPill(
+      counts, words(preview, "count-rejected"), plan.counts.rejected, "is-rejected"
+    );
     if (counts.childNodes.length) { preview.appendChild(counts); }
 
     /* ADDED ROWS FIRST, AND NAMED. On an upsert a row that "would be added"
      * is either a row somebody meant to add or a key with a typo in it, and
      * those look identical in a count. Showing the keys is what lets a reader
      * tell them apart, which is the whole reason this preview exists. */
-    rowList(preview, "Would be added", plan.created, function (row) {
-      return row.key + "  (line " + row.line + ")";
-    });
-    rowList(preview, "Would be updated", plan.updated, function (row) {
-      return row.key + "  (line " + row.line + ")";
-    });
-    rowList(preview, "Would be deactivated", plan.deactivated, function (row) {
+    function keyAndLine(row) {
+      return fill(words(preview, "row-line"), { key: row.key, line: row.line });
+    }
+    function justTheKey(row) {
       return row.key;
-    });
-    rowList(preview, "Would be deleted", plan.deleted, function (row) {
-      return row.key;
-    });
+    }
+
+    rowList(preview, words(preview, "heading-created"), plan.created, keyAndLine);
+    rowList(preview, words(preview, "heading-updated"), plan.updated, keyAndLine);
+    rowList(
+      preview, words(preview, "heading-deactivated"), plan.deactivated, justTheKey
+    );
+    rowList(preview, words(preview, "heading-deleted"), plan.deleted, justTheKey);
 
     if (plan.rejected && plan.rejected.length) {
-      preview.appendChild(element("p", "kaicalc-import-heading", "Refused"));
+      preview.appendChild(element(
+        "p", "kaicalc-import-heading", words(preview, "heading-rejected")
+      ));
       preview.appendChild(element(
         "div", "kaicalc-import-rejections", plan.rejected.join("\n\n")
       ));
@@ -282,25 +333,31 @@
     if (busy) { return; }
 
     if (!fileInput.files || !fileInput.files.length) {
-      say(message, "Choose a .csv or .json file first.", "alert-warning");
+      say(message, words(message, "msg-no-file"), "alert-warning");
       return;
     }
 
     hide(message);
     forgetThePreview();
-    working(true, "Checking…");
+    working(true, words(checkButton, "busy-label"));
 
     send(true).then(function (response) {
       if (!response.ok) {
         /* A refusal is plain text from admin/importing.py and names every
-         * value it could not read, one per line. Shown as it was written. */
+         * value it could not read, one per line. Shown as it was written.
+         * **That text is the server's and it is English**, on this panel's
+         * Chinese pages too - admin/importing.py's refusals have never been
+         * through the catalogue. Recorded rather than fixed here: this dialog
+         * was the round's scope, and translating a module's worth of refusals
+         * is its own piece of work. */
         return response.text().then(function (text) {
-          say(message, text || "This file could not be checked.", "alert-danger");
+          say(message, text || words(message, "msg-check-failed"), "alert-danger");
         });
       }
       return response.json().then(render);
     }).catch(function (error) {
-      say(message, "The file could not be checked: " + error.message,
+      say(message,
+          fill(words(message, "msg-check-error"), { error: error.message }),
           "alert-danger");
     }).then(function () {
       working(false);
@@ -312,17 +369,17 @@
   confirmButton.addEventListener("click", function () {
     if (busy) { return; }
     if (!fileInput.files || !fileInput.files.length) {
-      say(message, "Choose a .csv or .json file first.", "alert-warning");
+      say(message, words(message, "msg-no-file"), "alert-warning");
       return;
     }
     hide(message);
-    working(true, "Importing…");
-    confirmButton.textContent = "Importing…";
+    working(true, words(confirmButton, "busy-label"));
+    confirmButton.textContent = words(confirmButton, "busy-label");
 
     send(false).then(function (response) {
       if (!response.ok) {
         return response.text().then(function (text) {
-          say(message, text || "The import was refused.", "alert-danger");
+          say(message, text || words(message, "msg-refused"), "alert-danger");
           hide(confirmCell);
         });
       }
@@ -341,22 +398,25 @@
           } catch (ignored) { /* a partial line at the end of the stream */ }
         });
         if (last && last.ok) {
-          say(message, last.summary + " Reloading the list…", "alert-success");
+          say(message,
+              last.summary + " " + words(message, "msg-reloading"),
+              "alert-success");
           hide(confirmCell);
           window.setTimeout(function () { window.location.reload(); }, 900);
         } else {
           say(message,
-              (last && last.summary) || "The import did not complete.",
+              (last && last.summary) || words(message, "msg-incomplete"),
               "alert-danger");
           hide(confirmCell);
         }
       });
     }).catch(function (error) {
-      say(message, "The import could not be sent: " + error.message,
+      say(message,
+          fill(words(message, "msg-send-error"), { error: error.message }),
           "alert-danger");
     }).then(function () {
       working(false);
-      confirmButton.textContent = "Import";
+      confirmButton.textContent = words(confirmButton, "label");
     });
   });
 

@@ -168,6 +168,36 @@ async def test_the_dialog_takes_both_formats_in_one_control(admin_client):
 
 
 @pytest.mark.asyncio
+async def test_the_list_page_s_import_button_does_not_promise_one_format(admin_client):
+    """The button is the whole of what a staff member sees before the dialog.
+
+    sqladmin labels it `_("Import CSV")`. This screen takes a `.csv` OR a
+    `.json` file on one path, so that label tells somebody holding a JSON file
+    that this is not the place for it - and the dialog behind it, which says
+    so correctly, is never opened. `admin/i18n.py::_ImportButton` rewrites the
+    label in sqladmin's own compiled template; this is the assertion that the
+    rewrite reaches a real page rather than only a `preprocess` call.
+
+    Anchored on the element, not on the words: "Import" appears in the modal's
+    own heading and in its submit button too, and an assertion that only
+    looked for the string would pass against a page whose button still said
+    CSV.
+    """
+    page = (await admin_client.get("/admin/sector/list")).text
+
+    assert 'data-bs-target="#modal-import">Import</a>' in page, (
+        "the list page's Import control does not render the rewritten label; "
+        "either admin/i18n.py::_ImportButton is not installed in sqladmin's "
+        "Jinja environment, or sqladmin has changed the markup it is matched "
+        "against"
+    )
+    assert "Import CSV" not in page, (
+        "the page still promises CSV only somewhere, on a screen that takes "
+        "both formats"
+    )
+
+
+@pytest.mark.asyncio
 async def test_the_dialog_is_wired_for_drag_and_drop(admin_client):
     """`dragover`, `drop` and `dragenter` appear **zero** times in what
     sqladmin ships; it is a plain `<input type="file">`.

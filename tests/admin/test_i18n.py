@@ -902,6 +902,131 @@ def test_a_base_template_without_the_line_is_refused_rather_than_ignored():
     assert "VERSION SKEW" in message.upper()
 
 
+def _installed_sqladmin_list() -> str:
+    from pathlib import Path
+
+    import sqladmin
+
+    return (
+        Path(sqladmin.__file__).parent / "templates" / "sqladmin" / "list.html"
+    ).read_text(encoding="utf-8")
+
+
+def test_the_import_button_rewrite_still_finds_the_line_it_rewrites():
+    """The drift guard for the second sqladmin line the panel rewrites.
+
+    `admin/i18n.py::_ImportButton` relabels sqladmin's `_("Import CSV")`
+    button, because this panel's import takes a `.csv` OR a `.json` file on
+    one path and the button is all a staff member sees before opening the
+    dialog. Same failure mode as the `<html>` element above: a rewrite that
+    matches nothing looks installed and is not, and the button would quietly
+    go back to naming one of the two formats.
+
+    Anchored on the whole anchor rather than on the three words, so that this
+    fails if sqladmin keeps the label and moves it - which would leave the
+    rewrite matching nothing while the string was still findable.
+    """
+    assert i18n.SQLADMIN_IMPORT_BUTTON in _installed_sqladmin_list(), (
+        f"sqladmin {_installed_version('sqladmin')} no longer writes "
+        f"{i18n.SQLADMIN_IMPORT_BUTTON!r} in its own list.html, so the Import "
+        f"button would go back to promising CSV only on a screen that takes "
+        f"both formats. If the installed version does not match the pin "
+        f"({_pinned_version('sqladmin')}), fix that first - this failure is a "
+        f"symptom of it. If it does, update admin/i18n.py's literal by hand."
+    )
+
+
+def test_the_import_button_rewrite_is_applied_to_the_list_page_and_nowhere_else():
+    """The extension is wired in, and it reaches only the template it names.
+
+    The assertion above proves the literal is findable; an extension that was
+    never added to the environment would pass it unchanged. This renders the
+    substitution through a real Jinja environment instead.
+
+    The second half matters more here than it did for the `<html>` element:
+    six `brand/` templates descend from `sqladmin/list.html` and inherit the
+    rewritten block, so a rewrite keyed on anything looser than the template
+    name would run twice - and the second pass, finding no literal, would
+    raise.
+    """
+    from jinja2 import Environment, DictLoader
+
+    env = Environment(loader=DictLoader({}))
+    i18n.install(env)
+
+    source = _installed_sqladmin_list()
+    rewritten = env.preprocess(source, i18n.SQLADMIN_LIST_TEMPLATE)
+    assert '{{ _("Import") }}</a>' in rewritten
+    assert i18n.SQLADMIN_IMPORT_BUTTON not in rewritten
+    assert '_("Import CSV")' not in rewritten
+
+    assert env.preprocess(source, "brand/model_list.html") == source
+
+
+def test_a_list_template_without_the_import_button_is_refused_rather_than_ignored():
+    """The mutation this guard exists to catch, exercised directly.
+
+    A `preprocess` that returned the source unchanged when it could not find
+    its literal would pass every other test in this file, and the button would
+    simply go back to saying "Import CSV" with nothing in any log. So the
+    not-found path is asserted to raise, and the message is asserted to name
+    the version-skew cause and the consequence - a reader who is told only
+    that "a rewrite failed" has to go and find out what breaks.
+    """
+    from jinja2 import Environment, DictLoader
+
+    env = Environment(loader=DictLoader({}))
+    i18n.install(env)
+
+    with pytest.raises(RuntimeError) as raised:
+        env.preprocess("<a>{{ _(\"Import CSV\") }}</a>", i18n.SQLADMIN_LIST_TEMPLATE)
+
+    message = str(raised.value)
+    assert "docker/constraints.txt" in message
+    assert "VERSION SKEW" in message.upper()
+    assert ".json" in message, (
+        "the message does not say what the button would be getting wrong"
+    )
+
+
+@pytest.mark.parametrize("language", TRANSLATED)
+def test_the_new_import_button_msgid_is_in_the_catalogue(language):
+    """The rewrite introduces a msgid; a msgid with no entry renders English.
+
+    `"Import"` was already a catalogue key before this rewrite existed, which
+    is why no translation was added for it. Asserted rather than assumed,
+    because the whole point of the rewrite is that the Chinese panel keeps a
+    translated button - a rewrite that silently de-translated the control
+    would be a worse outcome than the wrong word.
+    """
+    assert "Import" in i18n.catalogue(language).strings
+
+
+@pytest.mark.parametrize("language", TRANSLATED)
+def test_the_retired_import_csv_key_is_kept_because_the_package_still_has_it(
+    language,
+):
+    """`"Import CSV"` renders nowhere now and stays in the catalogue anyway.
+
+    A key nothing renders is normally litter. This one is not, and the reason
+    is mechanical: `_sqladmin_msgids()` above reads its msgids out of the
+    **installed package**, and `_ImportButton` rewrites the compiled template,
+    not the file on disk - so `_("Import CSV")` is still written there and
+    `test_sqladmin_s_own_chrome_is_translated` still demands an entry for it.
+
+    Deleting the entry would fail that test with "sqladmin chrome untranslated
+    in zh: ['Import CSV']", which is indistinguishable from a genuinely
+    missing translation and would send the next reader to add it back. This
+    test states the dependency in the place somebody would go to delete it.
+    """
+    assert "Import CSV" in i18n.catalogue(language).strings, (
+        "'Import CSV' was removed from the catalogue, but sqladmin's own "
+        "list.html still contains the string - admin/i18n.py rewrites the "
+        "compiled template, not the installed file. Restore the entry; it "
+        "becomes removable only when sqladmin itself stops writing it."
+    )
+
+
 def test_the_vendored_macros_copy_still_matches_its_original():
     """admin/templates/sqladmin/_macros.html is a copy; copies drift silently.
 

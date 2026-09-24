@@ -15,6 +15,7 @@ to appear in. "The page contains Chinese characters" would pass against a
 page with one translated word in it and is not written anywhere in this file.
 """
 
+import json
 import re
 
 import pytest
@@ -250,6 +251,451 @@ async def test_the_page_heading_composed_from_a_view_name_is_translated(admin_cl
     listing = await admin_client.get("/admin/constant/list", params={"lang": "zh"})
     assert '<h3 class="card-title">常量</h3>' in listing.text
 
+
+
+async def test_the_rewritten_import_button_is_still_translated_in_place(admin_client):
+    """The button says the right thing, and says it in the rendered language.
+
+    Two ways this could regress and they fail differently, so both are named:
+    a rewrite that dropped the `_()` wrapper would leave a correct English
+    button on a Chinese page, and a rewrite that never ran would leave
+    「导入 CSV」 - faithfully translated and still wrong about the formats.
+
+    Anchored on the anchor element rather than on the word, because 「导入」
+    also appears in the dialog's heading and its submit button on this same
+    page; a bare substring assertion would pass against a button that had
+    reverted.
+    """
+    page = (
+        await admin_client.get("/admin/sector/list", params={"lang": "zh"})
+    ).text
+
+    assert 'data-bs-target="#modal-import">导入</a>' in page, (
+        "the list page's Import button did not render as 导入 - either "
+        "admin/i18n.py::_ImportButton dropped the `_()` wrapper, or the "
+        "rewrite did not run on this environment's sqladmin/list.html"
+    )
+    assert "导入 CSV" not in page, (
+        "the button still carries the CSV-only label, translated"
+    )
+
+
+def _inside(body: str, pattern: str) -> str:
+    """The text inside the first element `pattern` matches, stripped.
+
+    One capturing group, and the match is asserted rather than allowed to
+    return None: an assertion written against `None` reads as "the string is
+    not translated" when what actually happened is that the element is no
+    longer there at all, and the next reader debugs the catalogue for an hour.
+    """
+    found = re.search(pattern, body, re.S)
+    assert found is not None, f"no element matched {pattern!r}"
+    return found.group(1).strip()
+
+
+def _open_tag(body: str, marker: str) -> str:
+    """The opening tag that starts with `marker`, up to its `>`.
+
+    The `data-*` attributes below are asserted **inside the tag they sit on**
+    rather than anywhere in the page, which is this file's rule applied to an
+    attribute: a `data-heading-created` that had migrated to some other
+    element would satisfy a substring check and be invisible to the script
+    that reads it off this one.
+    """
+    start = body.index(marker)
+    return body[start : body.index(">", start) + 1]
+
+
+#: The dialog lives on every importable list page; `sector` is the one WP1's
+#: button test already uses, and it is one of the nine tables whose second
+#: mode DEACTIVATES - which is why `formula`, one of the five that DELETE, is
+#: checked alongside it further down.
+_IMPORT_PAGE = "/admin/sector/list"
+
+
+async def test_the_import_dialog_s_own_strings_are_translated_in_place(admin_client):
+    """**The dialog that had left the translation system**, asserted back into it.
+
+    `admin/templates/sqladmin/modals/import.html` replaced sqladmin's own
+    modal for three reasons that are all still good, and took the dialog out
+    of the catalogue as a side effect nobody noticed: sqladmin's modal had
+    every string `_()`-wrapped and the replacement's were bare literals.
+    Measured at the time: 154 `_()` calls across the 51 templates under
+    `admin/templates/`, and **0** in this one.
+
+    **Widening `test_i18n.py::_sqladmin_msgids` to our own templates would not
+    have caught it**, and that is worth writing down here because it is the
+    obvious guard and it is the wrong one: that function extracts `_("…")`
+    *calls*, so a string that was never wrapped produces no msgid at all and a
+    template with zero `_()` in it contributes nothing to compare against.
+    Only a rendered page can tell the difference, which is what this file is
+    for.
+
+    Every assertion below names the element the string has to be inside, per
+    this file's own rule. A bare `"导入到供应链环节" in body` would pass against
+    a dialog that rendered it into a `title=` attribute or a comment.
+    """
+    body = (await admin_client.get(_IMPORT_PAGE, params={"lang": "zh"})).text
+
+    # The heading, composed from the view's already-translated `name_plural`.
+    assert '<h3 class="mb-1">导入到供应链环节</h3>' in body, (
+        "the dialog's heading is not translated, or `name_plural` was wrapped "
+        "in a second `_()` and the lookup of an already-Chinese string missed"
+    )
+
+    assert (
+        _inside(body, r'<p class="text-muted mb-3"[^>]*>(.*?)</p>')
+        == "系统会先检查这个文件，在你确认之前不会写入任何内容。"
+    ), "the line telling a reader nothing is written yet is still English"
+
+    assert (
+        '<span class="kaicalc-drop-title">把文件拖到这里，或者选择一个文件</span>'
+        in body
+    ), "the drop zone's title is still English"
+
+    # The hint, and the two file extensions still emphasised inside it. They
+    # are interpolated rather than part of the msgid, so a translation that
+    # dropped `%(csv)s` would leave the sentence reading as prose with no
+    # formats named in it - and `test_placeholders_survive_translation` would
+    # catch that, but only this assertion catches the `|safe` being lost and
+    # the tags arriving on screen as text.
+    hint = _inside(body, r'<span class="kaicalc-drop-hint">(.*?)</span>')
+    assert hint.startswith("一个 <strong>.csv</strong> 或 <strong>.json</strong> 文件"), (
+        f"the drop zone's hint has lost its translation or its markup: {hint!r}"
+    )
+    assert "从这里导出的文件改好后可以直接传回来。" in hint
+
+    # The filename placeholder, in BOTH places it exists: the visible text and
+    # `data-empty`, which /admin/static/import.js reads back when the file is
+    # cleared. Two assertions because they are two strings in the markup, and
+    # a dialog that translated only the first says 未选择文件 until somebody
+    # chooses a file and cancels, and "No file chosen" afterwards.
+    assert (
+        _inside(body, r'<p id="kaicalc-import-filename"[^>]*>(.*?)</p>') == "未选择文件"
+    )
+    assert 'data-empty="未选择文件"' in _open_tag(body, '<p id="kaicalc-import-filename"')
+
+    assert (
+        _inside(body, r'<label class="form-label" for="kaicalc-import-mode">(.*?)</label>')
+        == "本表中已有的行"
+    ), "the mode control's label is still English"
+
+    assert (
+        _inside(body, r'<option value="update_and_add" selected>(.*?)</option>')
+        == "更新并新增 —— 文件中列出的行会被更新，文件中没有列出的行保持不变"
+    )
+
+    # The three controls. The Cancel anchor is matched with its own
+    # `data-bs-dismiss`, and the two buttons by id, because 「导入」 appears
+    # four times on this page - the list page's own Import button, this
+    # dialog's heading and this button - and a bare substring would pass
+    # against a button that had reverted.
+    assert '<a href="#" class="btn w-100" data-bs-dismiss="modal">取消</a>' in body
+    assert (
+        _inside(body, r'<button id="kaicalc-import-check"[^>]*>(.*?)</button>')
+        == "检查这个文件"
+    )
+    assert (
+        _inside(body, r'<button id="kaicalc-import-confirm"[^>]*>(.*?)</button>')
+        == "导入"
+    )
+
+
+async def test_the_import_dialog_is_english_when_english_was_asked_for(admin_client):
+    """The control. Translation must not be something a page gets regardless.
+
+    Without this, every assertion above would pass against a dialog hardcoded
+    to Chinese - which is not a hypothetical failure mode for a template whose
+    strings were hardcoded to English until this change.
+    """
+    body = (await admin_client.get(_IMPORT_PAGE)).text
+
+    assert '<h3 class="mb-1">Import into Sectors</h3>' in body
+    assert (
+        '<span class="kaicalc-drop-title">Drop a file here, or choose one</span>'
+        in body
+    )
+    assert (
+        _inside(body, r'<button id="kaicalc-import-check"[^>]*>(.*?)</button>')
+        == "Check this file"
+    )
+    assert 'data-empty="No file selected"' in _open_tag(
+        body, '<p id="kaicalc-import-filename"'
+    )
+    assert (
+        _inside(
+            body,
+            r'<details id="kaicalc-import-json-guide"[^>]*>\s*<summary>(.*?)</summary>',
+        )
+        == "What a .json file for this screen has to look like"
+    )
+    assert "未选择文件" not in body
+
+
+async def test_the_dialog_s_script_reads_every_string_off_its_own_element(admin_client):
+    """The other half of the dialog: thirteen bare literals in a `.js` file.
+
+    A string in `/admin/static/import.js` is a string no catalogue and no
+    i18n test can see, and the script draws the whole preview - the counts,
+    the four lists of row keys and every refusal. They are `data-*` attributes
+    on the element each belongs to now, read back with `getAttribute`, which
+    is what `/admin/static/security.js` does and this panel's established
+    pattern.
+
+    **The four preview headings survive a mode change** because all four are
+    rendered here once, whatever the mode: the mode decides which lists the
+    server's plan carries, not which labels exist. Asserted as four attributes
+    on one element for exactly that reason - a design that fetched the pair
+    for the current mode would have two here and would need a reload to change
+    them, and a mode changed in the browser reloads nothing.
+    """
+    body = (await admin_client.get(_IMPORT_PAGE, params={"lang": "zh"})).text
+
+    preview = _open_tag(body, '<div id="kaicalc-import-preview"')
+    for attribute, chinese in (
+        ("data-count-created", "新增 {count} 条"),
+        ("data-count-updated", "更新 {count} 条"),
+        ("data-count-deactivated", "停用 {count} 条"),
+        ("data-count-deleted", "删除 {count} 条"),
+        ("data-count-rejected", "拒绝 {count} 条"),
+        ("data-heading-created", "将会新增"),
+        ("data-heading-updated", "将会更新"),
+        ("data-heading-deactivated", "将会停用"),
+        ("data-heading-deleted", "将会删除"),
+        ("data-heading-rejected", "已拒绝"),
+        ("data-row-line", "{key}  （第 {line} 行）"),
+    ):
+        assert f'{attribute}="{chinese}"' in preview, (
+            f"#kaicalc-import-preview carries no {attribute}={chinese!r}; the "
+            f"script has nothing to render that part of the preview with: {preview!r}"
+        )
+
+    message = _open_tag(body, '<div id="kaicalc-import-message"')
+    for attribute, chinese in (
+        ("data-msg-no-file", "请先选择一个 .csv 或 .json 文件。"),
+        ("data-msg-check-failed", "无法检查这个文件。"),
+        ("data-msg-check-error", "无法检查这个文件：{error}"),
+        ("data-msg-refused", "导入被拒绝。"),
+        ("data-msg-incomplete", "导入没有完成。"),
+        ("data-msg-send-error", "导入请求发送失败：{error}"),
+        ("data-msg-reloading", "正在重新加载列表……"),
+    ):
+        assert f'{attribute}="{chinese}"' in message, (
+            f"#kaicalc-import-message carries no {attribute}={chinese!r}: {message!r}"
+        )
+
+    # The label each button goes back to, and the one it wears while a request
+    # is in flight. On the button itself, so the word a reader sees and the
+    # word the script restores cannot become two different sentences.
+    check = _open_tag(body, '<button id="kaicalc-import-check"')
+    assert 'data-label="检查这个文件"' in check and 'data-busy-label="正在检查……"' in check
+    confirm = _open_tag(body, '<button id="kaicalc-import-confirm"')
+    assert 'data-label="导入"' in confirm and 'data-busy-label="正在导入……"' in confirm
+
+    # And the script itself holds none of them. This is the regression that
+    # would otherwise be invisible: a fallback literal put back "just in case"
+    # renders English on the Chinese panel and passes every assertion above.
+    script = (await admin_client.get("/admin/static/import.js")).text
+    for literal in (
+        "Would be added",
+        "Would be updated",
+        "Would be deactivated",
+        "Would be deleted",
+        "Check this file",
+        "Checking…",
+        "Importing…",
+        "Choose a .csv or .json file first.",
+    ):
+        assert f'"{literal}"' not in script, (
+            f"/admin/static/import.js has {literal!r} back as a literal; a "
+            "string there reaches no catalogue and no i18n test"
+        )
+
+
+async def test_the_retirement_mode_says_what_this_screen_will_actually_do(admin_client):
+    """Deactivate on the nine, delete on the five - **in Chinese too**.
+
+    `model_view.import_retirement_word` is a plain English property
+    (`admin/importing.py`), not one of the attributes
+    `admin/i18n.py::translate_view_names` wraps - measured, because the note
+    that started this work said otherwise. So the two sentences are written
+    out in full in the template and chosen by it, and this is the assertion
+    that the choosing still happens after the wrapping: a template that had
+    picked one sentence for every screen would render 停用 on `formula`, where
+    the rows are gone for good.
+
+    Both anchored inside `<option value="deactivate_missing">`, and each
+    checked for the absence of the other word - the two sentences differ by
+    one character and a substring test would not tell them apart.
+    """
+    sector = (await admin_client.get(_IMPORT_PAGE, params={"lang": "zh"})).text
+    option = _inside(sector, r'<option value="deactivate_missing">(.*?)</option>')
+    assert option == "更新并新增，并把文件中没有列出的每一行停用", option
+
+    formula = (await admin_client.get("/admin/formula/list", params={"lang": "zh"})).text
+    option = _inside(formula, r'<option value="deactivate_missing">(.*?)</option>')
+    assert option == "更新并新增，并把文件中没有列出的每一行删除", option
+
+
+#: The JSON guide's seven rules, in the order the dialog lists them, each
+#: paired with the place in `admin/importing.py` it was read out of. The
+#: comment is load-bearing: a rule here that no longer matches that function
+#: is a dialog teaching a staff member a file format the server does not
+#: accept, which is worse than a dialog that says nothing.
+_JSON_GUIDE_RULES_ZH = (
+    # `rows_from_json` -> `_json_is_not_a_list`, which names what was found.
+    "整个文件是一个 JSON 数组，数组里的每一项都是本表的一行，写成一个对象。"
+    "文件不是这个形状就会被拒绝，拒绝信息会说明读到的是什么。",
+    # `rows_from_json`'s `missing` check, and `get_export_columns` returning
+    # `get_import_columns()`.
+    "每个对象都要写齐这个屏幕导入的每一列 —— 也就是「导出」写出的那些列。"
+    "需要留空的列要写成空字符串或 null，不能省略不写。",
+    # `_json_cell`: `None`/`""` for a blank, and a list or dict refused.
+    "值可以是文本、数字、true、false 或 null。列表或另一个对象会被拒绝："
+    "一个单元格只放一个值。",
+    # `content.decode("utf-8-sig")`.
+    "文件请存成 UTF-8。字节顺序标记（BOM）是允许的，"
+    "所以 Windows 上的编辑器未经询问写进去的 BOM 不会让文件读不出来。",
+    # `line = index + 2`, and JSON_LINE_NOTE, which says the same thing in
+    # the refusal itself. **The one this guide exists for.**
+    "行号从 2 开始：数组里的第一个对象是第 2 行，第二个是第 3 行。"
+    "第 1 行是 .csv 文件会有的表头行，这样同一行在两种格式里被拒绝时的叫法是一样的。",
+    # `natural_key_column` / `_NATURAL_KEY_COLUMNS` / `_unknown_code`.
+    "指向另一张表的列，写的是那一行自己的 code —— 因子集写它的版本标签 —— "
+    "而不是它的 id 数字。id 在不同部署之间并不相同，"
+    "所以用 id 写出来的文件只能装回它原来的那个数据库。",
+    # MODE_UPSERT and `_key_cells`: the match is the row's own natural key.
+    "一行是更新还是新增，由这一行自己的键决定，所以键打错了不会变成一次更正，"
+    "而会悄悄变成新的一行。这正是先检查文件的意义：确认之前先读一遍预览。",
+)
+
+
+def _json_guide(body: str) -> str:
+    """The guide element's own markup, so that every assertion below is
+    anchored inside it rather than anywhere on a list page."""
+    start = body.index('<details id="kaicalc-import-json-guide"')
+    return body[start : body.index("</details>", start)]
+
+
+async def test_the_json_guide_s_rules_are_translated_inside_the_guide(admin_client):
+    """The guide to the JSON format, in Chinese, rule by rule.
+
+    The dialog's hint says a file is "written the way this screen's own Export
+    writes one", which is true and is not enough to write one from scratch -
+    and JSON is the format a staff member is most likely to hand-edit. Every
+    rule below was read out of `admin/importing.py`; `_JSON_GUIDE_RULES_ZH`
+    names which function each came from.
+
+    Each assertion names the element the string has to be inside, per this
+    file's rule: the `<summary>`, a `<li>` of the guide's own list, and the
+    two paragraphs around the worked example. A bare substring check against
+    the page body would pass against a rule that had ended up in the CSS
+    comment above it.
+    """
+    body = (await admin_client.get(_IMPORT_PAGE, params={"lang": "zh"})).text
+    guide = _json_guide(body)
+
+    assert (
+        _inside(
+            guide,
+            r'<details id="kaicalc-import-json-guide"[^>]*>\s*<summary>(.*?)</summary>',
+        )
+        == "这个屏幕的 .json 文件该长什么样"
+    ), "the guide's own heading is still English, so nothing below it is reached"
+
+    for rule in _JSON_GUIDE_RULES_ZH:
+        assert f"<li>{rule}</li>" in guide, (
+            f"the guide has no <li> reading {rule!r}; the rule is missing, "
+            "reworded, or rendering in English"
+        )
+
+    assert (
+        _inside(guide, r'<p class="kaicalc-json-caption">(.*?)</p>')
+        == "本屏幕的两行。第一个对象是第 2 行，第二个是第 3 行。"
+    ), "the example's caption - which is where line 2 is said a second time"
+
+    assert (
+        _inside(guide, r'<p class="kaicalc-json-footnote">(.*?)</p>')
+        == "上面每个值都只是占位，列名才是这个屏幕自己的。"
+    ), "the footnote admitting the example's values are placeholders"
+
+
+async def test_the_json_guide_is_closed_by_default_and_needs_no_script(admin_client):
+    """A `<details>` with no `open`, whose content is in the served HTML.
+
+    **Both halves matter and neither implies the other.** A guide injected by
+    `/admin/static/import.js` would satisfy every assertion in the test above
+    when run against a browser and none of them here, and would be absent on
+    the panel whose script failed to load - which is exactly the panel whose
+    visitor most needs to read a file format. A Bootstrap collapse widget
+    would render its content server-side and still need the script to open.
+
+    Closed by default because the dialog's job is to take a file: a reader who
+    already has one must not have to scroll past the manual to reach the
+    button.
+    """
+    body = (await admin_client.get(_IMPORT_PAGE)).text
+
+    tag = _open_tag(body, '<details id="kaicalc-import-json-guide"')
+    assert tag == '<details id="kaicalc-import-json-guide">', (
+        f"the guide's own tag is {tag!r}: an `open` attribute would have it "
+        "expanded on every visit, and a `data-bs-toggle` would make it a "
+        "widget that needs the script"
+    )
+
+    guide = _json_guide(body)
+    assert guide.count("<li>") == len(_JSON_GUIDE_RULES_ZH), (
+        "the guide's rules are not all in the served markup, so a panel with "
+        f"no JavaScript shows a heading and nothing under it: {guide!r}"
+    )
+    assert '<pre id="kaicalc-import-json-example">' in guide
+
+    # And nothing in the script has any opinion about the element, which is
+    # what makes "needs no script" a measurement rather than a reading of the
+    # markup.
+    script = (await admin_client.get("/admin/static/import.js")).text
+    assert "kaicalc-import-json" not in script, (
+        "/admin/static/import.js now touches the guide; the guide is the one "
+        "part of this dialog that has to work with scripting off"
+    )
+
+
+async def test_the_worked_example_is_this_screen_s_own_columns(admin_client):
+    """The example matches the screen the dialog is open on.
+
+    An example that does not match the screen is worse than none: it is a
+    file a staff member would copy and a refusal they could not explain. The
+    column names are rendered from `model_view._import_prop_names` - the very
+    list `rows_from_json` iterates when it decides whether a row is missing a
+    column - so the two screens below must show two different sets.
+
+    Parsed rather than substring-matched, because the thing being asserted is
+    that the example **is valid JSON**: a Jinja loop that lost a comma or a
+    brace would still contain every column name.
+    """
+    sector = (await admin_client.get(_IMPORT_PAGE)).text
+    example = json.loads(
+        _inside(sector, r'<pre id="kaicalc-import-json-example">(.*?)</pre>')
+    )
+    assert [list(row) for row in example] == [
+        ["code", "name", "description", "sort_order", "active"],
+        ["code", "name", "description", "sort_order", "active"],
+    ], f"the example on the Sectors screen is not two rows of its own columns: {example!r}"
+    assert set(example[0].values()) == {"…"}, (
+        "the example's values are supposed to be the placeholder the footnote "
+        f"says they are: {example[0]!r}"
+    )
+
+    # A screen whose columns are almost all foreign keys, so that the example
+    # is shown to follow the screen rather than to be one file repeated.
+    upstream = (await admin_client.get("/admin/factor-upstream/list")).text
+    other = json.loads(
+        _inside(upstream, r'<pre id="kaicalc-import-json-example">(.*?)</pre>')
+    )
+    assert list(other[0]) == [
+        "factor_set", "sector", "food_category", "food_item", "destination",
+        "metric", "value_per_kg", "data_quality", "source_note",
+    ], f"the example on the Upstream factors screen is not its own: {other[0]!r}"
 
 
 def _with_choice(client, value):

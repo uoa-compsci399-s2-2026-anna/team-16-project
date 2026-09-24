@@ -301,6 +301,42 @@ class FactorBundle:
             return self.formulas[metric]
         return DEFAULT_FORMULA
 
+    @property
+    def computed_metrics(self) -> tuple[MetricSpec, ...]:
+        """The metrics THIS factor set computes, in `metrics` order (v1.70).
+
+        `metrics` is the whole active metric vocabulary -- §2.1 makes `metric`
+        a global table with no `factor_set_id`, and §5.1 keeps
+        `get_taxonomy_for_bundle` a deliberate superset. A *factor set* is a
+        narrower thing: it computes a metric when it says something about it,
+        which is a `formula` row, a `factor_upstream` row or a
+        `factor_downstream` row of its own.
+
+        **Why this exists.** Without it, adding one row to the global `metric`
+        table makes every factor set that has never heard of that metric report
+        it at exactly zero -- `formula()` falls back to `DEFAULT_FORMULA`,
+        every factor lookup falls through §4.1's chain to `Decimal('0')`, and
+        the engine returns a real-looking `0.0` line. That reaches the results
+        page, both downloads and the PDF, and on screen it is indistinguishable
+        from a measurement of none. It is also retroactive: a rollback to an
+        older set shows the same zero. Measured on `case_01`'s own bundle with
+        one extra `metrics[]` row and no formula: the new metric came back with
+        a total of `0E-10` and three by-destination rows.
+
+        **`DEFAULT_FORMULA` is not weakened by this.** A set that carries
+        factor rows for a metric but no formula for it still computes it,
+        through the default expression, exactly as §4.1 and §4.3 say -- that is
+        the case the default was written for. What is excluded is the set that
+        carries neither, which has nothing to compute from.
+
+        **No metric code appears here**, and none may: the rule is about what a
+        factor set contains, not about which metric it is.
+        """
+        known = set(self.formulas)
+        known.update(key[4] for key in self.upstream_factors)
+        known.update(key[3] for key in self.downstream_factors)
+        return tuple(spec for spec in self.metrics if spec.code in known)
+
     def has_destination(self, code):
         return code in self.destinations
 
@@ -551,6 +587,23 @@ class FactorBundle:
                         # bundle that forgot it should still calculate.
                         name=str(row.get("name") or code),
                         source_note=row.get("source_note"),
+                        # §10.2, v1.71. All four optional and all four absent
+                        # from every bundle written before v1.71 -- the
+                        # thirteen golden cases, every `GET /factors` response
+                        # a staff member has ever pasted into the dry-run box.
+                        # A bundle with no families produces exactly the
+                        # equivalence list it produced before the columns
+                        # existed, which is the whole of why this landing is
+                        # inert. Unlike `source_note`, these are **read**: the
+                        # engine selects on them, so they are parsed with the
+                        # same strictness as any other value rather than
+                        # accepted-and-ignored.
+                        family=_optional_nullable_code(row, "family", where),
+                        min_value=_optional_decimal(row, "min_value", where),
+                        max_value=_optional_decimal(row, "max_value", where),
+                        label_template_one=_optional_text(
+                            row, "label_template_one", where
+                        ),
                     ),
                 )
             )
@@ -711,12 +764,55 @@ class FactorBundle:
                     f"formula for metric {metric!r} names a metric which is not in this bundle"
                 )
 
+        family_metrics: dict[str, tuple[str, str]] = {}
         for spec in self.equivalence_specs:
             if spec.source_metric_code not in metric_codes:
                 problems.append(
                     f"equivalence {spec.code!r} names source_metric "
                     f"{spec.source_metric_code!r}, which is not in this bundle"
                 )
+            #: v1.71's three ladder checks. The first two mirror
+            #: `equivalence`'s own CHECK constraints (alembic 0019), which the
+            #: database enforces on every row it stores -- so these can only
+            #: fire on a hand-written or hand-assembled bundle, which is
+            #: exactly the case that has no other check behind it. §8.2's
+            #: "Save as regression case" writes one straight out of a dry run.
+            if spec.family is None and (
+                spec.min_value is not None or spec.max_value is not None
+            ):
+                problems.append(
+                    f"equivalence {spec.code!r} carries a band and no family; "
+                    "selection only happens within a family, so the band can "
+                    "never fire"
+                )
+            if (
+                spec.min_value is not None
+                and spec.max_value is not None
+                and spec.min_value >= spec.max_value
+            ):
+                problems.append(
+                    f"equivalence {spec.code!r} has min_value "
+                    f"{spec.min_value} and max_value {spec.max_value}; the "
+                    "band is half-open, so it admits nothing and this rung "
+                    "can never be chosen"
+                )
+            #: The third has no counterpart in the schema, because it is a
+            #: statement about a *set* of rows rather than about one. A ladder
+            #: is one quantity expressed at several sizes; rungs drawn from
+            #: two different metrics are two different facts wearing one name,
+            #: and the one the reader gets would be decided by magnitude.
+            if spec.family is not None:
+                first = family_metrics.setdefault(
+                    spec.family, (spec.code, spec.source_metric_code)
+                )
+                if first[1] != spec.source_metric_code:
+                    problems.append(
+                        f"equivalence {spec.code!r} is in family "
+                        f"{spec.family!r} and converts "
+                        f"{spec.source_metric_code!r}, but {first[0]!r} in the "
+                        f"same family converts {first[1]!r}; a ladder's rungs "
+                        "must all be sizes of one quantity"
+                    )
 
         # Not in §4.1's list, and reported anyway: a duplicate key is the same
         # failure mode as a dangling destination -- the later row wins, nothing
@@ -877,6 +973,35 @@ def _decimal(row: dict, key: str, where: str) -> Decimal:
     if not parsed.is_finite():
         raise BundleFormatError(f"{where}.{key} is not a finite decimal: {value!r}")
     return parsed
+
+
+def _optional_decimal(row: dict, key: str, where: str) -> Decimal | None:
+    """A decimal that may be `null` **or absent**, both meaning `None`.
+
+    v1.71's band bounds. Absent is the normal state -- every bundle written
+    before the columns existed omits them, and means by its silence exactly
+    what `null` means, which is *unbounded on that side*. A value that is
+    present and is not a decimal string is still refused: §1.2 does not stop
+    applying because a key is optional, and a band arriving as a JSON number
+    would have been through binary floating point before the engine saw it.
+    """
+    if key not in row or row[key] is None:
+        return None
+    return _decimal(row, key, where)
+
+
+def _optional_text(row: dict, key: str, where: str) -> str | None:
+    """Free text that may be `null` **or absent**, both meaning `None`.
+
+    v1.71's `label_template_one`. `None` means "no singular form was given",
+    which is a different thing from the empty string: `""` is a sentence a
+    staff member typed, and a template that prints nothing is their business
+    (`_interpolate` copies it verbatim) rather than an absence to fall back
+    from. A non-string is refused.
+    """
+    if key not in row or row[key] is None:
+        return None
+    return _text(row, key, where)
 
 
 def _note_duplicate(duplicates: list[str], seen: dict, key: Any, label: str) -> None:

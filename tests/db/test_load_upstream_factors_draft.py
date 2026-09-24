@@ -32,8 +32,9 @@ from pathlib import Path
 import pytest
 from sqlalchemy import select
 
-from admin.factor_models import Equivalence
+from admin.factor_models import Equivalence, FactorSet, FactorUpstream
 from admin.seed import seed_taxonomy
+from admin.taxonomy_models import FoodItem
 
 pytestmark = pytest.mark.db
 
@@ -142,3 +143,71 @@ def test_loaded_equivalence_values_match_the_divisions_the_client_specified(sess
     assert stored["vehicles_year"] == (Decimal(1) / Decimal(2410)).quantize(scale)
     assert stored["olympic_pools"] == (Decimal(1) / Decimal(2500000)).quantize(scale)
     assert stored["meals"] == (Decimal(1) / Decimal("0.45")).quantize(scale)
+
+
+def test_the_item_level_switch_and_the_item_rows_both_reach_the_database(session, draft_data):
+    """The second half of the same defect class the `equivalences` slip was.
+
+    `factor_upstream.food_item_id` and `factor_set.item_level_enabled` are two
+    more keys this loader had no code path for, and a JSON carrying both would
+    have landed a set with 342 item rows flattened onto their categories -- six
+    dairy rows at the same `(sector, food_category, metric)` key, which
+    `FactorBundle.from_json` resolves by letting the last row silently win -- and
+    the switch off, so step 2.5 would have been unreachable anyway. Neither
+    would have raised anything.
+
+    Both sides are read from the same JSON rather than hard-coded, so the test
+    holds when the count changes.
+    """
+    _seeded(session)
+
+    set_id, counts = loader.load_factor_set(session, draft_data)
+    session.flush()
+
+    expected = [row for row in draft_data["upstream"] if row.get("food_item")]
+    assert expected, "the draft file no longer carries any item-level rows"
+    assert draft_data["item_level_enabled"] is True
+
+    factor_set = session.get(FactorSet, set_id)
+    assert factor_set.item_level_enabled is True
+    #: And a draft, never published: `load_factor_set` does not call
+    #: `publish_factor_set` and whether this set goes live is the owner's
+    #: decision.
+    assert factor_set.status.value == "draft"
+    assert factor_set.is_mock is True
+
+    items = {row.id: row.code for row in session.scalars(select(FoodItem)).all()}
+    stored = session.scalars(
+        select(FactorUpstream).where(
+            FactorUpstream.factor_set_id == set_id,
+            FactorUpstream.food_item_id.is_not(None),
+        )
+    ).all()
+    assert len(stored) == len(expected)
+    assert {items[row.food_item_id] for row in stored} == {
+        row["food_item"] for row in expected
+    }
+    #: Every item row must also carry the category it refines -- `food_item_id`
+    #: and `food_category_id` are two independent columns (`resolve_food_item`),
+    #: and a row with one and not the other is what section 2.2's chain cannot
+    #: resolve.
+    assert all(row.food_category_id is not None for row in stored)
+
+
+def test_an_unknown_food_item_code_stops_the_load(session, draft_data):
+    """`ITEM_LEVEL_CLIENT_FOODS` is kept in step with `admin/seed.py`'s
+    `FOOD_ITEMS` by hand, because the build script may not import `admin.seed`.
+
+    So the loader is the backstop, and it must be a hard stop rather than a
+    created row: writing the missing `food_item` here would put a factor
+    loader's own vocabulary into a **global** taxonomy table, which is how
+    forty-eight `refed_*` rows came to sit in `food_category`.
+    """
+    _seeded(session)
+    mutated = dict(draft_data)
+    mutated["upstream"] = [dict(row) for row in draft_data["upstream"]]
+    target = next(row for row in mutated["upstream"] if row.get("food_item"))
+    target["food_item"] = "brie_de_meaux"
+
+    with pytest.raises(loader.LoadError, match="brie_de_meaux"):
+        loader.load_factor_set(session, mutated)

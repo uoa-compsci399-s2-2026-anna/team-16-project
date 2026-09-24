@@ -213,13 +213,19 @@ def test_taxonomy_is_internally_consistent(taxonomy):
         "question than the numbers can answer is what design section 8 warns "
         "about"
     )
-    #: Empty today, and the fixture says so honestly rather than inventing a
-    #: vocabulary: `admin/seed.py` seeds no `food_item`, so this is what every
-    #: deployment returns. Design section 9 leaves "are the ~20 foods in the
-    #: client's table 1 the full list or a sample?" open, and a fixture that
-    #: answered it for them would put codes in front of C and D that no
-    #: database holds. The rule each row must satisfy is asserted anyway, so
-    #: the day the rows arrive they are checked rather than merely added.
+    #: Empty until v1.72, and for a reason that has expired: `admin/seed.py`
+    #: seeded no `food_item`, so `[]` was what every deployment returned and a
+    #: fixture that invented a vocabulary would have put codes in front of C
+    #: and D that no database held. The seed has had twenty foods since the
+    #: vocabulary landed and has forty-seven since v1.72, so `[]` had become
+    #: the invention -- a front end built against this file would have been
+    #: built against a deployment that does not exist. The set equality lives
+    #: in `test_taxonomy_codes_and_names_are_the_shipped_seeds` with every
+    #: other section's; what is asserted here is the shape of each row.
+    assert taxonomy["food_items"], (
+        "the seed has a food vocabulary, so an empty array here describes no "
+        "deployment"
+    )
     for row in taxonomy["food_items"]:
         assert set(row) == {"code", "name", "food_category", "sort_order"}, row
         assert row["food_category"] in {
@@ -268,6 +274,18 @@ def test_factor_rows_reference_the_taxonomy(taxonomy, factors):
         assert row["source_metric"] in metrics
         assert "{value}" in row["label_template"]
         assert "source_note" in row  # §6.3; equivalence has no data_quality
+        #: §6.3 (v1.71): the four ladder columns are present-and-null, never
+        #: omitted, on the same terms as `source_note` above and for the same
+        #: reason -- a consumer has to be able to tell "this row is not a rung
+        #: of anything" from "this endpoint does not report ladders". `in row`
+        #: separately from the value, because `row.get("family")` would pass
+        #: on a row that omits the key entirely.
+        for key in ("family", "min_value", "max_value", "label_template_one"):
+            assert key in row, f"equivalence {row['code']} omits {key}"
+        #: Mirrors `ck_equivalence_band_needs_family` (alembic 0019). A band on
+        #: a row with no family is a rule that can never fire.
+        if row["family"] is None:
+            assert row["min_value"] is None and row["max_value"] is None
 
     # §2.1: prevention contributes no downstream impact, in every metric that
     # names it at all.
@@ -716,14 +734,55 @@ def test_every_equivalence_is_derived_from_the_metric_total_it_names(name, facto
     """
     fixture = load(name)
     specs = {row["code"]: row for row in factors["equivalences"]}
+    ordered = sorted(factors["equivalences"], key=lambda r: (r["sort_order"], r["code"]))
+
+    #: §2.2/§4.2 (v1.71): one rung per ladder, and **the whole submission's
+    #: CURRENT scenario chooses it** -- for the alternative and for every
+    #: entry as well as for the totals. Re-derived here from the factor
+    #: export rather than read off the response, on the same terms as every
+    #: other number this file checks: a response that chose its rungs some
+    #: other way has to fail, and one that chose a *different* rung per
+    #: scenario has to fail too, which is the failure this list being
+    #: computed once rather than per scenario is what catches.
+    def chosen_rung(family):
+        rungs = [row for row in ordered if row["family"] == family]
+        current = fixture["totals"]["current"]
+        for row in rungs:
+            source = current["metrics"].get(row["source_metric"])
+            if source is None:
+                continue
+            value = Decimal(source["total"]) * Decimal(row["value_per_unit"])
+            low = row["min_value"]
+            high = row["max_value"]
+            if low is not None and value < Decimal(low):
+                continue
+            if high is not None and value >= Decimal(high):
+                continue
+            return row["code"]
+        #: The family's first row is the fallback -- the top of the ladder,
+        #: which is the figure that was there before ladders existed.
+        return rungs[0]["code"]
+
+    expected_codes = []
+    placed = set()
+    for row in ordered:
+        if row["family"] is None:
+            expected_codes.append(row["code"])
+        elif row["family"] not in placed:
+            #: A ladder occupies the page position of its FIRST row, not of
+            #: the rung that won, so a submission that drops a rung does not
+            #: also move the card.
+            expected_codes.append(chosen_rung(row["family"]))
+            placed.add(row["family"])
 
     def check(scenario, where):
         if scenario is None:
             return
         assert scenario["equivalences"], f"{where}: no equivalences at all"
-        assert [item["code"] for item in scenario["equivalences"]] == [
-            row["code"] for row in sorted(specs.values(), key=lambda r: r["sort_order"])
-        ], f"{where}: equivalences are not the published set, in sort_order"
+        assert [item["code"] for item in scenario["equivalences"]] == expected_codes, (
+            f"{where}: equivalences are not the published set, in sort_order, "
+            "with one rung per ladder"
+        )
         for item in scenario["equivalences"]:
             spec = specs[item["code"]]
             source = item["source_metric"]
@@ -735,10 +794,20 @@ def test_every_equivalence_is_derived_from_the_metric_total_it_names(name, facto
                 f"{total} x {spec['value_per_unit']} is {expected}"
             )
             shown = f"{expected.quantize(Decimal('1'), rounding=ROUND_HALF_UP):,}"
-            assert item["label"] == spec["label_template"].replace("{value}", shown), (
+            #: §3 rule 5 (v1.71): the singular template when the PRINTED
+            #: number is exactly 1. Written out here although no value in
+            #: this set lands on it, for the same reason `ROUND_HALF_UP` is:
+            #: both branches pass on today's fixtures and only one of them is
+            #: the rule, so leaving it implicit would pin the wrong one the
+            #: first time a ladder drove a figure to one -- which a ladder
+            #: does by design.
+            template = spec["label_template"]
+            if shown == "1" and spec.get("label_template_one"):
+                template = spec["label_template_one"]
+            assert item["label"] == template.replace("{value}", shown), (
                 f"{where}.{item['code']}: label is {item['label']!r}, the "
                 f"template interpolates to "
-                f"{spec['label_template'].replace('{value}', shown)!r}"
+                f"{template.replace('{value}', shown)!r}"
             )
 
     for scenario in ("current", "alternative"):
@@ -821,6 +890,7 @@ def test_taxonomy_codes_and_names_are_the_shipped_seeds(taxonomy):
         DESTINATION_GROUPS,
         DESTINATIONS,
         FOOD_CATEGORIES,
+        FOOD_ITEMS,
         METRICS,
         SECTORS,
         UNIT_PRESETS,
@@ -856,6 +926,23 @@ def test_taxonomy_codes_and_names_are_the_shipped_seeds(taxonomy):
         code: (group_code, name, is_prevention, sort_order)
         for group_code, code, name, is_prevention, sort_order in DESTINATIONS
     }
+    #: v1.72. The vocabulary is `FOOD_ITEMS`, parent and order included: the
+    #: parent is what step 2.5 groups by and a food filed under the wrong
+    #: heading is offered under a category step 2 may not even show, and the
+    #: order is what `get_taxonomy` sorts by (`sort_order`, then `code`).
+    assert {
+        row["code"]: (row["name"], row["food_category"], row["sort_order"])
+        for row in taxonomy["food_items"]
+    } == {
+        code: (name, parent, sort_order)
+        for code, name, parent, sort_order in FOOD_ITEMS
+    }
+    assert [row["code"] for row in taxonomy["food_items"]] == [
+        code for code, _, _, _ in sorted(FOOD_ITEMS, key=lambda r: (r[3], r[0]))
+    ], (
+        "tests/fixtures/taxonomy.json lists the foods in an order no "
+        "deployment serves; get_taxonomy orders them by sort_order then code"
+    )
     assert {
         row["code"]: (
             row["name"],
@@ -897,11 +984,12 @@ def test_the_codes_the_fixtures_calculate_with_are_shipped_codes():
     and would otherwise only ever be checked against the taxonomy file that
     was renamed alongside them.
     """
-    from admin.seed import DESTINATIONS, FOOD_CATEGORIES, SECTORS
+    from admin.seed import DESTINATIONS, FOOD_CATEGORIES, FOOD_ITEMS, SECTORS
 
     sectors = {code for code, _, _ in SECTORS}
     foods = {code for code, _, _, _ in FOOD_CATEGORIES}
     destinations = {code for _, code, _, _, _ in DESTINATIONS}
+    items = {code for code, _, _, _ in FOOD_ITEMS}
 
     for name in (
         "calculate_request.json",
@@ -919,22 +1007,21 @@ def test_the_codes_the_fixtures_calculate_with_are_shipped_codes():
             key = path.rsplit(".", 1)[-1].split("[")[0]
             if value is None or not isinstance(value, str):
                 continue
-            #: v1.58: `food_item` is **not** in this list, and that is the
-            #: one deliberate hole in it. `admin/seed.py` seeds no
-            #: `food_item` row at all -- mapping the client's ~20 foods onto
-            #: our categories is a data-authoring task with client-facing
-            #: consequences and seven of their rows have no New Zealand
-            #: category -- so there is no pool to check against, and adding an
-            #: empty one would forbid every food rather than validate it. The
-            #: fixtures name no food for exactly that reason (every
-            #: `food_item` in them is `null`, and the `is None` guard above
-            #: skips those), so nothing is currently unchecked. **Add
-            #: `food_item` to this list the moment the seed grows one.**
-            if key in {"sector", "destination", "food_category"}:
+            #: v1.58 left `food_item` out of this list as the one deliberate
+            #: hole in it, because `admin/seed.py` seeded no `food_item` row
+            #: and an empty pool would have forbidden every food rather than
+            #: validated it. That note ended "add `food_item` to this list the
+            #: moment the seed grows one", and **v1.72 is that moment**: the
+            #: seed carries forty-seven foods. Every `food_item` in these
+            #: fixtures is still `null` and skipped by the `is None` guard
+            #: above, so this changes nothing today and catches the first
+            #: fixture that names a food the seed does not create.
+            if key in {"sector", "destination", "food_category", "food_item"}:
                 pool = {
                     "sector": sectors,
                     "destination": destinations,
                     "food_category": foods,
+                    "food_item": items,
                 }[key]
                 assert value in pool, f"{name} {path}: {value!r} is not a seeded code"
 

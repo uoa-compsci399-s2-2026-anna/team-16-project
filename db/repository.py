@@ -211,9 +211,13 @@ def _covered_by(session: Session, factor_set_id: int) -> dict[str, set[int]]:
     offered its category's average and the figure is as good as the one the
     visitor would have got by naming the category instead. Requiring an item to
     carry rows of its own would therefore hide almost the whole vocabulary from
-    the moment step 2.5 is released — 19 items x 6 sectors x 5 metrics = 570
-    rows is full coverage, and no data that will exist comes close — while the
-    thing it would be protecting against cannot happen.
+    the moment step 2.5 is released — full coverage is every seeded food x 6
+    sectors x every metric the set prices, which was 570 rows at nineteen foods
+    and five metrics, 684 once v1.70 added a sixth, and **1,692 since v1.72**
+    took the vocabulary to forty-seven by giving the five categories the client
+    never subdivided some foods of their own. No data that will exist comes
+    close, and each of those revisions moved the number further out of reach —
+    while the thing it would be protecting against cannot happen.
 
     The union is not redundant in one case, which is why it is a union. An item
     row carries a NOT NULL ``food_category_id``, so an item priced under its own
@@ -738,6 +742,21 @@ def build_bundle_data(session: Session, factor_set_id: int) -> dict[str, Any]:
                 "source_metric": metric,
                 "value_per_unit": str(x.value_per_unit),
                 "label_template": x.label_template,
+                #: v1.71's four ladder columns. Present-and-null rather than
+                #: omitted when unset, on the same terms as `source_note`
+                #: beside them: §6.3 is the public factor export and a
+                #: consumer has to be able to tell "this row is not a rung of
+                #: anything" from "this endpoint does not report ladders".
+                #:
+                #: Unlike `source_note`, these are **read by the engine** --
+                #: §10.2 makes them optional in a bundle and the engine
+                #: selects on them, so a projection that dropped them would
+                #: not merely hide provenance, it would silently un-ladder
+                #: every set a staff member pastes into the dry-run box.
+                "family": x.family,
+                "min_value": None if x.min_value is None else str(x.min_value),
+                "max_value": None if x.max_value is None else str(x.max_value),
+                "label_template_one": x.label_template_one,
                 "source_note": x.source_note,
                 "sort_order": x.sort_order,
             }
@@ -871,9 +890,10 @@ def _live_item_vocabulary(session: Session) -> tuple:
     Every column `build_bundle_data` publishes is in the fingerprint, not just
     the primary keys: a rename changes what the results page prints, and
     re-parenting a food changes which pairs `resolve_food_item` accepts. The
-    row count is bounded by design -- the client's list is about twenty foods
-    -- so this is one small `SELECT` beside the one-boolean `SELECT`
-    `_live_is_mock` already costs.
+    row count is bounded by what a visitor can be asked to scan -- forty-seven
+    foods since v1.72, at most seven under any one category -- so this is one
+    small `SELECT` beside the one-boolean `SELECT` `_live_is_mock` already
+    costs.
     """
     return tuple(
         session.execute(
@@ -1225,17 +1245,17 @@ def item_level_coverage(session: Session, factor_set_id: int) -> tuple[int, int]
 
     What the factor-set screen shows beside `item_level_enabled`, because
     releasing step 2.5 is a judgement about how much of the vocabulary actually
-    carries numbers and a boolean cannot carry that. "3 of 19" and "19 of 19"
+    carries numbers and a boolean cannot carry that. "3 of 47" and "47 of 47"
     are both legal (the guard is soft, §3.5) and they are not the same decision.
 
-    Counts **distinct foods**, not rows: one food priced for five metrics
-    across six sectors is thirty rows and one food, and the number a staff
-    member is weighing is how many of the foods on the new screen will be
+    Counts **distinct foods**, not rows: one food priced for every metric
+    across six sectors is six rows per metric and one food, and the number a
+    staff member is weighing is how many of the foods on the new screen will be
     answered with something better than their category's average.
 
     The denominator is the **active** vocabulary, matching what the calculator
-    would offer; a retired item is not a gap in coverage. Both halves are zero
-    in every database today.
+    would offer; a retired item is not a gap in coverage. The numerator is zero
+    in every database today; the denominator is forty-seven since v1.72.
     """
     priced = session.scalar(
         select(func.count(distinct(FactorUpstream.food_item_id))).where(
@@ -1261,9 +1281,10 @@ def refuse_item_level_without_item_rows(session: Session, factor_set_id: int) ->
     rather than a modelling one, and it is the exact thing §2.2's mandatory
     placeholder banner is already struggling to say.
 
-    **Soft, and deliberately so.** One item row is enough. Full coverage is 19
-    items x 6 sectors x 5 metrics = 570 rows and is unreachable from any data
-    that will exist, and a partly-covered set is coherent because everything
+    **Soft, and deliberately so.** One item row is enough. Full coverage is
+    every seeded food x 6 sectors x every metric the set prices (1,692 rows at
+    v1.72's forty-seven foods and six metrics, against the 570 of the day this
+    rule was written) and is unreachable from any data that will exist, and a partly-covered set is coherent because everything
     else falls back to the category average — see `_covered_by`. A guard
     demanding more would make the flag unusable and would be arguing with
     §2.2's own fallback.

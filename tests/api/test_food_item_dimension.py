@@ -96,7 +96,7 @@ async def test_the_taxonomy_carries_the_item_vocabulary_and_each_items_parent(
     app, sqlite_engine
 ):
     """§6.1. Without the parent the front end cannot group step 2.5 under the
-    categories step 2 offered, and a flat list of twenty foods is not the
+    categories step 2 offered, and a flat list of forty-seven foods is not the
     question the design asks."""
     _add_item(sqlite_engine, "cheese", "Cheese", "dairy", sort_order=20)
     #: Both under `dairy`, because `vegetables` is not priced by the seed and

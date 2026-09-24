@@ -739,17 +739,28 @@ class EquivalenceAdmin(AuditedImport, AuditedModelView, model=Equivalence):
     category = _CATEGORY
     icon = "fa-solid fa-right-left"
 
+    #: `family`, `min_value` and `max_value` are on the LIST, not only on the
+    #: detail page (v1.71). A ladder is the one thing on this screen a staff
+    #: member cannot check one row at a time: "does this family cover the whole
+    #: range, in the right order" is a question about the rows side by side,
+    #: and the list sorted by `sort_order` is the only place they are.
     column_list = [Equivalence.factor_set, Equivalence.code, Equivalence.name,
                    Equivalence.source_metric, Equivalence.value_per_unit,
-                   Equivalence.sort_order, Equivalence.active]
+                   Equivalence.family, Equivalence.min_value,
+                   Equivalence.max_value, Equivalence.sort_order,
+                   Equivalence.active]
     column_details_list = [Equivalence.factor_set, Equivalence.code,
                            Equivalence.name, Equivalence.source_metric,
                            Equivalence.value_per_unit, Equivalence.label_template,
+                           Equivalence.label_template_one, Equivalence.family,
+                           Equivalence.min_value, Equivalence.max_value,
                            Equivalence.source_note, Equivalence.sort_order,
                            Equivalence.active]
     form_columns = [Equivalence.factor_set, Equivalence.code, Equivalence.name,
                     Equivalence.source_metric, Equivalence.value_per_unit,
-                    Equivalence.label_template, Equivalence.source_note,
+                    Equivalence.label_template, Equivalence.label_template_one,
+                    Equivalence.family, Equivalence.min_value,
+                    Equivalence.max_value, Equivalence.source_note,
                     Equivalence.sort_order, Equivalence.active]
     # BULK CSV IMPORT, DRAFT-ONLY. The import accepts exactly what the create
     # form accepts, because every imported row is validated through that form;
@@ -788,15 +799,61 @@ class EquivalenceAdmin(AuditedImport, AuditedModelView, model=Equivalence):
             "renders a sentence with no number in it. The number is "
             "formatted for you — whole units, comma thousands separator."
         )},
+        "label_template_one": {"description": (
+            "The same sentence for when the number comes out as exactly 1 — "
+            "'Equivalent to 1 Olympic swimming pool of water'. Leave it "
+            "empty and the sentence above is used whatever the number is, "
+            "which is how 'Equivalent to 1 Olympic swimming pools of water' "
+            "gets printed. Worth filling in on every rung of a ladder: "
+            "picking the right-sized unit drives the number towards 1 on "
+            "purpose, so this is the common case rather than the rare one."
+        )},
+        "family": {"description": (
+            "Name a ladder here and this row becomes one rung of it — "
+            "'vehicles', 'water_volume'. Rows sharing a family are the same "
+            "comparison at different sizes, and a visitor is shown exactly "
+            "one of them: the first, in the order below, whose own number "
+            "falls inside the range set by the two boxes after this one. "
+            "Leave it empty for an equivalence that is not part of a ladder; "
+            "it is then always shown, which is how every equivalence behaved "
+            "before this box existed. Rungs of one family must all convert "
+            "the same metric."
+        )},
+        "min_value": {"description": (
+            "The smallest number this rung is allowed to show. Usually 1: "
+            "'use this unit as long as it comes to at least one of them'. "
+            "Leave it empty on the last rung of the ladder, so that a value "
+            "too small for every other rung still has somewhere to land. "
+            "It is compared against THIS ROW's own number — 3 showers, 0.4 "
+            "swimming pools — not against the metric total, so it does not "
+            "have to be retuned when the underlying factors change. Only "
+            "usable on a row that names a family; the database refuses a "
+            "range without one, because nothing would ever look at it."
+        )},
+        "max_value": {"description": (
+            "The largest number this rung may show, not included — a rung "
+            "set 1 to 1000 covers 1 up to 999.99 and stops. Usually left "
+            "empty: rows are tried in the order below and the first one that "
+            "fits wins, so a bigger unit listed earlier already keeps the "
+            "smaller one from taking over. Must be greater than the box "
+            "above it."
+        )},
         "source_note": {"description": (
             "What this conversion is based on. Open item O-3: the New "
             "Zealand sources for kilometres driven, meals and showers are "
             "not settled, and an equivalence with no stated basis is the "
-            "figure most likely to be challenged in public."
+            "figure most likely to be challenged in public. A rung you "
+            "worked out yourself needs one as much as a supplied figure "
+            "does — say what it was derived from and from what."
         )},
         "sort_order": {"description": (
             "Order on the results page, lowest first; equal values fall back "
-            "to alphabetical order by code."
+            "to alphabetical order by code. Inside a ladder it does a second "
+            "job: it is the order the rungs are tried in, so number them "
+            "LARGEST UNIT FIRST and the visitor gets the biggest unit their "
+            "figure still reaches. The ladder keeps the position of its "
+            "first rung on the page whichever rung is shown, so a card does "
+            "not move about between one visitor and the next."
         )},
         "active": {"description": (
             "Untick to stop showing this equivalence without deleting it. "
@@ -1314,11 +1371,13 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
             #: preparing rather than the one already live — and on a fresh
             #: deployment there is no published set at all.
             #:
-            #: "Item-level factors for 3 of 19 foods" is the whole point:
+            #: "Item-level factors for 3 of 47 foods" is the whole point:
             #: `item_level_enabled` is a boolean and the decision behind it is
-            #: not. Both figures are zero everywhere today, which is why the
-            #: template says nothing when the vocabulary is empty rather than
-            #: printing "0 of 0" beside every row.
+            #: not. The numerator is zero on every set in every database today,
+            #: and the denominator has been the whole active vocabulary since
+            #: the seed grew one; the template still says nothing when the
+            #: vocabulary is empty rather than printing "0 of 0" beside every
+            #: row, because a deployment may have deactivated all of it.
             item_coverage = [
                 {
                     "version_label": row.version_label,

@@ -5,10 +5,15 @@ entry point outside `engine/` (§4.2 names this module for that reason).
 Four properties of this file are load-bearing, and each of them replaced a
 walking-skeleton shortcut whose failure mode was silent:
 
-**No metric code appears here.** The loop iterates `bundle.metrics` and
-evaluates each metric's stored formula. Adding a metric costs one INSERT and
-one expression, never a call site -- and `tests/test_calculator.py` proves it
-by adding a metric *row* rather than by checking that today's metrics render.
+**No metric code appears here.** The loop iterates `bundle.computed_metrics`
+and evaluates each metric's stored formula. Adding a metric costs one INSERT
+and one expression, never a call site -- and `tests/test_calculator.py` proves
+it by adding a metric *row* rather than by checking that today's metrics
+render. `computed_metrics` rather than `metrics` since v1.70: `metric` is a
+global table, so the vocabulary is wider than any one factor set, and a set
+that carries neither a formula nor a factor row for a metric has nothing to
+compute from -- see `FactorBundle.computed_metrics` for what reporting it
+anyway looked like on screen.
 
 **A formula computes one line; the engine performs the summation** (§4.3):
 
@@ -25,12 +30,21 @@ happen *inside* the per-line loop -- it is the same edit as the summation
 above, which is why open item O-7 and the `lines[0]` defect were fixed
 together.
 
-**Equivalences are data too.** They are read from `bundle.equivalences()` in
-exactly the same way, and no equivalence code appears here either. §4.2
-requires the rolled-up equivalence to be derived from the *rolled-up metric
-total* rather than summed from the per-entry ones -- the conversion is linear
-so the two agree mathematically, but `Decimal` has finite precision and one
-computation is one rounding.
+**Equivalences are data too, and since v1.71 so is the choice between them.**
+They are read from `bundle.equivalences()` in exactly the same way, and no
+equivalence code appears here either -- nor does a family name, nor a band.
+A row says which ladder it is a rung of and what range of its own value it is
+the right rung for (`EquivalenceSpec.family` / `.admits`); `_select_rungs`
+asks the rows and names none of them. §4.2 requires the rolled-up equivalence
+to be derived from the *rolled-up metric total* rather than summed from the
+per-entry ones -- the conversion is linear so the two agree mathematically,
+but `Decimal` has finite precision and one computation is one rounding.
+
+**One rung per ladder per calculation, not per scenario.** `calculate` decides
+the selection once, from the rolled-up `totals.current` metric totals, and
+every `ScenarioResult` in the result is built with it. See `calculate`'s own
+note for why that scenario and not the alternative or the net benefit, and for
+the surface that would have shown the failure.
 
 **Every lookup on `FactorBundle` falls back to `Decimal('0')`, so this module
 checks the codes itself.** Zero is the right answer for a missing *factor*
@@ -60,6 +74,7 @@ from engine.types import (
     EntryInput,
     EntryResult,
     EquivalenceResult,
+    EquivalenceSpec,
     ItemBasis,
     MetricResult,
     MoneyResult,
@@ -126,9 +141,13 @@ def calculate(request: CalculationRequest, bundle: FactorBundle) -> CalculationR
             f"gwp_horizon must be 20 or 100, got {request.gwp_horizon!r}"
         )
 
-    entries: list[EntryResult] = []
+    #: v1.71, pass one: the metrics of every scenario, and no equivalence yet.
+    #: The rung a ladder shows has to be decided for the WHOLE calculation
+    #: before any scenario can name its equivalences, so the two passes are
+    #: not an optimisation -- they are the shape of the dependency.
+    computed: list[tuple[_ScenarioMetrics, _ScenarioMetrics | None]] = []
     for entry in request.entries:
-        current = calculate_scenario(
+        current_metrics = _scenario_metrics(
             entry.current,
             entry.sector_code,
             entry.food_category_code,
@@ -136,10 +155,9 @@ def calculate(request: CalculationRequest, bundle: FactorBundle) -> CalculationR
             request.gwp_horizon,
             food_item_code=entry.food_item_code,
         )
-        alternative = None
-        benefit = None
+        alternative_metrics = None
         if entry.alternative is not None:
-            alternative = calculate_scenario(
+            alternative_metrics = _scenario_metrics(
                 entry.alternative,
                 entry.sector_code,
                 entry.food_category_code,
@@ -152,6 +170,58 @@ def calculate(request: CalculationRequest, bundle: FactorBundle) -> CalculationR
                 # representable.
                 food_item_code=entry.food_item_code,
             )
+        computed.append((current_metrics, alternative_metrics))
+
+    #: §4.2, v1.71. **The whole submission's CURRENT scenario is what chooses
+    #: the rung, and the choice is then binding on every scenario in this
+    #: result.** Three reasons, in the order they decided it.
+    #:
+    #: It is the scenario the page renders equivalences from
+    #: (`totals.current.equivalences`, §7.3a), so the unit is chosen from the
+    #: number the reader is shown. The objects below are the *same*
+    #: `MetricResult`s that go on to be reported, not a second roll-up of the
+    #: same inputs, so "the unit was chosen from the figure on the page" is
+    #: true by construction rather than by two computations agreeing.
+    #:
+    #: It always exists. `alternative` and `net_benefit` are `None` whenever
+    #: no entry carries an alternative (§3 rule 4), so either of those as the
+    #: selector would leave half of all submissions with no rule at all.
+    #:
+    #: It is monotone in the size of the submission, which is the only thing a
+    #: ladder is about. Net benefit is not: a large submission that changes
+    #: nothing between its scenarios has a net benefit of zero, and selecting
+    #: on it would drive every ladder to its bottom rung while the page beside
+    #: it reads in tonnes.
+    #:
+    #: **And it is what makes two units for one family on one page
+    #: impossible.** One mapping is computed here and handed to every
+    #: `ScenarioResult` this function builds -- the totals' current and
+    #: alternative, and both scenarios of every entry -- so every
+    #: `equivalences[]` array on one response names the same rung of each
+    #: family. `web/js/improvement.js` is the surface that would have shown the
+    #: failure: it merges the current and alternative lists **by `code`**, so a
+    #: per-scenario selection would have produced two half-populated rows
+    #: (a current with no improved figure, an improved with no current)
+    #: wherever the two scenarios landed on different rungs.
+    totals_current_kg, totals_current_metrics = _roll_up_metrics(
+        tuple(current for current, _ in computed)
+    )
+    selection = _select_rungs(totals_current_metrics, bundle)
+    totals_current = ScenarioResult(
+        total_kg=totals_current_kg,
+        metrics=totals_current_metrics,
+        equivalences=_equivalences(totals_current_metrics, bundle, selection),
+    )
+
+    entries: list[EntryResult] = []
+    for entry, (current_metrics, alternative_metrics) in zip(
+        request.entries, computed
+    ):
+        current = _as_scenario(current_metrics, bundle, selection)
+        alternative = None
+        benefit = None
+        if alternative_metrics is not None:
+            alternative = _as_scenario(alternative_metrics, bundle, selection)
             benefit = net_benefit(current, alternative)
         entries.append(
             EntryResult(
@@ -183,8 +253,35 @@ def calculate(request: CalculationRequest, bundle: FactorBundle) -> CalculationR
         factor_set_version=bundle.version_label,
         is_mock=bundle.is_mock,
         gwp_horizon=request.gwp_horizon,
-        totals=_totals(request.entries, tuple(entries), bundle),
+        totals=_totals(
+            request.entries, tuple(entries), bundle, selection, totals_current
+        ),
         entries=tuple(entries),
+    )
+
+
+#: v1.71. One scenario's `(total_kg, metrics)`, before any equivalence has been
+#: attached to it. Not a public type and not on the wire: `ScenarioResult` is
+#: still the only scenario shape that leaves this module. It exists because
+#: `calculate` has to know every scenario's metric totals before it can decide
+#: which rung of a ladder any of them shows, and a `ScenarioResult` carrying a
+#: provisional equivalence list -- to be replaced a few lines later -- would be
+#: a value that is wrong for as long as anything can see it.
+_ScenarioMetrics = tuple[Decimal, dict[str, MetricResult]]
+
+
+def _as_scenario(
+    parts: _ScenarioMetrics,
+    bundle: FactorBundle,
+    selection: dict[str, EquivalenceSpec],
+) -> ScenarioResult:
+    """Attach the equivalences chosen for this calculation to one scenario's
+    already-computed metrics."""
+    total_kg, metrics = parts
+    return ScenarioResult(
+        total_kg=total_kg,
+        metrics=metrics,
+        equivalences=_equivalences(metrics, bundle, selection),
     )
 
 
@@ -196,6 +293,7 @@ def calculate_scenario(
     gwp_horizon: int,
     *,
     food_item_code: str | None = None,
+    selection: dict[str, EquivalenceSpec] | None = None,
 ) -> ScenarioResult:
     """Evaluate one scenario of one entry. Internal to the engine (§4.2): no
     caller outside `engine/` may depend on this signature.
@@ -213,6 +311,41 @@ def calculate_scenario(
     already `gwp_horizon`, and a food silently landing there would be worse
     than one left out. Left out, the scenario prices at its category's
     factors, which is what every scenario evaluated before v1.58 did.
+
+    **`selection` (v1.71) is the ladder rung each equivalence family shows.**
+    `calculate` passes the one it decided for the whole result; left out, this
+    scenario selects from its own metric totals, because a scenario evaluated
+    on its own has no other context to select from. That is the degenerate
+    case and not the normal one -- a caller that evaluates two scenarios of
+    one submission separately and renders them together will get two
+    independently-chosen rungs, which is exactly what `calculate` exists to
+    prevent.
+    """
+    parts = _scenario_metrics(
+        lines, sector_code, food_category_code, bundle, gwp_horizon,
+        food_item_code=food_item_code,
+    )
+    if selection is None:
+        selection = _select_rungs(parts[1], bundle)
+    return _as_scenario(parts, bundle, selection)
+
+
+def _scenario_metrics(
+    lines: tuple[ScenarioLine, ...],
+    sector_code: str,
+    food_category_code: str | None,
+    bundle: FactorBundle,
+    gwp_horizon: int,
+    *,
+    food_item_code: str | None = None,
+) -> _ScenarioMetrics:
+    """`calculate_scenario` above, minus the equivalences -- every metric
+    total and every breakdown row, and nothing that depends on a ladder.
+
+    Split out for v1.71: `calculate` has to see every scenario's metric
+    totals before it can choose the rung any of them shows, so the two halves
+    run at different moments. Everything that was in `calculate_scenario`
+    before the split is here, unchanged.
     """
     food_category = _resolve_food_category(food_category_code, bundle)
     #: Raises for a food this bundle has never heard of, and for a food whose
@@ -239,7 +372,7 @@ def calculate_scenario(
     constants = _constant_bindings(bundle, gwp_horizon)
 
     metrics: dict[str, MetricResult] = {}
-    for spec in bundle.metrics:
+    for spec in bundle.computed_metrics:
         formula = bundle.formula(spec.code)
         rows: list[BreakdownRow] = []
         total = Decimal("0")
@@ -326,11 +459,7 @@ def calculate_scenario(
             by_destination=tuple(rows),
         )
 
-    return ScenarioResult(
-        total_kg=sum((row.qty_kg for row in lines), Decimal("0")),
-        metrics=metrics,
-        equivalences=_equivalences(metrics, bundle),
-    )
+    return sum((row.qty_kg for row in lines), Decimal("0")), metrics
 
 
 def net_benefit(
@@ -389,6 +518,8 @@ def _totals(
     request_entries: tuple[EntryInput, ...],
     entries: tuple[EntryResult, ...],
     bundle: FactorBundle,
+    selection: dict[str, EquivalenceSpec],
+    current: ScenarioResult,
 ) -> CalculationTotals:
     """§4.2's roll-up table, computed here and never in `api/`.
 
@@ -407,7 +538,12 @@ def _totals(
     """
     has_alternative = any(entry.alternative is not None for entry in entries)
 
-    current = _roll_up(tuple(entry.current for entry in entries), bundle)
+    #: `current` arrives already rolled up (v1.71) rather than being rolled up
+    #: here, because `calculate` had to roll it up before this function could
+    #: be called at all: it is what the ladder rungs were selected from. Two
+    #: roll-ups of the same inputs would agree, but the claim that the unit
+    #: was chosen from the figure on the page is stronger when it is the same
+    #: object than when it is two computations that happen to match.
     alternative = (
         _roll_up(
             tuple(
@@ -415,6 +551,7 @@ def _totals(
                 for entry in entries
             ),
             bundle,
+            selection,
         )
         if has_alternative
         else None
@@ -780,9 +917,19 @@ def _item_basis(
     return ItemBasis.MIXED
 
 
-def _roll_up(
-    scenarios: tuple[ScenarioResult, ...], bundle: FactorBundle
-) -> ScenarioResult:
+def _roll_up_metrics(parts: tuple[_ScenarioMetrics, ...]) -> _ScenarioMetrics:
+    """§4.2's cross-entry roll-up of mass and metrics, with no equivalence
+    attached -- `_roll_up` below is this plus the equivalences.
+
+    Split out for v1.71, and it is `calculate`'s first caller rather than
+    `_roll_up`'s helper: the rung a ladder shows is decided from the
+    **rolled-up current** metric totals, which therefore have to exist before
+    any scenario in the result can name its equivalences. `calculate` rolls
+    the current side up once, here, selects on it, and passes the very same
+    `MetricResult` objects on as `totals.current.metrics` -- so the figure the
+    unit was chosen from and the figure printed beside it are one object and
+    cannot drift apart.
+    """
     metrics: dict[str, MetricResult] = {}
     #: v1.48, amending §3 rule 2 for the half of it that was wrong. Keyed
     #: first by metric code and then by destination: `qty_kg` and `value`
@@ -798,8 +945,8 @@ def _roll_up(
     #: and a mean of two different rates is a number derived from nothing --
     #: that half of the old rule stands.
     destinations: dict[str, dict[str, list[Decimal]]] = {}
-    for scenario in scenarios:
-        for code, metric in scenario.metrics.items():
+    for _, scenario_metrics in parts:
+        for code, metric in scenario_metrics.items():
             running = metrics[code].total if code in metrics else Decimal("0")
             bucket_for_metric = destinations.setdefault(code, {})
             for row in metric.by_destination:
@@ -836,27 +983,124 @@ def _roll_up(
                     for destination_code, (qty, value) in bucket_for_metric.items()
                 ),
             )
-    return ScenarioResult(
-        total_kg=sum((scenario.total_kg for scenario in scenarios), Decimal("0")),
-        metrics=metrics,
-        # §4.2: derived from the metric totals **this function just rolled
-        # up**, not from `scenario.equivalences`. Adding the per-entry values
-        # would be a second place a headline number is produced, and the two
-        # disagree in the last place whenever a per-entry product rounds.
-        equivalences=_equivalences(metrics, bundle),
+    return sum((total_kg for total_kg, _ in parts), Decimal("0")), metrics
+
+
+def _roll_up(
+    scenarios: tuple[ScenarioResult, ...],
+    bundle: FactorBundle,
+    selection: dict[str, EquivalenceSpec],
+) -> ScenarioResult:
+    """§4.2's roll-up, as a scenario.
+
+    The equivalences are derived from the metric totals `_roll_up_metrics`
+    has **just rolled up**, not from `scenario.equivalences`. Adding the
+    per-entry values would be a second place a headline number is produced,
+    and the two disagree in the last place whenever a per-entry product
+    rounds. Which *rung* each ladder shows is `selection`'s, decided once for
+    the whole calculation (v1.71) and not re-decided here.
+    """
+    return _as_scenario(
+        _roll_up_metrics(
+            tuple((scenario.total_kg, scenario.metrics) for scenario in scenarios)
+        ),
+        bundle,
+        selection,
     )
 
 
-def _equivalences(
-    metrics: dict[str, MetricResult], bundle: FactorBundle
-) -> tuple[EquivalenceResult, ...]:
-    """§2.2, §3 rule 5, §4.2. One `EquivalenceResult` per active equivalence
-    in the bundle, in `sort_order` (which `FactorBundle.equivalences()`
-    already applies), converted from the metric total it names.
-
-    `value = source metric total x value_per_unit`, quantised to the
+def _equivalence_value(total: Decimal, spec: EquivalenceSpec) -> Decimal:
+    """§4.2. `value = source metric total x value_per_unit`, quantised to the
     contract's ten places for the same reason every other decimal on the wire
     is: the raw product carries twenty.
+
+    Named, because v1.71 needs it in two places -- once to decide which rung
+    of a ladder is shown and once to report the rung that was chosen -- and
+    the two must be the same arithmetic to the last place. A band tested
+    against an unquantised product and a label printed from a quantised one
+    would disagree on exactly the values that sit on a band edge, which are
+    the only values a band decides.
+    """
+    return (total * spec.value_per_unit).quantize(METRIC_SCALE)
+
+
+def _select_rungs(
+    metrics: dict[str, MetricResult], bundle: FactorBundle
+) -> dict[str, EquivalenceSpec]:
+    """§2.2, v1.71. One chosen rung per equivalence family, from `metrics`.
+
+    **The selection is data, not code.** No family name, no equivalence code
+    and no band appears here or anywhere else in `engine/`: this walks
+    `bundle.equivalences()` in `(sort_order, code)` order and asks each row
+    whether its own band admits its own converted value
+    (`EquivalenceSpec.admits`). Adding a rung is inserting a row.
+
+    **The first admitting row of a family wins**, which makes `sort_order`
+    within a family a priority order rather than a partition. Bands are
+    therefore allowed to overlap, and the shipped ladders rely on it: every
+    rung above the bottom one says `min_value = 1` and nothing else, so the
+    rule reads *use the largest unit that still comes to at least one*, with
+    the ladder ordered largest-unit-first.
+
+    **A family whose bands admit nothing falls back to its first row.** That
+    is the rung a staff member put at the top of the ladder, which in both
+    shipped families is the client's own unit -- so a ladder somebody has
+    misconfigured degrades to the figure that was there before ladders
+    existed, rather than to silence or to a teaspoon.
+
+    A rung whose `source_metric` this factor set does not compute is invisible
+    here for the same reason it is invisible in `_equivalences` below: it is
+    skipped, and a family all of whose rungs are invisible is absent from the
+    returned mapping and contributes nothing.
+
+    Rows with no family are not in the returned mapping at all. They are not
+    rungs of anything and are never selected against -- which is every
+    equivalence in every factor set written before v1.71.
+    """
+    chosen: dict[str, EquivalenceSpec] = {}
+    settled: set[str] = set()
+    for spec in bundle.equivalences():
+        if spec.family is None:
+            continue
+        source = metrics.get(spec.source_metric_code)
+        if source is None:
+            continue
+        # First computable row of the family: the fallback, until something
+        # admits.
+        chosen.setdefault(spec.family, spec)
+        if spec.family in settled:
+            continue
+        if spec.admits(_equivalence_value(source.total, spec)):
+            chosen[spec.family] = spec
+            settled.add(spec.family)
+    return chosen
+
+
+def _equivalences(
+    metrics: dict[str, MetricResult],
+    bundle: FactorBundle,
+    selection: dict[str, EquivalenceSpec],
+) -> tuple[EquivalenceResult, ...]:
+    """§2.2, §3 rule 5, §4.2. One `EquivalenceResult` per active equivalence
+    in the bundle that is not a rung of a ladder, plus **exactly one rung of
+    each ladder**, in `sort_order` (which `FactorBundle.equivalences()`
+    already applies), converted from the metric total it names.
+
+    **`selection` is passed in rather than computed here, and that is the
+    whole of how one page is stopped from showing two units for one family.**
+    `calculate` computes it once, from the rolled-up `totals.current` metric
+    totals, and hands the same mapping to every scenario it builds -- the
+    totals' current and alternative, and both scenarios of every entry. See
+    `calculate`'s own note for why `totals.current` is the scenario that
+    decides.
+
+    **A ladder occupies the page position of its first row**, not of the rung
+    that happened to win. The loop emits a family's chosen rung at the first
+    row of that family it reaches and then skips the rest, so a submission
+    that drops from vehicle-years to vehicle-days does not also move the card.
+
+    `value = source metric total x value_per_unit`, quantised to the
+    contract's ten places -- see `_equivalence_value`.
 
     An equivalence naming a metric absent from `metrics` is **skipped**
     rather than raising. `validate()` (§4.1) reports a dangling
@@ -866,15 +1110,27 @@ def _equivalences(
     metric codes present on both sides.
     """
     results: list[EquivalenceResult] = []
-    for spec in bundle.equivalences():
+    seen_families: set[str] = set()
+    for row in bundle.equivalences():
+        if row.family is None:
+            spec = row
+        elif row.family in seen_families:
+            continue
+        else:
+            spec = selection.get(row.family)
+            if spec is None:
+                continue
+            seen_families.add(row.family)
         source = metrics.get(spec.source_metric_code)
         if source is None:
             continue
-        value = (source.total * spec.value_per_unit).quantize(METRIC_SCALE)
+        value = _equivalence_value(source.total, spec)
         results.append(
             EquivalenceResult(
                 code=spec.code,
-                label=_interpolate(spec.label_template, value),
+                label=_interpolate(
+                    spec.label_template, value, spec.label_template_one
+                ),
                 value=value,
                 source_metric_code=spec.source_metric_code,
                 name=spec.name,
@@ -886,7 +1142,9 @@ def _equivalences(
     return tuple(results)
 
 
-def _interpolate(template: str, value: Decimal) -> str:
+def _interpolate(
+    template: str, value: Decimal, template_one: str | None = None
+) -> str:
     """§3 rule 5. `{value}` is substituted; everything else in the template is
     copied verbatim.
 
@@ -894,8 +1152,26 @@ def _interpolate(template: str, value: Decimal) -> str:
     is arithmetic, and a client that formatted the label itself would be a
     second place a number is turned into the figure a user reads -- one the
     golden suite could not cover.
+
+    **`template_one` is v1.71's singular form and is chosen off the printed
+    number, not off the raw value.** The test is `_whole_units(value) == "1"`
+    -- the very string that is about to be substituted -- so the sentence and
+    the number in it can never disagree. Choosing off `value == 1` instead
+    would print `Equivalent to 1 Olympic swimming pools` for 1.4 and
+    `Equivalent to 1 Olympic swimming pool` for exactly 1, which is the defect
+    wearing a smaller hat.
+
+    **`-1` takes the plural**, because `_whole_units` produces `"-1"` and not
+    `"1"`. English is not settled on negative ones, the sign is a real signal
+    here (a metric total can be negative when a downstream offset dominates),
+    and a staff member who wants a negative singular can say so in the plural
+    template. A rule nobody can predict is worse than a rule that is slightly
+    coarse.
     """
-    return template.replace(VALUE_PLACEHOLDER, _whole_units(value))
+    printed = _whole_units(value)
+    if template_one is not None and printed == "1":
+        template = template_one
+    return template.replace(VALUE_PLACEHOLDER, printed)
 
 
 def _whole_units(value: Decimal) -> str:

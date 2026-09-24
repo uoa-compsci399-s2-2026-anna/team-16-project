@@ -120,6 +120,29 @@ def _add_destination(engine, code, *, is_prevention):
         db.commit()
 
 
+def _add_food_item(engine, code, name, category_code):
+    """One `food_item` row, on the same terms as `_add_destination` above.
+
+    The seed in `tests/support/sqlite.py` creates none, and that is right: an
+    empty vocabulary is a real deployment state (Section 6.1), and four tests in
+    `tests/db` are *about* a bundle with no items at all. So the row is added
+    where it is needed rather than seeded for everyone.
+    """
+    from sqlalchemy.orm import sessionmaker
+
+    from db.models import FoodCategory, FoodItem
+
+    with sessionmaker(bind=engine, expire_on_commit=False)() as db:
+        parent = db.scalar(
+            select(FoodCategory).where(FoodCategory.code == category_code)
+        )
+        assert parent is not None, f"the seed has no {category_code!r}"
+        db.add(
+            FoodItem(code=code, name=name, food_category_id=parent.id, sort_order=20)
+        )
+        db.commit()
+
+
 def _set_prevention_flag(engine, code, value):
     from sqlalchemy.orm import sessionmaker
 
@@ -755,7 +778,16 @@ def _request_from(fixture_name):
     return {"gwp_horizon": fixture["gwp_horizon"], "entries": entries}
 
 
-async def test_contract_fixtures_have_the_same_top_level_shapes(app):
+async def test_contract_fixtures_have_the_same_top_level_shapes(app, sqlite_engine):
+    #: v1.72. `taxonomy.json` carries the whole shipped vocabulary now, and
+    #: this is the one test that checks a fixture against a live response, so
+    #: the response needs a `food_items` row for the shape of one to be
+    #: checked at all -- `_assert_shape` refuses a fixture that carries rows
+    #: against a response that carries none, which is the rule that caught
+    #: this. `milk` is `admin/seed.py`'s code, parented to `dairy` because
+    #: that is the category the test seed prices and Section 6.1 offers an
+    #: item only under a covered parent.
+    _add_food_item(sqlite_engine, "milk", "Milk", "dairy")
     cases = (
         ("taxonomy.json", "get", "/api/v1/taxonomy", None),
         (

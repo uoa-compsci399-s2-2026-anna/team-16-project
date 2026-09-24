@@ -306,8 +306,25 @@
       "source_metric": "co2e",
       "value_per_unit": "4.1800000000",
       "label_template": "Equivalent to driving {value} km",
+      "label_template_one": "Equivalent to driving {value} km",
+      "family": "driving",
+      "min_value": "1.0000000000",
+      "max_value": null,
       "source_note": "PLACEHOLDER. Open item O-3 — the New Zealand basis for this conversion is not settled. Roughly one kilometre of an average light petrol vehicle per 0.24 kg CO2e.",
       "sort_order": 10
+    },
+    {
+      "code": "metres_driven",
+      "name": "Metres driven",
+      "source_metric": "co2e",
+      "value_per_unit": "4180.0000000000",
+      "label_template": "Equivalent to driving {value} m",
+      "label_template_one": "Equivalent to driving {value} m",
+      "family": "driving",
+      "min_value": null,
+      "max_value": null,
+      "source_note": "PLACEHOLDER, and derived rather than sourced: the row above, in metres. Open item O-3 — the New Zealand basis for the kilometre figure is not settled, so this one is not settled either.",
+      "sort_order": 11
     }
   ]
 }

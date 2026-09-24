@@ -276,9 +276,28 @@ def test_metrics_and_equivalences_arrive_sorted_by_sort_order():
         "water",
         "cost",
         "mass",
+        "land",
     ]
     assert loaded.metrics[0].unit == "kg CO2e"
     assert loaded.metrics[0].display_precision == 1
+    #: `land` is last because its `sort_order` is 60, and it is the reason this
+    #: list is spelled out rather than compared against `len()`: the fixture
+    #: taxonomy gained it at v1.70 and the sort had to be re-proved on a list
+    #: whose new member sorts to the end, which is where a comparison that
+    #: stops early would never look.
+    assert loaded.metrics[-1].code == "land"
+    assert loaded.metrics[-1].unit == "m2"
+
+    #: And the set this bundle is composed from carries no `land` formula and
+    #: no `land` factor row, so the engine does not report it (v1.70). The
+    #: whole vocabulary is in `metrics`; what this set computes is narrower.
+    assert [metric.code for metric in loaded.computed_metrics] == [
+        "co2e",
+        "ch4",
+        "water",
+        "cost",
+        "mass",
+    ]
 
 
 def test_from_json_accepts_the_json_text_and_never_opens_a_file():
@@ -529,6 +548,138 @@ def test_validate_reports_a_formula_and_an_equivalence_naming_an_absent_metric()
     assert len(problems) == 2
     assert any("formula" in problem for problem in problems)
     assert any("km_driven" in problem for problem in problems)
+
+
+# ---------- the ladder columns (v1.71) ----------
+
+
+def _laddered(*, family="water", min_value=None, max_value=None,
+              label_template_one=None):
+    """The minimal bundle with its one equivalence turned into a rung."""
+    data = _minimal()
+    row = data["equivalences"][0]
+    if family is not None:
+        row["family"] = family
+    if min_value is not None:
+        row["min_value"] = min_value
+    if max_value is not None:
+        row["max_value"] = max_value
+    if label_template_one is not None:
+        row["label_template_one"] = label_template_one
+    return data
+
+
+def test_a_bundle_written_before_the_ladder_loads_with_no_family_or_band():
+    """The inertness claim, read off the parsed object rather than off a
+    calculation. Every bundle in `tests/golden/` is this shape."""
+    spec = FactorBundle.from_json(_minimal()).equivalences()[0]
+
+    assert spec.family is None
+    assert spec.min_value is None
+    assert spec.max_value is None
+    assert spec.label_template_one is None
+    #: An unbanded rung admits every value there is, which is what makes it a
+    #: catch-all rather than a rung that is never chosen.
+    assert spec.admits(Decimal("0"))
+    assert spec.admits(Decimal("-1E20"))
+    assert spec.admits(Decimal("1E20"))
+
+
+def test_the_four_ladder_keys_survive_from_json():
+    data = _laddered(
+        family="water", min_value="1.0000000000", max_value="1000.0000000000",
+        label_template_one="Equivalent to driving 1 km",
+    )
+
+    spec = FactorBundle.from_json(data).equivalences()[0]
+
+    assert spec.family == "water"
+    assert spec.min_value == Decimal("1.0000000000")
+    assert spec.max_value == Decimal("1000.0000000000")
+    assert spec.label_template_one == "Equivalent to driving 1 km"
+
+
+def test_a_band_is_half_open():
+    """`[min, max)`. The lower edge is in and the upper edge is out, so two
+    rungs written `[0, 1)` and `[1, ...)` cover the line exactly once."""
+    spec = FactorBundle.from_json(
+        _laddered(min_value="1.0000000000", max_value="10.0000000000")
+    ).equivalences()[0]
+
+    assert not spec.admits(Decimal("0.9999999999"))
+    assert spec.admits(Decimal("1"))
+    assert spec.admits(Decimal("9.9999999999"))
+    assert not spec.admits(Decimal("10"))
+
+
+def test_a_band_bound_given_as_a_json_number_is_refused():
+    """§1.2 does not stop applying because a key is optional. A band arriving
+    as a JSON number has already been through binary floating point by the
+    time `from_json` sees it, and the rung it would then choose is decided by
+    a value the bundle never carried."""
+    with pytest.raises(BundleFormatError):
+        FactorBundle.from_json(_laddered(min_value=1))
+
+
+def test_validate_reports_a_band_on_a_row_with_no_family():
+    """Mirrors `ck_equivalence_band_needs_family`, which the database enforces
+    on every row it stores -- so this can only fire on a hand-written bundle,
+    which §8.2's "Save as regression case" produces."""
+    data = _minimal()
+    data["equivalences"][0]["min_value"] = "1.0000000000"
+
+    problems = FactorBundle.from_json(data).validate()
+
+    assert len(problems) == 1
+    assert "km_driven" in problems[0]
+    assert "never fire" in problems[0]
+
+
+def test_validate_reports_a_band_that_admits_nothing():
+    """`[10, 1)` and `[1, 1)` are both empty, and a rung that can never be
+    chosen looks exactly like a rung nobody added."""
+    data = _laddered(min_value="10.0000000000", max_value="1.0000000000")
+
+    problems = FactorBundle.from_json(data).validate()
+
+    assert len(problems) == 1
+    assert "can never be chosen" in problems[0]
+
+
+def test_validate_reports_a_family_whose_rungs_convert_different_metrics():
+    """A ladder is one quantity expressed at several sizes. Rungs drawn from
+    two metrics are two different facts wearing one name, and which one the
+    reader gets would be decided by magnitude."""
+    data = _laddered()
+    data["metrics"].append(
+        {"code": "water", "name": "Water", "unit": "L", "display_unit": "L",
+         "display_precision": 0, "sort_order": 2}
+    )
+    data["equivalences"].append(
+        {"code": "showers", "name": "Showers", "source_metric": "water",
+         "family": "water", "value_per_unit": "0.0111111111",
+         "label_template": "Equivalent to {value} showers", "sort_order": 2}
+    )
+
+    problems = FactorBundle.from_json(data).validate()
+
+    assert len(problems) == 1
+    assert "showers" in problems[0]
+    assert "one quantity" in problems[0]
+
+
+def test_validate_accepts_a_well_formed_ladder():
+    """Two rungs of one family, overlapping bands, one catch-all. Overlap is
+    not a problem: `sort_order` within a family is a priority order, which is
+    what lets every rung above the bottom one say only `min_value = 1`."""
+    data = _laddered(min_value="1.0000000000")
+    data["equivalences"].append(
+        {"code": "metres_driven", "name": "Metres driven", "source_metric": "co2e",
+         "family": "water", "value_per_unit": "4180.0000000000",
+         "label_template": "Equivalent to driving {value} m", "sort_order": 2}
+    )
+
+    assert FactorBundle.from_json(data).validate() == []
 
 
 def test_validate_reports_a_duplicate_factor_row():

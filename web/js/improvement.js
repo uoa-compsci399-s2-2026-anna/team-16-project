@@ -812,6 +812,14 @@ function comparisonData(result) {
   }
   // §3: `label` is `label_template` with the equivalence's own value already interpolated
   // and formatted by the engine. Each side keeps its own sentence.
+  //
+  // **This merge is by `code`, and §6.2 (v1.71) is what makes that safe.** Where several
+  // equivalences are rungs of one ladder, the engine chooses the rung ONCE per
+  // calculation -- from the whole submission's current scenario -- and puts the same one
+  // in every `equivalences[]` on the response. A per-scenario choice would give this loop
+  // two codes for one comparison and it would render two rows, each with one side filled
+  // in: a before-and-after with nothing to compare. Do not "fix" that by pairing on
+  // anything other than `code`; the guarantee is the engine's.
   const equivalences = new Map()
   const readSide = (rows, key) => {
     for (const row of rows || []) equivalences.set(row.code, { ...(equivalences.get(row.code) || {}), [key]: row.label })

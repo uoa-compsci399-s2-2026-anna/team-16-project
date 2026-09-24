@@ -281,9 +281,15 @@ def test_every_land_row_says_which_of_the_two_figures_it_is():
     row that reached the file by some other path is covered too.
     """
     data = build_module.build()
+    #: `food_item is None` is the category row, section 2.2's candidate 4. The
+    #: item-level rows are `destination is None` as well and are a different
+    #: subject -- their own notes are asserted by
+    #: `test_every_item_row_says_what_it_is_derived_from` below.
     land_rows = [
         row for row in data["upstream"]
-        if row["metric"] == "land" and row["destination"] is None
+        if row["metric"] == "land"
+        and row["destination"] is None
+        and row.get("food_item") is None
     ]
     assert len(land_rows) == 60, "ten food categories x six sectors"
 
@@ -309,10 +315,17 @@ def test_the_client_and_public_figures_reach_the_built_categories():
     a change to either side would move.
     """
     data = build_module.build()
+    #: `food_item is None` for the reason given in the test above: since the
+    #: item level landed, four of these ten categories carry item rows that are
+    #: `destination is None` too, and without this filter `built[food]` was
+    #: whichever item row happened to be written last -- `meat` read
+    #: `other_meat`'s 181.4 instead of the category's 64.08.
     built = {
         row["food_category"]: Decimal(row["value_per_kg"])
         for row in data["upstream"]
-        if row["metric"] == "land" and row["destination"] is None
+        if row["metric"] == "land"
+        and row["destination"] is None
+        and row.get("food_item") is None
     }
 
     assert built["vegetables"] == Decimal("0.1683501684")   # 10 / 59.40
@@ -327,6 +340,7 @@ def test_the_client_and_public_figures_reach_the_built_categories():
             row["value_per_kg"] for row in data["upstream"]
             if row["metric"] == "land"
             and row["destination"] is None
+            and row.get("food_item") is None
             and row["food_category"] == food
         }
         assert len(values) == 1, f"{food} varies by sector: {sorted(values)}"
@@ -574,3 +588,365 @@ def test_a_band_on_a_row_with_no_family_stops_the_build():
         build_module._assert_ladders_are_well_formed(data)
 
     assert "carries a band and no family" in str(caught.value)
+
+
+# ------------------------------------------------------------- the item level
+
+
+@pytest.fixture
+def restore_item_map():
+    """Put ``ITEM_LEVEL_CLIENT_FOODS`` back however the test leaves it.
+
+    Same reason as ``restore_tables``: it is module-level state the build script
+    reads on every call, so a test that adds a food to it would change what
+    every later test in the session builds.
+    """
+    saved = dict(build_module.ITEM_LEVEL_CLIENT_FOODS)
+    yield
+    build_module.ITEM_LEVEL_CLIENT_FOODS.clear()
+    build_module.ITEM_LEVEL_CLIENT_FOODS.update(saved)
+
+
+def _item_rows(data):
+    return [row for row in data["upstream"] if row.get("food_item") is not None]
+
+
+def _category_rows_at_one():
+    """A category-level row at exactly 1.0 for every (category, sector, metric)
+    the item level covers.
+
+    Against a category factor of exactly one, an item row **is** the relativity
+    -- ``category x client / mean(client)`` reduces to ``client / mean(client)``
+    -- which is what lets a test check the arithmetic against the client's own
+    printed cells without also reproducing the anchoring, clamping and ReFED
+    scaling that produce the real category figure.
+    """
+    return [
+        {
+            "sector": sector,
+            "food_category": food,
+            "destination": None,
+            "metric": metric,
+            "value_per_kg": "1.0000000000",
+        }
+        for food in build_module.ITEM_LEVEL_CLIENT_FOODS
+        for sector in build_module.ALL_NZ_SECTORS
+        for metric in build_module.ITEM_LEVEL_METRICS
+    ]
+
+
+def test_the_item_map_names_only_foods_the_seed_actually_creates():
+    """The one thing in this script that is kept in step **by hand**.
+
+    ``build_upstream_factors_draft.py`` must not import ``admin.seed`` -- it
+    imports SQLAlchemy, and ``db/repository.py`` is the only module allowed to
+    touch the database -- so ``ITEM_LEVEL_CLIENT_FOODS`` restates the item codes
+    and their parent categories. A typo there writes a perfectly valid JSON file
+    that ``load_upstream_factors_draft.py`` then refuses several hundred rows
+    into a load, a long way from the line that caused it.
+
+    Both directions are checked: the code has to exist, and its parent has to be
+    the category this script files it under. A food filed under the wrong
+    category would load, and ``FactorBundle.validate()`` would report it at
+    publish -- correctly, but after the fact.
+    """
+    from admin.seed import FOOD_ITEMS
+
+    parent_of = {code: parent for code, _, parent, _ in FOOD_ITEMS}
+    wrong = []
+    for nz_food, pairs in build_module.ITEM_LEVEL_CLIENT_FOODS.items():
+        for code, _client_food in pairs:
+            if code not in parent_of:
+                wrong.append(f"{code!r} is in no seeded FOOD_ITEMS row")
+            elif parent_of[code] != nz_food:
+                wrong.append(
+                    f"{code!r} is filed under {nz_food!r} here but under "
+                    f"{parent_of[code]!r} in admin/seed.py"
+                )
+    assert not wrong, wrong
+
+
+def test_the_item_map_names_only_rows_the_client_actually_printed():
+    """Every item-level figure in this draft traces to a client table-1 row.
+
+    The twenty-seven foods contract v1.72 added are New Zealand foods and
+    Poore & Nemecek product rows, not client rows, and the whole basis of the
+    item level here is the client's own per-food spread -- so a code in this map
+    whose client name is not in ``TABLE1`` would mean a figure invented in this
+    script.
+    """
+    printed = {row.food for row in build_module.TABLE1}
+    unknown = sorted(
+        client_food
+        for pairs in build_module.ITEM_LEVEL_CLIENT_FOODS.values()
+        for _code, client_food in pairs
+        if client_food not in printed
+    )
+    assert not unknown, unknown
+
+
+def test_the_item_rows_average_to_the_category_row_they_fall_back_to():
+    """**The property the whole construction exists for**, on the built set.
+
+    Section 2.2's chain prices a food with no row of its own at its category's
+    factor. If the item rows do not average back to that factor, the calculator
+    answers the same question two different ways depending only on whether the
+    visitor happened to name the food -- design section 8.2's named failure, and
+    invisible in the output.
+
+    Asserted here on the real build as well as inside it, because the in-build
+    assertion is the thing a future edit could remove.
+    """
+    data = build_module.build()
+    categories = {
+        (row["food_category"], row["sector"], row["metric"]): Decimal(row["value_per_kg"])
+        for row in data["upstream"]
+        if row["destination"] is None and row.get("food_item") is None
+    }
+    groups = {}
+    for row in _item_rows(data):
+        key = (row["food_category"], row["sector"], row["metric"])
+        groups.setdefault(key, []).append(Decimal(row["value_per_kg"]))
+
+    assert groups, "no item rows were built at all"
+    for key, values in sorted(groups.items()):
+        expected = len(build_module.ITEM_LEVEL_CLIENT_FOODS[key[0]])
+        assert len(values) == expected, (key, len(values))
+        drift = abs(sum(values) / len(values) - categories[key])
+        assert drift <= build_module.ITEM_LEVEL_TOLERANCE, (key, drift)
+        #: A group whose rows all equalled their category would satisfy the
+        #: line above perfectly and teach a visitor nothing -- the dimension
+        #: wired and inert.
+        assert len(set(values)) > 1, (key, values)
+
+
+def test_an_item_row_that_drifts_from_its_category_stops_the_build():
+    """``_assert_item_level_preserves_the_category_mean()`` earns its place.
+
+    A drifted item row is not malformed data. It loads, it validates, it
+    publishes and it computes -- and it shows a visitor one number for Cheese
+    and a different one for "dairy, food unspecified" with nothing on the screen
+    saying why. So the refusal has to be mechanical, and the message has to name
+    the group rather than merely say something is wrong.
+    """
+    data = build_module.build()
+    target = next(
+        row for row in _item_rows(data)
+        if row["food_category"] == "dairy"
+        and row["metric"] == "co2e"
+        and row["sector"] == "wholesale_retail"
+        and row["food_item"] == "butter"
+    )
+    assert target["value_per_kg"] == "11.3900000000", target["value_per_kg"]
+    target["value_per_kg"] = "11.4900000000"
+
+    with pytest.raises(SystemExit) as caught:
+        build_module._assert_item_level_preserves_the_category_mean(data)
+
+    message = str(caught.value)
+    assert "dairy/wholesale_retail/co2e" in message
+    assert "item rows average" in message
+
+
+def test_an_item_list_that_is_not_the_categorys_own_list_stops_the_build(restore_item_map):
+    """The mean can only be preserved if the two lists are the same list.
+
+    Adding Seafood to ``meat``'s item level would divide by a mean of five
+    client rows while ``meat``'s own factor is the mean of four, and every one
+    of the twenty-four ``meat`` item rows would then be quietly wrong. Caught
+    before a value is computed, and the message prints both lists.
+    """
+    build_module.ITEM_LEVEL_CLIENT_FOODS["meat"] = (
+        *build_module.ITEM_LEVEL_CLIENT_FOODS["meat"],
+        ("hoki", "Seafood"),
+    )
+    with pytest.raises(SystemExit) as caught:
+        build_module._assert_item_lists_match_the_category_construction()
+
+    message = str(caught.value)
+    assert "meat: the item level names client rows" in message
+    assert "Seafood" in message
+    assert "NZ_FOOD_CATEGORY_SOURCES['meat']" in message
+
+
+def test_giving_eggs_an_item_factor_stops_the_build(restore_item_map):
+    """**The exclusion most likely to be "corrected" by a future reader.**
+
+    ``admin/seed.py`` files the ``eggs`` item under ``staples``, so adding it
+    here looks like tidying up. It is not: this draft leaves the client's Eggs
+    row out of every category figure -- out of co2e and water by
+    ``NZ_FOOD_CATEGORY_SOURCES`` (provenance section 3.2) and out of land by
+    ``LAND_STAPLES_CLIENT_ROWS`` -- so an Eggs item row would be priced against
+    a mean it is not part of, and ``staples``' six-row land mean would stop
+    matching its own item rows.
+
+    The refusal is stated separately from the list comparison above so that the
+    message explains the decision rather than only reporting a mismatch.
+    """
+    build_module.ITEM_LEVEL_CLIENT_FOODS["staples"] = (
+        *build_module.ITEM_LEVEL_CLIENT_FOODS["staples"],
+        ("eggs", "Eggs"),
+    )
+    with pytest.raises(SystemExit) as caught:
+        build_module._assert_item_lists_match_the_category_construction()
+
+    assert "'Eggs' row has been given an item-level factor" in str(caught.value)
+
+
+def test_the_anchor_sector_carries_the_clients_own_printed_cell():
+    """Where the arithmetic should land on the client's own number, it does.
+
+    For the three categories the client supplied a total for, the category
+    factor at the anchor sector -- the stage its own "Life cycle covered" column
+    measures up to -- is the client's unweighted mean, stored exactly. So the
+    item row there must be the client's own printed cell: Butter 11.39, Cheese
+    10.13, Red Meat 20.28, Bread 1.46. That is the one figure in this whole
+    construction a reader can check against the client's document with nothing
+    but a calculator.
+
+    ``staples`` is absent on purpose -- it has no client total to anchor
+    against, so nothing there should reproduce a client cell.
+    """
+    data = build_module.build()
+    stored = {
+        (row["food_category"], row["sector"], row["metric"], row["food_item"]):
+            Decimal(row["value_per_kg"])
+        for row in _item_rows(data)
+    }
+    assert stored[("dairy", "wholesale_retail", "co2e", "butter")] == Decimal("11.39")
+    assert stored[("dairy", "wholesale_retail", "co2e", "cheese")] == Decimal("10.13")
+    assert stored[("dairy", "wholesale_retail", "water", "cheese")] == Decimal("3968")
+    assert stored[("meat", "wholesale_retail", "co2e", "red_meat")] == Decimal("20.28")
+    assert stored[("bakery_grains", "wholesale_retail", "co2e", "bread")] == Decimal("1.46")
+
+    #: ``land`` collapses to the food's own resolved figure at EVERY sector,
+    #: because the land category factor is the mean of the same per-food figures
+    #: at every sector. 12.22 is Poore & Nemecek's Poultry Meat, which the
+    #: stated ten-times rule took over the client's 0.174; 17.2413793103 is
+    #: 10/0.58, the client's own Pork yield inverted and kept.
+    #:
+    #: **The tolerance is one unit in DECIMAL(20,10)'s last place, not slack.**
+    #: An item row is scaled onto the *stored* category value, which has already
+    #: been through that column, so a figure that should collapse exactly
+    #: collapses to within its rounding -- ``other_meat``'s land reads
+    #: 181.3999999999 against the public 181.40 for precisely that reason. The
+    #: alternative was to recompute the category figure here, which would put a
+    #: second copy of the anchoring and clamping in this script.
+    for sector in build_module.ALL_NZ_SECTORS:
+        got = stored[("meat", sector, "land", "poultry")]
+        assert abs(got - Decimal("12.22")) <= build_module.ITEM_LEVEL_TOLERANCE, (sector, got)
+        got = stored[("meat", sector, "land", "pork")]
+        assert abs(got - Decimal("17.2413793103")) <= build_module.ITEM_LEVEL_TOLERANCE, (sector, got)
+
+
+def test_the_item_rows_are_read_off_the_clients_table_not_frozen_beside_it(restore_tables):
+    """A construction that had hard-coded the six dairy figures would pass every
+    test above and silently stop tracking the client's next revision.
+
+    Checked against a category factor of exactly 1, where the item row is the
+    relativity itself (see ``_category_rows_at_one``), so the expected value can
+    be written out of the client's own printed cells -- 10.13, 1.51, 4.95,
+    11.39, 3.29, 1.19 -- rather than copied from the code under test. Doubling
+    Butter's cell must move both its own relativity and, through the mean, every
+    other dairy food's.
+    """
+    def butter_relativity():
+        rows = build_module._build_item_level_upstream_rows(_category_rows_at_one())
+        return next(
+            Decimal(row["value_per_kg"]) for row in rows
+            if row["food_item"] == "butter"
+            and row["metric"] == "co2e"
+            and row["sector"] == "wholesale_retail"
+        )
+
+    printed = [
+        Decimal(cell) for cell in ("10.13", "1.51", "4.95", "11.39", "3.29", "1.19")
+    ]
+    before = butter_relativity()
+    assert before == build_module.qd(
+        Decimal("11.39") / (sum(printed) / 6)
+    ), before
+
+    index = next(i for i, row in enumerate(build_module.TABLE1) if row.food == "Butter")
+    build_module.TABLE1[index] = build_module.TABLE1[index]._replace(
+        co2e_per_kg=Decimal("22.78")
+    )
+    printed[3] = Decimal("22.78")
+    after = butter_relativity()
+    assert after != before
+    assert after == build_module.qd(Decimal("22.78") / (sum(printed) / 6)), after
+
+
+def test_no_metric_the_client_has_no_per_food_column_for_gets_an_item_row():
+    """Three absences with three different causes, asserted rather than trusted.
+
+    ``ch4`` has no client column at all and ReFED's finest resolution is a food
+    category; ``cost`` has no upstream row anywhere in this set; ``mass`` reads
+    no factor row. An item row for any of them would be a number invented here,
+    and it would look exactly like the rest on screen.
+    """
+    data = build_module.build()
+    metrics = sorted({row["metric"] for row in _item_rows(data)})
+    assert metrics == ["co2e", "land", "water"], metrics
+
+
+def test_the_foods_the_client_never_subdivided_carry_no_item_row():
+    """Contract v1.72's twenty-seven foods, ``eggs`` and ``standard_mix`` get nothing.
+
+    That is the correct answer rather than a gap: section 2.2's chain prices
+    each at its category's average and section 7.3c's fallback disclosure says
+    so on the page, in the text download and on the PDF. Inventing a figure for
+    Kiwifruit is the invention this draft exists to avoid -- so this test fails
+    if somebody generates one.
+    """
+    data = build_module.build()
+    categories = sorted({row["food_category"] for row in _item_rows(data)})
+    assert categories == ["bakery_grains", "dairy", "meat", "staples"], categories
+    codes = {row["food_item"] for row in _item_rows(data)}
+    for absent in ("kiwifruit", "kumara", "hoki", "almonds", "coffee", "eggs"):
+        assert absent not in codes, absent
+
+
+def test_every_item_row_says_what_it_is_derived_from():
+    """Open item O-1 travels on the row, not only on the set.
+
+    Step 2.5 makes the calculator ask a more specific question and therefore
+    return a more authoritative-looking placeholder (design section 9), so each
+    row has to carry its own provenance: that it is the client's table 1, that
+    it is a relativity on this set's own category factor, and that it is not a
+    per-food New Zealand measurement.
+    """
+    data = build_module.build()
+    rows = _item_rows(data)
+    assert len(rows) == 342, len(rows)
+    for row in rows:
+        where = f"{row['food_category']}/{row['food_item']}/{row['sector']}/{row['metric']}"
+        note = row["source_note"]
+        assert "DERIVED FROM THE CLIENT'S OWN TABLE 1" in note, where
+        assert "NOT a per-food New Zealand measurement" in note, where
+        assert "relativity" in note, where
+        assert "O-1 is still open" in note, where
+        assert row["data_quality"] in (
+            "item-client-relativities",
+            "item-client-refed-level",
+            "item-public-substituted",
+        ), (where, row["data_quality"])
+        assert len(row["data_quality"]) <= 32, where
+
+
+def test_an_item_row_with_no_category_row_behind_it_stops_the_build():
+    """The one silent zero the item dimension can still produce.
+
+    Section 2.2's chain has no silent-zero trap *as long as the data has a
+    category row to fall back on*, and that is a property of the data. A set
+    whose only upstream row for a tuple names a food prices every other food in
+    that category at 0 --
+    ``db.repository.refuse_item_rows_without_category_fallback`` refuses to
+    publish it, and the build should not write it in the first place.
+    """
+    with pytest.raises(SystemExit) as caught:
+        build_module._build_item_level_upstream_rows([])
+
+    message = str(caught.value)
+    assert "No category-level upstream row for" in message
+    assert "refuse_item_rows_without_category_fallback" in message

@@ -10,7 +10,7 @@ docstring for why this shape exists rather than reusing
 already exists, and can only look taxonomy codes up, not create them).
 
 Unlike the ReFED loader, this one adds **no taxonomy**: every sector, food
-category and destination this file's data names is already seeded by
+category, food item and destination this file's data names is already seeded by
 ``admin/seed.py`` (this is New Zealand data, keyed to the New Zealand
 taxonomy, not a parallel one). If any code this file expects is missing, that
 is treated as a hard stop -- see ``_lookup`` below -- rather than created on
@@ -54,7 +54,13 @@ from admin.factor_models import (  # noqa: E402
     FactorUpstream,
     Formula,
 )
-from admin.taxonomy_models import Destination, FoodCategory, Metric, Sector  # noqa: E402
+from admin.taxonomy_models import (  # noqa: E402
+    Destination,
+    FoodCategory,
+    FoodItem,
+    Metric,
+    Sector,
+)
 from db.session import create_session_factory  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
@@ -92,6 +98,16 @@ def load_factor_set(session: Session, data: dict) -> tuple[int, dict[str, int]]:
         version_label=label,
         status=FactorSetStatus.draft,
         is_mock=bool(data.get("is_mock", True)),
+        #: v1.58's release switch for step 2.5, read the same way
+        #: ``docker/seed_mock_factors.py`` reads it and defaulting the same
+        #: way. **FALSE is the answer for every file written before the field
+        #: existed** and the safe answer either way: a set that released step
+        #: 2.5 because nobody said otherwise would ask a finer question than
+        #: its factors can answer. A set that says ``true`` and carries no
+        #: item-level row is refused at publish by
+        #: ``refuse_item_level_without_item_rows``, not here -- this loader
+        #: lands what the JSON says and leaves the set a draft.
+        item_level_enabled=bool(data.get("item_level_enabled", False)),
         notes=data.get("notes"),
     )
     session.add(factor_set)
@@ -100,6 +116,14 @@ def load_factor_set(session: Session, data: dict) -> tuple[int, dict[str, int]]:
 
     sectors = _codes(session, Sector)
     foods = _codes(session, FoodCategory)
+    #: v1.54's second nullable dimension on ``factor_upstream``. Looked up the
+    #: same hard-stopping way as every other code (see ``_lookup``): a
+    #: ``food_item`` this database does not have is a drifted
+    #: ``ITEM_LEVEL_CLIENT_FOODS`` in the build script, and creating the row
+    #: here would put a factor-loader's own vocabulary into a global taxonomy
+    #: table -- which is how forty-eight ``refed_*`` rows came to sit in
+    #: ``food_category``.
+    items = _codes(session, FoodItem)
     destinations = _codes(session, Destination)
     metrics = _codes(session, Metric)
 
@@ -132,6 +156,13 @@ def load_factor_set(session: Session, data: dict) -> tuple[int, dict[str, int]]:
             sector_id=_lookup(sectors, row["sector"], "sector", where),
             food_category_id=_lookup(
                 foods, row["food_category"], "food category", where),
+            #: ``None`` means the row prices every food in the category
+            #: (section 2.2's candidate 4), which is what every row of this
+            #: draft meant before the item level landed.
+            food_item_id=(
+                None if row.get("food_item") is None
+                else _lookup(items, row["food_item"], "food item", where)
+            ),
             destination_id=(
                 None if destination is None
                 else _lookup(destinations, destination, "destination", where)
@@ -207,7 +238,7 @@ def load_factor_set(session: Session, data: dict) -> tuple[int, dict[str, int]]:
     #: carries must have produced exactly one inserted row -- not "at least
     #: one", not "some" -- or the load is refused rather than summarised as
     #: though it were complete.
-    known_scalars = {"version_label", "is_mock", "notes"}
+    known_scalars = {"version_label", "is_mock", "notes", "item_level_enabled"}
     sections = {
         "constants": "constant",
         "formulas": "formula",
@@ -264,9 +295,12 @@ def main() -> int:
             return 1
         session.commit()
 
+    item_rows = sum(1 for row in factors.get("upstream", []) if row.get("food_item"))
     print(
         f"Factor set {factors['version_label']!r} created as id {set_id}, "
-        f"status DRAFT, is_mock=true: "
+        f"status DRAFT, is_mock=true, item_level_enabled="
+        f"{str(bool(factors.get('item_level_enabled', False))).lower()} "
+        f"({item_rows} of the upstream rows name a food item): "
         f"{counts['constant']} constants, {counts['formula']} formulas, "
         f"{counts['upstream']} upstream rows, "
         f"{counts['downstream']} downstream rows, "

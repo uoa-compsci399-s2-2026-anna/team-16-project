@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-09-24 (v1.72)"
+date: "2026-09-24 (v1.73)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,47 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.73 — 2026-09-24 (item-level factors from the client's own table 1, in a draft; affects A, B, D and E)
+
+v1.72 gave the five categories the client never subdivided a vocabulary and wrote **no factor row at all**, which was correct: pricing a food is O-1's business, not a vocabulary's. This revision prices the foods the client's own table 1 *does* subdivide a category into, in a **draft** factor set, and says plainly what it does not price.
+
+**Nothing is published, no wire shape moves, and no fixture moves.** The new set is a draft; `GET /factors` exports the *published* set (`db.repository.get_factor_export` falls back to `_published`), `GET /taxonomy` narrows its vocabulary to the published set, and `bundle.json` already carries `food_items` and `upstream[].food_item` as optional keys from v1.54. So the third step of the contract-change process is a **no-op here** — checked rather than assumed: `tests/api`, `tests/db`, `tests/golden`, `tests/test_bundle.py`, `tests/test_calculator.py`, `tests/admin/test_food_item_seed.py` and `tests/admin/test_i18n.py` all green with no fixture edited, and all thirteen golden cases byte-identical.
+
+> **One live statement is corrected, and it is v1.72's own.** That entry says *"`item_level_enabled` is still `false` on **every** set in every database"*, which was true when it was written and is not now: the draft this revision loads carries it `true`. The published set 15 still has it `false`, so **step 2.5 is still unreachable for a visitor** and the calculator's screens are unchanged. §2.2's note on the soft guard is corrected too — it still costed full coverage at *19 items × 6 sectors*, which has been forty-seven foods since v1.72.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **342 item-level `factor_upstream` rows in the client draft**, for the four categories the client subdivides — `bakery_grains` (3 foods), `dairy` (6), `meat` (4), `staples` (6) — × 6 sectors × `co2e`, `water` and `land`. Each is the client's own per-food figure expressed as a **relativity on this set's own category factor**, so the unweighted mean of a category's item rows *is* that category's factor at every sector. `data/upstream-factors-draft/build_upstream_factors_draft.py` asserts that on every build, on the values that will be stored, within ten units in `DECIMAL(20,10)`'s last place; the two drifts measured on this data are 0 and 5E-11 | §2.2, §5.2 |
+| 2 | **The draft carries `item_level_enabled`.** It is the first set in this repository other than `docker/mock-factors.json` and the archived local-test set 14 to do so, and the first whose item rows are the client's data rather than local test data — set 14's 72 rows begin their `source_note` with "LOCAL TEST DATA" | §2.2, §8.2 |
+| 3 | **Three metrics get item rows and three do not, each for a stated reason.** `co2e` and `water` come off table 1's own per-food columns; `land` is the figure the draft already resolves per food (the client's t/ha inverted, or Poore & Nemecek's where §5.8's ten-times rule replaced it). **`ch4` cannot be done** — neither client table has a methane column and ReFED's finest resolution is its own nine food *categories*, so a per-food figure would have to be manufactured out of the CO2-eq relativity, which asserts methane's share of a footprint is the same for cheese as for milk. **`cost` has no upstream row anywhere** in this set (the waste levy is charged per tonne at the destination) and the item dimension exists only on `factor_upstream`. **`mass`** reads no factor row | §2.2, §4.3 |
+| 4 | **No `prevention` override is written per item row, and that is §2.2's ordering rather than an omission.** The four candidates are tried **destination-first**, so the category-level `(NULL item, prevention)` zero covers every food under it — `engine/bundle.py::upstream` holds the measurement behind that ordering (item-first re-opened O-7 at 78.9% of the benefit lost). Measured on the loaded set: 1,000 kg of household dairy to `prevention` reads 0 for `co2e`, `water` and `land` both with `food_item = cheese` and without | §2.2, §4.1 |
+| 5 | **`data/upstream-factors-draft/load_upstream_factors_draft.py` reads `upstream[].food_item` and `item_level_enabled`.** It had a code path for neither, which is the same defect class as the `equivalences` section it silently dropped once before. `food_item` goes through the same hard-stopping `_lookup` as every other code: creating the row would put a factor loader's own vocabulary into a **global** taxonomy table, which is how the 48 `refed_*` rows came to sit in `food_category`. The switch defaults **false**, as `docker/seed_mock_factors.py`'s does | §10 |
+| 6 | **`tests/web/test_step_navigation.py::walk()` is correct on either flag state.** It ticks every food category to measure step 2.5 at its tallest and cleared them again only inside the branch that entered the panel — so with the flag off on the published set the ticks survived, step 3 rendered ten suffixed leaves (`total-waste--standard-mix`, …) and `wait_for_selector("#total-waste")` timed out. **89 of that file's 101 tests were failing for that reason**, none of them about a named leaf. A test defect the release flag had been masking, not a product one | §7.3a |
+| 7 | **Twenty-eight of the forty-seven foods get no item row, and every one of those absences is the answer rather than a gap.** The twenty-seven foods v1.72 added (the client's table gives one row per those five categories and that row *is* the category); `standard_mix` (no vocabulary, and should have none); and **`eggs`** — `admin/seed.py` files it under `staples`, but this draft leaves the client's Eggs row out of every `staples` figure already, so an item row for it would be priced against a mean it is not part of. The build refuses Eggs **by name**, with the reason, so the exclusion reads as a decision. §2.2's chain prices all of them at the category average and §7.3c discloses it on the page, in the text download and on the PDF | §2.2, §7.3c |
+
+**Every publish guard, run against the loaded draft inside a transaction that was then rolled back.** Nothing was committed and nothing was published:
+
+| guard | result |
+| --- | --- |
+| `_refuse_incomplete_prevention` / `find_missing_prevention_upstream` | passed, 0 tuples |
+| `refuse_nonzero_prevention_factors` | passed |
+| `refuse_item_level_without_item_rows` | passed — 342 item rows, and the guard is **soft**: one is enough |
+| `refuse_item_rows_without_category_fallback` / `find_item_rows_without_category_fallback` | passed, 0 tuples |
+| `refuse_a_bundle_that_does_not_validate` | passed — `bundle.validate()` reports 0 problems |
+| `revalidate_formulas` (the panel's own publish path adds this one) | passed |
+
+`item_level_coverage` reports **19 of 47** active foods priced, which is what the factor-set screen shows beside the flag.
+
+**What the item level is worth, measured.** 1,000 kg of household dairy, current scenario, against the loaded draft:
+
+| `food_item` | `co2e` | `water` | `land` |
+| --- | ---: | ---: | ---: |
+| *(none — the category average)* | 6881.1800053 | 2785523.3333333 | 7359.7752080 |
+| `cheese` | 12361.2483279 | 3968060.0000000 | 10526.3157894 |
+| `other_dairy` | 1981.6273949 | 420450.0000000 | 1026.6940452 |
+
+> **Still open after this revision. O-1 is unchanged and is the reason this set is a draft**: these are the client's own draft figures aggregated into categories and re-spread across the foods they were aggregated from, not a per-food New Zealand measurement, and every one of the 342 rows says exactly that in its own `source_note`. `is_mock` stays `true`, the placeholder banner stays mandatory, and **whether the set goes live is the owner's decision**. **O-5 is the taxonomy question underneath the Eggs exclusion** — `eggs` sits under `staples` because a dedicated category would move the taxonomy while O-5 has not settled eight against nine. O-2, O-3, O-4, O-6 and O-8 are unchanged. **Not attempted here:** an item row for any of the twenty-seven, a `ch4` or `cost` item row, and full coverage — 1,692 rows, which no data that will exist can fill.
 
 ### v1.72 — 2026-09-24 (foods for the five categories the client never subdivided; affects B, C, D and E)
 
@@ -1629,7 +1670,7 @@ A named food *within* a category — "cheese", not "dairy". The vocabulary step 
 >
 > **It is on the set, and it is *not* how the two levels are separated.** One set holds item rows and category rows together — publishing set A versus set B must never be how step 2.5 is turned on, because the client cannot be asked to maintain two. The flag lives here so that it is versioned and audited like everything else in this table, and so that the factor-set screen can show staff what they are releasing beside it.
 >
-> **The guard is soft, and it landed in part two: at least one `factor_upstream` row in the set with `food_item_id IS NOT NULL`.** Full coverage is 19 items × 6 sectors × every metric the set prices — 570 rows at the five metrics of the day, 684 since v1.70 added a sixth — and is unreachable from any data that will exist. One item row is enough to be coherent, because every item without one falls back to its category's average — see §2.2's upstream lookup order. This is not the `destination_id` case O-7 closed: there the fallback was zero, here it is a defined number.
+> **The guard is soft, and it landed in part two: at least one `factor_upstream` row in the set with `food_item_id IS NOT NULL`.** Full coverage is every seeded food × 6 sectors × every metric the set prices — **1,692 rows** at v1.72's forty-seven foods and v1.70's six metrics, against the 570 of the day this rule was written — and is unreachable from any data that will exist. **v1.73's draft carries 342 of them and prices 19 of the 47**, which is the shape this softness was written for: the client's table subdivides four categories and says nothing about the foods in the other five. One item row is enough to be coherent, because every item without one falls back to its category's average — see §2.2's upstream lookup order. This is not the `destination_id` case O-7 closed: there the fallback was zero, here it is a defined number.
 >
 > **Both `clone_factor_set` implementations must carry it**, `admin/factor_lifecycle.py`'s and `db/repository.py`'s. Each hand-writes its `FactorSet(...)` and names `is_mock`, `effective_from` and `notes` one column at a time. Miss it in either and the recommended clone → edit → publish workflow (§5.2) silently un-releases step 2.5 on the first real factor set: the calculator stops asking which food was wasted, with no error and nothing on the factor-set screen saying why.
 

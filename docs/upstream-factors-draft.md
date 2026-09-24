@@ -1,7 +1,7 @@
 ---
 title: "Draft New Zealand upstream and downstream factors (O-1, first movement)"
 date: "2026-09-05"
-revised: "2026-09-21 — the client's corrected table 2 CO2-eq column (§4.1)"
+revised: "2026-09-21 — the client's corrected table 2 CO2-eq column (§4.1); 2026-09-24 — `land` (§5.8), the equivalence ladders (§7) and the item level (§5.9)"
 status: "DRAFT factor set. is_mock = true. O-1 still open. Not the deliverable's confirmed data."
 ---
 
@@ -1057,6 +1057,146 @@ zero against the prevention destination, one per (sector, food category), so
 a prevented line carries no land burden. `find_missing_prevention_upstream()`
 returns empty for the loaded set, which is the check that would otherwise
 refuse the publication.
+
+### 5.9 The item level: the client's own per-food figures, as a relativity
+
+The client's table 1 is a table of **foods**, not of categories. Everything
+above aggregates it -- `dairy` is the unweighted mean of six client rows, `meat`
+of four -- and until this revision that aggregation was the only thing this
+draft carried. Step 2.5 of the calculator asks which *food* was wasted ("cheese",
+not "dairy"), and the set now answers it for the foods the client actually
+subdivided a category into.
+
+**342 upstream rows**, for four of the ten food categories and three of the six
+metrics:
+
+| category | foods | client table-1 rows |
+| --- | ---: | --- |
+| `bakery_grains` | 3 | Bread, Bakery, Grains |
+| `dairy` | 6 | Cheese, Milk, Cream, Butter, Yoghurt, Other dairy |
+| `meat` | 4 | Red Meat, Pork, Poultry, Other meat |
+| `staples` | 6 | Fats, Sauces Spreads Dips, Herbs/Spices, Snack Foods and desserts, Sweeteners, Other Food Types |
+
+times six sectors, times `co2e`, `water` and `land`. The set's
+`item_level_enabled` is true, which is what releases the screen (§6.1 of the
+contract); it is still a **draft** and still `is_mock = true`.
+
+#### The construction, and the one property it has to have
+
+    item_value(sector) = category_value(sector)
+                         x client_figure(food) / mean(client_figures)
+
+so the **unweighted mean of a category's item rows is that category's own
+factor**, at every sector, for every metric. That is not a nicety. §2.2's
+upstream chain prices a food with no row of its own at its category's factor, so
+if the item rows did not average back to it the calculator would answer the same
+question two different ways depending only on whether the visitor happened to
+name the food -- with nothing on the screen saying why. The build asserts it on
+every run (`_assert_item_level_preserves_the_category_mean`), on the values that
+will actually be stored, within ten units in `DECIMAL(20,10)`'s last place; the
+two drifts measured on this data are 0 and 5E-11.
+
+It also asserts the reverse: that each group holds **more than one distinct
+value**. A set of item rows that all equalled their category would satisfy the
+mean check perfectly and leave the dimension wired and inert.
+
+**Where the arithmetic lands on the client's own printed cell**, and it is the
+one figure in this whole section a reader can check against the client's document
+with nothing but a calculator:
+
+| row | stored | why |
+| --- | ---: | --- |
+| `dairy`/`butter`/`wholesale_retail`/`co2e` | 11.39 | the anchor sector, where the category factor is the client's own mean stored exactly |
+| `dairy`/`cheese`/`wholesale_retail`/`co2e` | 10.13 | the same |
+| `dairy`/`cheese`/`wholesale_retail`/`water` | 3968.00 | the same |
+| `meat`/`red_meat`/`wholesale_retail`/`co2e` | 20.28 | the same |
+| `meat`/`poultry`/*every sector*/`land` | 12.22 | land is flat across sectors (§5.8), so the relativity collapses; 12.22 is Poore & Nemecek's Poultry Meat, which the stated ten-times rule took over the client's 0.174 |
+| `meat`/`pork`/*every sector*/`land` | 17.2413793103 | 10/0.58, the client's own yield inverted and kept |
+
+At the other five sectors `co2e` and `water` carry ReFED's cumulative shape, the
+same as the category rows they are scaled onto.
+
+**`staples` is the one category where only the *spread* is the client's.** It has
+no client row at all for `co2e` and `water` -- its category figure comes from
+ReFED Dry Goods (§5.4) -- so an item row there is the client's relativity on a
+level ReFED supplies. Every such row is tagged `item-client-refed-level` and says
+so in its own `source_note`. `staples`' `land` is different again: §5.8 already
+builds it from the same six client rows, so the item rows there are the client's
+own resolved figures.
+
+#### What gets no item row, and why each absence is the answer
+
+- **The twenty-seven foods contract v1.72 added** to `fruit`, `vegetables`,
+  `seafood`, `nuts_seeds` and `beverages`. The client's table gives **one row per
+  category** there, and that row *is* the category -- there is no per-food spread
+  to take. §2.2's chain prices each at its category average and §7.3c's fallback
+  disclosure tells the reader, on the page, in the text download and on the PDF,
+  that *"Kiwifruit is priced at the Fruit average."* Inventing a figure for
+  Kiwifruit is the invention this whole draft exists to avoid.
+- **`standard_mix`**, which has no vocabulary at all and should not: it is what a
+  visitor ticks when they do **not** know the composition.
+- **`eggs`.** `admin/seed.py` files the `eggs` item under `staples`, so adding it
+  looks like tidying up. It is not. This draft leaves the client's Eggs row out of
+  every category figure -- out of `co2e` and `water` by §3.2, out of `land` by
+  §5.8's `LAND_STAPLES_CLIENT_ROWS` -- so an item row for it would be priced
+  against a mean it is not part of, and `staples`' six-row land mean would stop
+  matching its own item rows. The build refuses it **by name**, with the reason,
+  so the exclusion reads as a decision rather than an omission. Including Eggs
+  means including it in the category figures first, in the same commit, with the
+  reason written down. O-5 is the open question underneath it.
+- **`ch4`.** Neither client table carries a methane column, and every `ch4`
+  figure in this draft comes from ReFED, whose finest resolution is its own nine
+  food *categories*. There is no per-food methane number to take a relativity
+  from, and reusing the `CO2-eq` relativity would assert that methane's share of
+  a food's footprint is the same for cheese as for milk -- which nothing here
+  supports.
+- **`cost`.** It has no upstream row anywhere in this set (§4.5: the waste levy
+  is charged per tonne at the destination and is identical for every food), and
+  the item dimension exists only on `factor_upstream`.
+- **`mass`.** Its formula is `qty_kg`; it reads no factor row at all.
+- **A `prevention` override per item row.** §2.2 tries its four candidates
+  **destination-first**, so the category-level `(NULL item, prevention)` zero
+  already covers every food under it. `engine/bundle.py::upstream` records the
+  measurement behind that ordering: item-first re-opened O-7 at 78.9% of the
+  benefit lost. Checked on the loaded set -- 1,000 kg of household dairy sent to
+  `prevention` reads 0 for `co2e`, `water` and `land`, both with
+  `food_item = cheese` and without.
+
+#### What the numbers look like, and every publish guard's answer
+
+Measured against the loaded set, 1,000 kg of household dairy, current scenario:
+
+| `food_item` | `co2e` | `water` | `land` |
+| --- | ---: | ---: | ---: |
+| *(none -- the category average)* | 6881.1800053 | 2785523.3333333 | 7359.7752080 |
+| `cheese` | 12361.2483279 | 3968060.0000000 | 10526.3157894 |
+| `other_dairy` | 1981.6273949 | 420450.0000000 | 1026.6940452 |
+
+Every guard `publish_factor_set` runs, and every extra one
+`admin/factor_lifecycle.py`'s own publish path adds, was run against the loaded
+set inside a transaction that was then **rolled back** -- nothing was committed
+and nothing was published:
+
+| guard | result |
+| --- | --- |
+| `_refuse_incomplete_prevention` / `find_missing_prevention_upstream` | passed, 0 tuples |
+| `refuse_nonzero_prevention_factors` | passed |
+| `refuse_item_level_without_item_rows` | passed -- 342 item rows, and the guard is soft: one is enough |
+| `refuse_item_rows_without_category_fallback` / `find_item_rows_without_category_fallback` | passed, 0 tuples |
+| `refuse_a_bundle_that_does_not_validate` | passed -- `bundle.validate()` reports 0 problems |
+| `revalidate_formulas` | passed |
+
+`item_level_coverage` reports **19 of 47** active foods priced. That is the
+honest figure and it is what the panel shows beside the flag: full coverage would
+be 47 foods x 6 sectors x every metric the set prices, which is unreachable from
+any data that will exist, and the other 28 fall back to a category average the
+page discloses.
+
+**Whether this set goes live is the owner's decision.** It is loaded as a draft,
+`is_mock` stays true, the placeholder banner stays mandatory and **O-1 stays
+open**: these are still the client's draft figures aggregated and re-spread, not
+a per-food New Zealand measurement, and every item row's own `source_note` says
+exactly that.
 
 ## 6. What is not represented, and why
 

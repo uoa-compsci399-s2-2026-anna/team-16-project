@@ -270,17 +270,41 @@ def walk(page):
         page.wait_for_timeout(35)
     page.click('.step-nav [data-action="continue"]')
     page.wait_for_timeout(150)
-    #: Absent wherever the published set does not release the item level, where the
-    #: panel is correctly unreachable and there is nothing to measure. Asked of the
-    #: DOM rather than of the taxonomy for `tests/web/steps.py`'s reason.
+    #: **The excursion has two ways in and one way out, and that is the fix.**
+    #:
+    #: Step 2.5 is yielded only where the panel is actually on screen -- absent
+    #: wherever the published set does not release the item level, where the panel
+    #: is correctly unreachable and there is nothing to measure. Asked of the DOM
+    #: rather than of the taxonomy for `tests/web/steps.py`'s reason.
+    #:
+    #: **The untick, though, is unconditional**, and it was not. The ten ticks
+    #: above happen whatever the flag says; only the panel does not. An earlier
+    #: revision cleared them *inside* this branch, so on a stack whose published
+    #: set has `item_level_enabled = 0` -- which is what set 15, published
+    #: 2026-09-23, actually is -- the press above landed straight on step 3 with
+    #: all ten categories still ticked, step 3 rendered ten suffixed leaves
+    #: (`total-waste--standard-mix`, `total-waste--fruit`, ...), and the
+    #: `#total-waste` below waited out thirty seconds against a screen that was
+    #: working correctly. Eighty-nine of this file's hundred-and-one tests failed
+    #: that way, and not one of them is about a named leaf. The release flag was
+    #: masking a defect in this generator, not causing one.
+    #:
+    #: So both paths back out to the category step and clear it there: what
+    #: `yield 2` is handed is the single-leaf screen twenty-odd tests below were
+    #: calibrated on, with the flag off and with it on alike.
     if page.locator("#item-title").count():
         yield 1.5
         page.click('.step-nav [data-action="back-to-categories"]')
-        page.wait_for_selector('input[name="food-category"]')
-        page.click('[data-action="clear-food"]')
-        page.wait_for_timeout(120)
-        page.click('.step-nav [data-action="continue"]')
-        page.wait_for_timeout(150)
+    else:
+        #: Step 3's own Back (`stepNav({step: 2, back: backTarget(2)})`, and
+        #: `backTarget(2)` is 1 on a plain forward walk with no review marker
+        #: set), which is the way the visitor would return here too.
+        page.click('.step-nav [data-action="go-step"]')
+    page.wait_for_selector('input[name="food-category"]')
+    page.click('[data-action="clear-food"]')
+    page.wait_for_timeout(120)
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_timeout(150)
     page.wait_for_selector("#total-waste")
     yield 2
     page.fill("#total-waste", "1000")
@@ -397,6 +421,84 @@ def test_the_walk_actually_reaches_the_food_panel(page_at):
     #: opened with no groups would satisfy the yield above while measuring a
     #: screen no visitor sees.
     assert reached.index(1.5) == reached.index(1) + 1, reached
+
+
+def _set_item_level(page, released: bool) -> None:
+    """Force `GET /taxonomy`'s `factor_set.item_level_enabled`, in the browser.
+
+    Instrumentation of the same kind `page_at` already installs for the calculate
+    POST, and for the same reason: the screen this file has to measure is a
+    property of the **deployment's published factor set**, not of the test. Set
+    15, published 2026-09-23, has the flag off and carries no item-level factor
+    row; set 14, which has both, is archived. So on this stack step 2.5 is
+    unreachable, and every assertion about `walk`'s behaviour with the panel
+    *open* would be made by no test at all.
+
+    Only the one boolean is substituted. The response is fetched from the real
+    API and everything else on it -- the forty-seven foods, the nine categories,
+    their parents and their order -- is the deployment's own, so the panel that
+    opens is built from the real vocabulary by the real `itemStep`.
+
+    Routes outlive a navigation, so the caller reloads after calling this.
+    """
+
+    def handler(route):
+        body = route.fetch().json()
+        body.setdefault("factor_set", {})["item_level_enabled"] = released
+        route.fulfill(
+            status=200, content_type="application/json", body=json.dumps(body)
+        )
+
+    page.route("**/api/v1/taxonomy*", handler)
+
+
+#: Every `id` step 3 gives an amount field. One leaf keeps the bare `total-waste`;
+#: more than one suffixes each with its own leaf slug (`fieldId`, `calculator.js`),
+#: which is the difference this file's own `wait_for_selector("#total-waste")`
+#: turns on.
+AMOUNT_FIELD_IDS = """
+() => [...document.querySelectorAll('[id^="total-waste"]')].map(e => e.id)
+"""
+
+
+@pytest.mark.parametrize("released", [False, True], ids=["flag-off", "flag-on"])
+def test_the_walk_hands_step_three_one_leaf_on_either_side_of_the_release_flag(page_at, released):
+    """`walk` must hand `yield 2` the same screen whether step 2.5 was reachable.
+
+    **This is a test defect it was written for, not a product one.** `walk` ticks
+    every food category to measure step 2.5 at its tallest, and an earlier
+    revision cleared them again only *inside* the branch that entered the panel.
+    With `item_level_enabled` off on the published set the branch is skipped, the
+    ten ticks survive, step 3 renders ten leaves whose amount fields are suffixed
+    (`total-waste--standard-mix`, `total-waste--fruit`, ...), and `walk`'s own
+    `wait_for_selector("#total-waste")` waits out thirty seconds against a screen
+    that is behaving correctly. Eighty-nine of this file's hundred-and-one tests
+    failed exactly there, and none of them is about a named leaf.
+
+    Both states are forced rather than read, so this holds on a deployment whose
+    set releases the item level and on one that does not -- and the two are not a
+    hypothetical: set 14 released it, set 15 does not, and the flag moved under
+    this file without a line of it changing.
+    """
+    page = page_at(1278, 983, 1.25)
+    _set_item_level(page, released)
+    page.goto(_english(BASE), wait_until="networkidle", timeout=15000)
+    page.wait_for_selector('[data-action="start"]', timeout=10000)
+
+    ids_at_step_three = None
+    reached = []
+    for step in walk(page):
+        reached.append(step)
+        if step == 2:
+            ids_at_step_three = page.evaluate(AMOUNT_FIELD_IDS)
+
+    #: The panel is reachable exactly when the flag releases it, so it is the one
+    #: thing that legitimately differs between the two runs.
+    assert (1.5 in reached) is released, reached
+    assert [step for step in reached if step != 1.5] == [-1, 0, 1, 2, 3, 4, 5], reached
+    #: And this is what must NOT differ: one leaf, and the singleton id every
+    #: other test in this file is written against.
+    assert ids_at_step_three == ["total-waste"], ids_at_step_three
 
 
 @pytest.mark.parametrize("width,height,dpr", VIEWPORTS)

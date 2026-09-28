@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-09-28 (v1.75)"
+date: "2026-09-28 (v1.76)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,25 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.76 — 2026-09-28 (Back and Forward move inside the calculator; affects C)
+
+v1.74 and v1.75 gave the visitor their answers and their result back across a Back press. Neither could stop the press **leaving**. `pushState`, `replaceState` and `popstate` appeared **zero times** in `web/js/`, so the whole wizard was one history entry: Back on step 4 did not go to step 3, it went to whatever the visitor was looking at before they arrived. Nobody had reported it, because the defect §7.2a closed was the louder one.
+
+**Each step now has its own history entry.** The step is in `history.state` and the URL never changes, because a `?step=` is a link that is copied and cannot be honoured — the screen it names is about answers no URL carries, and putting those in a URL is the opposite of §7.2a's per-tab, gone-when-the-tab-closes storage. **This is entirely `web/js/`**: no endpoint, no server-side change, no new field on the wire.
+
+| # | Change | Affects |
+| --- | --- | --- |
+| 1 | **`web/js/history.js`, and `{"kaiStep", "kaiIndex"}` inside `history.state`.** `pushState` with no URL argument, from **one** subscriber, off `state.step` alone — so `render()` running on every `setState` cannot produce an entry. Measured: four keystrokes into the amount, a unit change and two breakdown tabs add **zero** entries | §7.2b |
+| 2 | **The entry the page arrives on is `replaceState`, never a push** — including on a load that restores (§7.2a), which claims its entry rather than adding one. A push there gives every visitor a duplicate introduction entry and makes the first Back of the session do nothing visible | §7.2b, §7.2a |
+| 3 | **`popstate` calls the step bar's own `goToStep`**, so the jump undo, the discard confirmation and the `foodStage` reset are identical whichever Back was pressed. `backTarget` and the previous history entry are the same fact recorded twice — both are "the step the visitor came from" — rather than two answers that have to be compared. A declined discard has the history **position travelled back**, because a `popstate` has already moved it and cannot be cancelled | §7.2b, §7.3a |
+| 4 | **A restored load opens on the step the *entry* names, not the step the snapshot names.** They agree except after a Back *inside* the calculator: the snapshot is written at `continue` and `calculate` only and names the furthest step reached, the entry names the screen the visitor was looking at. `restorableStep` (§7.2a) is now the one place either source is clamped | §7.2b, §7.2a |
+| 5 | **`resetCalculator()` unwinds the entries it cannot delete.** It travels back to the entry the calculator opened in and rewrites it as the introduction, so Back after "Clear all calculator data" leaves the site rather than walking into a step of the calculation just cleared. The count is re-stamped on arrival, or a second clear in the same tab unwinds past the start of the history | §7.2b, §7.2 |
+| 6 | **A traversal to a step the calculator cannot draw is answered with the introduction, and the entry is rewritten to say so.** Forward is a live direction after a clear and those entries still name steps; step 0 is never clamped, because the stage question is answerable from empty | §7.2b |
+| 7 | **The cost is stated: a visitor on the results page needs seven Back presses to leave the calculator.** That is the ordinary price of an entry per step, and `test_the_whole_walk_out_is_one_press_per_screen` pins the number so that changing it is a decision rather than a discovery | §7.2b |
+| 8 | **Nothing below a step gets an entry.** Step 2.5 is a panel of step 2, not a step; nor do the breakdown tabs, the improvement panel or the floating nav | §7.2b, §7.3a |
+
+> **A measurement that contradicts the obvious argument, recorded because it was nearly written into the code as fact.** The presses that follow a restore are **same-document `popstate`s, not further re-parses**: the entries behind the restored one were pushed from the document the reload replaced, so the reload hands them the new document too. A mark written onto `window` before the press is still there after it, twice. So item 4 is *not* what keeps Back working after a restore — it decides one journey only, and the mutation that removes it leaves the restore-walk test green. Both `history.js` and §7.2b say so.
 
 ### v1.75 — 2026-09-28 (the result survives a page load too, and the taxonomy that produced it; affects C and D)
 
@@ -4376,7 +4395,7 @@ Keys, grouped. **This is C's shape and the contract has adopted it**; the previo
 
 ## 7.2a `snapshot.js` — the visitor's answers, and the result they saw, across a page load (v1.74 / v1.75, written by C)
 
-**The defect.** The whole calculator is one URL with one history entry: `location.pathname` is `/` from the introduction to the results, and which screen is up is `state.step`, in memory. `pushState`, `replaceState` and `popstate` appear nowhere in `web/js/`. So following one of the three navigation links — or the results page's own link to the documentation — and pressing **Back** re-parsed the page and landed the visitor on the introduction screen with the whole calculation gone. Measured, twice: by comparing the screen before and after, and by registering a `pageshow` listener before leaving and finding it absent on return, which is what says the JS heap is new rather than restored from the back-forward cache. nginx serves `Cache-Control: no-cache` and **not** `no-store`, so the response header is not what disables that cache and changing it would not have helped.
+**The defect.** The whole calculator is one URL with one history entry: `location.pathname` is `/` from the introduction to the results, and which screen is up is `state.step`, in memory. `pushState`, `replaceState` and `popstate` appeared nowhere in `web/js/` — **which was a second defect, closed separately at v1.76; see §7.2b, and read the two together.** So following one of the three navigation links — or the results page's own link to the documentation — and pressing **Back** re-parsed the page and landed the visitor on the introduction screen with the whole calculation gone. Measured, twice: by comparing the screen before and after, and by registering a `pageshow` listener before leaving and finding it absent on return, which is what says the JS heap is new rather than restored from the back-forward cache. nginx serves `Cache-Control: no-cache` and **not** `no-store`, so the response header is not what disables that cache and changing it would not have helped.
 
 **The fix is two `sessionStorage` keys: the visitor's own answers, and the result they were looking at.**
 
@@ -4482,6 +4501,60 @@ Five kinds of code can reach the check, and each is compared against the list th
 - **Storage may refuse, and the form does not depend on it.** In a private window or with site data blocked, every `sessionStorage` call throws. All of them are wrapped, a failed write is dropped, and a failed read is "no snapshot". **This feature is never a precondition for the form working.**
 - **Decimals survive untouched, in both documents.** §1.2 puts decimals on the wire as strings because JavaScript's `Number` is a double. Every quantity in `leafFigures` is the raw string the visitor typed; every metric total, every `qty_kg`, every money figure in `result` and every `kg_per_unit` in `resultTaxonomy` is the string the server sent. `JSON.stringify`/`JSON.parse` preserve a JSON string exactly, and **nothing in either write, either read or the check calls `Number` at any depth**. Asserted on the stored bytes, on the parsed type and on the exact characters — at the top level, inside `by_destination`, inside `entry_results[].entry` and inside `entry_results[].response`, because a "normalising" traversal would reach some depths and not others — in `tests/web/test_snapshot.py`, and again in a browser against the live `1164.5525000000`.
 - **The token's rules are untouched.** One hour, the scheduled job still nulls the column, and it still identifies a draft record rather than a person (§2.3). There is no second identifier and no cookie: the two documents hold what the visitor typed, the figures they were shown, and where they had got to. The token appears once more than it did — §6.2 echoes it inside its own response and `result` is stored as the response came — and that is the same value in the same storage for the same lifetime, removed by the same call; see the note in the result section above.
+
+## 7.2b `history.js` — one history entry per step (v1.76, written by C)
+
+**The defect, and it is a second one.** §7.2a gave the visitor's answers back across a Back press. It could not stop the press *leaving*: `pushState`, `replaceState` and `popstate` appeared **zero times** in `web/js/`, `location.pathname` is `/` from the introduction to the results, and which screen is up is `state.step`, in memory. So the whole wizard was **one** history entry, and Back on step 4 did not go to step 3 — it went to whatever the visitor was looking at before they arrived. Nobody had reported it, because the defect §7.2a closed was louder.
+
+**The fix is an entry per step, in `history.state`, at one URL.**
+
+| | |
+| --- | --- |
+| Written | `history.pushState` with **no URL argument**, from one subscriber, whenever `state.step` changes |
+| The arrival entry | `history.replaceState`, never a push — see below |
+| Shape | `{"kaiStep": <int>, "kaiIndex": <int>}` and nothing else |
+| Read | `popstate` only, which calls the step bar's own `goToStep` |
+| Cleared | `resetCalculator()` travels back to the entry the calculator opened in and rewrites it as the introduction |
+
+### The step is in `history.state` and not in the URL
+
+A `?step=` or a `#step-3` was considered and refused:
+
+- **A deep link cannot deliver the screen it names.** Step 3 asks how much waste there was *for the categories the visitor chose* and step 4 allocates *their* total. None of that is in the URL, so a pasted `/?step=3` in a fresh tab would have to be clamped to the introduction — which makes the parameter a lie in exactly the case a URL exists for.
+- **The answers may not go in the URL to fix that.** A URL is copied into chats and written into intermediaries' logs. §7.2a keeps the answers in `sessionStorage` because that is per tab and gone when the tab closes; a query string is the opposite of both.
+- **`history.state` has the right scope and the right lifetime.** Per entry, per tab, invisible, uncopyable, and it survives a reload and a document discard — which is what lets a restored load know which screen its entry is. It is the same lifetime as §7.2a's two documents, so the two cannot disagree about how long they last.
+
+A refresh behaves identically either way: `history.state` survives F5.
+
+### The step bar's Back and the browser's Back are the same navigation
+
+There were already two answers to "where does Back go" — `backTarget` (§7.3a), which reads `state.returnTo` so that a review-step *Edit* returns to the review step rather than stepping back one — and the browser's Back is a third. **History is a projection of `state.step`; the control is the source of truth.** Three rules make a disagreement unrepresentable rather than merely unlikely:
+
+1. **Nothing but a step change writes history.** The push happens in one subscriber, off `state.step`. `render()` runs on every `setState` and most of those are typing, ticking and breakdown tabs; a re-render is not a navigation, and the entry count is measured across a burst of editing.
+2. **Every entry therefore holds the step the control moved to, and its predecessor holds the step it moved from.** `backTarget` is *also* "the step the visitor came from": `state.returnTo.step` records where they stood when they jumped, and `step - 1` is where a plain walk came from. The previous entry and `backTarget(state.step)` are the same fact recorded twice, not two facts compared.
+3. **A traversal runs `goToStep`**, so the jump undo, the discard confirmation and the `foodStage` reset happen identically whichever Back was pressed. A refusal is passed back and the history **position is travelled back**, because a `popstate` has already moved it and cannot be cancelled.
+
+**The first load replaces and does not push.** Otherwise every visitor collects a duplicate entry for the introduction before doing anything, and the first Back of the session does nothing visible. The same is true of a load that restores (§7.2a): it claims the entry it arrived on rather than adding one, so Back does not walk the visitor through a screen they never left.
+
+> **Which step a restored load opens on: the entry outranks the snapshot.** They agree in the ordinary case. They part in one journey — the visitor pressed Back *inside* the calculator and then left — because the snapshot is written at `continue` and `calculate` only and so still names the furthest step reached, while the entry names the screen they were actually looking at. The clamp is shared: `restorableStep` (§7.2a) is the one place a stored 5 becomes the review step when there is no result to draw.
+>
+> **The presses that follow a restore are same-document `popstate`s, not further re-parses**, and that was measured rather than assumed: the entries behind the restored one were pushed from the document the reload replaced, so they are handed the new document too. A mark written onto `window` before the press is still there after it, twice. The obvious argument for the paragraph above — "otherwise each further Back re-parses and draws the same screen" — is therefore **wrong**, and is recorded as wrong in `web/js/history.js` so that it is not re-derived.
+
+### `start-over` unwinds
+
+"Clear all calculator data and return to the introduction?" must not leave six entries behind Back, each naming a step of a calculation that no longer exists. **History entries cannot be deleted**, so `resetCalculator` travels back over the calculator's own entries — `kaiIndex` counts them, and lives in `history.state` so it survives a document discard — and rewrites the entry it lands on as the introduction. Back from there leaves the site, which is what it did before the visitor started. The count is re-stamped on arrival, or a second clear in the same tab unwinds further than the calculator has pushed and walks the visitor off the site.
+
+Forward is still a live direction, so those entries are not left to mislead either: a traversal to a step the calculator cannot draw — anything past the stage question with no sector and no saved entry — is answered with the introduction and **the entry is rewritten** to say so. Step 0 is never clamped, because the stage question is answerable from empty.
+
+### The cost, stated rather than discovered
+
+**A visitor who walked to the results page needs seven Back presses to leave the calculator** — results, review, destinations, amount, food type, stage, introduction, out. That is the ordinary price of an entry per step and it is worth paying: the presses it adds each land on a screen the visitor recognises, and the press it fixes threw a finished calculation away. Anyone who wants *out* has the three header links, one click from anywhere. `tests/web/test_step_history_browser.py::test_the_whole_walk_out_is_one_press_per_screen` pins the number so that changing it is a decision.
+
+### What this does not promise
+
+- **No entry for anything below a step.** Step 2.5 is a *panel* of step 2 (§7.3a) and does not get one; neither does a breakdown tab, an expanded sector, the improvement panel or the floating nav. A visitor who opens the improvement panel and presses Back leaves the results page rather than closing the panel.
+- **No server-side change and no new field on the wire.** This is entirely `web/js/`: `history.js`, one call in `main.js`, one in `state.js` and one exported wrapper in `calculator.js`.
+- **A browser that refuses `pushState` is not a broken calculator.** Everything in `history.js` is inert until `installStepHistory` runs, and the form's own step bar is untouched by any of it.
 
 ## 7.3 `units.js` (written by C)
 

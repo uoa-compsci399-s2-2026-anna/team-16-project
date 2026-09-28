@@ -568,6 +568,8 @@ def test_a_retired_food_is_dropped_and_its_category_is_kept(tmp_path):
     assert result["patch"]["foodCategories"] == ["fruit"]
     assert result["patch"]["foodItems"] == {"fruit": []}
     assert {"kind": "food_item", "code": "apples"} in result["dropped"]
+    # The figures typed under that food go with it: nothing can reach them again.
+    assert _key("fruit", "apples") not in result["patch"]["leafFigures"]
 
 
 @node
@@ -685,6 +687,37 @@ def test_the_category_less_record_is_kept_because_it_can_always_come_back(tmp_pa
 
 
 @node
+def test_a_category_the_visitor_merely_unticked_keeps_its_figures(tmp_path):
+    """**The prune removes what the TAXONOMY lost, never what the visitor unticked.**
+
+    §7.2 parks the figures of an unticked category so that re-ticking hands them
+    back, and `draftEntry()` prunes at the request boundary so nothing parked is
+    ever sent. An earlier version of this function kept only the records belonging
+    to the chain's *live* leaves, and the consequence was a real loss: tick two
+    categories, fill both, untick one, press Continue, and the unticked one's money
+    figures were gone at the next page load -- silently, with the category still
+    perfectly well priced, and with nothing in the notice because nothing had been
+    retired.
+
+    So the record for a category that is still in the taxonomy survives whether or
+    not it is ticked, and the page load is no longer the thing that decides.
+    """
+    answers = _state(foodCategories=["fruit"])
+    # `dairy` was ticked, filled and unticked. The figures are parked.
+    answers["leafFigures"][_key("dairy")] = _leaf(totalAmount="400.000", wastedValueNzd="55.50")
+    result = probe(tmp_path, "prune", answers=answers, taxonomy=TAXONOMY)
+    parked = result["patch"]["leafFigures"].get(_key("dairy"))
+    assert parked is not None, (
+        "the figures of a category the visitor unticked were destroyed by the page load, "
+        "although the taxonomy still prices it and re-ticking would hand them back in "
+        "memory"
+    )
+    assert parked["totalAmount"] == "400.000"
+    assert parked["wastedValueNzd"] == "55.50"
+    assert result["dropped"] == [], result["dropped"]
+
+
+@node
 def test_each_dropped_code_is_reported_once_however_many_times_it_appears(tmp_path):
     """Two entries sending waste to the same retired destination is one thing to
     tell the visitor, not two. A notice that read "Destination "landfill",
@@ -780,19 +813,21 @@ def test_the_leaf_key_the_prune_uses_is_the_one_state_js_defines(tmp_path):
     ]
     keys = probe(tmp_path, "leafKeys", leaves=leaves)["keys"]
     assert keys == [_key("fruit", "apples"), _key("fruit"), _key()], keys
-    # And the prune keeps a record under exactly the keys `entryLeaves` would name,
-    # which is the property the hand-written copy has to have. Two configurations,
-    # because a category with a food ticked has no category-level leaf: the item-level
-    # key is live and `fruit` + NUL is not, which is `entryLeaves`'s own rule.
-    for items, live in (
-        (["apples"], [_key("fruit", "apples"), _key()]),
-        ([], [_key("fruit"), _key()]),
-    ):
-        answers = _state(foodCategories=["fruit"], foodItems={"fruit": items}, leafFigures={})
-        for key in keys:
-            answers["leafFigures"][key] = _leaf(totalAmount="1.000")
-        result = probe(tmp_path, "prune", answers=answers, taxonomy=TAXONOMY)
-        assert sorted(result["patch"]["leafFigures"]) == sorted(live), (items, result["patch"]["leafFigures"])
+    # And the prune reads each of them back: it splits the key on the same NUL to ask
+    # whether the taxonomy still has that category and that food. All three survive a
+    # taxonomy that has everything, whichever of them is currently ticked -- the prune
+    # does not decide what is in use.
+    answers = _state(foodCategories=["fruit"], foodItems={"fruit": ["apples"]}, leafFigures={})
+    for key in keys:
+        answers["leafFigures"][key] = _leaf(totalAmount="1.000")
+    result = probe(tmp_path, "prune", answers=answers, taxonomy=TAXONOMY)
+    assert sorted(result["patch"]["leafFigures"]) == sorted(keys), result["patch"]["leafFigures"]
+    # And a key naming a retired food is the one that goes, which is what says the split
+    # is being read rather than ignored.
+    taxonomy = {**TAXONOMY, "food_items": [{"code": "cheese", "food_category": "dairy"}]}
+    result = probe(tmp_path, "prune", answers=answers, taxonomy=taxonomy)
+    assert _key("fruit", "apples") not in result["patch"]["leafFigures"]
+    assert _key("fruit") in result["patch"]["leafFigures"]
 
 
 # ----------------------------------------------------------------- clearing it

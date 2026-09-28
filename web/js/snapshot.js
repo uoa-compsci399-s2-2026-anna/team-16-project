@@ -296,11 +296,15 @@ export function restoredPatch(answers) {
  *
  * ## What happens to what is left
  *
- *   * **A dropped category or item takes its parked figures with it.** `state.js`
- *     deliberately *parks* the figures of an unticked category so re-ticking restores
- *     them, and `draftEntry()` prunes at the boundary. A code the vocabulary no longer
- *     has can never be re-ticked, so its record is unreachable forever and is removed
- *     rather than parked.
+ *   * **A RETIRED category or item takes its figures with it; an unticked one does not.**
+ *     `state.js` deliberately *parks* the figures of an unticked category so that
+ *     re-ticking restores them, and `draftEntry()` prunes at the request boundary — so
+ *     this function keys on what the taxonomy has, never on what is currently ticked. A
+ *     code the vocabulary no longer has can never be re-ticked, so its record is
+ *     unreachable forever and is removed; a code that is merely unticked is parked
+ *     exactly as it is in memory, and survives the page load with everything else.
+ *     Getting this the wrong way round loses money figures a visitor typed, silently,
+ *     for a category that is still priced.
  *   * **A committed entry whose sector is gone is dropped whole.** `sector` is the one
  *     answer an entry cannot be without — `submission_entry.sector_id` is NOT NULL — so
  *     an entry with a null sector is an entry that can only ever be refused. Its loss is
@@ -342,23 +346,28 @@ export function pruneAnswers(answers, taxonomy) {
         return false
       })
     }
-    // The leaf keys that survive, in `leafKey`'s own NUL-joined form. Written out here
-    // rather than imported from `state.js`, which imports this module: one line of
-    // duplication against a cycle, and `tests/web/test_snapshot.py` pins the two together.
-    const live = new Set()
-    for (const category of keptCategories) {
-      const items = keptItems[category]
-      if (items.length) for (const item of items) live.add(`${category}\u0000${item}`)
-      else live.add(`${category}\u0000`)
-    }
-    // **The category-less leaf is always live**, because unticking every category brings
-    // it back (`entryLeaves`) — so its record is reachable and is parked, not pruned. That
-    // is the difference this loop turns on: a retired code can never be re-ticked, and a
-    // record only that code could reach is unreachable forever.
-    live.add('\u0000')
+    // **A figures record is dropped when the TAXONOMY no longer has its leaf, never
+    // because the visitor has unticked it.** That distinction is the whole of this
+    // loop and getting it the other way round loses work.
+    //
+    // §7.2 *parks* the figures of an unticked category so that re-ticking hands them
+    // back, and `draftEntry()` prunes at the request boundary so nothing parked is ever
+    // sent. An earlier version of this function kept only the records belonging to the
+    // chain's **live leaves** — which meant a visitor who ticked two categories, filled
+    // both, unticked one and pressed Continue lost the unticked one's money figures at
+    // the next page load, silently, with the category still perfectly well priced. The
+    // prune is not the place that decides what is in use.
+    //
+    // A key is `category` NUL `item` (`leafKey`, §7.2). Written out here rather than
+    // imported from `state.js`, which imports this module: one line of duplication
+    // against a cycle, and `tests/web/test_snapshot.py` pins the two together. The
+    // category-less record's key is a bare NUL and passes both tests, which is correct —
+    // unticking every category brings that leaf back (`entryLeaves`).
     const keptFigures = {}
     for (const [key, figures] of Object.entries(asMap(chain.leafFigures))) {
-      if (!live.has(key)) continue
+      const [category, item] = String(key).split('\u0000')
+      if (category && !categories.has(category)) continue
+      if (item && itemParent.get(item) !== category) continue
       const preset = figures?.unitPreset
       const presetGone = preset && !presets.has(preset)
       if (presetGone) drop(DROPPED_UNIT_PRESET, preset)

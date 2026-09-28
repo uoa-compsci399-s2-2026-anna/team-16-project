@@ -729,6 +729,39 @@ def test_an_empty_taxonomy_drops_everything_rather_than_keeping_it(tmp_path):
     assert kinds == ["food_category", "sector"], result["dropped"]
 
 
+@node
+@pytest.mark.parametrize(
+    "answers",
+    [
+        {"foodCategories": "fruit"},
+        {"foodItems": {"fruit": "apples"}},
+        {"foodItems": "fruit"},
+        {"leafFigures": {"fruit\x00apples": "40.000"}},
+        {"leafFigures": {"fruit\x00apples": {"current": "landfill"}}},
+        {"entries": [{"sector": "processing", "foodItems": {"dairy": 7}}]},
+        {"entries": "processing"},
+    ],
+)
+def test_a_hand_edited_snapshot_does_not_turn_into_a_broken_calculator(tmp_path, answers):
+    """The failure mode this guards is worse than a lost restore.
+
+    `pruneAnswers` runs inside `loadTaxonomy`'s own `try`, so a `.filter` on a
+    string there is caught as a **taxonomy** failure and the visitor is shown
+    "Calculator unavailable" -- a working calculator reporting itself broken
+    because of something in their own browser, with a Try again button that can
+    never clear it. So every nested read goes through `asList`/`asMap` and a wrong
+    type reads as an empty one.
+
+    The version gate cannot cover this: these are documents at the current
+    version with a wrong value inside.
+    """
+    full = _state()
+    full.update(answers)
+    result = probe(tmp_path, "prune", answers=full, taxonomy=TAXONOMY)
+    assert isinstance(result["patch"], dict), result
+    assert isinstance(result["dropped"], list), result
+
+
 # ------------------------------------------------- the leaf key is not re-derived
 
 

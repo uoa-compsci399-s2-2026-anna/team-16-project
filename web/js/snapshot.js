@@ -137,6 +137,18 @@ export const DROPPED_UNIT_PRESET = 'unit_preset'
 
 const isObject = value => Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 const codeSet = rows => new Set((Array.isArray(rows) ? rows : []).map(row => row?.code))
+/**
+ * **Every nested read inside `pruneAnswers` goes through one of these two.**
+ *
+ * The version number rules out another deployment's schema; it does not rule out a hand
+ * edit, and `pruneAnswers` runs inside `loadTaxonomy`'s own `try`. So `.filter` on a
+ * string there is not a broken restore — it is caught as a *taxonomy* failure and the
+ * visitor is shown "Calculator unavailable", which is a working calculator reporting
+ * itself broken because of something in their own browser. These two make a wrong type
+ * read as an empty one, which is what the visitor would have had anyway.
+ */
+const asList = value => (Array.isArray(value) ? value : [])
+const asMap = value => (isObject(value) ? value : {})
 
 /**
  * Write the answers. Never throws, and never reports a failure to the caller.
@@ -317,14 +329,14 @@ export function pruneAnswers(answers, taxonomy) {
   /** One chain's codes, pruned. Used for the draft and for every committed entry, because
    *  a committed entry is the draft's own shape and the two must not diverge here. */
   const pruneChain = chain => {
-    const keptCategories = (chain.foodCategories || []).filter(code => {
+    const keptCategories = asList(chain.foodCategories).filter(code => {
       if (categories.has(code)) return true
       drop(DROPPED_FOOD_CATEGORY, code)
       return false
     })
     const keptItems = {}
     for (const category of keptCategories) {
-      keptItems[category] = ((chain.foodItems || {})[category] || []).filter(code => {
+      keptItems[category] = asList(asMap(chain.foodItems)[category]).filter(code => {
         if (itemParent.get(code) === category) return true
         drop(DROPPED_FOOD_ITEM, code)
         return false
@@ -345,15 +357,15 @@ export function pruneAnswers(answers, taxonomy) {
     // record only that code could reach is unreachable forever.
     live.add('\u0000')
     const keptFigures = {}
-    for (const [key, figures] of Object.entries(chain.leafFigures || {})) {
+    for (const [key, figures] of Object.entries(asMap(chain.leafFigures))) {
       if (!live.has(key)) continue
       const preset = figures?.unitPreset
       const presetGone = preset && !presets.has(preset)
       if (presetGone) drop(DROPPED_UNIT_PRESET, preset)
       keptFigures[key] = {
-        ...figures,
+        ...asMap(figures),
         ...(presetGone ? { unitPreset: null, measureMode: 'mass' } : {}),
-        current: (figures?.current || []).filter(line => {
+        current: asList(figures?.current).filter(line => {
           if (offeredDestinations.has(line?.destination)) return true
           drop(DROPPED_DESTINATION, line?.destination)
           return false
@@ -372,7 +384,7 @@ export function pruneAnswers(answers, taxonomy) {
   if (sectorGone) drop(DROPPED_SECTOR, answers.sector)
 
   const entries = []
-  for (const entry of answers.entries || []) {
+  for (const entry of asList(answers.entries)) {
     if (entry?.sector && !sectors.has(entry.sector)) {
       drop(DROPPED_SECTOR, entry.sector)
       continue

@@ -44,7 +44,8 @@
  *   1. **Nothing but a step change writes history.** The push happens in one subscriber,
  *      off `state.step`, so `render()` running on every `setState` — every keystroke, every
  *      tick, every breakdown tab — cannot produce an entry. A re-render is not a
- *      navigation.
+ *      navigation, and neither is the one step change the *page* performs rather than the
+ *      visitor: see `withoutAnEntry`.
  *   2. **Every entry therefore holds the step the control moved to**, and its predecessor
  *      holds the step the control moved *from*. `backTarget` is *also* "the step the
  *      visitor came from": `state.returnTo.step` records where they stood when they
@@ -84,12 +85,21 @@
  * the entry is **rewritten** to say so (`goToStepFromHistory` in `calculator.js`, and
  * `recordStepChange` below is what rewrites it).
  *
- * ## Inert until installed
+ * ## Inert until installed, and out of service if the browser refuses
  *
- * Every export is a no-op until `installStepHistory` has run, and nothing in this module
- * touches `history` at module load. `state.js` calls `unwindStepHistory` from
- * `resetCalculator`, and `tests/web/test_snapshot.py` runs that function under Node with no
- * `history` object at all — a page that never installed a step history has none to unwind.
+ * **Nothing here touches `history` at module load**, and nothing *changes* it until
+ * `installStepHistory` has run: `unwindStepHistory` returns at once and `withoutAnEntry`
+ * simply runs what it is given. `state.js` calls the first of those from `resetCalculator`,
+ * and `tests/web/test_snapshot.py` runs that function under Node with no `history` object at
+ * all — a page that never installed a step history has none to unwind. (`stepFromHistory`
+ * is the one export that does read, before the install by design, and it answers `null`
+ * where there is nothing to read.)
+ *
+ * **And a browser that refuses to write history must leave a working calculator**, which is
+ * `state.js`'s rule for `sessionStorage` applied here. Every write goes through `attempt`,
+ * which takes this module out of service rather than letting a `SecurityError` out of
+ * `main.js`'s module evaluation — see its own note for what that costs and why it is not
+ * optional.
  */
 
 /** The step this entry shows. */

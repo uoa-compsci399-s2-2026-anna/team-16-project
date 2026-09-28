@@ -126,8 +126,14 @@ let applying = false
  *
  * `history.go` is asynchronous and reports nothing, so a position repair and the
  * `start-over` unwind are both "call `go`, then finish the job in the `popstate` it
- * produces". A queue rather than a boolean because a visitor holding Back can produce a
- * second traversal before the first repair has landed.
+ * produces". A queue rather than a boolean so that two of them in flight cannot be
+ * mistaken for one.
+ *
+ * **What it cannot tell apart is a visitor's own press arriving inside that window**, which
+ * is a few milliseconds wide and would be a Back pressed during a dialog's dismissal. That
+ * press is swallowed, and both callbacks re-read `recordedIndex` off whatever entry the
+ * browser actually landed on — so the worst case is one press that does nothing, with the
+ * count still true of the entry it is standing on rather than drifting from it.
  */
 const swallow = []
 
@@ -174,19 +180,43 @@ export function stepFromHistory() {
   return Number.isInteger(value) ? value : null
 }
 
+/**
+ * Every call that *changes* the session history, and the one place that may refuse.
+ *
+ * **A browser that will not let us write history must leave a working calculator**, which is
+ * `state.js`'s rule for `sessionStorage` applied to the other browser API this feature
+ * depends on. `pushState` throws where the document is sandboxed, and a page that is
+ * throttled for calling it too often gets a `SecurityError` too. Unguarded, the very first
+ * call — `installStepHistory`, which runs at module evaluation time — would abort `main.js`
+ * and the calculator would not render at all: a wizard lost to a history entry.
+ *
+ * So a failure takes this module out of service and nothing else with it. `installed` goes
+ * false, no entry is pushed again, and the step bar's own Back is untouched by any of it.
+ */
+function attempt(write) {
+  if (!installed) return false
+  try {
+    write()
+    return true
+  } catch {
+    installed = false
+    return false
+  }
+}
+
 /** Rewrite the entry the visitor is standing on. Adds no entry, so Back is unchanged. */
 function replaceEntry(step) {
   const held = entryState()
   recordedStep = step
   recordedIndex = integerOr(held[INDEX_KEY], recordedIndex)
-  window.history.replaceState({ ...held, [STEP_KEY]: step, [INDEX_KEY]: recordedIndex }, '')
+  return attempt(() => window.history.replaceState({ ...held, [STEP_KEY]: step, [INDEX_KEY]: recordedIndex }, ''))
 }
 
 /** Add an entry for a step the visitor has just moved to. */
 function pushEntry(step) {
   recordedStep = step
   recordedIndex += 1
-  window.history.pushState({ [STEP_KEY]: step, [INDEX_KEY]: recordedIndex }, '')
+  return attempt(() => window.history.pushState({ [STEP_KEY]: step, [INDEX_KEY]: recordedIndex }, ''))
 }
 
 /**
@@ -212,6 +242,9 @@ function recordStepChange() {
 
 /** A Back or Forward press: the same navigation the on-screen control performs. */
 function traverse(event) {
+  // Out of service (`attempt`): the entries that exist are the browser's business and
+  // this module no longer claims to know what they mean.
+  if (!installed) return
   if (swallow.length) {
     swallow.shift()()
     return
@@ -246,7 +279,7 @@ function traverse(event) {
     recordedIndex = integerOr(entryState()[INDEX_KEY], from)
     recordedStep = readStep()
   })
-  window.history.go(delta)
+  if (!attempt(() => window.history.go(delta))) swallow.pop()
 }
 
 /**
@@ -262,8 +295,9 @@ export function installStepHistory({ step, navigate: performNavigation, subscrib
   readStep = step
   navigate = performNavigation
   installed = true
-  // **`replaceState`, never `pushState`.** See `recordStepChange`.
-  replaceEntry(step())
+  // **`replaceState`, never `pushState`.** See `recordStepChange`. And if this first call is
+  // refused, nothing else is wired at all: see `attempt`.
+  if (!replaceEntry(step())) return
   subscribe(recordStepChange)
   window.addEventListener('popstate', traverse)
 }
@@ -278,8 +312,7 @@ export function installStepHistory({ step, navigate: performNavigation, subscrib
 export function unwindStepHistory() {
   if (!installed) return
   const depth = recordedIndex
-  replaceEntry(-1)
-  if (depth <= 0) return
+  if (!replaceEntry(-1) || depth <= 0) return
   swallow.push(() => replaceEntry(-1))
-  window.history.go(-depth)
+  if (!attempt(() => window.history.go(-depth))) swallow.pop()
 }

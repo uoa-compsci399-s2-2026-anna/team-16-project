@@ -642,6 +642,59 @@ def test_a_second_clear_unwinds_from_where_the_first_one_left_off(page):
     assert _entry_state(page) == {STEP_KEY: -1, INDEX_KEY: 0}, _entry_state(page)
 
 
+def test_a_browser_that_refuses_to_write_history_is_not_a_broken_calculator(context):
+    """The other browser API this feature leans on, guarded like `sessionStorage`.
+
+    §7.2a wraps every storage call because a private window throws on all of them;
+    `pushState` throws where the document is sandboxed, and a page throttled for
+    calling it too often gets a `SecurityError` as well. The first call runs at
+    module evaluation time inside `main.js`, so unguarded it would abort the module
+    and the calculator would not render at all - a whole wizard lost to a history
+    entry.
+
+    Both writes are made to throw here, before any of the page's own scripts run,
+    and the form still has to walk. There is no history to move within in that
+    browser; there is a calculator.
+    """
+    broken = context.new_page()
+    broken.add_init_script(
+        """
+        history.pushState = () => { throw new Error('history is blocked') }
+        history.replaceState = () => { throw new Error('history is blocked') }
+        """
+    )
+    try:
+        broken.goto(BASE, wait_until="networkidle", timeout=15000)
+    except Exception as error:  # pragma: no cover - environment guard
+        pytest.skip(f"the front end is not being served at {ORIGIN}: {error}")
+    # Named, rather than left as a bare selector timeout: the whole failure mode here is
+    # that `main.js` aborts at module evaluation and the page renders nothing at all, so
+    # the message has to say that instead of "waiting for [data-action=start]".
+    try:
+        broken.wait_for_selector('[data-action="start"]', timeout=10000)
+    except playwright_api.Error:
+        painted = broken.evaluate("() => document.getElementById('main-content').innerText")
+        pytest.fail(
+            "the calculator did not render at all in a browser that refuses to write "
+            f"history - main-content holds {painted!r}"
+        )
+    assert _heading(broken) == INTRODUCTION, _heading(broken)
+
+    broken.click('[data-action="start"]')
+    broken.wait_for_selector('input[name="sector"]', timeout=10000)
+    broken.evaluate("document.querySelectorAll('input[name=sector]')[1].click()")
+    broken.wait_for_timeout(80)
+    press_continue(broken)
+    broken.wait_for_selector('input[name="food-category"]', timeout=10000)
+    assert _heading(broken) == FOOD, _heading(broken)
+
+    # And the step bar's own Back is untouched by any of it.
+    broken.click('.step-nav [data-action="go-step"]')
+    broken.wait_for_timeout(300)
+    assert _heading(broken) == STAGE, _heading(broken)
+    broken.close()
+
+
 def test_forward_after_start_over_does_not_reopen_a_cleared_step(page):
     """Forward is a live direction too, and those entries still name steps.
 

@@ -120,7 +120,22 @@
  *     defect its own note in `state.js` exists to prevent.
  *   * **`contributeError`** — an error about a request that is over.
  *
- * `token` is not here either: it has rules of its own and keeps its own key.
+ * `token` is not here either: it has rules of its own and keeps its own key. §6.2's
+ * *response* does echo it, and `result` is stored as the response came, so a second copy
+ * of it is in this document — the same value, in the same `sessionStorage`, for the same
+ * lifetime, removed by the same `clearSnapshot`. No new information and no second
+ * identifier.
+ *
+ * **The load-bearing guard for those five is `readResultSnapshot`'s own destructuring,
+ * not this whitelist**, and that was measured rather than assumed: adding
+ * `contributeArmedUntil` to `RESULT_KEYS` — and then also writing the document while a
+ * grace window was open — left `tests/web/test_session_restore_browser.py::
+ * test_an_armed_countdown_does_not_come_back` green both times, because the read names
+ * the three keys it hands back and ignores anything else it finds. Only the third edit,
+ * spreading the stored section into the patch, put the countdown back on the screen. So
+ * **a key added here does nothing until it is added there too**, which is the safe
+ * direction, and it is why the whitelist is worth keeping even though it is the belt
+ * rather than the braces.
  *
  * **The improvement panel is not stored.** `improvementOpen`, `improvedAllocations` and
  * `improvementResult` are absent, so a restored results page has the panel closed. That

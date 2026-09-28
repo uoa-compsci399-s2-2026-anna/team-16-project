@@ -66,6 +66,15 @@ if (snapshot) {
   // result so that a stored step of 5 stands when there is something to draw and falls back
   // to the review step when there is not.
   //
+  // **The gate is documentation rather than behaviour, and that was measured.** Restoring
+  // the result unconditionally was tried with the answers key deleted and the result key
+  // intact at 19,536 bytes: `main-content`'s `innerText` and `innerHTML` came back
+  // byte-identical, because `step` lives only in the answers document and `state.step`
+  // therefore stays at -1 — the introduction screen, which renders nothing off
+  // `state.result`. So this is a mutation-equivalent guard, kept because the relationship
+  // it states ("the result is reachable only through its answers") is the thing a future
+  // reader needs and cannot infer from the two keys being independent.
+  //
   // **It is NOT pruned against the fresh taxonomy, and that is the point of the whole
   // package.** The answers are - `pendingRestore` above is what asks for that - because the
   // form must not offer a code the current set does not price (§6.1). The result is history:

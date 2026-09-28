@@ -93,6 +93,10 @@ globalThis.sessionStorage = {
 import { readFileSync, writeFileSync } from 'node:fs'
 const snapshot = await import(process.argv[2])
 const { leafKey, resetCalculator, state, taxonomyForResult } = await import(process.argv[3])
+// A sibling of `state.js`, imported off its own URL so that `probe()` keeps the
+// signature every test above passes. `submission.js` is where the PDF request body
+// is built, and it has to convert a container count with the RESULT's `kg_per_unit`.
+const submission = await import(new URL('./submission.js', process.argv[3]).href)
 const input = JSON.parse(readFileSync(process.argv[4], 'utf8'))
 
 const probes = {
@@ -207,6 +211,10 @@ const probes = {
       answers: snapshot.readSnapshot(),
       keys: [...store.keys()].sort(),
     }
+  },
+  // The PDF request body, built from `state.result`'s own entries.
+  exportPayload() {
+    return { payload: submission.exportPayload(input.state, 'en') }
   },
   // `taxonomyForResult` is the one place the two uses of the taxonomy are told
   // apart, so it is asserted on rather than grepped for.
@@ -1310,6 +1318,66 @@ def test_the_result_snapshot_is_not_a_precondition_for_anything(tmp_path):
     result = probe(tmp_path, "resultBlocked", state=_state())
     assert result["read"] is None
     assert result["stored"] is False
+
+
+@node
+def test_the_pdf_payload_converts_a_container_with_the_result_s_own_kg_per_unit(tmp_path):
+    """`POST /export/pdf` recomputes every figure server-side, so the front end's job
+    is to send the same *masses* the screen showed -- and a container's mass is a count
+    times a `kg_per_unit` that lives only in the taxonomy.
+
+    A publish that changed that number between the calculation and the download would
+    otherwise have the document state a mass the visitor never saw: eight crates at
+    12.5 kg is the 100.000 kg on screen, and the same eight crates at 20 kg is
+    160.000 kg in a PDF nothing else in the flow would disagree with. During a live
+    page load the two taxonomies are the same object, which is exactly why this needs a
+    test rather than a walk -- the divergence only exists after a restore.
+    """
+    result = {
+        **RESULT,
+        "entry_results": [
+            {
+                "entry": {
+                    "sector": "processing",
+                    "foodCategory": "fruit",
+                    "foodItem": None,
+                    "measureMode": "count",
+                    "unitPreset": "wheelie_bin_120l",
+                    "unitCount": "8",
+                    "totalAmount": "",
+                    "totalUnit": "kilograms",
+                    # One destination row stated in containers rather than in mass, which
+                    # is the shape `rowKgString` converts with the presets.
+                    "current": [
+                        {
+                            "id": "row-1",
+                            "destination": "landfill",
+                            "qtyInput": "8",
+                            "unit": "preset:wheelie_bin_120l",
+                        }
+                    ],
+                },
+                "response": RESULT["entry_results"][0]["response"],
+            }
+        ],
+    }
+    preset = lambda kg: [{"code": "wheelie_bin_120l", "kg_per_unit": kg}]
+    payload = probe(
+        tmp_path,
+        "exportPayload",
+        state=_state(
+            result=result,
+            # The form's own taxonomy, re-fetched after a publish that changed the
+            # preset. `exportPayload` must not read this one.
+            taxonomy={**TAXONOMY, "unit_presets": preset("20.000")},
+            resultTaxonomy={**TAXONOMY, "unit_presets": preset("12.500")},
+        ),
+    )["payload"]
+    line = payload["entries"][0]["current"][0]
+    assert line["qty_kg"] == "100.000", (
+        "the PDF was asked for a mass the results page never showed: the count was "
+        f"converted with the freshly fetched kg_per_unit rather than the result's own -- {line}"
+    )
 
 
 @node

@@ -31,6 +31,13 @@ What is measured here, and why each case needs a browser:
   without a row the first load's answers name, and the visitor is told what went.
   This is §6.1's own hazard arriving by another door and is the one real risk in
   the whole feature.
+* **Back from the results page** (v1.75). The figures come back as they were, no
+  second ``POST /calculate`` is made, a visitor who contributed is not asked
+  again, and **a factor set published while they were away does not change what
+  is on the screen** -- the metric is still named out of the taxonomy that
+  produced the calculation, not out of the one this load fetched. Every one of
+  those is a claim about a page after a real Back press, which is why none of
+  them is asserted anywhere else.
 * **A decimal survives the round trip as a string**, read out of the box the
   visitor typed it into after a real reload.
 * **Clear wipes it**, or the button is a false statement.
@@ -73,6 +80,10 @@ BASE = ORIGIN + "/index.html?lang=en"
 AWAY = ORIGIN + "/methodology.html?lang=en"
 
 SNAPSHOT_KEY = "kaiCalculatorAnswers"
+#: The result document, beside it (v1.75). Two keys and not two sections of one,
+#: because the answers are rewritten at every Continue and this one changes once
+#: per calculation.
+RESULT_KEY = "kaiCalculatorResult"
 
 ROOT = Path(__file__).resolve().parents[2]
 #: The contract fixture the results view is reached from. Fulfilled in the
@@ -113,6 +124,66 @@ def _heading(page) -> str:
 def _snapshot(page):
     raw = page.evaluate(f"() => sessionStorage.getItem({SNAPSHOT_KEY!r})")
     return None if raw is None else json.loads(raw)
+
+
+def _stored_result(page):
+    raw = page.evaluate(f"() => sessionStorage.getItem({RESULT_KEY!r})")
+    return None if raw is None else json.loads(raw)
+
+
+def _stored_result_text(page):
+    """The result document's exact bytes, for the decimal assertions."""
+    return page.evaluate(f"() => sessionStorage.getItem({RESULT_KEY!r})")
+
+
+def _summary_cards(page):
+    """Every card in the impact summary, as `[(label, value)]`.
+
+    These are the largest numbers on the page and the ones a visitor would notice
+    changing, so they are what "the same figures" is asserted on.
+    """
+    return page.evaluate(
+        """() => [...document.querySelectorAll('.results-grid .result-card')].map(card => [
+             card.querySelector('.result-label')?.textContent?.trim() ?? '',
+             card.querySelector('.result-value')?.textContent?.trim() ?? '',
+           ])"""
+    )
+
+
+def _to_the_results_page(page, *, amount="10.00", allocated="10.00"):
+    """Walk the whole form and press Calculate, with the response fulfilled.
+
+    The fixture rather than a real POST for `_fulfil_calculate`'s reason: a real
+    one writes a `submission` row, and a test that pollutes the public statistics
+    to look at a screen is the wrong trade.
+    """
+    _fulfil_calculate(page)
+    _to_review_step(page, amount=amount, allocated=allocated)
+    page.click('[data-action="calculate"]')
+    page.wait_for_selector('[data-action="start-over"]', timeout=10000)
+    assert _heading(page) == "Your estimated impact", _heading(page)
+
+
+#: A taxonomy served on the NEXT load as a publish would leave it: one metric
+#: renamed and one destination retired. The rename is the discriminator -- a
+#: restored result rendered from the freshly fetched taxonomy would print the new
+#: name, and one rendered from the stored taxonomy prints the old one, so the two
+#: implementations disagree visibly rather than subtly.
+RENAMED_METRIC = "Greenhouse gases after the publish"
+
+
+def _publish_while_away(page, *, metric="co2e", destination="landfill"):
+    def handler(route):
+        taxonomy = route.fetch().json()
+        for row in taxonomy["metrics"]:
+            if row["code"] == metric:
+                row["name"] = RENAMED_METRIC
+        taxonomy["destinations"] = [
+            row for row in taxonomy["destinations"] if row["code"] != destination
+        ]
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(taxonomy))
+
+    page.route("**/api/v1/taxonomy*", handler)
 
 
 def _to_amount_step(page, *, amount="1200.50"):
@@ -334,24 +405,30 @@ def test_the_review_step_comes_back_with_its_period(page):
     page.wait_for_selector('[data-action="start-over"]', timeout=10000)
     stored = _snapshot(page)
     assert stored["answers"]["timeFrame"] == "one_week", stored["answers"]["timeFrame"]
-    # **The step the calculate checkpoint records is 4, not 5, and that was measured.**
-    # `writeSnapshot` runs from the click handler; `submitCalculation`'s move to step 5
-    # happens after its `await`. So nothing in the calculator writes a snapshot holding
-    # step 5 today, and `restoredPatch`'s clamp of 5 -> 4 is defence for the revision
-    # that stores the result rather than a live path -- which is why a mutation removing
-    # that clamp survives this file and is killed by `tests/web/test_snapshot.py`
-    # instead. Asserted here so the claim is checked rather than remembered.
-    assert stored["answers"]["step"] == 4, stored["answers"]["step"]
+    # **The step the answers document records is 5, and it takes TWO writes to get
+    # there.** `writeSnapshot` runs from the click handler, before `submitCalculation`
+    # has awaited anything, so the Calculate press itself records step 4 -- which is
+    # what keeps the answers restorable when the request comes back `RATE_LIMITED`.
+    # v1.75 rewrites the document from the success path, where the step has become 5,
+    # and that second write is what makes Back land on the results page. `step == 4`
+    # was asserted here until then and is the measurement that changed.
+    assert stored["answers"]["step"] == 5, stored["answers"]["step"]
 
     # **The reported route, end to end**: the Documentation link, clicked from the
     # results page, and Back.
     _leave_the_calculator(page)
     page.go_back(wait_until="load", timeout=15000)
-    page.wait_for_selector("#time-frame", timeout=10000)
+    page.wait_for_selector("main h1", timeout=10000)
+    page.wait_for_timeout(400)
 
-    # The review step, not the introduction - and NOT the results page: WP1 stores
-    # the answers and not the computed result, so the visitor comes back to the
-    # screen they calculated from with Calculate one press away.
+    # The results page, since v1.75 -- and the review step's own answers are one
+    # press away behind *Edit your data*, which is what this test is actually about:
+    # `timeFrame` and the period are typed on that screen and nowhere else, so
+    # without `calculate` as a checkpoint they would be the only answers no snapshot
+    # ever held.
+    assert _heading(page) == "Your estimated impact", _heading(page)
+    page.click('.step-nav [data-action="go-step"]')
+    page.wait_for_selector("#time-frame", timeout=10000)
     assert _heading(page) == "Review your information", _heading(page)
     assert page.eval_on_selector("#time-frame", "element => element.value") == "one_week"
     assert page.locator('[data-action="calculate"]').count() == 1
@@ -631,6 +708,12 @@ def test_clear_all_calculator_data_removes_the_snapshot(page):
     page.click("#clear-button")
     page.wait_for_timeout(250)
     assert _snapshot(page) is None, "Clear left the snapshot in storage"
+    # The result document is NOT asserted here, and deliberately: this walk stops at
+    # step 3, so nothing ever wrote one and `is None` would hold whatever `clearSnapshot`
+    # did. A mutation removing its `removeItem(RESULT_KEY)` survived that assertion, so
+    # the claim is made where it can fail --
+    # `test_start_a_new_calculation_on_the_results_page_removes_the_snapshot`, which
+    # calculates first and asserts the document is there before clearing it.
     assert page.locator('[data-action="start"]').count() == 1
 
     # And it stays cleared across the load that would otherwise have restored it.
@@ -651,10 +734,17 @@ def test_start_a_new_calculation_on_the_results_page_removes_the_snapshot(page):
     page.click('[data-action="calculate"]')
     page.wait_for_selector('[data-action="start-over"]', timeout=10000)
     assert _snapshot(page) is not None
+    assert _stored_result(page) is not None, (
+        "the result was never stored, so this test proves nothing about clearing it"
+    )
     page.once("dialog", lambda dialog: dialog.accept())
     page.click('[data-action="start-over"]')
     page.wait_for_timeout(300)
     assert _snapshot(page) is None, "Start a new calculation left the snapshot in storage"
+    assert _stored_result(page) is None, (
+        "Start a new calculation left the result in storage, so the next page load would "
+        "put the figures back on a calculator the visitor had just emptied"
+    )
     assert page.locator('[data-action="start"]').count() == 1
 
 
@@ -678,3 +768,329 @@ def test_no_error_and_no_open_dialog_survives_the_page_load(page):
         "back with the answers"
     )
     assert page.evaluate(f"() => JSON.parse(sessionStorage.getItem({SNAPSHOT_KEY!r})).answers.error") is None
+
+
+# ----------------------------------------------------- back from the results page
+
+
+def test_back_from_the_results_page_lands_on_the_results_page(page):
+    """The defect at the end of the flow rather than in the middle of it.
+
+    This is the press that cost the most: the visitor has answered every question,
+    waited for a calculation and is reading the figures. Before v1.75 following the
+    results page's own link to the documentation and pressing Back put them on the
+    introduction screen with the whole calculation gone.
+
+    **No second `POST /calculate` is made, and that is asserted rather than
+    assumed.** A restored result is a record of a calculation that already happened:
+    `submission` stamps `factor_set_id` so historical results stay reproducible, and
+    a silent recalculation would both change the figures under a set the visitor
+    never saw and write a second row through §5.3's upsert.
+    """
+    _to_the_results_page(page)
+    before = _summary_cards(page)
+    assert before and before[0][1], before
+
+    calculated = []
+    page.on("request", lambda request: calculated.append(request.url) if "/api/v1/calculate" in request.url else None)
+
+    _leave_and_come_back(page)
+
+    assert _heading(page) == "Your estimated impact", (
+        f"Back from the results page landed on {_heading(page)!r}"
+    )
+    assert _summary_cards(page) == before, (_summary_cards(page), before)
+    assert calculated == [], (
+        "the restored page sent a calculate request. A restored result is history and "
+        f"must be re-shown, never recomputed: {calculated}"
+    )
+
+
+def test_the_factor_version_the_calculation_ran_under_comes_back_with_it(page):
+    """The figures are only honest beside the version label that produced them.
+
+    §6.2's response carries its own `factor_set`, and it is stored with the result
+    rather than re-derived, so the restored page names the same set -- including the
+    mandatory placeholder banner, which is raised from `factor_set.is_mock` and must
+    not be lost by a cache.
+    """
+    _to_the_results_page(page)
+    before = page.locator("#results-methodology").inner_text()
+    banner = page.locator(".disclaimer").first.inner_text()
+    assert "Placeholder data" in banner, banner
+
+    _leave_and_come_back(page)
+
+    assert page.locator("#results-methodology").inner_text() == before, before
+    assert "Placeholder data" in page.locator(".disclaimer").first.inner_text()
+
+
+def test_a_restored_metric_total_is_still_the_string_the_server_sent(page):
+    """§1.2's oldest rule, measured against the document in the browser's storage.
+
+    `1164.5525000000` is a *string* on the wire because JavaScript's `Number` is a
+    double. A single `Number()` in the write or the read turns it into
+    `1164.5525`, and the assertion is on the stored bytes for that reason -- the
+    screen rounds the figure to one decimal place and would hide the loss.
+    """
+    _to_the_results_page(page)
+    raw = _stored_result_text(page)
+    assert raw, "no result document was written"
+    assert '"1164.5525000000"' in raw, raw[:400]
+    assert "1164.5525," not in raw.replace(" ", ""), raw[:400]
+
+    _leave_and_come_back(page)
+
+    total = page.evaluate(
+        "() => JSON.parse(sessionStorage.getItem('kaiCalculatorResult')).calculation"
+        ".result.totals.current.metrics.co2e.total"
+    )
+    assert total == "1164.5525000000", total
+    assert isinstance(total, str), type(total)
+
+
+def test_a_publish_while_the_visitor_was_away_does_not_change_the_restored_figures(page):
+    """The owner's ruling, measured: *this result is this result*.
+
+    The second page load is served a taxonomy with `co2e` renamed and `landfill`
+    retired, which is what a publish does. A restored result rendered from that
+    taxonomy would print the new metric name; one rendered from the taxonomy that
+    produced the calculation prints the old one. So the assertion is on a **name
+    that differs between the two implementations**, not merely on the figures, which
+    an implementation reading the wrong taxonomy would also have got right.
+
+    The two uses of §6.1's response point in opposite directions and this is the one
+    that points backwards: the form is still fetched fresh, and
+    `test_the_form_behind_a_restored_result_was_pruned_against_the_fresh_taxonomy`
+    is the other half.
+    """
+    _to_the_results_page(page)
+    before = _summary_cards(page)
+    labels = [label for label, _ in before]
+    assert "Greenhouse gases" in labels, labels
+
+    _publish_while_away(page)
+    _leave_and_come_back(page)
+
+    after = _summary_cards(page)
+    assert after == before, (after, before)
+    assert RENAMED_METRIC not in [label for label, _ in after], (
+        "the restored result was renamed out of the taxonomy this page load fetched. A "
+        "result is a record of a calculation that already happened and must be rendered "
+        "from the vocabulary it used"
+    )
+
+
+def test_the_form_behind_a_restored_result_was_pruned_against_the_fresh_taxonomy(page):
+    """§6.1 stands for the form, and *Edit your data* is the door to it.
+
+    The stored taxonomy renders the result and nothing else. The form behind the
+    results page is checked against the freshly fetched one exactly as it is at any
+    other step, so the destination the publish retired is gone from step 4 and the
+    visitor reads why -- which is the failure the revalidation exists to prevent,
+    and would be reintroduced by a restore that handed the form its stored
+    vocabulary because that was convenient for the result.
+    """
+    _to_the_results_page(page)
+    _publish_while_away(page)
+    _leave_and_come_back(page)
+    assert _heading(page) == "Your estimated impact", _heading(page)
+
+    # *Edit your data* is the results page's own `go-step` and it goes to step 4, the
+    # review screen; step 4's own Back is what reaches the destination allocation.
+    page.click('.step-nav [data-action="go-step"]')
+    page.wait_for_timeout(400)
+    notice = page.locator(NOTICE)
+    assert notice.count() == 1, (
+        "the form behind the results page came back holding a retired destination with "
+        "nothing on the screen saying so, which is the failure the check exists to prevent"
+    )
+    assert "landfill" in notice.inner_text(), notice.inner_text()
+    assert "Destination" in notice.inner_text(), notice.inner_text()
+
+    page.click('.step-nav [data-action="go-step"]')
+    page.wait_for_timeout(400)
+    rows = page.evaluate(
+        "() => [...document.querySelectorAll('.destination-row label')].map(l => l.textContent)"
+    )
+    assert rows, f"step 3 did not render; the heading is {_heading(page)!r}"
+    assert not any("landfill" in text.lower() for text in rows), rows
+    assert page.locator(NOTICE).count() == 1, "the notice did not survive the step transition"
+
+
+def test_the_restore_notice_is_not_printed_over_a_restored_result(page):
+    """A caveat about dropped answers does not belong over figures it cannot touch.
+
+    `calculate` already clears the notice one screen earlier so that it does not
+    follow the visitor onto the results page, and the reason is stronger here: a
+    restored result is re-shown under the factor set that produced it and is never
+    recomputed, so "some of the answers you had entered ... have been removed" above
+    it would read as a warning about the numbers. It is **held, not cleared** -- the
+    previous test is what says it appears the moment *Edit your data* reaches the
+    form that actually lost something.
+    """
+    _to_the_results_page(page)
+    _publish_while_away(page)
+    _leave_and_come_back(page)
+
+    assert _heading(page) == "Your estimated impact", _heading(page)
+    assert page.locator(NOTICE).count() == 0, page.locator(NOTICE).inner_text()
+
+
+def test_the_improvement_panel_comes_back_closed(page):
+    """Compare Impact is a *new* submission under the currently published set.
+
+    So its editor and its comparison belong to the page load that ran them: a
+    restored comparison would sit beside allocation sliders offered from a different
+    vocabulary, which is the one thing the two-taxonomies distinction exists to
+    prevent. The panel is not stored and comes back closed, with the button that
+    opens it exactly where it was.
+    """
+    _to_the_results_page(page)
+    page.click('[data-action="explore-improvements"]')
+    page.wait_for_selector(".improvement-editor", timeout=10000)
+
+    _leave_and_come_back(page)
+
+    assert _heading(page) == "Your estimated impact", _heading(page)
+    assert page.locator(".improvement-editor").count() == 0, "a restored allocation editor"
+    assert page.locator('[data-action="explore-improvements"]').count() == 1
+
+
+# ------------------------------------------------- the contribute choice rides along
+
+
+def _fulfil_contribute(page):
+    """Answer `POST /contribute` with §6.2.2's 204 and write no row.
+
+    The route is intercepted rather than let through for `_fulfil_calculate`'s
+    reason: the flag this test is about belongs to a `submission` row, and the
+    calculation that would have created one was itself fulfilled from a fixture.
+    `tests/web/test_contribute_submission.py` is the file that asserts against the
+    real database.
+    """
+    sent = []
+    page.route(
+        "**/api/v1/contribute*",
+        lambda route: (sent.append(route.request.url), route.fulfill(status=204, body="")),
+    )
+    return sent
+
+
+def test_a_visitor_who_contributed_is_not_invited_to_contribute_again(page):
+    """The interface must not forget what the visitor did.
+
+    The server dedupes on the token, so a second press would write no second row --
+    but a control that came back unticked, unlocked and offering Submit is the page
+    telling them it had forgotten, and that is the defect. `contributed` is the one
+    contribute flag the snapshot carries, and `contributeBlock` derives the whole
+    done state from it: the box reads back ticked and disabled, Submit is not
+    rendered at all, and the status line speaks.
+    """
+    sent = _fulfil_contribute(page)
+    _to_the_results_page(page)
+    page.locator("#contribute").click()
+    page.wait_for_timeout(150)
+    page.click('[data-action="contribute-submit"]')
+    # The grace window is five seconds and the request is made at the end of it.
+    page.wait_for_selector(".contribute-status", timeout=15000)
+    assert sent, "no contribute request was made, so this test proves nothing"
+
+    _leave_and_come_back(page)
+
+    assert _heading(page) == "Your estimated impact", _heading(page)
+    assert page.locator(".contribute-status").count() == 1, (
+        "a visitor who had already contributed came back to a page that had forgotten"
+    )
+    assert page.locator('[data-action="contribute-submit"]').count() == 0, (
+        "Submit was offered again to a visitor whose figures are already in the statistics"
+    )
+    assert page.evaluate("() => document.querySelector('#contribute').checked") is True
+    assert page.evaluate("() => document.querySelector('#contribute').disabled") is True
+
+
+def test_an_armed_countdown_does_not_come_back(page):
+    """The grace window is not stored, and an expired one least of all.
+
+    The `setTimeout` that fires the request lives in `results.js` module scope and
+    died with the page, and `contributeWindowIsOpen` tests `> 0` rather than
+    `> Date.now()` -- so a restored deadline would draw a full countdown bar, an
+    Undo button and a locked checkbox over a request nothing was ever going to make.
+    **Nothing was sent**, so the control comes back where it stood before the press:
+    unticked, unlocked, Submit offered.
+    """
+    sent = _fulfil_contribute(page)
+    _to_the_results_page(page)
+    page.locator("#contribute").click()
+    page.wait_for_timeout(150)
+    page.click('[data-action="contribute-submit"]')
+    page.wait_for_selector(".contribute-countdown", timeout=5000)
+    # Leave inside the window, so the timer is killed mid-flight.
+    _leave_and_come_back(page)
+
+    assert _heading(page) == "Your estimated impact", _heading(page)
+    assert sent == [], f"a request went out from a page that had been unloaded: {sent}"
+    assert page.locator(".contribute-countdown").count() == 0, "a countdown over no timer"
+    assert page.locator(".contribute-status").count() == 0
+    assert page.locator('[data-action="contribute-submit"]').count() == 1
+    assert page.evaluate("() => document.querySelector('#contribute').checked") is False
+    assert page.evaluate("() => document.querySelector('#contribute').disabled") is False
+
+
+# --------------------------------------------- what is refused rather than restored
+
+
+def test_a_result_from_another_schema_version_leaves_the_review_step_standing(page):
+    """Discarded whole and silently, with the answers still there.
+
+    A result document written by an older deployment is not half-read, and the
+    fallback is not the introduction screen: the answers are in the other key and
+    still valid, so the visitor lands on the review step they calculated from with
+    Calculate one press away. Nothing on screen mentions it, because they did
+    nothing wrong and there is nothing for them to act on.
+    """
+    _to_the_results_page(page)
+    page.evaluate(
+        f"""() => {{
+          const stored = JSON.parse(sessionStorage.getItem({RESULT_KEY!r}))
+          stored.version = 99
+          sessionStorage.setItem({RESULT_KEY!r}, JSON.stringify(stored))
+        }}"""
+    )
+    _leave_and_come_back(page)
+
+    assert _heading(page) != "Your estimated impact", "a foreign schema version was restored"
+    assert page.locator("#time-frame").count() == 1, (
+        f"the review step is not on screen; the heading is {_heading(page)!r}"
+    )
+    assert page.locator(NOTICE).count() == 0, page.locator(NOTICE).inner_text()
+    assert page.locator(".error-state").count() == 0
+
+
+def test_a_stored_result_without_its_answers_restores_nothing(page):
+    """`step` lives in the answers document, so the result is reachable only
+    through it. A result key found on its own is a hand edit or a partial eviction,
+    and restoring it would put a calculation on `state` that nothing renders."""
+    _to_the_results_page(page)
+    page.evaluate(f"() => sessionStorage.removeItem({SNAPSHOT_KEY!r})")
+    _leave_and_come_back(page)
+
+    assert page.locator('[data-action="start"]').count() == 1, _heading(page)
+    assert page.locator(NOTICE).count() == 0
+
+
+def test_closing_the_tab_and_opening_a_new_one_restores_no_result(context, page):
+    """`sessionStorage` is per top-level browsing context, so a second tab shares
+    neither key. That is a claim about the browser rather than about our code, and
+    the result document is the half of it worth measuring: it holds the figures."""
+    _to_the_results_page(page)
+    assert _stored_result(page) is not None
+    page.close()
+
+    fresh = context.new_page()
+    fresh.goto(BASE, wait_until="load", timeout=15000)
+    fresh.wait_for_selector("main h1", timeout=10000)
+    fresh.wait_for_timeout(400)
+    assert _stored_result(fresh) is None, "a new tab was handed the previous tab's figures"
+    assert fresh.locator('[data-action="start"]').count() == 1, _heading(fresh)
+    fresh.close()

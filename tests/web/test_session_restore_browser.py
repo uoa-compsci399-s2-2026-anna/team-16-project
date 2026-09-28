@@ -1,6 +1,6 @@
 """Leave the calculator, press Back, and find the calculation still there.
 
-**The defect, reproduced before anything was written.** The whole calculator is
+**The defect, reproduced before anything was written.** The whole calculator was
 one URL with one history entry: ``location.pathname`` is ``/`` from the
 introduction to the results, and which screen is up is ``state.step``, in memory.
 So following the header's *Documentation* link and pressing Back landed the
@@ -44,6 +44,12 @@ What is measured here, and why each case needs a browser:
 
 ``tests/web/test_snapshot.py`` is the other half: it can put a hand-written
 snapshot into storage and assert on the bytes, which no browser walk can.
+
+**The single history entry was a defect of its own and is closed separately**
+(v1.76, §7.2b): each step has an entry now, so Back *inside* the calculator moves
+between steps instead of leaving. ``tests/web/test_step_history_browser.py``
+measures that, and the two compose — every ``go_back`` here still arrives from
+``methodology.html``, which is a real document navigation either way.
 
 Requires the stack, and the image rebuilt -- ``web/`` is baked in by
 ``docker/web.Dockerfile``::

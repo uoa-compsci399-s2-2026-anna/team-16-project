@@ -41,6 +41,7 @@ v1.74 and v1.75 gave the visitor their answers and their result back across a Ba
 | 6 | **A traversal to a step the calculator cannot draw is answered with the introduction, and the entry is rewritten to say so.** Forward is a live direction after a clear and those entries still name steps; step 0 is never clamped, because the stage question is answerable from empty | §7.2b |
 | 7 | **The cost is stated: a visitor on the results page needs seven Back presses to leave the calculator.** That is the ordinary price of an entry per step, and `test_the_whole_walk_out_is_one_press_per_screen` pins the number so that changing it is a decision rather than a discovery | §7.2b |
 | 8 | **Nothing below a step gets an entry.** Step 2.5 is a panel of step 2, not a step; nor do the breakdown tabs, the improvement panel or the floating nav | §7.2b, §7.3a |
+| 9 | **A browser that refuses to write history keeps a working calculator.** §7.2a item 8's rule, applied to `pushState`: one guard, the module out of service on a refusal, nothing else affected. Unguarded, the install call aborts `main.js` at module evaluation and `main-content` stays on *"Loading calculator…"* for ever — measured | §7.2b, §7.2a |
 
 > **A measurement that contradicts the obvious argument, recorded because it was nearly written into the code as fact.** The presses that follow a restore are **same-document `popstate`s, not further re-parses**: the entries behind the restored one were pushed from the document the reload replaced, so the reload hands them the new document too. A mark written onto `window` before the press is still there after it, twice. So item 4 is *not* what keeps Back working after a restore — it decides one journey only, and the mutation that removes it leaves the restore-walk test green. Both `history.js` and §7.2b say so.
 
@@ -4554,7 +4555,7 @@ Forward is still a live direction, so those entries are not left to mislead eith
 
 - **No entry for anything below a step.** Step 2.5 is a *panel* of step 2 (§7.3a) and does not get one; neither does a breakdown tab, an expanded sector, the improvement panel or the floating nav. A visitor who opens the improvement panel and presses Back leaves the results page rather than closing the panel.
 - **No server-side change and no new field on the wire.** This is entirely `web/js/`: `history.js`, one call in `main.js`, one in `state.js` and one exported wrapper in `calculator.js`.
-- **A browser that refuses `pushState` is not a broken calculator.** Everything in `history.js` is inert until `installStepHistory` runs, and the form's own step bar is untouched by any of it.
+- **A browser that refuses to write history is not a broken calculator**, which is §7.2a item 8's rule applied to the other browser API this feature leans on. `pushState` throws where the document is sandboxed, and a page throttled for calling it too often gets a `SecurityError`; the first call runs at module evaluation time inside `main.js`, so unguarded it aborts the module and the calculator does not render at all. Every write goes through one guard that takes the module **out of service** on a refusal and nothing else with it. Measured with both writes replaced by throwers before any page script runs: the introduction paints, the form walks, and the step bar's Back still works.
 
 ## 7.3 `units.js` (written by C)
 

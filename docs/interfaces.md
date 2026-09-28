@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-09-24 (v1.73)"
+date: "2026-09-28 (v1.74)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,29 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.74 — 2026-09-28 (the visitor's answers survive a page load; affects C and D)
+
+A team member found it and the owner confirmed it: from the results page, follow the header's link to *Documentation* or *Statistics*, press **Back**, and you land on the **introduction screen** with the whole calculation gone. The same from any step. Reproduced in a real browser before anything was written::
+
+    on results:     {path: '/', results: True,  intro: False, heading: 'Your estimated impact'}
+    after leaving:  {path: '/methodology.html', ...}
+    after Back:     {path: '/', results: False, intro: True,  heading: 'Food Waste Impact Calculator'}
+
+Three facts behind it, each a reasonable decision on its own: the calculator is **one URL with one history entry**; **nothing but the token was persisted**; and Back **re-parses the page** rather than restoring it from the back-forward cache — measured by registering a `pageshow` listener before leaving and finding it gone on return. One common suspect was ruled out: nginx serves `Cache-Control: no-cache`, **not** `no-store`, so the response header is not what disables that cache.
+
+**Nothing on the wire moves, no endpoint is added, and no fixture moves.** This revision is entirely `web/js/`: one new module, one new `sessionStorage` key, one new `state` key and one new interface string. The third step of the contract-change process is therefore a **no-op**, checked rather than assumed — `tests/web`, `tests/api/test_pdf_render.py` and the engine and golden suites all green with no fixture edited, and all thirteen golden cases byte-identical.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`web/js/snapshot.js`, and one `sessionStorage` key `kaiCalculatorAnswers`** holding `{"version", "answers"}`. `sessionStorage` and never `localStorage` — per tab, gone when the tab closes, the same scope the token already uses; `localStorage` is shared between every tab of the origin, which is wider than anything here needs. The version is compared with `===` and a mismatch **discards the whole snapshot silently**, so a snapshot written by an older deployment is never half-read | §7.2a |
+| 2 | **`answers` is a whitelist of fourteen keys and nothing else.** A forbidden list would have to be edited every time somebody adds a spinner flag, and forgetting is a restored open dialog or a restored error about a request that finished before the visitor left. `loading`, `error`, `errorAt`, `errorCode`, `fieldErrors`, `rateLimitedUntil`, `pdfExporting`, `pdfError`, `periodPicker` and `periodClock` are absent by construction; `returnTo` is absent by decision, because restoring a pre-jump snapshot of the entries would let Back reinstate entries that never went through item 4's check | §7.2a, §7.2 |
+| 3 | **Written at the visitor's own checkpoints — every `continue` and `calculate` — and wiped by `resetCalculator()`** beside the token. Both doors to that function ask "Clear all calculator data and return to the introduction?", and a snapshot that outlived either would make the question a false statement. **Not written per keystroke**: a write per keystroke would have to be fed by a `setState` per keystroke, and `render()` replaces `main.innerHTML` on every one of those. The stated cost is that an amount typed and not yet continued past is not restored | §7.2a |
+| 4 | **Restored answers are revalidated against a freshly fetched taxonomy, and what is dropped is said on screen.** §6.1's rule — the taxonomy is fetched once per page load and cached nowhere, because a stale one is *"a form offering codes the current set does not price"* — is **unchanged and is the reason this exists**: a restored answer naming a code a publish has since retired is that same form, arriving at the other end. The order is fixed: restore → fetch fresh → check → drop and report. `state.restoreDropped` carries `{kind, code}` per drop and `calculator.js`'s `restoreNotice` prints them; silently dropping a category or a destination the visitor chose is the failure the check exists to prevent | §7.2a, §6.1, §7.2 |
+| 5 | **`result`, `taxonomy` and the six contribute flags are deliberately NOT stored at this revision**, so a stored `step` of 5 is clamped to the review step. A restored *result* is a record of a calculation that already happened and has to be rendered from the taxonomy that produced it — a second use of the taxonomy pointing the opposite way from §6.1 — and that distinction is a decision of its own rather than a side effect of this one | §7.2a |
+| 6 | **One new interface string across all twenty catalogues, both trees byte-identical.** *"Some of the answers you had entered are no longer offered by this calculator and have been removed: %(items)s. Please check your selections before you calculate."* The five kind labels it prints — `Sector`, `Food category`, `Food`, `Destination`, `Containers` — and the list separator `', '` are **existing** keys, so only the sentence is new. **The four CJK subsets are *not* re-cut**: every character of all twenty translations was checked against that language's own current catalogue and every one was already carried, so `PROVENANCE.md` is untouched. `api/assets/locales/` is re-copied byte-for-byte and compared by file list *and* SHA-256 | §7.7 |
+| 7 | **Decimals survive the round trip untouched.** §1.2 puts them on the wire as strings because JavaScript's `Number` is a double, and nothing in the write, the read or the check calls `Number` at any depth. Asserted three ways — on the stored bytes, on the parsed type and on the exact characters including trailing zeros — in `tests/web/test_snapshot.py`, and again from the box the visitor typed into after a real Back press | §1.2, §7.2a |
+| 8 | **Storage that refuses is not a broken calculator.** Every read and write is wrapped, including `state.js`'s own module-load read of the token, which was bare. In a private window the calculator behaves exactly as it did before this revision | §7.2a |
 
 ### v1.73 — 2026-09-24 (item-level factors from the client's own table 1, in a draft; affects A, B, D and E)
 
@@ -3348,7 +3371,7 @@ Called once on page load to build every dropdown and input row.
 >
 > The **standard mix** is kept for the structural half of the same reason: §2.1 requires exactly one active row to carry `is_standard_mix` and §6.2 resolves a null `food_category` to it, so filtering it out would leave a consumer with no legal way to say "composition unknown" while the server went on resolving null to a code the consumer was never offered. §2.1's "exactly one active row" invariant is still counted over the **active** rows rather than the narrowed ones.
 
-> **A consumer must not assume this list is stable across a publish.** The front end fetches it once per page load and holds it in `state.taxonomy` (§7.2) — it caches nothing across loads, and nothing here may be cached in `localStorage`, because a taxonomy fetched before a publish is a form offering codes the current set does not price, which is the defect this rule closes arriving by another door.
+> **A consumer must not assume this list is stable across a publish.** The front end fetches it once per page load and holds it in `state.taxonomy` (§7.2) — it caches nothing across loads, and nothing here may be cached in `localStorage`, because a taxonomy fetched before a publish is a form offering codes the current set does not price, which is the defect this rule closes arriving by another door. **§7.2a restores the visitor's own answers across a page load and does not weaken this rule**: the form still fetches this response fresh on every load, and the restored answers are checked against *that* response and reduced to what it still offers — the same hazard, met at the other end.
 
 **200 response**
 
@@ -4215,6 +4238,7 @@ Keys, grouped. **This is C's shape and the contract has adopted it**; the previo
 | Per leaf | `leafFigures: {leafKey: leafRecord}`, where a leaf record is `measureMode` (`'mass'` \| `'container'`), `totalAmount` (raw string), `totalUnit`, `unitPreset` (a `unit_preset` code, or null), `unitCount` (raw string), `totalInputKg`, `totalValueNzd`, `wastedValueNzd` and `current: [{id, destination, qtyInput, unit}]` — the nine keys that were flat on this object before the fork, one set per leaf. A keyed map and not an array, so unticking the middle category cannot slide the third category's figures onto the second |
 | Multi-entry | `entries: []` — committed **chains**, same shape as the draft |
 | UI | `step` (−1 intro … 5 results), `returnTo` (`null` \| `{from, step, entries?, draft?, kind?, after?}` — v1.53), `expandedSectors`, `resultBreakdownTab` (`'stage'` \| `'destination'` \| `'food'`), `lastChangedDestination` |
+| Restore | `restoreDropped: [{kind, code}]` — what a restored snapshot had to throw away because the freshly fetched taxonomy no longer offers it, `[]` when nothing was (v1.74, §7.2a). Never stored itself |
 | Status | `loading`, `error`, `errorAt` (`null` \| `{leaf, field}` — which leaf and which field a client-side message belongs to; string identity cannot survive N leaves, because two leaves produce the byte-identical sentence), `errorCode`, `fieldErrors: {fieldPath: message}`, `rateLimitedUntil` (epoch ms) |
 | Improvement | `improvementOpen`, `improvedAllocations: [{destinationCode: percentString}]` — **one allocation per leaf, in submission order**, `improvementMode` (`'percentage'` \| `'unit'`), `improvementRowUnits: {destinationCode: 'kilograms' \| 'tonnes' \| 'preset:<code>'}` (a display choice, panel-wide), `improvementChartExpanded` (`null`, or the index of the leaf whose donut is expanded — **not a boolean**, because leaf 0 is a real answer), `improvementResult`, `improvementLoading`, `improvementError` |
 
@@ -4299,6 +4323,61 @@ Keys, grouped. **This is C's shape and the contract has adopted it**; the previo
 - **`gwpHorizon` is set to 100 at initialisation and no control ever writes it.** §6.2 makes the horizon user-selectable between 20 and 100; a stated requirement is currently unmet and invisible on screen.
 
 > **Documented exception to "no ad-hoc DOM manipulation".** Two modules deliberately bypass `setState` and mutate the DOM directly on keystroke (`calculator.js`, `improvement.js`). The reason is sound — `render()` replaces `main.innerHTML`, so a `setState` per keystroke destroys the focused input — but the exception must be documented rather than merely present, because the two fast paths **apply different validity rules to the same field**. As of 2026-08-09 the divergence is narrower than it was and is not zero: on a negative amount `updateLine` marks only the row being typed in, while `destinationRows` marks every negative row on the screen; and `destinationRows` additionally marks a row named by `state.fieldErrors`, which `updateLine` clears on the first keystroke because blanking or filling a row changes which lines the request would carry, so the server's line positions stop meaning what they meant. Any change to a validation rule has to be made in both.
+
+## 7.2a `snapshot.js` — the visitor's answers across a page load (v1.74, written by C)
+
+**The defect.** The whole calculator is one URL with one history entry: `location.pathname` is `/` from the introduction to the results, and which screen is up is `state.step`, in memory. `pushState`, `replaceState` and `popstate` appear nowhere in `web/js/`. So following one of the three navigation links — or the results page's own link to the documentation — and pressing **Back** re-parsed the page and landed the visitor on the introduction screen with the whole calculation gone. Measured, twice: by comparing the screen before and after, and by registering a `pageshow` listener before leaving and finding it absent on return, which is what says the JS heap is new rather than restored from the back-forward cache. nginx serves `Cache-Control: no-cache` and **not** `no-store`, so the response header is not what disables that cache and changing it would not have helped.
+
+**The fix is one `sessionStorage` key holding the visitor's own answers.**
+
+| | |
+| --- | --- |
+| Key | `kaiCalculatorAnswers`, beside `kaiCalculatorToken` |
+| Scope | `sessionStorage` — per tab, gone when the tab closes. **Never `localStorage`**, which survives a tab close and is shared between every tab of the origin: a visitor who closes the tab has finished, and the next person to open one on that machine must not be handed their figures |
+| Shape | `{"version": <int>, "answers": {…}}` |
+| Version | `SNAPSHOT_VERSION`, an integer compared with `===`. **A mismatch discards the whole snapshot, silently** |
+| Written | on every `continue` action and on `calculate`, after that action's own `setState` |
+| Cleared | by `resetCalculator()`, beside the token |
+
+**`answers` carries exactly `ANSWER_KEYS` and nothing else**: `sector`, `gwpHorizon`, `foodCategories`, `foodUnspecified`, `foodItems`, `foodStage`, `totalUnit`, `leafFigures`, `entries`, `timeFrame`, `periodStart`, `periodEnd`, `periodFields`, `step`. It is a **whitelist and not a forbidden list**, because a forbidden list has to be edited every time somebody adds a spinner flag and forgetting is a restored open dialog or a restored error about a request that finished before the visitor left. So `loading`, `error`, `errorAt`, `errorCode`, `fieldErrors`, `rateLimitedUntil`, `pdfExporting`, `pdfError`, `periodPicker` and `periodClock` are absent **by construction**.
+
+> **Three keys are absent by decision rather than by category, and each has its own reason.**
+>
+> - **`returnTo`** holds a snapshot of the entries and the draft *as they were before a jump*. Restoring one would let Back reinstate entries that never went through the revalidation below, which is the one door this mechanism must not leave open.
+> - **`totalUnit` is present although it is not one of the visitor's answers in the ordinary sense**, and it has to be: it is the unit the chain's combined figures are stated in, fixed at the 3 → 4 move and never re-derived. Restore step 4 without it and a chain whose rows were typed in tonnes is laid out against a total in kilograms — a thousandfold error on a screen that looks entirely normal.
+> - **`result`, `taxonomy` and the six contribute flags are absent at v1.74.** A restored *result* is a record of a calculation that already happened, and rendering it needs the taxonomy **as it was**, which points the opposite way from §6.1's fetched-fresh rule. That distinction is a decision of its own and is not written down yet, so this revision stores answers only — and `restoredPatch` therefore clamps a stored `step` of 5 back to the review step, because a results screen with `result: null` renders nothing at all. A visitor who left from the results page comes back to the review step they calculated from, with Calculate one press away.
+
+### The order is fixed, and it is §6.1's rule arriving by another door
+
+§6.1 requires the taxonomy to be fetched **once per page load** and cached across loads **nowhere**, because a taxonomy fetched before a publish is *"a form offering codes the current set does not price"*. **A restored answer naming a code a publish has since retired is that same form.** So:
+
+1. **Restore** the answers from storage, before anything renders.
+2. **Fetch the taxonomy fresh** — §6.1 is unchanged, and the form still reads no cached vocabulary of any kind.
+3. **Check the restored answers against it**, in `pruneAnswers`.
+4. **Drop what no longer exists and say so on screen.**
+
+Nothing unvalidated is ever painted: `render()` shows the loading state for as long as `state.loading && !state.taxonomy`, which is every moment between step 1 and step 3, and the taxonomy and the answers checked against it arrive in **one** `setState`.
+
+Five kinds of code can reach the check, and each is compared against the list the form would have offered it from:
+
+| Answer | Checked against | Dropped how |
+| --- | --- | --- |
+| `sector` | `sectors` | `null`; the **draft** is additionally sent back to step 0, which is the screen that asks the question. A **committed entry** whose sector is gone is dropped **whole** — `submission_entry.sector_id` is NOT NULL (§2.3), so such an entry can only ever be refused |
+| `foodCategories` | `food_categories` | the code leaves the list, and its `leafFigures` record leaves with it |
+| `foodItems` | `food_items`, **and the parent the taxonomy now gives that item** | the code leaves the list. Membership alone is not the question: step 2.5 groups foods under their category, so a re-parented food would be restored as a tick under a heading it no longer belongs to |
+| `leafFigures[*].current[].destination` | the destinations the form offers — every destination **minus the prevention ones**, which is `entryDestinations`'s own filter (§7.3a), because §6.2 refuses a flagged destination in a *current* scenario outright | the row goes; the rest of the allocation stays |
+| `leafFigures[*].unitPreset` | `unit_presets` | the preset is cleared and the leaf falls back to `measureMode: 'mass'`. A count of containers means nothing without the `kg_per_unit` that converted it, and that number lives only in the taxonomy |
+
+> **A dropped code takes its parked figures with it, and that is the one place this departs from §7.2's parking rule.** §7.2 keeps the figures of an *unticked* category so that re-ticking hands them back. A code the published vocabulary no longer has **can never be re-ticked**, so a record only that code could reach is unreachable forever and is removed rather than parked. The category-less leaf's own record (`leafKey` `"\u0000"`) is always kept, because unticking every category brings that leaf back.
+
+> **Every drop is reported.** `state.restoreDropped` is `[]` or a list of `{kind, code}`, and `calculator.js`'s `restoreNotice` prints one `.disclaimer.compact` aside above the step naming each one by kind and by code. **Silently dropping a category or a destination the visitor chose is the failure this whole check exists to prevent**, so the report is not optional and the notice is not dismissible. The **code** and not a name is printed because §6.1's response is the only place a code becomes words and the premise is that this code is no longer in it; a retired row's last label is kept nowhere on this side, and inventing one would be worse. The notice is not held in `state.error` — that is cleared by every step transition, and this has to survive the visitor walking back to the step the dropped answer was on — and it is cleared by `calculate` and by `resetCalculator`.
+
+### What this does not promise
+
+- **Only what a checkpoint saw is restored.** The write is at `continue` and `calculate` and not on every keystroke, because a write per keystroke would have to be fed by a `setState` per keystroke and `render()` replaces `main.innerHTML` on every one of those — which is exactly what `period.js` is written to avoid (§7.3a). So an amount typed on step 3 and not yet continued past is **not** restored; the step is, and every answer up to the last Continue is. `tests/web/test_session_restore_browser.py::test_only_what_a_checkpoint_saw_is_restored` pins that boundary so that moving it is a decision rather than something a visitor discovers.
+- **Storage may refuse, and the form does not depend on it.** In a private window or with site data blocked, every `sessionStorage` call throws. All of them are wrapped, a failed write is dropped, and a failed read is "no snapshot". **This feature is never a precondition for the form working.**
+- **Decimals survive untouched.** §1.2 puts decimals on the wire as strings because JavaScript's `Number` is a double, and every quantity in `leafFigures` is the raw string the visitor typed. `JSON.stringify`/`JSON.parse` preserve a JSON string exactly, and **nothing in the write, the read or the check calls `Number` at any depth**. Asserted on the stored bytes, on the parsed type and on the exact characters, in `tests/web/test_snapshot.py` and again in a browser.
+- **The token's rules are untouched.** One hour, the scheduled job still nulls the column, and it still identifies a draft record rather than a person (§2.3). There is no second identifier, no cookie, and nothing about the visitor in the snapshot: it holds what they typed and where they had got to.
 
 ## 7.3 `units.js` (written by C)
 

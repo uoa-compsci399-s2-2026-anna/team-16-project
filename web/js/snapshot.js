@@ -4,9 +4,12 @@
  *
  * ## The defect this closes
  *
- * The whole calculator is **one URL with one history entry**: `location.pathname` is
+ * The whole calculator was **one URL with one history entry**: `location.pathname` is
  * `/` from the introduction to the results, and which screen is up is `state.step`, in
- * memory. `pushState`, `replaceState` and `popstate` appear nowhere in `web/js/`. So
+ * memory. `pushState`, `replaceState` and `popstate` appeared nowhere in `web/js/` —
+ * **which was a second defect, and `history.js` closes it (§7.2b): the step now has an
+ * entry of its own, and Back moves within the calculator.** This module and that one
+ * compose and neither depends on the other. So
  * following the header's *Documentation* or *Statistics* link and pressing Back
  * re-parses the page — measured by registering a `pageshow` listener before leaving and
  * finding it gone on return, so the JS heap is genuinely new — and the visitor landed on
@@ -439,6 +442,29 @@ export function readResultSnapshot() {
 }
 
 /**
+ * A stored step number, or `null` where there is nothing usable in it.
+ *
+ * **Two sources restore a step and they must clamp identically** (§7.2b): the answers
+ * document, through `restoredPatch` below, and the step the *history entry* the page arrived
+ * on records, which `main.js` prefers because it names the screen the visitor was last
+ * looking at rather than the furthest one a checkpoint saw. Written once here so the two
+ * cannot disagree about what a 5 means or about what is out of range.
+ *
+ * **5 clamps to 4 only when there is no result to render.** The results screen renders from
+ * `state.result`, so a step 5 restored without one would paint "Results unavailable" over
+ * answers that are perfectly intact; with one it stands, and the visitor comes back to the
+ * figures they were looking at.
+ *
+ * @param {*} step Whatever was stored — any type
+ * @param {object|null} [result] `readResultSnapshot()`'s return, or `state.result`
+ * @returns {number|null}
+ */
+export function restorableStep(step, result = null) {
+  if (!Number.isInteger(step) || step < -1 || step > 5) return null
+  return step === 5 && !result ? 4 : step
+}
+
+/**
  * The stored answers as a `setState` patch, with each value's own shape checked.
  *
  * **Shape-checked rather than trusted.** The version number rules out another
@@ -482,9 +508,8 @@ export function restoredPatch(answers, result = null) {
     }
     patch.periodFields = fields
   }
-  if (Number.isInteger(answers.step) && answers.step >= -1 && answers.step <= 5) {
-    patch.step = answers.step === 5 && !result ? 4 : answers.step
-  }
+  const step = restorableStep(answers.step, result)
+  if (step !== null) patch.step = step
   return patch
 }
 

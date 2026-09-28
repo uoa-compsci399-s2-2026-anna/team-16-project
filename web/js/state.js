@@ -8,6 +8,11 @@ import { t } from './i18n.js'
 // nothing at all, for the same reason `i18n.js` does not: this module is the one every
 // other may import, which is only true while what it imports imports nothing back.
 import { clearSnapshot } from './snapshot.js'
+// The history entries the steps pushed (§7.2b). `history.js` imports nothing at all
+// either - it is handed `state` and `subscribe` at install time by `main.js`, precisely so
+// that this line closes no cycle - and every one of its exports is inert until that
+// install has run, which is why `resetCalculator` may call it under Node.
+import { unwindStepHistory } from './history.js'
 
 // **Read in a `try`, because a browser may refuse to hand it over.** In a private window
 // or with site data blocked, `sessionStorage` is either absent or throws on access - and
@@ -617,6 +622,16 @@ export function resetCalculator() {
   // the header's Clear and the results page's *Start over* - and a snapshot that outlived
   // it would put every one of those answers back on the next page load.
   clearSnapshot()
+  // **And the step history goes with them** (§7.2b). One entry per step means six of them
+  // sit behind Back by the time a visitor reaches the results, and "Clear all calculator
+  // data and return to the introduction?" must not leave a Back press that walks into a
+  // step of the calculation just cleared. Entries cannot be deleted, so this travels back
+  // to the entry the calculator opened in and rewrites it as the introduction - Back from
+  // there leaves the site, which is what it did before the visitor started.
+  //
+  // **Before the patch below, not after.** It records the step as -1 synchronously, so the
+  // patch's own `step: -1` is not a change this module's subscriber would push an entry for.
+  unwindStepHistory()
   setState({
     token: null,
     sector: null,

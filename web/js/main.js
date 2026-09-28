@@ -1,8 +1,9 @@
 import { getTaxonomy } from './api.js'
 import { state, setState, subscribe, resetCalculator } from './state.js'
-import { bindCalculator, render, renderChrome } from './calculator.js'
+import { bindCalculator, goToStepFromHistory, render, renderChrome } from './calculator.js'
+import { installStepHistory, stepFromHistory } from './history.js'
 import { applyDocumentLanguage, applyToDocument, installLanguageChooser, t } from './i18n.js'
-import { pruneAnswers, readResultSnapshot, readSnapshot, restoredPatch } from './snapshot.js'
+import { pruneAnswers, readResultSnapshot, readSnapshot, restorableStep, restoredPatch } from './snapshot.js'
 // The site drawer's `Escape` handler and `aria-expanded`. Side-effect import: the
 // drawer is a `<details>` in the markup and works without this; see web/js/drawer.js.
 import './drawer.js'
@@ -83,6 +84,23 @@ if (snapshot) {
   // rather than rewriting one they have already seen.
   const calculation = readResultSnapshot()
   setState({ ...restoredPatch(snapshot, calculation), ...(calculation || {}) })
+  // **The entry the browser returned to outranks the snapshot's own `step`** (§7.2b).
+  // They are about the same tab and they agree in the ordinary case - the last thing the
+  // visitor did before leaving was a Continue, and both name that step. They part in one
+  // journey, which is the whole reason this line exists: the visitor pressed Back *inside*
+  // the calculator and then left. The snapshot is written at `continue` and `calculate`
+  // only, so it still names the furthest step reached; the entry names the one they were
+  // actually looking at.
+  //
+  // It is **not** what keeps Back working after a restore, and that was measured: the
+  // entries behind this one were pushed from the document this load replaced, so they are
+  // handed this document too and traversing to them is a same-document `popstate` rather
+  // than another re-parse. See `stepFromHistory` in `history.js` for the measurement.
+  //
+  // **Only in place of the step, never in place of the restore**: with no answers there is
+  // nothing for a step to show, so the whole of this block is inside `if (snapshot)`.
+  const entryStep = restorableStep(stepFromHistory(), state.result)
+  if (entryStep !== null) setState({ step: entryStep })
 }
 
 // render() replaces main.innerHTML wholesale, so every re-render detaches whatever the
@@ -101,6 +119,16 @@ subscribe(() => {
   if (stepChanged) main.focus({ preventScroll: true })
   else if (activeId !== null) (document.getElementById(activeId) || main).focus({ preventScroll: true })
 })
+
+// **One history entry per step** (§7.2b), installed after the restore above so that the
+// entry the page arrived on is claimed with the step actually on screen, and `replaceState`
+// rather than `pushState` so nobody collects a duplicate entry before doing anything.
+//
+// `goToStepFromHistory` is the same `goToStep` the step bar's own Back calls, which is how
+// the two Backs are kept from disagreeing rather than compared; `() => state.step` is the
+// only thing history is written from, so a `render()` caused by a keystroke cannot produce
+// an entry.
+installStepHistory({ step: () => state.step, navigate: goToStepFromHistory, subscribe })
 
 bindCalculator(main, loadTaxonomy)
 homeButton.addEventListener('click', () => resetCalculator())

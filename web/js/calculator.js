@@ -2618,6 +2618,33 @@ function goToStep(step, jumped = false) {
   return true
 }
 
+/**
+ * A browser Back or Forward press, answered by **the same function the on-screen Back
+ * calls** (§7.2b).
+ *
+ * That identity is the whole of how the two Backs are kept from disagreeing: the jump undo,
+ * the "this will discard the entry you started" confirmation, the `foodStage` reset and the
+ * spent-marker rule are not reimplemented here, they are `goToStep`'s, and a refusal is
+ * passed straight back so `history.js` can put the position where the visitor left it.
+ *
+ * **The one thing this adds is a clamp, and only `start-over` can reach it.** History
+ * entries cannot be deleted, so after "Clear all calculator data" the entries *above* the
+ * one the unwind returns to still name steps of a calculation that no longer exists.
+ * Forward is a live direction, and a step past the stage question with no sector and no
+ * saved entry has nothing to draw — `amountStep` would ask for figures against no food and
+ * `reviewStep` would offer Calculate on nothing. So it lands on the introduction, and
+ * `history.js` rewrites that entry to say so rather than leaving it to mislead the next
+ * press. Step 0 is never clamped: the stage question is answerable from empty, and it is
+ * where Forward after pressing Start and Back belongs.
+ *
+ * @param {number} step The step the entry being traversed to records
+ * @returns {boolean} False only if the visitor declined a discard — `goToStep`'s own answer
+ */
+export function goToStepFromHistory(step) {
+  const drawable = step >= 1 && !state.sector && !state.entries.length ? -1 : step
+  return goToStep(drawable)
+}
+
 export function bindCalculator(main, retryTaxonomy) {
   reloadTaxonomy = retryTaxonomy
   main.addEventListener('click', event => {

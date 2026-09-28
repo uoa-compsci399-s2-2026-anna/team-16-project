@@ -2365,11 +2365,17 @@ function clearDraft() {
  * longer in it. A retired row's last label is not kept anywhere on this side, and
  * inventing one would be worse than printing the code.
  *
- * **Four existing catalogue keys and one new sentence.** `Sector`, `Food category`,
- * `Food` and `Destination` are already rendered elsewhere in this form, and the
- * separator `', '` is already a key; only the sentence is new. It is a plain quoted
+ * **Five existing catalogue keys and one new sentence.** `Sector`, `Food category`,
+ * `Food`, `Destination` and `Containers` are already rendered elsewhere in this form, and
+ * the separator `', '` is already a key; only the sentence is new. It is a plain quoted
  * literal at the `t()` call, because `tests/web/i18n_keys.py` is a regex and a template
  * literal there ships English in twenty catalogues with nothing failing.
+ *
+ * **The escape is on the finished sentence, not on the code.** A `code` here came out of
+ * the visitor's own `sessionStorage` and can therefore be anything a hand edit put there,
+ * so it must not reach the markup raw — and since it is interpolated into the sentence
+ * before `escapeHtml` runs on the whole of it, one escape covers both. Escaping the code
+ * first would double-escape it the moment the sentence were escaped as well.
  *
  * It is NOT `state.error`: `clearedError` empties that on every step transition, and this
  * has to survive the visitor walking back to the step the dropped answer was on. It is

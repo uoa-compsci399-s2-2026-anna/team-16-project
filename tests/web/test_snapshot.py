@@ -830,6 +830,27 @@ def test_the_leaf_key_the_prune_uses_is_the_one_state_js_defines(tmp_path):
     assert _key("fruit") in result["patch"]["leafFigures"]
 
 
+# -------------------------------------------- the code reaches the notice as text
+
+
+@node
+def test_a_code_from_storage_is_carried_as_data_and_not_as_markup(tmp_path):
+    """The notice prints the `code` the visitor's own answer carried, and that
+    answer came out of *their* `sessionStorage` -- so it can hold whatever a hand
+    edit put there.
+
+    This module's half of the guarantee is that the code travels as data: it is
+    reported verbatim in `dropped`, with no markup assembled here. `restoreNotice`
+    in `calculator.js` is what escapes it, and it escapes the finished sentence, so
+    one escape covers the interpolated code. Asserted here rather than in a browser
+    because the shape of `dropped` is this module's contract.
+    """
+    hostile = '<img src=x onerror="alert(1)">'
+    result = probe(tmp_path, "prune", answers=_state(sector=hostile), taxonomy=TAXONOMY)
+    assert {"kind": "sector", "code": hostile} in result["dropped"], result["dropped"]
+    assert result["patch"]["sector"] is None
+
+
 # ----------------------------------------------------------------- clearing it
 
 

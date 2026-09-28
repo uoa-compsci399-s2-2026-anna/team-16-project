@@ -582,6 +582,41 @@ def test_a_quantity_comes_back_as_the_string_it_was_typed_as(page):
     assert page.locator('[data-leaf-field="amount"]').first.input_value() == "1200.50"
 
 
+# ------------------------------------------ the notice prints a code as text
+
+
+def test_a_code_from_storage_reaches_the_notice_as_text_and_not_as_markup(page):
+    """The notice names the code the visitor's answer carried, and that answer came
+    out of **their own** `sessionStorage` -- so it can hold whatever a hand edit,
+    or anything else with access to this origin, put there.
+
+    `restoreNotice` escapes the finished sentence, so the interpolated code is
+    escaped with it. Measured rather than reasoned about: the snapshot is edited to
+    name a sector that is an `<img onerror>`, the page is reloaded, and the notice
+    is read as text while the DOM is asked whether an element appeared and the
+    handler ran.
+    """
+    _to_amount_step(page)
+    payload = '<img src=x onerror="window.__injected = true">'
+    page.evaluate(
+        """(payload) => {
+          const held = JSON.parse(sessionStorage.getItem('kaiCalculatorAnswers'));
+          held.answers.sector = payload;
+          sessionStorage.setItem('kaiCalculatorAnswers', JSON.stringify(held));
+        }""",
+        payload,
+    )
+    page.reload(wait_until="load", timeout=15000)
+    page.wait_for_selector(NOTICE, timeout=10000)
+    notice = page.locator(NOTICE).inner_text()
+    assert "<img" in notice, notice
+    assert page.evaluate("() => window.__injected === true") is False, (
+        "a code out of the visitor's own storage was written into the page as markup, and "
+        "its handler ran"
+    )
+    assert page.evaluate(f"() => document.querySelector({NOTICE!r}).querySelectorAll('img').length") == 0
+
+
 # --------------------------------------------------------------- clearing it
 
 

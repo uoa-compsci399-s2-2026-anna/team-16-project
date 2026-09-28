@@ -243,3 +243,38 @@ def test_every_browser_storage_sentence_says_what_ends_it():
         "browser without saying both that closing the tab ends it and which "
         "control removes it: " + " || ".join(offenders)
     )
+#: The four pages that carry the shared footer notice. `home.html` is retired
+#: as a route and still carries it, which is deliberate: reviving the page must
+#: be a routing decision rather than a re-translation.
+_PUBLIC_PAGES = ("index.html", "home.html", "methodology.html", "stats.html")
+
+_NOTICE = re.compile(r'<p class="transparency-notice">.*?</p>', re.S)
+
+
+def _notice(name: str) -> str:
+    markup = (i18n_keys.WEB / name).read_text(encoding="utf-8")
+    found = _NOTICE.findall(markup)
+    assert len(found) == 1, f"{name}: {len(found)} transparency notices"
+    return found[0].replace("\r\n", "\n")
+
+
+def test_the_four_public_pages_carry_the_same_notice():
+    """One paragraph, four files, and nothing in the build keeps them in step.
+
+    A copy edit that reaches three of the four is the defect this asserts
+    against, and it is not hypothetical: `index.html`'s *What we record* link
+    was the one of the four never given `data-i18n` when the notice was
+    translated, so the calculator page - the page a visitor actually uses -
+    showed an English link under a translated sentence for eleven revisions,
+    with every catalogue complete and every test green. The markup is compared
+    whole rather than the sentences alone, because that omission was in an
+    attribute.
+    """
+    notices = {name: _notice(name) for name in _PUBLIC_PAGES}
+    first = notices[_PUBLIC_PAGES[0]]
+    differing = [name for name, markup in notices.items() if markup != first]
+    assert not differing, (
+        "the transparency notice is not the same on every public page; "
+        f"{differing} differ from {_PUBLIC_PAGES[0]}: "
+        + " || ".join(notices[name] for name in differing)
+    )

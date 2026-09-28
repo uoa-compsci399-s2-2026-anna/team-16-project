@@ -361,3 +361,50 @@ in their own face now only because a fresh cut reads that catalogue's current
 strings. The four extra glyphs are the difference between "nothing prints as a
 box" and "each face covers its own language", and it is the second that this
 script produces.
+
+## Re-cut, 2026-09-28 (the browser-storage copy, v1.77)
+
+The transparency notice on the four public pages and the methodology page's
+*What we record* section both gained copy about the answers the visitor's own
+browser now holds (`docs/interfaces.md` v1.77, §7.2a), which is two new keys
+in each of the twenty catalogues. Both sentences are about a browser, a tab and
+a button that empties them - ideas this copy had never had to express - so
+`test_no_character_in_any_catalogue_would_print_as_a_box` named **thirty-three**
+code points across `ja`, `ko`, `zh` and `zh-Hant`: among them 許/许 ("permit", in
+"a browser that refuses to keep anything"), 離/离 ("leave", in "never leaves
+your browser"), 屬/属 ("belongs to"), 失 ("lose"), 控 (`ja`'s 控え, the copy
+itself), ザ (the katakana in `ja`'s ブラウザ, "browser"), and `ko`'s 벗
+(벗어나지, "does not leave"), 브 (붌라우저, "browser") and 튼 (버튼,
+"button").
+
+Re-cut the same way as every entry above: `recut_cjk_subsets.py`, run inside
+the `api` container with `fonts-noto-cjk` (1:20240730+repack1-1, the same
+package version the table at the top of this file names) installed fresh. The
+script reads `web/locales/*.json`, so the four current catalogues and the script
+were copied into the container beside each other in the layout it expects, and
+the four `.woff2` files copied back out - the running container's own baked
+catalogues are the pre-change ones, and cutting from those would have produced
+exactly the faces this replaces.
+
+| Face | Characters before | Characters after | Bytes before | Bytes after |
+| --- | --- | --- | --- | --- |
+| `NotoSansCJKjp-Regular.woff2` | 662 | 673 | 239,016 | 243,172 |
+| `NotoSansCJKkr-Regular.woff2` | 567 | 578 | 81,256 | 81,996 |
+| `NotoSansCJKsc-Regular.woff2` | 717 | 732 | 207,056 | 211,080 |
+| `NotoSansCJKtc-Regular.woff2` | 719 | 732 | 273,540 | 278,912 |
+
+**One character present in the old `sc` face is absent from the new one, and it
+is not a loss.** 便 (`U+4FBF`). Checked the way the 2026-09-19 entry requires,
+against the catalogue it would have to come from in the working tree **and** at
+the commit before this copy landed: it appears in no string of `zh.json` in
+either, and in no metadata field of either - `grep` over the whole file finds it
+nowhere. Residue from a cut taken before some earlier catalogue edit removed the
+string that needed it, carried forward because a re-cut only ever happens when
+something is *missing*. Nothing was lost from `jp`, `kr` or `tc`.
+
+**Fifty-one glyphs were added, over forty-one distinct code points, and only
+thirty-three were undrawable**, which is the 2026-09-22 entry's point restated:
+`_is_drawable` asks *every* embedded face, so 共, 初, 可, 白, 私, 立, 若 and
+近 - eight characters each already carried by one CJK face - never failed the
+test, and they arrive in their own face only because a fresh cut reads that
+catalogue's current strings.

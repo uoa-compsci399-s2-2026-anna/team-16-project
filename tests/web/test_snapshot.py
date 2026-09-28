@@ -1,10 +1,11 @@
 """`web/js/snapshot.js`: what is written, what is refused, and what is dropped.
 
-The visitor's answers are kept in `sessionStorage` so that leaving the
-calculator for the Documentation or Statistics page and pressing Back resumes
-the form instead of restarting it. Four properties of that mechanism are worth
-a test of their own, and none of them is observable from a browser test that
-walks the form:
+The visitor's answers -- and, since v1.75, the result they already saw -- are
+kept in `sessionStorage` so that leaving the calculator for the Documentation or
+Statistics page and pressing Back resumes the calculation instead of restarting
+it. Two keys, `kaiCalculatorAnswers` and `kaiCalculatorResult`, under one shared
+version number. Properties of that mechanism worth a test of their own, none of
+them observable from a browser test that walks the form:
 
 * **A decimal survives the round trip as a string.** §1.2 puts decimals on the
   wire as strings because JavaScript's ``Number`` is a double, and a quantity
@@ -21,6 +22,17 @@ walks the form:
   no longer has, and reports every drop.** Silently dropping a category or a
   destination the visitor chose is the failure that check exists to prevent, so
   the report is the assertion.
+* **The result document carries the result, the taxonomy that produced it and
+  one contribute flag of six** -- and a result document that would not render is
+  refused rather than half-restored, because "Results unavailable" over answers
+  that are perfectly intact is a worse page than no restore at all.
+* **The two uses of the taxonomy are told apart by one function.** The form is
+  offered from the freshly fetched one (section 6.1) and a restored result is
+  rendered from the stored one, because a calculation named its rows out of that
+  vocabulary. `taxonomyForResult` is where that decision lives, so it is
+  asserted on rather than grepped for.
+* **A Continue does not erase the stored result.** That is what the second key
+  buys, and it is the reason there are two.
 
 Run under Node for the reason ``test_leaf_rule.py`` gives at length: a test
 that greps the source asserts that a name was typed, not that a value came
@@ -80,7 +92,7 @@ globalThis.sessionStorage = {
 
 import { readFileSync, writeFileSync } from 'node:fs'
 const snapshot = await import(process.argv[2])
-const { leafKey, resetCalculator, state } = await import(process.argv[3])
+const { leafKey, resetCalculator, state, taxonomyForResult } = await import(process.argv[3])
 const input = JSON.parse(readFileSync(process.argv[4], 'utf8'))
 
 const probes = {
@@ -129,18 +141,79 @@ const probes = {
   leafKeys() {
     return { keys: input.leaves.map(leaf => leafKey(leaf)) }
   },
-  // Clear has to take the snapshot with the token, or the Clear button is a
+  // Clear has to take BOTH snapshots with the token, or the Clear button is a
   // false statement.
   reset() {
     snapshot.writeSnapshot(input.state)
+    snapshot.writeResultSnapshot(input.state)
     store.set('kaiCalculatorToken', 'a-token')
     const before = store.has(snapshot.SNAPSHOT_KEY)
+    const resultBefore = store.has(snapshot.RESULT_KEY)
     resetCalculator()
     return {
       before,
+      resultBefore,
       snapshotAfter: store.has(snapshot.SNAPSHOT_KEY),
+      resultAfter: store.has(snapshot.RESULT_KEY),
       tokenAfter: store.has('kaiCalculatorToken'),
       step: state.step,
+      resultTaxonomyAfter: state.resultTaxonomy,
+    }
+  },
+
+  // ---------------------------------------------------------------- WP2's own
+
+  // The result document, written and read back, with the exact bytes so that a
+  // metric total can be checked for still being a string.
+  resultRoundTrip() {
+    snapshot.writeResultSnapshot(input.state)
+    return { raw: store.get(snapshot.RESULT_KEY), calculation: snapshot.readResultSnapshot() }
+  },
+  // The keys actually written to the result document, and the whole of it as text.
+  resultWritten() {
+    snapshot.writeResultSnapshot(input.state)
+    const raw = store.get(snapshot.RESULT_KEY)
+    return { keys: Object.keys(JSON.parse(raw).calculation), raw, expected: snapshot.RESULT_KEYS }
+  },
+  // A result document this deployment did not write.
+  resultForeign() {
+    store.set(snapshot.RESULT_KEY, JSON.stringify(input.stored))
+    return { calculation: snapshot.readResultSnapshot() }
+  },
+  // Whatever `input.raw` is, byte for byte.
+  resultRawStored() {
+    store.set(snapshot.RESULT_KEY, input.raw)
+    return { calculation: snapshot.readResultSnapshot() }
+  },
+  // Every call throws. Nothing here may.
+  resultBlocked() {
+    failing = true
+    snapshot.writeResultSnapshot(input.state)
+    const read = snapshot.readResultSnapshot()
+    failing = false
+    return { read, stored: store.has(snapshot.RESULT_KEY) }
+  },
+  // The step the answers restore to, given a result beside them or not.
+  patchWithResult() {
+    return { patch: snapshot.restoredPatch(input.answers, input.result || null) }
+  },
+  // Two keys, and the cheap one is rewritten at every Continue. This is what says
+  // the expensive one is not erased by that.
+  continueAfterCalculate() {
+    snapshot.writeResultSnapshot(input.state)
+    snapshot.writeSnapshot({ ...input.state, step: 3 })
+    return {
+      calculation: snapshot.readResultSnapshot(),
+      answers: snapshot.readSnapshot(),
+      keys: [...store.keys()].sort(),
+    }
+  },
+  // `taxonomyForResult` is the one place the two uses of the taxonomy are told
+  // apart, so it is asserted on rather than grepped for.
+  taxonomyChoice() {
+    return {
+      restored: taxonomyForResult({ taxonomy: { mark: 'fresh' }, resultTaxonomy: { mark: 'stored' } }).mark,
+      live: taxonomyForResult({ taxonomy: { mark: 'fresh' }, resultTaxonomy: null }).mark,
     }
   },
 }
@@ -210,6 +283,61 @@ TAXONOMY = {
 }
 
 
+#: A §6.2 response as `submitCalculation` leaves it on `state.result` -- the response
+#: plus the `entry_results` pairing `entryResultsFrom` adds (§7.2). Every figure in it
+#: is a **string**, which is the whole reason it is written out in full here rather
+#: than stubbed: `1234.560` and `1200.500` both lose a character to a single `Number()`
+#: anywhere in the write or the read, and `240.00` loses two.
+RESULT = {
+    "token": "a-token",
+    "factor_set": {"code": "fs-mock-1", "version_label": "mock-1", "is_mock": True},
+    "factor_source": "mock",
+    "gwp_horizon": 100,
+    "totals": {
+        "total_kg": "1240.500",
+        "current": {
+            "total_kg": "1240.500",
+            "metrics": {
+                "co2e": {
+                    "total": "1234.560",
+                    "unit": "kg CO2e",
+                    "display_precision": 2,
+                    "by_destination": [
+                        {"destination": "landfill", "qty_kg": "1200.500", "value": "1200.100"}
+                    ],
+                }
+            },
+        },
+        "money": {"wasted_value_nzd": "240.00"},
+    },
+    "entry_results": [
+        {
+            "entry": {
+                "sector": "processing",
+                "foodCategory": "fruit",
+                "foodItem": "apples",
+                "totalAmount": "1200.500",
+                "totalUnit": "kilograms",
+                "current": [
+                    {"id": "row-1", "destination": "landfill", "qtyInput": "1200.500", "unit": "kilograms"}
+                ],
+            },
+            "response": {
+                "sector": "processing",
+                "food_category": "fruit",
+                "food_item": "apples",
+                "item_basis": "category",
+                "current": {
+                    "total_kg": "1200.500",
+                    "metrics": {"co2e": {"total": "1200.100", "unit": "kg CO2e", "display_precision": 2, "by_destination": []}},
+                },
+                "factor_set": {"code": "fs-mock-1", "version_label": "mock-1", "is_mock": True},
+            },
+        }
+    ],
+}
+
+
 def _state(**overrides) -> dict:
     """A state carrying one filled draft, one committed entry, and every
     transient key the module must refuse to write."""
@@ -259,13 +387,32 @@ def _state(**overrides) -> dict:
         "pdfError": "The document could not be produced.",
         "periodPicker": {"field": "startDate", "cursor": "2026-09-01", "openerId": "x"},
         "periodClock": {"field": "startTime", "stage": "hours", "mode": "dial"},
-        # WP2's, and so not this module's.
-        "result": {"totals": []},
-        "taxonomy": TAXONOMY,
+        # The result document's own keys (v1.75). They must not reach the ANSWERS
+        # document -- a 32 KB result rewritten at every Continue is what the second
+        # key exists to avoid -- so every test below that looks at the answers
+        # asserts their absence, and the WP2 tests further down assert their
+        # presence in the other one.
+        "result": RESULT,
+        "resultTaxonomy": TAXONOMY,
         "contributed": True,
+        # The five contribute flags that are NOT stored, one of each kind: a request
+        # in flight, a tick on its own, a grace window, a one-shot animation and an
+        # error about a request that is over.
+        "contributing": True,
         "contributeTicked": True,
         "contributeArmedUntil": 1234567890,
+        "contributeCelebrating": True,
+        "contributeError": "The calculator service could not be reached.",
+        # Never stored anywhere: `taxonomy` is the FORM's, fetched fresh on every
+        # load (§6.1), and the token has rules and a key of its own.
+        "taxonomy": TAXONOMY,
         "token": "a-token",
+        # The results page's own furniture, and the improvement panel's.
+        "resultBreakdownTab": "destination",
+        "resultsNavOpen": True,
+        "improvementOpen": True,
+        "improvedAllocations": [{"landfill": "50"}],
+        "improvementResult": {"totals": {}},
     }
     base.update(overrides)
     return base
@@ -352,12 +499,27 @@ def test_exactly_the_answer_keys_are_written_and_nothing_transient(tmp_path):
         "pdfError",
         "periodPicker",
         "periodClock",
-        # WP2's three, which this package deliberately does not carry.
+        # The result document's own keys, which live under `kaiCalculatorResult` and
+        # must not also be here: `writeSnapshot` runs at every `continue`, and a
+        # 32 KB result carried through each of those is exactly what the second key
+        # exists to avoid.
         "result",
-        "taxonomy",
+        "resultTaxonomy",
         "contributed",
+        # `taxonomy` is the FORM's and is never stored at all (§6.1).
+        "taxonomy",
+        # The five contribute flags that are stored nowhere.
+        "contributing",
         "contributeTicked",
         "contributeArmedUntil",
+        "contributeCelebrating",
+        "contributeError",
+        # The results page's furniture and the improvement panel's.
+        "resultBreakdownTab",
+        "resultsNavOpen",
+        "improvementOpen",
+        "improvedAllocations",
+        "improvementResult",
         # And the token, which has rules of its own and keeps its own key.
         "token",
     ]
@@ -450,12 +612,14 @@ def test_the_form_works_when_storage_throws_on_every_call(tmp_path):
 
 
 @node
-def test_the_results_step_is_restored_as_the_review_step(tmp_path):
-    """WP1 stores no result, and a results screen with no result renders nothing.
+def test_the_results_step_is_restored_as_the_review_step_when_there_is_no_result(tmp_path):
+    """A results screen with no result renders "Results unavailable", which is a
+    dead end with the visitor's answers intact in the form behind it.
 
-    The visitor who left from the results page comes back to the review step
-    they calculated from, with Calculate one press away. WP2 is what changes
-    this, and it will have to change this line.
+    So the clamp stands for every document that has no usable result beside it --
+    a snapshot written before v1.75, a result key evicted on its own, or one that
+    failed `readResultSnapshot`'s shape check. The visitor comes back to the review
+    step they calculated from, with Calculate one press away.
     """
     patch = probe(tmp_path, "patch", answers={"step": 5})["patch"]
     assert patch["step"] == 4
@@ -866,3 +1030,303 @@ def test_clearing_the_calculator_removes_the_snapshot_with_the_token(tmp_path):
     assert result["snapshotAfter"] is False
     assert result["tokenAfter"] is False
     assert result["step"] == -1
+
+
+@node
+def test_clearing_the_calculator_removes_the_result_snapshot_too(tmp_path):
+    """The second key, and the one that would be forgotten.
+
+    "Clear all calculator data" is one call to `clearSnapshot`, and a key added to
+    this module and not removed there is exactly how that question becomes a false
+    statement -- with the more revealing half left behind, because the result
+    document holds the figures rather than the answers. `resultTaxonomy` is cleared
+    off `state` in the same patch, so nothing is left pointing at a vocabulary for a
+    calculation that no longer exists.
+    """
+    result = probe(tmp_path, "reset", state=_state())
+    assert result["resultBefore"] is True, "the result snapshot was never written; the test proves nothing"
+    assert result["resultAfter"] is False, (
+        "Clear left the result in storage, so the next page load would put the figures "
+        "back on a calculator the visitor had just emptied"
+    )
+    assert result["resultTaxonomyAfter"] is None
+
+
+# ------------------------------------------------ the result, and its taxonomy
+
+
+@node
+def test_the_result_document_carries_exactly_the_result_keys(tmp_path):
+    """Asserted as a set, and then every excluded name searched for in the text.
+
+    The five contribute flags are the interesting half. `contributed` is the
+    visitor's durable choice and has to ride along, or a visitor who ticked,
+    submitted and came back is invited to contribute again -- `contributeBlock`
+    derives the whole done state from that one flag. The other five would each be a
+    statement about something the page load ended:
+
+    * `contributing` -- a request in flight, which cannot be resumed and whose fate
+      is unknowable from here.
+    * `contributeArmedUntil` -- the grace window, whose `setTimeout` lives in
+      `results.js` module scope and died with the page.
+    * `contributeTicked` -- a control position rather than a decision.
+    * `contributeCelebrating` -- a one-shot animation.
+    * `contributeError` -- an error about a request that is over.
+    """
+    result = probe(tmp_path, "resultWritten", state=_state())
+    assert sorted(result["keys"]) == sorted(result["expected"]), result["keys"]
+    assert sorted(result["expected"]) == sorted(["result", "resultTaxonomy", "contributed"]), result["expected"]
+    forbidden = [
+        "contributing",
+        "contributeTicked",
+        "contributeArmedUntil",
+        "contributeCelebrating",
+        "contributeError",
+        # The form's own taxonomy, which is fetched fresh on every load and stored
+        # nowhere. `resultTaxonomy` is a different key and a different promise.
+        "taxonomy",
+        "improvementOpen",
+        "improvedAllocations",
+        "improvementResult",
+        "resultBreakdownTab",
+        "resultsNavOpen",
+        "loading",
+        "periodPicker",
+    ]
+    for key in forbidden:
+        assert '"%s":' % key not in result["raw"], (
+            f"{key!r} reached the result snapshot. A restored spinner, a restored "
+            "countdown over a request nothing will make, or a restored comparison "
+            "computed under a factor set the allocations no longer match are each a "
+            "defect this whitelist exists to make impossible."
+        )
+    # The fixture's `contributeError` sentence: the one value that would prove a
+    # transient leaked in nested rather than at the top level.
+    assert "could not be reached" not in result["raw"], result["raw"]
+    # **`token` is NOT on that list, and its presence is a property of the response
+    # rather than of this whitelist.** §6.2 echoes the session token in its own body
+    # and `result` is stored as the response came, so a second copy of it is in this
+    # document. It is the same value, in the same `sessionStorage`, for the same
+    # lifetime, removed by the same `clearSnapshot`/`resetCalculator` pair as
+    # `kaiCalculatorToken` itself -- no new information and no second identifier. The
+    # answers document is the one that must not carry it, and
+    # `test_exactly_the_answer_keys_are_written_and_nothing_transient` asserts that.
+    assert '"token":"a-token"' in result["raw"].replace(" ", "")
+
+
+@node
+def test_a_metric_total_survives_the_result_round_trip_as_a_string(tmp_path):
+    """Section 1.2's oldest rule, on the other document.
+
+    `1234.560` and `1200.500` each lose a character to one `Number()` anywhere in
+    the write or the read, and `240.00` loses two. Asserted on the stored bytes, on
+    the parsed types and on the exact characters -- at the top level, inside
+    `by_destination`, inside `entry_results[].entry` and inside
+    `entry_results[].response`, because a "normalising" traversal would reach some
+    depths and not others.
+    """
+    result = probe(tmp_path, "resultRoundTrip", state=_state())
+    raw, calculation = result["raw"], result["calculation"]
+    assert '"total":"1234.560"' in raw.replace(" ", ""), raw
+    assert '"wasted_value_nzd":"240.00"' in raw.replace(" ", ""), raw
+    assert "1234.56," not in raw.replace(" ", ""), raw
+
+    metric = calculation["result"]["totals"]["current"]["metrics"]["co2e"]
+    assert isinstance(metric["total"], str) and metric["total"] == "1234.560", metric
+    assert metric["by_destination"][0]["qty_kg"] == "1200.500"
+    assert calculation["result"]["totals"]["money"]["wasted_value_nzd"] == "240.00"
+    paired = calculation["result"]["entry_results"][0]
+    assert paired["entry"]["current"][0]["qtyInput"] == "1200.500"
+    assert paired["response"]["current"]["metrics"]["co2e"]["total"] == "1200.100"
+
+
+@node
+def test_the_stored_taxonomy_is_the_whole_response_and_keeps_its_own_numbers(tmp_path):
+    """Stored whole rather than reduced to the rows the result names.
+
+    A reduction would be a transformation, and what this key promises is the
+    taxonomy that produced the result rather than a summary of it -- 9.3 KB measured
+    against the running stack, against about 5 MB of quota. Any `kg_per_unit` or
+    `display_precision` in it is a decimal and is held to the same rule as the
+    figures above.
+    """
+    presets = [{"code": "wheelie_bin_120l", "kg_per_unit": "12.500"}]
+    calculation = probe(
+        tmp_path,
+        "resultRoundTrip",
+        state=_state(resultTaxonomy={**TAXONOMY, "unit_presets": presets}),
+    )["calculation"]
+    stored = calculation["resultTaxonomy"]
+    assert sorted(stored) == sorted(TAXONOMY), stored
+    assert stored["destinations"] == TAXONOMY["destinations"]
+    assert stored["unit_presets"][0]["kg_per_unit"] == "12.500", stored["unit_presets"]
+
+
+@node
+@pytest.mark.parametrize("version", [0, 2, 99, "1", None])
+def test_a_result_from_another_schema_version_is_discarded_whole(tmp_path, version):
+    """One version number for two keys, and it gates both.
+
+    A result document written by a deployment whose `result` shape differed is not
+    half-read: it is refused, `restoredPatch` clamps the step to the review screen,
+    and the visitor gets the form they can still calculate from.
+    """
+    stored = {
+        "version": version,
+        "calculation": {"result": RESULT, "resultTaxonomy": TAXONOMY, "contributed": False},
+    }
+    assert probe(tmp_path, "resultForeign", stored=stored)["calculation"] is None
+
+
+@node
+def test_the_current_version_of_the_result_is_read(tmp_path):
+    """The other half of the gate. Without it, a check that refused *everything*
+    would satisfy every assertion above and restore no result, ever."""
+    stored = {
+        "version": 1,
+        "calculation": {"result": RESULT, "resultTaxonomy": TAXONOMY, "contributed": True},
+    }
+    calculation = probe(tmp_path, "resultForeign", stored=stored)["calculation"]
+    assert calculation is not None
+    assert calculation["contributed"] is True
+    assert calculation["resultTaxonomy"] == TAXONOMY
+
+
+#: Documents somebody could find in storage after a hand edit or a partial
+#: eviction, each of which would produce a worse page than no restore at all.
+REFUSED_RESULTS = [
+    "",
+    "not json at all",
+    "[]",
+    "null",
+    '{"version":1}',
+    '{"version":1,"calculation":null}',
+    '{"version":1,"calculation":{}}',
+    # A result that is not a result.
+    '{"version":1,"calculation":{"result":"a string","resultTaxonomy":{}}}',
+    # `entry_results` is what `renderResults` renders from, and an empty one is the
+    # "Results unavailable" dead end.
+    '{"version":1,"calculation":{"result":{"entry_results":[],"totals":{},"factor_set":{}},"resultTaxonomy":{}}}',
+    '{"version":1,"calculation":{"result":{"entry_results":{},"totals":{},"factor_set":{}},"resultTaxonomy":{}}}',
+    '{"version":1,"calculation":{"result":{"entry_results":["x"],"totals":{},"factor_set":{}},"resultTaxonomy":{}}}',
+    # `totals` is where every headline figure comes from.
+    '{"version":1,"calculation":{"result":{"entry_results":[{}],"factor_set":{}},"resultTaxonomy":{}}}',
+    # `factor_set.is_mock` is what raises the mandatory placeholder banner.
+    '{"version":1,"calculation":{"result":{"entry_results":[{}],"totals":{}},"resultTaxonomy":{}}}',
+    # And the taxonomy, which `findByCode(taxonomy.destinations, ...)` reads straight
+    # off: `null.destinations` is a TypeError inside render(), which is a blank page.
+    '{"version":1,"calculation":{"result":{"entry_results":[{}],"totals":{},"factor_set":{}}}}',
+    '{"version":1,"calculation":{"result":{"entry_results":[{}],"totals":{},"factor_set":{}},"resultTaxonomy":"fruit"}}',
+]
+
+#: The minimal document that IS accepted, and the control for the list above.
+ACCEPTED_RESULT = (
+    '{"version":1,"calculation":{"result":{"entry_results":[{}],"totals":{},'
+    '"factor_set":{}},"resultTaxonomy":{}}}'
+)
+
+
+@node
+@pytest.mark.parametrize("raw", REFUSED_RESULTS)
+def test_a_result_document_that_would_not_render_is_refused(tmp_path, raw):
+    """Storage is a string, and a string can be anything.
+
+    Each of these would produce a worse page than no restore at all -- "Results
+    unavailable" over answers that are perfectly intact, or a `TypeError` inside
+    `render()`. Refusing here is what makes `restoredPatch` clamp the step back to
+    the review screen, where the answers are and Calculate is one press away.
+    """
+    assert probe(tmp_path, "resultRawStored", raw=raw)["calculation"] is None
+
+
+@node
+def test_a_minimal_result_document_is_accepted(tmp_path):
+    """The control for the list above: without it, a check that refused every
+    document would pass all fifteen of those and restore nothing, ever."""
+    assert probe(tmp_path, "resultRawStored", raw=ACCEPTED_RESULT)["calculation"] is not None
+
+
+@node
+@pytest.mark.parametrize(
+    "stored, expected",
+    [(True, True), (False, False), (None, False), ("yes", False), (1, False)],
+)
+def test_contributed_is_restored_only_on_an_explicit_true(tmp_path, stored, expected):
+    """The durable half of the consent control, and the direction of the default
+    matters: a visitor who never touched the box has answered no, and a document
+    saying anything other than `true` must not come back as a yes."""
+    document = {
+        "version": 1,
+        "calculation": {"result": RESULT, "resultTaxonomy": TAXONOMY, "contributed": stored},
+    }
+    calculation = probe(tmp_path, "resultForeign", stored=document)["calculation"]
+    assert calculation["contributed"] is expected
+
+
+@node
+def test_a_stored_results_step_stands_when_there_is_a_result_to_render(tmp_path):
+    """The whole of WP2's change to the restored patch.
+
+    Back from the results page has to land on the results page. The clamp is kept
+    for the case where there is nothing to draw, and both directions are asserted
+    here because a clamp that never fired and a clamp that always fired would each
+    pass only one of them.
+    """
+    calculation = {"result": RESULT, "resultTaxonomy": TAXONOMY, "contributed": False}
+    assert probe(tmp_path, "patchWithResult", answers={"step": 5}, result=calculation)["patch"]["step"] == 5
+    assert probe(tmp_path, "patchWithResult", answers={"step": 5}, result=None)["patch"]["step"] == 4
+    # A step the visitor actually left from is never *raised* to the results screen
+    # because a result happens to be stored beside it: walking back from the results
+    # page to step 3 and pressing Continue writes 3, and 3 is where they return.
+    assert probe(tmp_path, "patchWithResult", answers={"step": 3}, result=calculation)["patch"]["step"] == 3
+
+
+@node
+def test_a_continue_after_a_calculation_does_not_erase_the_result(tmp_path):
+    """Two keys, and this is the property they buy.
+
+    `writeSnapshot` runs at every `continue` and `writeResultSnapshot` once per
+    calculation. One document holding both would mean either carrying 32 KB through
+    every Continue press or erasing the result on the next one -- so the visitor who
+    calculates, presses *Edit your data*, changes an amount, presses Continue and
+    then leaves would come back to a form with no result behind it.
+    """
+    result = probe(tmp_path, "continueAfterCalculate", state=_state())
+    assert result["keys"] == ["kaiCalculatorAnswers", "kaiCalculatorResult"], result["keys"]
+    assert result["answers"]["step"] == 3, result["answers"]["step"]
+    assert result["calculation"] is not None, "the Continue erased the stored result"
+    assert result["calculation"]["result"]["totals"]["total_kg"] == "1240.500"
+
+
+@node
+def test_the_result_snapshot_is_not_a_precondition_for_anything(tmp_path):
+    """A private window, or site data blocked.
+
+    This is the larger of the two documents, so it is the one a quota refuses first.
+    The probe reaching its `writeFileSync` at all is the assertion, and
+    `read is None` is what says the failure was handled rather than turned into a
+    half-restore.
+    """
+    result = probe(tmp_path, "resultBlocked", state=_state())
+    assert result["read"] is None
+    assert result["stored"] is False
+
+
+@node
+def test_the_two_uses_of_the_taxonomy_are_told_apart_by_one_function(tmp_path):
+    """`taxonomyForResult` (`state.js`) is where the distinction lives.
+
+    Two uses, pointing in opposite directions: the form is offered from
+    `state.taxonomy`, fetched fresh on every load because a stale one is "a form
+    offering codes the current set does not price" (section 6.1); a restored result
+    is rendered from `state.resultTaxonomy`, because a calculation named its rows out
+    of *that* vocabulary and `submission.factor_set_id` exists so it stays
+    reproducible.
+
+    The fallback is load-bearing rather than defensive dressing: `results.js` does
+    `findByCode(taxonomy.destinations, ...)` on the return, and `null.destinations`
+    is a `TypeError` inside `render()`.
+    """
+    result = probe(tmp_path, "taxonomyChoice")
+    assert result["restored"] == "stored", "a restored result was renamed out of the current taxonomy"
+    assert result["live"] == "fresh", "the fallback is gone, so a state with no stored taxonomy renders nothing"

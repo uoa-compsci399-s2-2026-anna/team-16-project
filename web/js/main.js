@@ -2,7 +2,7 @@ import { getTaxonomy } from './api.js'
 import { state, setState, subscribe, resetCalculator } from './state.js'
 import { bindCalculator, render, renderChrome } from './calculator.js'
 import { applyDocumentLanguage, applyToDocument, installLanguageChooser, t } from './i18n.js'
-import { pruneAnswers, readSnapshot, restoredPatch } from './snapshot.js'
+import { pruneAnswers, readResultSnapshot, readSnapshot, restoredPatch } from './snapshot.js'
 // The site drawer's `Escape` handler and `aria-expanded`. Side-effect import: the
 // drawer is a `<details>` in the markup and works without this; see web/js/drawer.js.
 import './drawer.js'
@@ -58,7 +58,22 @@ async function loadTaxonomy({ preserveError = false } = {}) {
 const snapshot = readSnapshot()
 if (snapshot) {
   pendingRestore = snapshot
-  setState(restoredPatch(snapshot))
+  // **The result is read only when its answers are there, and it is read here rather than
+  // inside `restoredPatch` because the step depends on it** (§7.2a). `step` lives in the
+  // answers document, so the results screen is reachable only through it: a result key
+  // found on its own is a hand edit or a partial eviction, and restoring it would put a
+  // calculation on `state` that nothing renders. `restoredPatch` is handed the validated
+  // result so that a stored step of 5 stands when there is something to draw and falls back
+  // to the review step when there is not.
+  //
+  // **It is NOT pruned against the fresh taxonomy, and that is the point of the whole
+  // package.** The answers are - `pendingRestore` above is what asks for that - because the
+  // form must not offer a code the current set does not price (§6.1). The result is history:
+  // it carries its own `factor_set`, it is rendered from its own `resultTaxonomy`, and a
+  // publish that landed while the visitor was away takes effect on their next calculation
+  // rather than rewriting one they have already seen.
+  const calculation = readResultSnapshot()
+  setState({ ...restoredPatch(snapshot, calculation), ...(calculation || {}) })
 }
 
 // render() replaces main.innerHTML wholesale, so every re-render detaches whatever the

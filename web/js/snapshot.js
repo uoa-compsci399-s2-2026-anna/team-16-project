@@ -1,5 +1,6 @@
 /**
- * The visitor's own answers, kept across a page load. Contract §7.2a.
+ * The visitor's own answers, and the result they already saw, kept across a page load.
+ * Contract §7.2a.
  *
  * ## The defect this closes
  *
@@ -47,14 +48,86 @@
  * one would let Back reinstate entries that never went through the revalidation below —
  * the one door this module must not leave open.
  *
- * **`result`, `taxonomy` and the contribute flags are also absent, and that is this
- * package's boundary rather than an oversight.** A restored *result* is a record of a
- * calculation that already happened and has to be rendered from the taxonomy that
- * produced it, which is a second use of the taxonomy pointing the opposite way from
- * §6.1's "fetched fresh, every load". That distinction is worth writing down properly and
- * is not written down yet, so this module stores answers only and `restoredPatch` clamps
- * a stored `step` of 5 back to the review step: a results screen with `result: null`
- * renders nothing at all.
+ * ## Two keys, because the result is not an answer
+ *
+ * The result got a **second key** rather than a second section of the first one, and the
+ * reason is the write cadence. `writeSnapshot` runs at every `continue`; the result and
+ * the taxonomy beside it are measured at 32 KB against the running stack and change
+ * exactly once per calculation. One document would mean carrying 32 KB through every
+ * Continue press to avoid erasing it, or erasing it and losing the restore. Two keys
+ * write what has actually changed, and a quota failure on the large one cannot take the
+ * small one with it.
+ *
+ * They share **one version number**, so there is one integer to raise, and
+ * `clearSnapshot` removes both — `resetCalculator` calls it once and needs to know
+ * nothing about how many keys there are.
+ *
+ * **The result is only ever read alongside its answers.** `step` lives in the answers
+ * document, so the results screen is reachable only through it; a result key found on its
+ * own is a hand edit or an eviction and is ignored rather than restored into a state
+ * nothing would render.
+ *
+ * ## A restored result is history, and history has its own taxonomy
+ *
+ * `submission` stamps `factor_set_id` so historical results stay reproducible, and every
+ * §6.2 response carries its own `factor_set`. **So a restored result is re-shown under
+ * the set that produced it and is never recomputed**, and a publish that lands while the
+ * visitor is away takes effect on their *next* calculation. That is what makes the
+ * taxonomy snapshot necessary: `results.js` reads the taxonomy to name metrics,
+ * destinations, sectors and foods, and those are the names the calculation *used*.
+ *
+ * **This is a second use of the taxonomy pointing the opposite way from §6.1, and the two
+ * are kept apart by name rather than by convention.** §6.1's rule is about the *form*:
+ * fetched fresh on every load, cached across loads nowhere, because a stale one is "a form
+ * offering codes the current set does not price". `state.taxonomy` is that one and stays
+ * that one. The restored result reads `state.resultTaxonomy` through
+ * `taxonomyForResult()` (`state.js`), and every site in `results.js` that renders the
+ * calculation says which of the two it means. The improvement panel is a **form** — its
+ * sliders offer destinations to allocate to and Compare Impact submits them — so it keeps
+ * reading `state.taxonomy`, and a destination a publish retired is absent from it.
+ *
+ * ## One contribute flag of six, and why the other five are wrong to keep
+ *
+ * `RESULT_KEYS` carries `contributed` and nothing else about the control. A visitor who
+ * ticked, submitted, left for the methodology page and came back must not be invited to
+ * contribute again — the server dedupes on the token so no second row is written, but the
+ * interface would be telling them it had forgotten. `contributeBlock` (`results.js`)
+ * derives the whole of the done state from that one flag: the box reads back ticked and
+ * disabled, Submit is not rendered, and `.contribute-status` speaks.
+ *
+ * The five that are not stored:
+ *
+ *   * **`contributing`** — a request in flight. The page load ended it, and whether it
+ *     reached the server is unknowable from here. Restored `true` it is a control
+ *     disabled forever with nothing left to finish it; restored `false` the visitor may
+ *     press again, and §5.3's token upsert means a second press writes no second row. So
+ *     `false` is both the honest answer and the safe one.
+ *   * **`contributeArmedUntil`** — the five-second grace window. **The `setTimeout` that
+ *     fires the request lives in `results.js` module scope and does not survive a page
+ *     load**, so a restored deadline is a picture of a send that will never happen:
+ *     `contributeWindowIsOpen` tests `> 0` and not `> Date.now()`, so a deadline that
+ *     *expired* while the visitor was away would render a full countdown bar, an Undo
+ *     button and a locked checkbox over a request nothing is going to make. A deadline
+ *     still in the future is the same defect with a shorter fuse. Neither is stored, so
+ *     the answer to "what happens to a countdown that expired while they were away" is
+ *     that it cannot be restored at all — nothing was sent, and the control says so by
+ *     being back where it was before the press.
+ *   * **`contributeTicked`** — forced on by `contributed` where it matters, and on its own
+ *     it is a control position rather than a decision. Left out for the same reason the
+ *     answers whitelist leaves out a spinner.
+ *   * **`contributeCelebrating`** — a one-shot animation tied to the transition into
+ *     `contributed`, cleared by its own timeout. Replaying it on a page load would be the
+ *     defect its own note in `state.js` exists to prevent.
+ *   * **`contributeError`** — an error about a request that is over.
+ *
+ * `token` is not here either: it has rules of its own and keeps its own key.
+ *
+ * **The improvement panel is not stored.** `improvementOpen`, `improvedAllocations` and
+ * `improvementResult` are absent, so a restored results page has the panel closed. That
+ * is a decision and not an omission: Compare Impact is a *new* submission under the
+ * currently published set, so its editor and its comparison belong to the load that ran
+ * them, and restoring a comparison computed under one set beside allocations offered by
+ * another is the one thing this distinction exists to prevent.
  *
  * ## Decimals survive untouched
  *
@@ -81,14 +154,31 @@
  * @module snapshot
  */
 
-/** The one `sessionStorage` key, beside `kaiCalculatorToken`. */
+/** The answers key, beside `kaiCalculatorToken`. */
 export const SNAPSHOT_KEY = 'kaiCalculatorAnswers'
 
 /**
- * The schema number. **Raise it whenever the meaning of anything in `ANSWER_KEYS`
- * changes** — a key renamed, a value space narrowed, a nested shape altered. A raise
- * discards every snapshot written before it, which costs one visitor one restore and
- * is the cheap half of the trade.
+ * The result key. Separate from the answers for the reason in the note above: the answers
+ * are rewritten at every `continue` and this document changes once per calculation.
+ */
+export const RESULT_KEY = 'kaiCalculatorResult'
+
+/**
+ * The schema number, **shared by both keys** so there is one integer to raise and no way
+ * for the two documents to disagree about which deployment wrote them.
+ *
+ * **Raise it whenever the meaning of anything in `ANSWER_KEYS` or `RESULT_KEYS` changes**
+ * — a key renamed, a value space narrowed, a nested shape altered. A raise discards every
+ * snapshot written before it, which costs one visitor one restore and is the cheap half of
+ * the trade.
+ *
+ * **Storing the result did not raise it, and that is a decision.** `step` gained one
+ * reachable value in practice — a stored 5 is now the results screen rather than something
+ * clamped to the review step — but the old document degrades correctly rather than being
+ * half-read: a v1 snapshot written before this revision has no result key, `readResultSnapshot`
+ * answers `null`, and `restoredPatch` clamps the 5 exactly as it did before. The criterion
+ * for a raise is that an older document could be *misread*, not that a newer one says more,
+ * and raising it here would have thrown away every in-flight visitor's restore for nothing.
  */
 export const SNAPSHOT_VERSION = 1
 
@@ -124,6 +214,28 @@ export const ANSWER_KEYS = [
   'periodFields',
   'step',
 ]
+
+/**
+ * Exactly what the result document carries, and nothing else.
+ *
+ * Three keys, each earning its place:
+ *
+ *   * **`result`** — the §6.2 response with `entry_results` beside it (`entryResultsFrom`,
+ *     §7.2). Every figure in it is a string, and this module is why they are still strings
+ *     when they come back.
+ *   * **`resultTaxonomy`** — §6.1's response **as it was when the calculation ran**, stored
+ *     whole rather than reduced to the rows the result names. A reduction would be a
+ *     transformation, and what this key promises is the taxonomy that produced the result,
+ *     not a summary of it. It is 9.3 KB measured against the running stack.
+ *   * **`contributed`** — see the note above for why this one of six, and why the other
+ *     five would each be a lie about something the page load ended.
+ *
+ * A whitelist for `ANSWER_KEYS`' own reason: a forbidden list would have to be edited every
+ * time somebody adds a flag to the results page, and `pdfExporting`, `pdfError`,
+ * `resultBreakdownTab`, `resultsNavOpen` and the six improvement keys are all absent by
+ * construction rather than by anybody remembering.
+ */
+export const RESULT_KEYS = ['result', 'resultTaxonomy', 'contributed']
 
 /** The five kinds of thing a restored answer can name, and so the five labels the notice
  *  prints. Each label is an existing catalogue key — see `DROPPED_LABELS` and
@@ -174,10 +286,53 @@ export function writeSnapshot(state) {
   }
 }
 
-/** Remove the snapshot. Paired with the token's own removal in `resetCalculator`. */
+/**
+ * Write the result the visitor is looking at, the taxonomy that produced it, and their
+ * contribute choice. Never throws, and never reports a failure to the caller.
+ *
+ * **Called where the displayed result changes, and nowhere else** — twice:
+ *
+ *   * `submitCalculation` (`calculator.js`), after the success `setState`, which is the
+ *     one moment `state.result` and `state.resultTaxonomy` become the thing on screen.
+ *     The answers snapshot is rewritten in the same breath, because `step` has just become
+ *     5 and the copy written by the Calculate press itself still says 4.
+ *   * `contributeCalculation` (`results.js`), on success, which is the only other moment
+ *     anything in `RESULT_KEYS` changes. Without it a visitor who contributed and then
+ *     left would come back to a page offering to contribute again — the row is already
+ *     flagged, so nothing would be double-counted, but the interface would be saying it
+ *     had forgotten what they did.
+ *
+ * A *failed* contribute writes nothing, and does not need to: `contributed` is still
+ * false, which is what is already stored.
+ *
+ * @param {object} state The live state object; only `RESULT_KEYS` are read off it.
+ */
+export function writeResultSnapshot(state) {
+  try {
+    const calculation = {}
+    for (const key of RESULT_KEYS) calculation[key] = state[key]
+    // `JSON.stringify` and nothing else, for `writeSnapshot`'s reason: every metric total,
+    // every `qty_kg` and every money figure inside `result` is a string (§1.2) and stays
+    // one. No traversal here parses, formats or rounds anything at any depth.
+    sessionStorage.setItem(RESULT_KEY, JSON.stringify({ version: SNAPSHOT_VERSION, calculation }))
+  } catch {
+    // Private window, blocked site data, or the quota — and this is the larger of the two
+    // documents, so it is the one a quota refuses first. The results page is on screen
+    // either way; only coming back to it is lost.
+  }
+}
+
+/**
+ * Remove both snapshots. Paired with the token's own removal in `resetCalculator`.
+ *
+ * **Both, from one call.** `resetCalculator` asks for "Clear all calculator data" and must
+ * not have to know how many keys that is; a second key added and not removed here is
+ * exactly how that question becomes a false statement.
+ */
 export function clearSnapshot() {
   try {
     sessionStorage.removeItem(SNAPSHOT_KEY)
+    sessionStorage.removeItem(RESULT_KEY)
   } catch {
     // As above: a browser that will not let us remove it will not have let us write it.
   }
@@ -214,6 +369,61 @@ export function readSnapshot() {
 }
 
 /**
+ * The stored result as a `setState` patch, or `null`.
+ *
+ * `null` for every reason `readSnapshot` answers `null` for, and for three more of its own,
+ * each of which is a document that would render a broken results page rather than no page:
+ *
+ *   * **`result.entry_results` is not a non-empty array.** `renderResults` returns
+ *     "Results unavailable" on an empty one, which is a dead end with the visitor's answers
+ *     still in the form behind it — so an unusable result is answered `null` here instead,
+ *     `restoredPatch` clamps the step back to the review screen, and Calculate is one press
+ *     away.
+ *   * **`result.totals` or `result.factor_set` is not an object.** `totals` is where every
+ *     headline figure comes from and `factor_set.is_mock` is what raises the mandatory
+ *     placeholder banner; a result carrying neither is not the response §6.2 defines.
+ *   * **`resultTaxonomy` is not an object.** `taxonomyForResult` hands it straight to
+ *     `findByCode(taxonomy.destinations, …)`, and `null.destinations` is a `TypeError`
+ *     inside `render()`, which is a blank page.
+ *
+ * **Read and validated here, rather than trusted because the version matched.** The version
+ * rules out another deployment's schema; it does not rule out a hand edit, and this document
+ * is the larger and more inviting of the two.
+ *
+ * Beyond those three the contents are **not** walked. Every name on the results page goes
+ * through `findByCode`, which is `(items || []).find(…)`, so a missing or malformed list
+ * degrades to the code rather than throwing — which is the same fallback §5.2 already
+ * requires for a row retired after a submission named it.
+ *
+ * @returns {{result: object, resultTaxonomy: object, contributed: boolean}|null}
+ */
+export function readResultSnapshot() {
+  let raw = null
+  try {
+    raw = sessionStorage.getItem(RESULT_KEY)
+  } catch {
+    return null
+  }
+  if (!raw) return null
+  let parsed = null
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  if (!isObject(parsed) || parsed.version !== SNAPSHOT_VERSION || !isObject(parsed.calculation)) return null
+  const { result, resultTaxonomy, contributed } = parsed.calculation
+  if (!isObject(result) || !Array.isArray(result.entry_results) || !result.entry_results.length) return null
+  if (!result.entry_results.every(isObject)) return null
+  if (!isObject(result.totals) || !isObject(result.factor_set)) return null
+  if (!isObject(resultTaxonomy)) return null
+  // `contributed` is coerced rather than shape-checked out: the durable half of the
+  // contribute control is a yes or a no, and anything that is not an explicit `true` is a
+  // no. A missing flag is the ordinary case for a visitor who never touched the box.
+  return { result, resultTaxonomy, contributed: contributed === true }
+}
+
+/**
  * The stored answers as a `setState` patch, with each value's own shape checked.
  *
  * **Shape-checked rather than trusted.** The version number rules out another
@@ -221,15 +431,19 @@ export function readSnapshot() {
  * is a `TypeError` inside `render()`, which is a blank page. Anything of the wrong shape
  * is simply left out of the patch, so `state.js`'s own initial value stands.
  *
- * **`step` is clamped, and 5 is clamped to 4.** The results screen renders from
- * `state.result`, which this package does not store, so a restored step 5 would render
- * a results page with no result in it. The review step is where that visitor left the
- * form, and Calculate is one press away.
+ * **`step` is clamped, and 5 is clamped to 4 only when there is no result to render.**
+ * The results screen renders from `state.result`, so a step 5 restored without one would
+ * paint "Results unavailable" over answers that are perfectly intact. `result` is
+ * `readResultSnapshot()`'s return — it has already refused every document that would not
+ * render — so a truthy one means step 5 stands and the visitor comes back to the figures
+ * they were looking at, and a `null` one means the review step they calculated from, with
+ * Calculate one press away.
  *
  * @param {object} answers `readSnapshot()`'s return
+ * @param {object|null} [result] `readResultSnapshot()`'s return
  * @returns {object} a patch for `setState`
  */
-export function restoredPatch(answers) {
+export function restoredPatch(answers, result = null) {
   const patch = {}
   const string = key => {
     if (typeof answers[key] === 'string') patch[key] = answers[key]
@@ -253,7 +467,9 @@ export function restoredPatch(answers) {
     }
     patch.periodFields = fields
   }
-  if (Number.isInteger(answers.step) && answers.step >= -1 && answers.step <= 5) patch.step = Math.min(answers.step, 4)
+  if (Number.isInteger(answers.step) && answers.step >= -1 && answers.step <= 5) {
+    patch.step = answers.step === 5 && !result ? 4 : answers.step
+  }
   return patch
 }
 

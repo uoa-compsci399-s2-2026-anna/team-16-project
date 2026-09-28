@@ -26,7 +26,7 @@
  * `units.js`'s, called rather than re-typed.
  */
 
-import { entryLeaves, EMPTY_LEAF, leafFigures, leafKey } from './state.js'
+import { entryLeaves, EMPTY_LEAF, leafFigures, leafKey, taxonomyForResult } from './state.js'
 import { exactKgString, rowKgString } from './units.js'
 
 /**
@@ -226,7 +226,13 @@ export function submissionPayload(state, chains, alternativeFor = () => null) {
  *   renders in it — `i18n.js`'s `activeLanguage()`, not a value invented here.
  */
 export function exportPayload(state, locale) {
-  const presets = state.taxonomy?.unit_presets || []
+  // **The RESULT's presets, not the form's** (§7.2a). This function converts the entries
+  // of `state.result` into the request body, and those counts were typed against the
+  // `kg_per_unit` the taxonomy carried when the calculation ran. A publish that changed a
+  // preset's `kg_per_unit` — or retired it — between the calculation and the download
+  // would otherwise have the document state a mass the screen never showed. During a live
+  // page load the two are the same object; after a restore they are not.
+  const presets = taxonomyForResult(state)?.unit_presets || []
   const entries = (state.result?.entry_results || []).map(item => item.entry)
   return {
     gwp_horizon: state.gwpHorizon,

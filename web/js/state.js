@@ -168,6 +168,27 @@ export const state = {
   // this note is unchanged.
   entries: [],
   result: null,
+  // **§6.1's response as it was when `result` was computed** — the second use of the
+  // taxonomy, pointing the opposite way from the first (§7.2a).
+  //
+  // `taxonomy` above is the **form's**: fetched fresh on every page load, cached across
+  // loads nowhere, because a stale one is "a form offering codes the current set does not
+  // price" (§6.1). This one is the **result's**, and a result is history: `submission`
+  // stamps `factor_set_id` so historical results stay reproducible, and every §6.2 response
+  // carries its own `factor_set`. Re-showing a calculation under the set that produced it
+  // is more honest than silently renaming its rows out of a vocabulary the visitor never
+  // saw, and a publish that lands in between takes effect on their next calculation.
+  //
+  // **Set in the same `setState` as `result`, every time, not only on a restore.** One code
+  // path rather than two: during a live page load it holds the very object `taxonomy` holds,
+  // so the restored case exercises the same reads as the ordinary one. It is also the answer
+  // to the one live case that used to go unnoticed — `submitCalculation` re-fetches the
+  // taxonomy on `UNKNOWN_CODE`, so `taxonomy` can move underneath a result that is still on
+  // screen.
+  //
+  // Read through `taxonomyForResult` below and never off `state` directly, so that every
+  // site says which of the two taxonomies it means.
+  resultTaxonomy: null,
   loading: true,
   error: null,
   // **Where `error` belongs, when it belongs to one leaf's field.** `{leaf, field}` or
@@ -506,6 +527,42 @@ export function leafFigures(chain, leaf) {
 export const draftLeafFigures = leaf => leafFigures(state, leaf)
 
 /**
+ * **The taxonomy a result is rendered from — which is not the one the form is offered
+ * from.** §7.2a, and the distinction is the whole point of the function existing.
+ *
+ * There are two uses of §6.1's response now and they point in opposite directions:
+ *
+ * | use | source | why |
+ * | --- | --- | --- |
+ * | the form, still being filled in | `state.taxonomy`, fetched fresh every load | §6.1: a taxonomy cached across a publish is "a form offering codes the current set does not price" |
+ * | a result, which is history | `state.resultTaxonomy`, stored beside the result | the calculation named its rows out of *that* vocabulary, and `submission.factor_set_id` exists so it stays reproducible |
+ *
+ * **Every site that renders the calculation calls this; nothing calls it for the form.**
+ * `results.js` reads the taxonomy fourteen times and thirteen of them are the result — the
+ * metric definitions, the destination names, the sector names, the food names, and the same
+ * four in the text export and in the PDF payload. The fourteenth is `comparisonLines`, which
+ * renders `state.improvementResult`, and that one keeps `state.taxonomy` because Compare
+ * Impact is a **new** submission run on this page load. `improvement.js` keeps
+ * `state.taxonomy` throughout for the stronger version of the same reason: its sliders are a
+ * *form*, they offer destinations to allocate to, and §6.1's rule is exactly about that.
+ *
+ * **Written down here rather than left to each call site's judgement**, because left
+ * implicit a stored taxonomy reads as a violation of §6.1 and the next reader deletes it.
+ *
+ * The fallback is load-bearing and not defensive dressing: `results.js` does
+ * `findByCode(taxonomy.destinations, …)` on the return, and `null.destinations` is a
+ * `TypeError` inside `render()` — a blank page. The results screen is only reached past
+ * `render()`'s own `!state.taxonomy` guard, so falling back to `state.taxonomy` guarantees
+ * an object. Nothing reachable takes that branch today: `resultTaxonomy` is set in the same
+ * `setState` as `result`, and a restored result whose taxonomy snapshot failed its shape
+ * check is not restored at all (`readResultSnapshot`).
+ *
+ * @param {object} viewState The state the results view is being rendered from
+ * @returns {object} §6.1's response as the displayed calculation used it
+ */
+export const taxonomyForResult = viewState => viewState.resultTaxonomy || viewState.taxonomy
+
+/**
  * Pairs the entries the user typed with the per-entry results §6.2 returns, which
  * preserve request order.
  *
@@ -577,6 +634,7 @@ export function resetCalculator() {
     periodClock: null,
     entries: [],
     result: null,
+    resultTaxonomy: null,
     error: null,
     errorAt: null,
     errorCode: null,

@@ -7,7 +7,7 @@ import { t } from './i18n.js'
 import { armContribute, bindResultsSectionSpy, cancelContribute, downloadPdf, downloadResults, renderResults, resultsNavIsDocked } from './results.js'
 import { compareImprovement, openImprovement, resetImprovement, updateImprovementInput } from './improvement.js'
 import { handlePeriodBlur, handlePeriodClick, handlePeriodComposition, handlePeriodInput, handlePeriodKeydown, handlePeriodPointer, PeriodField, periodProblem, timeFrameChanged } from './period.js'
-import { DROPPED_DESTINATION, DROPPED_FOOD_CATEGORY, DROPPED_FOOD_ITEM, DROPPED_SECTOR, DROPPED_UNIT_PRESET, writeSnapshot } from './snapshot.js'
+import { DROPPED_DESTINATION, DROPPED_FOOD_CATEGORY, DROPPED_FOOD_ITEM, DROPPED_SECTOR, DROPPED_UNIT_PRESET, writeResultSnapshot, writeSnapshot } from './snapshot.js'
 
 const decimalPattern = /^\d+(\.\d{1,2})?$/
 
@@ -1990,7 +1990,22 @@ async function submitCalculation() {
     const response = await calculate(submissionPayload(state, chains))
     const token = response.token || state.token
     if (token) sessionStorage.setItem('kaiCalculatorToken', token)
-    setState({ result: { ...response, entry_results: entryResultsFrom(leaves, response) }, token, loading: false, step: 5, error: null, errorAt: null, errorCode: null, fieldErrors: {}, returnTo: null })
+    setState({ result: { ...response, entry_results: entryResultsFrom(leaves, response) }, resultTaxonomy: state.taxonomy, token, loading: false, step: 5, error: null, errorAt: null, errorCode: null, fieldErrors: {}, returnTo: null })
+    // **§7.2a's second checkpoint, and it is the response rather than the press.** The
+    // click handler already wrote the answers when Calculate was pressed — before this
+    // request was sent, so that a `RATE_LIMITED` refusal still leaves them restorable — and
+    // that copy says `step: 4`, because this function is `async` and the step only becomes
+    // 5 on the line above. So both documents are rewritten here: the answers, to carry the
+    // step the visitor is now on, and the result, which is the whole of what this revision
+    // adds.
+    //
+    // **`resultTaxonomy: state.taxonomy` in the same patch as `result`, every time.** Not
+    // only on the restore path: one code path means the restored page exercises the same
+    // reads as this one, and it closes a live case too — the `catch` below re-fetches the
+    // taxonomy on `UNKNOWN_CODE`, so `state.taxonomy` can move underneath a result that is
+    // still on screen.
+    writeSnapshot(state)
+    writeResultSnapshot(state)
   } catch (error) {
     const rateLimitedUntil = error.code === 'RATE_LIMITED' ? Date.now() + 60000 : state.rateLimitedUntil
     if (error.code === 'UNKNOWN_CODE' && reloadTaxonomy) await reloadTaxonomy({ preserveError: true })
@@ -2398,6 +2413,19 @@ const DROPPED_LABELS = {
 function restoreNotice() {
   const dropped = state.restoreDropped || []
   if (!dropped.length) return ''
+  // **Not over a restored result** — the same rule `calculate` applies one screen earlier,
+  // for a reason that is stronger here. `calculate` clears this list outright so that a
+  // notice about a dropped answer does not follow the visitor onto the results page; a
+  // restore that lands on step 5 has pruned the form behind that page and has something to
+  // report, but reporting it *here* puts "some of the answers you had entered ... have been
+  // removed" directly above a set of figures the drop did not touch and cannot touch. A
+  // restored result is history: it is re-shown under the factor set that produced it and is
+  // never recomputed, so the notice would read as a caveat on numbers it says nothing about.
+  //
+  // Held rather than cleared, so it is still there when *Edit your data* takes the visitor
+  // back into the form that actually lost something. It clears where it always did — on the
+  // next `calculate`, and on `resetCalculator`.
+  if (state.step === 5) return ''
   const items = dropped
     .map(entry => `${(DROPPED_LABELS[entry.kind] || (() => entry.kind))()} “${entry.code}”`)
     .join(t(', '))

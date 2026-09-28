@@ -162,6 +162,37 @@
               "upstream_basis": null
             }
           ]
+        },
+        "land": {
+          "unit": "m2",
+          "display_precision": 1,
+          "total": "11174.3429467200",
+          "by_destination": [
+            {
+              "destination": "landfill",
+              "qty_kg": "1200.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "8831.7302496000",
+              "upstream_basis": null
+            },
+            {
+              "destination": "animal_feed",
+              "qty_kg": "300.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "2207.9325624000",
+              "upstream_basis": null
+            },
+            {
+              "destination": "not_harvested",
+              "qty_kg": "800.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "134.6801347200",
+              "upstream_basis": null
+            }
+          ]
         }
       },
       "equivalences": [
@@ -333,6 +364,37 @@
               "upstream_basis": null
             }
           ]
+        },
+        "land": {
+          "unit": "m2",
+          "display_precision": 1,
+          "total": "11039.6628120000",
+          "by_destination": [
+            {
+              "destination": "anaerobic_digestion",
+              "qty_kg": "1200.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "8831.7302496000",
+              "upstream_basis": null
+            },
+            {
+              "destination": "animal_feed",
+              "qty_kg": "300.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "2207.9325624000",
+              "upstream_basis": null
+            },
+            {
+              "destination": "prevention",
+              "qty_kg": "800.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "0.0000000000",
+              "upstream_basis": null
+            }
+          ]
         }
       },
       "equivalences": [
@@ -353,7 +415,8 @@
       "ch4": "31.2000000000",
       "water": "257600.0000000000",
       "cost": "18.0000000000",
-      "mass": "0.0000000000"
+      "mass": "0.0000000000",
+      "land": "134.6801347200"
     },
     "money": {
       "total_value_nzd": null,
@@ -492,6 +555,29 @@
                 "upstream_basis": "absent"
               }
             ]
+          },
+          "land": {
+            "unit": "m2",
+            "display_precision": 1,
+            "total": "11039.6628120000",
+            "by_destination": [
+              {
+                "destination": "landfill",
+                "qty_kg": "1200.000",
+                "upstream": "7.3597752080",
+                "downstream": "0.0000000000",
+                "value": "8831.7302496000",
+                "upstream_basis": "category_every_destination"
+              },
+              {
+                "destination": "animal_feed",
+                "qty_kg": "300.000",
+                "upstream": "7.3597752080",
+                "downstream": "0.0000000000",
+                "value": "2207.9325624000",
+                "upstream_basis": "category_every_destination"
+              }
+            ]
           }
         },
         "equivalences": [
@@ -624,6 +710,29 @@
                 "upstream_basis": "absent"
               }
             ]
+          },
+          "land": {
+            "unit": "m2",
+            "display_precision": 1,
+            "total": "11039.6628120000",
+            "by_destination": [
+              {
+                "destination": "anaerobic_digestion",
+                "qty_kg": "1200.000",
+                "upstream": "7.3597752080",
+                "downstream": "0.0000000000",
+                "value": "8831.7302496000",
+                "upstream_basis": "category_every_destination"
+              },
+              {
+                "destination": "animal_feed",
+                "qty_kg": "300.000",
+                "upstream": "7.3597752080",
+                "downstream": "0.0000000000",
+                "value": "2207.9325624000",
+                "upstream_basis": "category_every_destination"
+              }
+            ]
           }
         },
         "equivalences": [
@@ -644,7 +753,8 @@
         "ch4": "31.2000000000",
         "water": "0.0000000000",
         "cost": "18.0000000000",
-        "mass": "0.0000000000"
+        "mass": "0.0000000000",
+        "land": "0.0000000000"
       },
       "production_share_percent": "15.00",
       "item_basis": "not_applicable"
@@ -728,6 +838,21 @@
                 "downstream": "0.0000000000",
                 "value": "800.0000000000",
                 "upstream_basis": "absent"
+              }
+            ]
+          },
+          "land": {
+            "unit": "m2",
+            "display_precision": 1,
+            "total": "134.6801347200",
+            "by_destination": [
+              {
+                "destination": "not_harvested",
+                "qty_kg": "800.000",
+                "upstream": "0.1683501684",
+                "downstream": "0.0000000000",
+                "value": "134.6801347200",
+                "upstream_basis": "category_every_destination"
               }
             ]
           }
@@ -822,6 +947,21 @@
                 "upstream_basis": "absent"
               }
             ]
+          },
+          "land": {
+            "unit": "m2",
+            "display_precision": 1,
+            "total": "0.0000000000",
+            "by_destination": [
+              {
+                "destination": "prevention",
+                "qty_kg": "800.000",
+                "upstream": "0.0000000000",
+                "downstream": "0.0000000000",
+                "value": "0.0000000000",
+                "upstream_basis": "absent"
+              }
+            ]
           }
         },
         "equivalences": [
@@ -842,7 +982,8 @@
         "ch4": "0.0000000000",
         "water": "257600.0000000000",
         "cost": "0.0000000000",
-        "mass": "0.0000000000"
+        "mass": "0.0000000000",
+        "land": "134.6801347200"
       },
       "production_share_percent": "100.00",
       "item_basis": "not_applicable"

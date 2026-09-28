@@ -288,10 +288,38 @@ def test_metrics_and_equivalences_arrive_sorted_by_sort_order():
     assert loaded.metrics[-1].code == "land"
     assert loaded.metrics[-1].unit == "m2"
 
-    #: And the set this bundle is composed from carries no `land` formula and
-    #: no `land` factor row, so the engine does not report it (v1.70). The
-    #: whole vocabulary is in `metrics`; what this set computes is narrower.
+    #: And the set this bundle is composed from now says something about every
+    #: one of them, so `computed_metrics` is the whole vocabulary. It was the
+    #: first five until `tests/fixtures/factors.json` gained a `land` formula
+    #: and `land` upstream rows -- the same revision that put `land` into the
+    #: response fixtures, because a published set that prices it had made the
+    #: five-metric fixture a body no visitor receives.
     assert [metric.code for metric in loaded.computed_metrics] == [
+        metric.code for metric in loaded.metrics
+    ]
+
+    #: **The narrowing is still the property under test**, so it is measured on
+    #: a set that really does not carry the metric rather than inferred from a
+    #: fixture that happens not to. Everything `land` is dropped -- its formula,
+    #: its upstream rows -- and `metrics` keeps it: §2.1 makes `metric` a global
+    #: table, so one INSERT there reaches every set, and without this rule an
+    #: archived set would report a metric it never heard of at exactly zero.
+    narrower = canonical_bundle_json()
+    narrower["metrics"] = list(reversed(narrower["metrics"]))
+    narrower["formulas"] = [row for row in narrower["formulas"] if row["metric"] != "land"]
+    narrower["upstream"] = [row for row in narrower["upstream"] if row["metric"] != "land"]
+    narrower["downstream"] = [row for row in narrower["downstream"] if row["metric"] != "land"]
+    narrowed = FactorBundle.from_json(narrower)
+
+    assert [metric.code for metric in narrowed.metrics] == [
+        "co2e",
+        "ch4",
+        "water",
+        "cost",
+        "mass",
+        "land",
+    ]
+    assert [metric.code for metric in narrowed.computed_metrics] == [
         "co2e",
         "ch4",
         "water",

@@ -39,8 +39,14 @@ press, because none of this can be reasoned about from the source:
   unwind travels back to the entry the calculator opened in; the entries above it
   are answered with the introduction rather than with a step of a calculation
   that no longer exists.
+* **A revalidation that moves the visitor rewrites its entry**, because §7.2a's
+  check sending a restored draft back to step 0 is the page load moving them and
+  not a press of theirs.
 * **The URL never changes.** The step is in ``history.state``, not in the URL —
   see ``web/js/history.js`` for why a deep link was refused.
+* **A browser that refuses to write history still has a calculator.** The first
+  write happens at module evaluation time, so unguarded it takes the whole page
+  with it -- the same hazard ``sessionStorage`` is already wrapped against.
 
 The walk is modelled on ``test_session_restore_browser.py``'s, which is the file
 that already drives this form correctly: ``press_continue`` rather than a bare

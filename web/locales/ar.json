@@ -328,6 +328,7 @@
     "Skip to methodology": "الانتقال إلى المنهجية",
     "Skip to statistics": "الانتقال إلى الإحصاءات",
     "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "ذكرت بعض الإدخالات إجمالي الإنتاج ولم تذكره أخرى، لذا لا يمكن عرض نسبة الهدر.",
+    "Some of the answers you had entered are no longer offered by this calculator and have been removed: %(items)s. Please check your selections before you calculate.": "بعض الإجابات التي أدخلتها لم تعد متوفرة في هذه الحاسبة وتم إزالتها: %(items)s. يرجى مراجعة اختياراتك قبل إجراء الحساب.",
     "Some of these food types are already entered": "بعض أنواع الطعام هذه مُدخلة بالفعل",
     "Sort order": "الترتيب",
     "Source metric": "المؤشر المصدر",

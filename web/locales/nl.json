@@ -327,6 +327,7 @@
     "Skip to methodology": "Direct naar de methodiek",
     "Skip to statistics": "Direct naar de statistieken",
     "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "Sommige invoeren gaven een productietotaal op en andere niet, dus een aandeel van de verspilling kan niet worden getoond.",
+    "Some of the answers you had entered are no longer offered by this calculator and have been removed: %(items)s. Please check your selections before you calculate.": "Sommige van de antwoorden die u had ingevoerd, worden niet meer door deze rekenmachine aangeboden en zijn verwijderd: %(items)s. Controleer uw selecties voordat u gaat rekenen.",
     "Some of these food types are already entered": "Sommige van deze voedselsoorten zijn al ingevoerd",
     "Sort order": "Sorteervolgorde",
     "Source metric": "Bronindicator",

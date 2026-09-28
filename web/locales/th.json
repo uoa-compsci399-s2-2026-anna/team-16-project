@@ -327,6 +327,7 @@
     "Skip to methodology": "ข้ามไปที่วิธีการคำนวณ",
     "Skip to statistics": "ข้ามไปที่สถิติ",
     "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "บางรายการระบุยอดรวมการผลิตและบางรายการไม่ได้ระบุ จึงไม่สามารถแสดงสัดส่วนของเสียได้",
+    "Some of the answers you had entered are no longer offered by this calculator and have been removed: %(items)s. Please check your selections before you calculate.": "คำตอบบางส่วนที่คุณกรอกไว้ไม่มีให้เลือกในเครื่องคำนวณนี้อีกต่อไปและถูกลบออกแล้ว: %(items)s โปรดตรวจสอบตัวเลือกของคุณก่อนคำนวณ",
     "Some of these food types are already entered": "อาหารบางประเภทเหล่านี้ถูกกรอกไว้แล้ว",
     "Sort order": "ลำดับการเรียง",
     "Source metric": "ตัวชี้วัดต้นทาง",

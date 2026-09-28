@@ -327,6 +327,7 @@
     "Skip to methodology": "सीधे पद्धति पर जाएँ",
     "Skip to statistics": "सीधे आँकड़ों पर जाएँ",
     "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "कुछ प्रविष्टियों ने उत्पादन कुल बताया और कुछ ने नहीं, इसलिए बर्बादी का हिस्सा नहीं दिखाया जा सकता।",
+    "Some of the answers you had entered are no longer offered by this calculator and have been removed: %(items)s. Please check your selections before you calculate.": "आपने जो कुछ उत्तर दर्ज किए थे, वे अब इस कैलकुलेटर में उपलब्ध नहीं हैं और हटा दिए गए हैं: %(items)s. गणना करने से पहले कृपया अपने चयन की जाँच करें।",
     "Some of these food types are already entered": "इनमें से कुछ खाद्य प्रकार पहले ही दर्ज किए जा चुके हैं",
     "Sort order": "क्रम",
     "Source metric": "स्रोत मापदंड",

@@ -327,6 +327,7 @@
     "Skip to methodology": "Spring na die metodiek",
     "Skip to statistics": "Spring na die statistiek",
     "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "Sommige inskrywings het 'n produksietotaal aangedui en sommige nie, dus kan 'n aandeel van vermorsing nie gewys word nie.",
+    "Some of the answers you had entered are no longer offered by this calculator and have been removed: %(items)s. Please check your selections before you calculate.": "Sommige van die antwoorde wat u ingevoer het, word nie meer deur hierdie sakrekenaar aangebied nie en is verwyder: %(items)s. Gaan asseblief u keuses na voordat u bereken.",
     "Some of these food types are already entered": "Sommige van hierdie voedselsoorte is reeds ingevoer",
     "Sort order": "Sorteervolgorde",
     "Source metric": "Bronmaatstaf",

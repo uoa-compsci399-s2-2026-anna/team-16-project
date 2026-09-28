@@ -4,8 +4,23 @@
 // `leafDisplayName` below needs it, because a leaf's name is the one piece of state that
 // is also a sentence.
 import { t } from './i18n.js'
+// The visitor's own answers, kept across a page load (§7.2a). `snapshot.js` imports
+// nothing at all, for the same reason `i18n.js` does not: this module is the one every
+// other may import, which is only true while what it imports imports nothing back.
+import { clearSnapshot } from './snapshot.js'
 
-const storedToken = sessionStorage.getItem('kaiCalculatorToken')
+// **Read in a `try`, because a browser may refuse to hand it over.** In a private window
+// or with site data blocked, `sessionStorage` is either absent or throws on access - and
+// this line runs at module load, so an exception here is the whole calculator not
+// starting. It was written bare when the token was the only stored value; the snapshot
+// beside it made the same hazard worth closing on both.
+const storedToken = (() => {
+  try {
+    return sessionStorage.getItem('kaiCalculatorToken')
+  } catch {
+    return null
+  }
+})()
 
 export const state = {
   taxonomy: null,
@@ -321,6 +336,15 @@ export const state = {
   // once it has downloaded, only whether one is in flight right now.
   pdfExporting: false,
   pdfError: null,
+  // **What a restore had to throw away, and nothing else.** `[]` or a list of
+  // `{kind, code}` - see `pruneAnswers` in `snapshot.js`, which is what fills it, and
+  // `restoreNotice` in `calculator.js`, which is what prints it. It is not an error and
+  // is deliberately not held in `error`: `error` is cleared by every step transition and
+  // this has to survive the visitor walking back to the step the dropped answer was on.
+  //
+  // **It is never stored.** A snapshot is rewritten pruned at the next checkpoint, so the
+  // notice belongs to the page load that did the dropping and to no other.
+  restoreDropped: [],
 }
 
 /**
@@ -526,7 +550,16 @@ export function subscribe(fn) {
 }
 
 export function resetCalculator() {
-  sessionStorage.removeItem('kaiCalculatorToken')
+  try {
+    sessionStorage.removeItem('kaiCalculatorToken')
+  } catch {
+    // See `storedToken` above: a browser that refuses storage has nothing to remove.
+  }
+  // **The snapshot goes with the token, or the Clear button is a false statement.**
+  // "Clear all calculator data and return to the introduction?" is what both doors ask -
+  // the header's Clear and the results page's *Start over* - and a snapshot that outlived
+  // it would put every one of those answers back on the next page load.
+  clearSnapshot()
   setState({
     token: null,
     sector: null,
@@ -581,5 +614,7 @@ export function resetCalculator() {
     contributeCelebrating: false,
     pdfExporting: false,
     pdfError: null,
+    // The notice about a restore goes too: there is nothing left that it was about.
+    restoreDropped: [],
   })
 }

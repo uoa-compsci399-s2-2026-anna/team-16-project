@@ -327,6 +327,7 @@
     "Skip to methodology": "நேரடியாக முறையியலுக்குச் செல்",
     "Skip to statistics": "நேரடியாக புள்ளிவிவரங்களுக்குச் செல்",
     "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "சில பதிவுகள் உற்பத்தி மொத்தத்தைக் குறிப்பிட்டன, சில குறிப்பிடவில்லை, எனவே வீணான பங்கைக் காட்ட முடியாது.",
+    "Some of the answers you had entered are no longer offered by this calculator and have been removed: %(items)s. Please check your selections before you calculate.": "நீங்கள் உள்ளிட்ட சில பதில்கள் இந்தக் கணிப்பானில் இனி வழங்கப்படுவதில்லை, எனவே அவை அகற்றப்பட்டன: %(items)s. கணக்கிடுவதற்கு முன் உங்கள் தேர்வுகளைச் சரிபார்க்கவும்.",
     "Some of these food types are already entered": "இந்த உணவு வகைகளில் சில ஏற்கெனவே உள்ளிடப்பட்டுள்ளன",
     "Sort order": "வரிசைமுறை",
     "Source metric": "மூல அளவீடு",

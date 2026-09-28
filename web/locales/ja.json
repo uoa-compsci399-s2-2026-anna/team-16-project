@@ -327,6 +327,7 @@
     "Skip to methodology": "算定方法へスキップ",
     "Skip to statistics": "統計へスキップ",
     "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "一部の項目では生産量の合計が入力され、一部では入力されていないため、廃棄割合を表示できません。",
+    "Some of the answers you had entered are no longer offered by this calculator and have been removed: %(items)s. Please check your selections before you calculate.": "入力された回答の一部は、この計算ツールでは提供されなくなったため削除されました: %(items)s。計算する前に選択内容をご確認ください。",
     "Some of these food types are already entered": "これらの食品の種類には、すでに入力済みのものがあります",
     "Sort order": "表示順",
     "Source metric": "元の指標",

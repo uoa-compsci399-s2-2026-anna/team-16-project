@@ -327,6 +327,7 @@
     "Skip to methodology": "Direkt zur Methodik",
     "Skip to statistics": "Direkt zur Statistik",
     "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "Einige Einträge gaben eine Produktionsmenge an und andere nicht, daher kann kein Anteil der Verschwendung angezeigt werden.",
+    "Some of the answers you had entered are no longer offered by this calculator and have been removed: %(items)s. Please check your selections before you calculate.": "Einige der von Ihnen eingegebenen Angaben werden von diesem Rechner nicht mehr angeboten und wurden entfernt: %(items)s. Bitte überprüfen Sie Ihre Auswahl, bevor Sie berechnen.",
     "Some of these food types are already entered": "Einige dieser Lebensmittelarten sind bereits erfasst",
     "Sort order": "Sortierung",
     "Source metric": "Quellkennzahl",

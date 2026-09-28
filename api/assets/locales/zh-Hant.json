@@ -330,6 +330,7 @@
     "Skip to methodology": "跳至計算方法",
     "Skip to statistics": "跳至統計資料",
     "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "部分記錄填寫了生產總量，部分未填寫，因此無法顯示浪費佔比。",
+    "Some of the answers you had entered are no longer offered by this calculator and have been removed: %(items)s. Please check your selections before you calculate.": "您輸入的部分答案已不再由本計算器提供，已被移除：%(items)s。請在計算前檢查您的選擇。",
     "Some of these food types are already entered": "這些食物類型中有一些已經填寫過了",
     "Sort order": "排序順序",
     "Source metric": "來源指標",

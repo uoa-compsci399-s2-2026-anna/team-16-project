@@ -327,6 +327,7 @@
     "Skip to methodology": "산정 방법으로 건너뛰기",
     "Skip to statistics": "통계로 건너뛰기",
     "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "일부 항목은 생산 총량을 입력했고 일부는 입력하지 않아 낭비 비율을 표시할 수 없습니다.",
+    "Some of the answers you had entered are no longer offered by this calculator and have been removed: %(items)s. Please check your selections before you calculate.": "입력하신 답변 중 일부는 이 계산기에서 더 이상 제공되지 않아 삭제되었습니다: %(items)s. 계산하기 전에 선택 내용을 확인해 주세요.",
     "Some of these food types are already entered": "이미 입력한 음식 종류가 있습니다",
     "Sort order": "정렬 순서",
     "Source metric": "원본 지표",

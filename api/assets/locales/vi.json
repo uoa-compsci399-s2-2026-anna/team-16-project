@@ -327,6 +327,7 @@
     "Skip to methodology": "Chuyển tới phần phương pháp",
     "Skip to statistics": "Chuyển tới phần thống kê",
     "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "Một số mục nhập đã nêu tổng sản lượng và một số thì không, nên không thể hiển thị tỷ lệ lãng phí.",
+    "Some of the answers you had entered are no longer offered by this calculator and have been removed: %(items)s. Please check your selections before you calculate.": "Một số câu trả lời bạn đã nhập không còn được máy tính này cung cấp nữa và đã bị xoá: %(items)s. Vui lòng kiểm tra lại các lựa chọn của bạn trước khi tính toán.",
     "Some of these food types are already entered": "Một số loại thực phẩm này đã được nhập",
     "Sort order": "Thứ tự sắp xếp",
     "Source metric": "Chỉ số nguồn",

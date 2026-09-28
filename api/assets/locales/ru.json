@@ -327,6 +327,7 @@
     "Skip to methodology": "Перейти к методике",
     "Skip to statistics": "Перейти к статистике",
     "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "Некоторые записи указали общий объём производства, а некоторые нет, поэтому долю отходов показать нельзя.",
+    "Some of the answers you had entered are no longer offered by this calculator and have been removed: %(items)s. Please check your selections before you calculate.": "Некоторые из введённых вами ответов больше не предлагаются этим калькулятором и были удалены: %(items)s. Пожалуйста, проверьте свой выбор перед расчётом.",
     "Some of these food types are already entered": "Некоторые из этих видов продуктов уже указаны",
     "Sort order": "Порядок сортировки",
     "Source metric": "Исходный показатель",

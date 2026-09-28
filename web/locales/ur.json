@@ -328,6 +328,7 @@
     "Skip to methodology": "براہِ راست طریقہ کار پر جائیں",
     "Skip to statistics": "براہِ راست اعداد و شمار پر جائیں",
     "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "کچھ اندراجات نے پیداوار کا مجموعہ بتایا اور کچھ نے نہیں، اس لیے ضائع ہونے کا حصہ نہیں دکھایا جا سکتا۔",
+    "Some of the answers you had entered are no longer offered by this calculator and have been removed: %(items)s. Please check your selections before you calculate.": "آپ نے جو کچھ جوابات درج کیے تھے وہ اب اس کیلکولیٹر میں دستیاب نہیں ہیں اور انہیں ہٹا دیا گیا ہے: %(items)s۔ حساب لگانے سے پہلے براہِ کرم اپنے انتخاب کی جانچ کریں۔",
     "Some of these food types are already entered": "ان میں سے کچھ کھانے کی اقسام پہلے ہی درج ہیں",
     "Sort order": "ترتیب",
     "Source metric": "ماخذ میٹرک",

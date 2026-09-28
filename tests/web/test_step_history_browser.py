@@ -96,6 +96,9 @@ REVIEW = "Review your information"
 RESULTS = "Your estimated impact"
 INTRODUCTION = "Food Waste Impact Calculator"
 
+#: The restore notice's own element. `calculator.js::restoreNotice`.
+NOTICE = ".restore-notice"
+
 
 @pytest.fixture
 def context(browser):
@@ -568,6 +571,56 @@ def test_a_back_inside_the_calculator_before_leaving_is_where_the_visitor_return
     assert _heading(page) == AMOUNT, (
         f"returned to {_heading(page)!r} - the furthest step a checkpoint saw, rather than "
         f"the screen the visitor left"
+    )
+
+
+def test_a_revalidation_that_moves_the_visitor_rewrites_its_entry(page):
+    """**The one step change that is the page's and not the visitor's.**
+
+    §7.2a revalidates restored answers against a freshly fetched taxonomy, and a
+    draft whose sector a publish has retired is sent back to step 0 - the screen
+    that asks the question they now have to answer again. That is the *load*
+    moving them. Pushed as an entry, Back would offer the step the dropped answer
+    was on, which is the one screen the prune has just made unanswerable; so the
+    entry is rewritten instead and says what is on it.
+
+    Driven by serving the second load a taxonomy without the sector the visitor
+    chose, which is what a publish that retires a supply-chain stage looks like
+    from here.
+    """
+    _to_destination_step(page)
+    chosen = page.evaluate(
+        """() => {
+             const back = document.querySelector('.step-nav [data-action="go-step"]')
+             return back ? back.dataset.step : null
+           }"""
+    )
+    assert chosen == "2", f"the walk did not end on the destinations step ({chosen})"
+    standing = _entry_state(page)
+
+    _leave_the_calculator(page)
+    sector = page.evaluate(
+        "() => JSON.parse(sessionStorage.getItem('kaiCalculatorAnswers')).answers.sector"
+    )
+    assert isinstance(sector, str) and sector, sector
+
+    def retire_the_sector(route):
+        taxonomy = route.fetch().json()
+        taxonomy["sectors"] = [row for row in taxonomy["sectors"] if row["code"] != sector]
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(taxonomy))
+
+    page.route("**/api/v1/taxonomy*", retire_the_sector)
+    page.go_back(wait_until="load", timeout=15000)
+    page.wait_for_selector("main h1", timeout=10000)
+    page.wait_for_timeout(700)
+
+    assert _heading(page) == STAGE, (
+        f"the revalidation did not land the visitor on the stage question: {_heading(page)!r}"
+    )
+    assert page.locator(NOTICE).count() == 1, "the drop was not reported on screen"
+    assert _entry_state(page) == {STEP_KEY: 0, INDEX_KEY: standing[INDEX_KEY]}, (
+        f"the revalidation pushed an entry instead of rewriting the one it was on: "
+        f"{_entry_state(page)} against {standing}"
     )
 
 

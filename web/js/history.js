@@ -283,6 +283,31 @@ function traverse(event) {
 }
 
 /**
+ * Run a step change that is **not** a navigation, so the entry is rewritten rather than
+ * added to.
+ *
+ * One caller: the `setState` in `main.js` that lands a freshly fetched taxonomy. §7.2a's
+ * revalidation can move the visitor — a restored draft whose sector a publish has retired is
+ * sent back to step 0, which is the screen that asks the question they now have to answer
+ * again — and **that is the page load moving them, not a press of theirs.** Pushed, Back
+ * would offer the step the dropped answer was on, which is the one screen the prune has just
+ * made unanswerable.
+ *
+ * It wraps the whole `setState` rather than being conditional on a prune having happened,
+ * because the rule is about the *cause* and not the outcome: a taxonomy arriving is not a
+ * navigation whether or not it moves anybody.
+ */
+export function withoutAnEntry(change) {
+  if (!installed) return change()
+  applying = true
+  try {
+    return change()
+  } finally {
+    applying = false
+  }
+}
+
+/**
  * Claim the entry the page arrived on and start recording step changes.
  *
  * @param {object} wiring

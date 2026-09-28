@@ -1,7 +1,7 @@
 import { getTaxonomy } from './api.js'
 import { state, setState, subscribe, resetCalculator } from './state.js'
 import { bindCalculator, goToStepFromHistory, render, renderChrome } from './calculator.js'
-import { installStepHistory, stepFromHistory } from './history.js'
+import { installStepHistory, stepFromHistory, withoutAnEntry } from './history.js'
 import { applyDocumentLanguage, applyToDocument, installLanguageChooser, t } from './i18n.js'
 import { pruneAnswers, readResultSnapshot, readSnapshot, restorableStep, restoredPatch } from './snapshot.js'
 // The site drawer's `Escape` handler and `aria-expanded`. Side-effect import: the
@@ -41,12 +41,17 @@ async function loadTaxonomy({ preserveError = false } = {}) {
     // together. Two would paint the form once from the unpruned answers.
     const revalidated = pendingRestore ? pruneAnswers(state, taxonomy) : null
     pendingRestore = null
-    setState({
+    // **A taxonomy arriving is not a navigation** (§7.2b). The revalidation can move the
+    // visitor - a restored draft whose sector this response no longer has is sent back to
+    // step 0 - and that is this load moving them rather than a press of theirs. Pushed, Back
+    // would offer the step the dropped answer was on, which is the one screen the prune has
+    // just made unanswerable; rewritten, the entry says what is on it.
+    withoutAnEntry(() => setState({
       taxonomy,
       loading: false,
       ...(revalidated ? { ...revalidated.patch, restoreDropped: revalidated.dropped } : {}),
       ...(preserveError ? {} : { error: null, errorCode: null }),
-    })
+    }))
   } catch (error) {
     setState({ taxonomy: null, loading: false, error: error.message, errorCode: error.code || 'NETWORK_ERROR' })
   }

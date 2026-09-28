@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-09-28 (v1.76)"
+date: "2026-09-28 (v1.77)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,24 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.77 — 2026-09-28 (the page says the answers are kept in the browser too; affects C and D)
+
+v1.74, v1.75 and v1.76 gave the visitor a second place their own figures sit: their tab's `sessionStorage`. The transparency notice on the four public pages describes what **the server** keeps — *"This calculator stores the sector, food category, the specific food where you name one, and the quantities entered…"* — and said nothing about the other one. A visitor who found that out from devtools rather than from the page is the outcome worth avoiding, so this revision says it: one sentence in the notice, and the fuller explanation in the methodology page's own *What we record* section.
+
+**Copy only.** No endpoint, no field on the wire, no fixture moves, nothing in `web/js/` behaves differently, and every one of the thirteen golden cases is byte-identical. What changed is what the pages admit.
+
+| # | Change | Affects |
+| --- | --- | --- |
+| 1 | **Two new catalogue keys, both plain `data-i18n` element text**: one sentence in the shared notice on `index.html`, `home.html`, `methodology.html` and `stats.html`, and one paragraph under `#what-we-record`. Twenty catalogues in `web/locales/`, copied byte for byte into `api/assets/locales/`, and the four CJK subsets re-cut for **33** new code points (`api/assets/fonts/noto/PROVENANCE.md`) | §7.2a, §7.7.1 |
+| 2 | **A second `<span class="notice-browser">` beside a now-classed `<span class="notice-server">`, not a reworded paragraph.** §7.7.1's rule is unchanged — a `data-i18n` element may not contain element children, because `applyToDocument` assigns `textContent` and would delete the *What we record* link — and rewording the first sentence would have orphaned twenty translations of a sentence that has not changed. The two say different things: what we keep, and what the visitor's own browser keeps | §7.7.1 |
+| 3 | **Every claim in the copy is read off `snapshot.js` and `state.js`**: the copy stays in the visitor's own browser, belongs to the one tab, ends when that tab closes, is never sent anywhere, is removed by *Clear all data* and *Start over* (`resetCalculator()` → `clearSnapshot()`), and the calculator still works where storage refuses. Nothing stronger | §7.2a |
+| 4 | **The one thing it declines to claim is that a restored result is recomputed**, because it is not: the paragraph says it is *"shown again with the factors that produced it rather than worked out again"*, which is v1.75's ruling in the visitor's own words | §7.2a |
+| 5 | **The copy names a control, so the twenty translations must use that control's own words.** Both sentences go into `SCOPE_SENTENCES` (`tests/web/test_i18n_web.py`), the mechanism written when seven catalogues coined a second term for `All destinations`: a translation that invents a second name for *Clear all data* points the visitor at a button they cannot find | §7.7.1 |
+| 6 | **A rule of its own in `tests/web/test_consent_copy.py` rather than a widened one.** That file's rule is that a sentence telling the visitor their entries are kept must say in the same breath that the public statistics are their choice; these two sentences are outside it **and must be**, because they describe a copy that is never published and never sent anywhere. The new predicate asks the question that *is* live for invisible storage: say what ends it — the tab closing, and the control that empties it before then | §7.2a |
+| 7 | **`index.html`'s *What we record* link was the one of four never marked for translation**, so the calculator page showed an English link under a translated sentence. One attribute, no new key — the string is already in all twenty catalogues from the other three pages | §7.7.1 |
+
+> **What the copy deliberately does not mention, and why.** The **session token** is already covered by the notice's own first sentence and by §2.3 — it identifies a draft record rather than a person, and `result` carrying a second copy of it inside the stored response is the same value in the same storage for the same lifetime (§7.2a). And **the four-page notice stays one paragraph**: the measurement that kept a four-link navigation out of the footer (§7.6) is about a 44px touch target and does not apply to text, but the notice is 0.82rem on a dark ground and a third sentence would be a wall. The long form is what the *What we record* link is for.
 
 ### v1.76 — 2026-09-28 (Back and Forward move inside the calculator; affects C)
 
@@ -4503,6 +4521,34 @@ Five kinds of code can reach the check, and each is compared against the list th
 - **Storage may refuse, and the form does not depend on it.** In a private window or with site data blocked, every `sessionStorage` call throws. All of them are wrapped, a failed write is dropped, and a failed read is "no snapshot". **This feature is never a precondition for the form working.**
 - **Decimals survive untouched, in both documents.** §1.2 puts decimals on the wire as strings because JavaScript's `Number` is a double. Every quantity in `leafFigures` is the raw string the visitor typed; every metric total, every `qty_kg`, every money figure in `result` and every `kg_per_unit` in `resultTaxonomy` is the string the server sent. `JSON.stringify`/`JSON.parse` preserve a JSON string exactly, and **nothing in either write, either read or the check calls `Number` at any depth**. Asserted on the stored bytes, on the parsed type and on the exact characters — at the top level, inside `by_destination`, inside `entry_results[].entry` and inside `entry_results[].response`, because a "normalising" traversal would reach some depths and not others — in `tests/web/test_snapshot.py`, and again in a browser against the live `1164.5525000000`.
 - **The token's rules are untouched.** One hour, the scheduled job still nulls the column, and it still identifies a draft record rather than a person (§2.3). There is no second identifier and no cookie: the two documents hold what the visitor typed, the figures they were shown, and where they had got to. The token appears once more than it did — §6.2 echoes it inside its own response and `result` is stored as the response came — and that is the same value in the same storage for the same lifetime, removed by the same call; see the note in the result section above.
+
+### What the visitor is told, and where (v1.77)
+
+**The transparency notice was about the server, and after v1.75 it was half the story.** It renders in the footer of all four public pages — `index.html`, `home.html`, `methodology.html`, `stats.html` — as one paragraph with two `<span data-i18n>` sentences and the *What we record* link beside them:
+
+| | sentence | says |
+| --- | --- | --- |
+| `.notice-server` | *This calculator stores the sector, food category, the specific food where you name one, and the quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.* | what **we** keep (§2.3, §6.2.2) |
+| `.notice-browser` | *Your answers, and the result you were shown, also stay in this browser tab, so that coming back does not start you over. That copy never leaves your browser, it goes when you close the tab, and the calculator's Clear all data button removes it at once.* | what **their own browser** keeps (this section) |
+
+**Two spans and not one reworded sentence**, for §7.7.1's reason and one of its own: a `data-i18n` element may not contain element children, so the sentence cannot be merged into the paragraph that holds the link; and rewording the existing sentence would have orphaned twenty translations of a claim that has not changed.
+
+**The long form lives under `#what-we-record`** on the methodology page, beside the paragraph about what is recorded anonymously, and adds the three things a sentence in a footer has no room for: that the copy is not shared with the visitor's *other* tabs, that a browser refusing storage still runs the calculator, and that a restored result is **the calculation they already saw, shown again with the factors that produced it rather than worked out again** — which is this section's own ruling, in the visitor's words rather than in ours.
+
+**Every claim is read off the code, and one claim was left out because the code does not support it.**
+
+| The copy says | Because |
+| --- | --- |
+| it stays in the visitor's own browser | `writeSnapshot`/`writeResultSnapshot` call `sessionStorage.setItem` and nothing else; no request carries either document |
+| it belongs to the one tab | `sessionStorage`, never `localStorage` — per tab, and not shared between tabs of the origin |
+| it goes when the tab closes | the same, and it is the reason `sessionStorage` was chosen |
+| *Clear all data* removes it | `resetCalculator()` calls `clearSnapshot()`, which removes **both** keys; the header's Clear button and the results page's *Start over* are the two doors |
+| the calculator still works where storage refuses | every call is wrapped; a failed write is dropped and a failed read is "no snapshot" |
+| a restored result is not worked out again | it is re-shown under the `factor_set` that produced it; no `POST /calculate` is made on the load that restores |
+
+> **The tab-close claim is true of closing a tab and not of every way a tab can come back.** A browser's own *reopen closed tab* or crash-recovery may restore a tab's `sessionStorage` along with the tab, which is browser behaviour this code cannot see and cannot prevent. The sentence is written as what happens when the visitor closes the tab, and the *Clear all data* clause is in the same breath precisely because it is the half this code does guarantee: one call, both keys, straight away. Nothing here claims an erasure guarantee that a session-restoring browser would falsify.
+
+> **The copy names the Clear all data button, so the translations must spell it the way the button does.** Both sentences are in `SCOPE_SENTENCES` (`tests/web/test_i18n_web.py`), which asserts that each of the twenty catalogues carries that label's own translation inside the sentence — the mechanism written when seven catalogues invented a second term for `All destinations` and described a column the reader could not find. `tests/web/test_consent_copy.py` holds the other half: a sentence that says something of the visitor's is kept in their browser must also say that closing the tab ends it and which control removes it. It is a **second** predicate rather than a widening of that file's consent rule, because this copy is about a document that is never published — asking it to state that the public statistics are a choice would be asking a sentence about the statistics from a sentence with nothing to do with them.
 
 ## 7.2b `history.js` — one history entry per step (v1.76, written by C)
 

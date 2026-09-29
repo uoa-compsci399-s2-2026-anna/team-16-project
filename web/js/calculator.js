@@ -7,6 +7,7 @@ import { t } from './i18n.js'
 import { armContribute, bindResultsSectionSpy, cancelContribute, downloadPdf, downloadResults, renderResults, resultsNavIsDocked } from './results.js'
 import { compareImprovement, openImprovement, resetImprovement, updateImprovementInput } from './improvement.js'
 import { handlePeriodBlur, handlePeriodClick, handlePeriodComposition, handlePeriodInput, handlePeriodKeydown, handlePeriodPointer, PeriodField, periodProblem, timeFrameChanged } from './period.js'
+import { DROPPED_DESTINATION, DROPPED_FOOD_CATEGORY, DROPPED_FOOD_ITEM, DROPPED_SECTOR, DROPPED_UNIT_PRESET, writeResultSnapshot, writeSnapshot } from './snapshot.js'
 
 const decimalPattern = /^\d+(\.\d{1,2})?$/
 
@@ -1989,7 +1990,22 @@ async function submitCalculation() {
     const response = await calculate(submissionPayload(state, chains))
     const token = response.token || state.token
     if (token) sessionStorage.setItem('kaiCalculatorToken', token)
-    setState({ result: { ...response, entry_results: entryResultsFrom(leaves, response) }, token, loading: false, step: 5, error: null, errorAt: null, errorCode: null, fieldErrors: {}, returnTo: null })
+    setState({ result: { ...response, entry_results: entryResultsFrom(leaves, response) }, resultTaxonomy: state.taxonomy, token, loading: false, step: 5, error: null, errorAt: null, errorCode: null, fieldErrors: {}, returnTo: null })
+    // **§7.2a's second checkpoint, and it is the response rather than the press.** The
+    // click handler already wrote the answers when Calculate was pressed — before this
+    // request was sent, so that a `RATE_LIMITED` refusal still leaves them restorable — and
+    // that copy says `step: 4`, because this function is `async` and the step only becomes
+    // 5 on the line above. So both documents are rewritten here: the answers, to carry the
+    // step the visitor is now on, and the result, which is the whole of what this revision
+    // adds.
+    //
+    // **`resultTaxonomy: state.taxonomy` in the same patch as `result`, every time.** Not
+    // only on the restore path: one code path means the restored page exercises the same
+    // reads as this one, and it closes a live case too — the `catch` below re-fetches the
+    // taxonomy on `UNKNOWN_CODE`, so `state.taxonomy` can move underneath a result that is
+    // still on screen.
+    writeSnapshot(state)
+    writeResultSnapshot(state)
   } catch (error) {
     const rateLimitedUntil = error.code === 'RATE_LIMITED' ? Date.now() + 60000 : state.rateLimitedUntil
     if (error.code === 'UNKNOWN_CODE' && reloadTaxonomy) await reloadTaxonomy({ preserveError: true })
@@ -2349,6 +2365,74 @@ function clearDraft() {
   setState({ ...EMPTY_DRAFT, step: 0, error: null, errorAt: null, fieldErrors: {}, expandedSectors: [], lastChangedDestination: null })
 }
 
+/**
+ * What a restore had to throw away, as one notice above the step.
+ *
+ * **Saying so is the whole point of the revalidation** (§7.2a). A restored answer is
+ * checked against a freshly fetched taxonomy and anything the current published set no
+ * longer offers is dropped - and dropping a category or a destination the visitor chose
+ * *silently* is the failure that check exists to prevent, not a tidy-up. So every drop is
+ * named here, by the kind of thing it was and by the code the visitor's own answer
+ * carried.
+ *
+ * **The code and not a name, because there is no name to print.** §6.1's response is the
+ * only place a `code` becomes words, and the whole premise here is that this code is no
+ * longer in it. A retired row's last label is not kept anywhere on this side, and
+ * inventing one would be worse than printing the code.
+ *
+ * **Five existing catalogue keys and one new sentence.** `Sector`, `Food category`,
+ * `Food`, `Destination` and `Containers` are already rendered elsewhere in this form, and
+ * the separator `', '` is already a key; only the sentence is new. It is a plain quoted
+ * literal at the `t()` call, because `tests/web/i18n_keys.py` is a regex and a template
+ * literal there ships English in twenty catalogues with nothing failing.
+ *
+ * **The escape is on the finished sentence, not on the code.** A `code` here came out of
+ * the visitor's own `sessionStorage` and can therefore be anything a hand edit put there,
+ * so it must not reach the markup raw — and since it is interpolated into the sentence
+ * before `escapeHtml` runs on the whole of it, one escape covers both. Escaping the code
+ * first would double-escape it the moment the sentence were escaped as well.
+ *
+ * It is NOT `state.error`: `clearedError` empties that on every step transition, and this
+ * has to survive the visitor walking back to the step the dropped answer was on. It is
+ * cleared by `calculate` - the point past which there is nothing left to check - and by
+ * `resetCalculator`.
+ *
+ * Markup copied from the duplicate notice above: the same `.disclaimer.compact` aside,
+ * with no `aria-live` region, for the reason that one has none. `render()` replaces
+ * `main.innerHTML` on every `setState`, so a live region here would re-announce the same
+ * sentence on every keystroke that reaches `setState`.
+ */
+const DROPPED_LABELS = {
+  [DROPPED_SECTOR]: () => t('Sector'),
+  [DROPPED_FOOD_CATEGORY]: () => t('Food category'),
+  [DROPPED_FOOD_ITEM]: () => t('Food'),
+  [DROPPED_DESTINATION]: () => t('Destination'),
+  [DROPPED_UNIT_PRESET]: () => t('Containers'),
+}
+
+function restoreNotice() {
+  const dropped = state.restoreDropped || []
+  if (!dropped.length) return ''
+  // **Not over a restored result** — the same rule `calculate` applies one screen earlier,
+  // for a reason that is stronger here. `calculate` clears this list outright so that a
+  // notice about a dropped answer does not follow the visitor onto the results page; a
+  // restore that lands on step 5 has pruned the form behind that page and has something to
+  // report, but reporting it *here* puts "some of the answers you had entered ... have been
+  // removed" directly above a set of figures the drop did not touch and cannot touch. A
+  // restored result is history: it is re-shown under the factor set that produced it and is
+  // never recomputed, so the notice would read as a caveat on numbers it says nothing about.
+  //
+  // Held rather than cleared, so it is still there when *Edit your data* takes the visitor
+  // back into the form that actually lost something. It clears where it always did — on the
+  // next `calculate`, and on `resetCalculator`.
+  if (state.step === 5) return ''
+  const items = dropped
+    .map(entry => `${(DROPPED_LABELS[entry.kind] || (() => entry.kind))()} “${entry.code}”`)
+    .join(t(', '))
+  const sentence = t('Some of the answers you had entered are no longer offered by this calculator and have been removed: %(items)s. Please check your selections before you calculate.', { items })
+  return `<aside class="disclaimer compact restore-notice" aria-label="${escapeHtml(t('Important information'))}"><span class="info-icon" aria-hidden="true">i</span><div><p>${escapeHtml(sentence)}</p></div></aside>`
+}
+
 export function render(main) {
   main.className = `main-content${state.step === -1 ? ' introduction-main' : ''}`
   if (state.loading && !state.taxonomy) {
@@ -2370,7 +2454,10 @@ export function render(main) {
   const foodPanel = () =>
     (state.foodStage === 'items' && itemStepOffered() ? itemStep : foodStep)()
   const screens = [sectorStep, foodPanel, amountStep, destinationStep, reviewStep]
-  main.innerHTML = state.step === -1 ? introduction() : state.step === 5 ? renderResults(state) : screens[state.step]()
+  // The restore notice sits OUTSIDE the step's `<section>`, above it. Inside would break
+  // `stepNav`'s "must stay the last child" rule by adding a sibling after it, and it
+  // belongs to the page load rather than to the step.
+  main.innerHTML = restoreNotice() + (state.step === -1 ? introduction() : state.step === 5 ? renderResults(state) : screens[state.step]())
   // **Called at every exit from this function, including the two above that are not
   // the results page.** The floating nav's scroll-spy watches four `<section>`
   // elements that this line has just destroyed and recreated, so it is re-pointed
@@ -2529,6 +2616,33 @@ function goToStep(step, jumped = false) {
   // the next time step 2 is reached.
   setState({ step, foodStage: 'categories', returnTo: jumped ? { from: step, step: state.step } : markerAfterLeaving(), ...clearedError() })
   return true
+}
+
+/**
+ * A browser Back or Forward press, answered by **the same function the on-screen Back
+ * calls** (§7.2b).
+ *
+ * That identity is the whole of how the two Backs are kept from disagreeing: the jump undo,
+ * the "this will discard the entry you started" confirmation, the `foodStage` reset and the
+ * spent-marker rule are not reimplemented here, they are `goToStep`'s, and a refusal is
+ * passed straight back so `history.js` can put the position where the visitor left it.
+ *
+ * **The one thing this adds is a clamp, and only `start-over` can reach it.** History
+ * entries cannot be deleted, so after "Clear all calculator data" the entries *above* the
+ * one the unwind returns to still name steps of a calculation that no longer exists.
+ * Forward is a live direction, and a step past the stage question with no sector and no
+ * saved entry has nothing to draw — `amountStep` would ask for figures against no food and
+ * `reviewStep` would offer Calculate on nothing. So it lands on the introduction, and
+ * `history.js` rewrites that entry to say so rather than leaving it to mislead the next
+ * press. Step 0 is never clamped: the stage question is answerable from empty, and it is
+ * where Forward after pressing Start and Back belongs.
+ *
+ * @param {number} step The step the entry being traversed to records
+ * @returns {boolean} False only if the visitor declined a discard — `goToStep`'s own answer
+ */
+export function goToStepFromHistory(step) {
+  const drawable = step >= 1 && !state.sector && !state.entries.length ? -1 : step
+  return goToStep(drawable)
 }
 
 export function bindCalculator(main, retryTaxonomy) {
@@ -2714,7 +2828,13 @@ export function bindCalculator(main, retryTaxonomy) {
       const index = Number(control.dataset.index)
       setState({ entries: state.entries.filter((_, entryIndex) => entryIndex !== index), error: null })
     }
-    if (action === 'calculate') submitCalculation()
+    // The notice goes at the moment there is nothing left to act on it: Calculate is the
+    // end of the form, and a notice about a dropped answer must not follow the visitor onto
+    // the results page.
+    if (action === 'calculate') {
+      if ((state.restoreDropped || []).length) setState({ restoreDropped: [] })
+      submitCalculation()
+    }
     if (action === 'start-over' && window.confirm(t('Clear all calculator data and return to the introduction?'))) resetCalculator()
     if (action === 'download-results') downloadResults(state)
     if (action === 'download-pdf') downloadPdf(state)
@@ -2756,6 +2876,22 @@ export function bindCalculator(main, retryTaxonomy) {
     if (action === 'compare-improvement') compareImprovement(state, publicError)
     if (action === 'retry' && !blocked()) retryTaxonomy()
     if (action === 'view-methodology') window.location.href = './methodology.html'
+    // **The two checkpoints, and they are the visitor's own** (§7.2a). Every `continue`
+    // and `calculate` is a moment they have just committed to something, which is why the
+    // snapshot is written here and not from `setState`: `render()` replaces
+    // `main.innerHTML` on every state change, and `period.js` deliberately does not
+    // `setState` while a date is being typed - so a write per keystroke would have to be
+    // fed by a render per keystroke, which is the one thing that module avoids.
+    //
+    // **After the action's own `setState`, never before.** The step 3 -> 4 move builds the
+    // destination rows in its patch; written first, the snapshot would carry the step the
+    // visitor is leaving and none of its rows.
+    //
+    // `calculate` is here rather than inside `submitCalculation` because what is being
+    // recorded is the press, not the response: the review step is where `timeFrame` and
+    // the period are typed, and a submission that comes back `RATE_LIMITED` must still
+    // leave the answers restorable.
+    if (action === 'continue' || action === 'calculate') writeSnapshot(state)
     if (['start', 'go-step', 'continue', 'add-entry', 'edit-entry', 'calculate', 'start-over', 'retry', 'view-methodology'].includes(action)) {
       window.scrollTo({ top: 0, behavior: 'smooth' })
     }

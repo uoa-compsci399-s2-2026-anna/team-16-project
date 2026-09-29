@@ -23,6 +23,18 @@ stored, submitted or recorded has to say, in the same breath, that the public
 statistics are their choice. Today that predicate selects exactly the three
 sentences this file was written for and nothing else, and it will select a
 fourth on the day it is written.
+
+**v1.77 added a second place the visitor's entries sit, and it is their own
+browser.** `snapshot.js` keeps the answers and the last result in
+`sessionStorage`, so the notice and the methodology page now say so. Those
+sentences are **not** selected by the rule above and must not be: they are about
+a copy that is never published and never sent anywhere, so demanding the consent
+clause of them would be demanding a sentence about the public statistics from a
+sentence that has nothing to do with them. They get a rule of their own instead,
+and it asks the question that *is* live for browser storage — storage a visitor
+cannot see has to come with what ends it: the tab closing, and the control that
+empties it before then. A page that says a copy is kept and not what removes it
+has told the visitor something they can do nothing about.
 """
 
 from __future__ import annotations
@@ -164,3 +176,105 @@ def test_the_page_no_longer_asks_for_data_the_visitor_already_gave():
         "typed, not a factor-based figure, so the placeholder data above "
         "does not affect it."
     ) in corpus, "the sentence that replaced the retired claim is missing"
+#: Where the visitor's own copy is said to live. Three spellings because the
+#: notice, which has one sentence to spend, and the methodology section, which
+#: has a paragraph, do not say it the same way.
+_IN_THE_BROWSER = re.compile(
+    r"\b(browser tab|your browser|this tab|the tab you are using)\b", re.I
+)
+
+#: And what it is said to be doing there. The conjunction is what keeps the
+#: predicate off "opens in a new tab" (a link, not a copy) and off the
+#: contribute sentence's "an anonymous copy of your results" (a copy, but one
+#: going to the server rather than staying in the browser). Both are in the
+#: corpus today and neither is a browser-storage claim.
+_KEPT_THERE = re.compile(r"\b(stay|stays|keep|keeps|kept|copy)\b", re.I)
+
+#: The two things such a claim has to carry. `sessionStorage` ends with the tab
+#: (`snapshot.js`), and `resetCalculator()` removes both keys before then - the
+#: header's Clear all data button and the results page's Start over. A sentence
+#: that names neither leaves the visitor unable to act on what it just told them.
+_WHAT_ENDS_IT = "close the tab"
+_WHAT_REMOVES_IT = "clear all data"
+
+
+def _claims_about_the_visitor_s_browser() -> list[str]:
+    return [
+        source
+        for source in sorted(i18n_keys.source_strings())
+        if _IN_THE_BROWSER.search(source)
+        and _KEPT_THERE.search(source)
+        and _ADDRESSES_THE_VISITOR.search(source)
+    ]
+
+
+def test_the_browser_storage_predicate_still_selects_the_sentences_it_is_about():
+    """The non-vacuity half, for the same reason the one above it has one.
+
+    Two sentences carry this claim today: the footer notice's second span on all
+    four public pages, and the paragraph under `#what-we-record`. A rewording
+    that put both outside this predicate would leave the rule below passing over
+    an empty list while the pages said whatever they liked.
+    """
+    selected = _claims_about_the_visitor_s_browser()
+    assert len(selected) >= 2, (
+        "the browser-storage predicate no longer finds the copy about what the "
+        f"visitor's own browser keeps, so the rule below proves nothing: {selected}"
+    )
+
+
+def test_every_browser_storage_sentence_says_what_ends_it():
+    """§7.2a: per tab, gone when the tab closes, removed by Clear all data.
+
+    The storage this describes is invisible - no cookie banner, nothing in the
+    interface that shows it - so the sentence that admits it exists is the only
+    place a visitor can learn how it ends. Both facts are asserted because they
+    answer different questions: the tab close is what happens if they do
+    nothing, and the button is what they can do now.
+    """
+    offenders = [
+        source
+        for source in _claims_about_the_visitor_s_browser()
+        if _WHAT_ENDS_IT not in source.lower()
+        or _WHAT_REMOVES_IT not in source.lower()
+    ]
+    assert not offenders, (
+        "these sentences tell the visitor their answers are kept in their own "
+        "browser without saying both that closing the tab ends it and which "
+        "control removes it: " + " || ".join(offenders)
+    )
+#: The four pages that carry the shared footer notice. `home.html` is retired
+#: as a route and still carries it, which is deliberate: reviving the page must
+#: be a routing decision rather than a re-translation.
+_PUBLIC_PAGES = ("index.html", "home.html", "methodology.html", "stats.html")
+
+_NOTICE = re.compile(r'<p class="transparency-notice">.*?</p>', re.S)
+
+
+def _notice(name: str) -> str:
+    markup = (i18n_keys.WEB / name).read_text(encoding="utf-8")
+    found = _NOTICE.findall(markup)
+    assert len(found) == 1, f"{name}: {len(found)} transparency notices"
+    return found[0].replace("\r\n", "\n")
+
+
+def test_the_four_public_pages_carry_the_same_notice():
+    """One paragraph, four files, and nothing in the build keeps them in step.
+
+    A copy edit that reaches three of the four is the defect this asserts
+    against, and it is not hypothetical: `index.html`'s *What we record* link
+    was the one of the four never given `data-i18n` when the notice was
+    translated, so the calculator page - the page a visitor actually uses -
+    showed an English link under a translated sentence for eleven revisions,
+    with every catalogue complete and every test green. The markup is compared
+    whole rather than the sentences alone, because that omission was in an
+    attribute.
+    """
+    notices = {name: _notice(name) for name in _PUBLIC_PAGES}
+    first = notices[_PUBLIC_PAGES[0]]
+    differing = [name for name, markup in notices.items() if markup != first]
+    assert not differing, (
+        "the transparency notice is not the same on every public page; "
+        f"{differing} differ from {_PUBLIC_PAGES[0]}: "
+        + " || ".join(notices[name] for name in differing)
+    )

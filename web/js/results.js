@@ -3,6 +3,9 @@ import { t, activeLanguage, isMachineTranslated, MACHINE_TRANSLATION_NOTICE } fr
 import { entryTotal, isPresetUnit, kgToTonnes, presetUnitCode, rowKgString } from './units.js'
 import { ComparisonResults, ImprovementScenario } from './improvement.js'
 import { contribute, exportPdf } from './api.js'
+// §7.2a. Written from here on one event only — a contribute that landed — because
+// `contributed` is the one thing in `RESULT_KEYS` this module can change.
+import { writeResultSnapshot } from './snapshot.js'
 import { exportPayload } from './submission.js'
 // v1.68. The `en-NZ` date pin lives in one place for this feature — see
 // `formatInstant`'s own note: what is printed back has to be what the field
@@ -13,7 +16,7 @@ import { formatInstant } from './period.js'
 // visitor has cleared or recalculated. `setState` mutates this object in place, so the
 // module binding is always the current state — and every renderer here still takes its
 // `state` as a parameter, so nothing else in this file reads the global by accident.
-import { leafDisplayName, setState, state as liveState } from './state.js'
+import { leafDisplayName, setState, state as liveState, taxonomyForResult } from './state.js'
 
 const DEMONSTRATION_NOTICE = 'Demonstration only — verified calculation factors have not yet been supplied.'
 
@@ -699,7 +702,7 @@ function destinationTree(groups, taxonomy) {
 
 function breakdownSection(state, entryResults) {
   const totals = state.result?.totals || {}
-  const allBreakdowns = breakdowns(entryResults, totals, state.taxonomy)
+  const allBreakdowns = breakdowns(entryResults, totals, taxonomyForResult(state))
   const active = state.resultBreakdownTab in TAB_LABELS ? state.resultBreakdownTab : 'stage'
   const current = allBreakdowns[active]
   let panel
@@ -709,11 +712,11 @@ function breakdownSection(state, entryResults) {
     // The tree, not `breakdownTable`: a destination's stages and foods are two more levels
     // than that table's single row of columns has room for, and its bars and per-tab metric
     // columns describe a flat list that this shape no longer is.
-    panel = `${current.note ? `<p class="breakdown-note">${escapeHtml(current.note)}</p>` : ''}${destinationTree(current.groups, state.taxonomy)}`
+    panel = `${current.note ? `<p class="breakdown-note">${escapeHtml(current.note)}</p>` : ''}${destinationTree(current.groups, taxonomyForResult(state))}`
   } else {
     const scale = widestRow(current.sections.flatMap(section => section.rows))
     const columns = metricColumns(current.sections)
-    panel = `${current.note ? `<p class="breakdown-note">${escapeHtml(current.note)}</p>` : ''}${current.sections.map(section => breakdownTable(section, t(TAB_LABELS[active]), state.taxonomy, scale, columns)).join('')}`
+    panel = `${current.note ? `<p class="breakdown-note">${escapeHtml(current.note)}</p>` : ''}${current.sections.map(section => breakdownTable(section, t(TAB_LABELS[active]), taxonomyForResult(state), scale, columns)).join('')}`
   }
   return `<section class="results-section" id="breakdown-section" aria-labelledby="breakdown-title"><div class="result-section-heading"><span class="section-number">03</span><div><h2 id="breakdown-title">${escapeHtml(t('Breakdown by category'))}</h2><p>${escapeHtml(t('Explore how the recorded waste is distributed.'))}</p></div></div><div class="breakdown-tabs" role="tablist" aria-label="${escapeHtml(t('Waste breakdown'))}">${Object.entries(TAB_LABELS).map(([key, label]) => `<button id="breakdown-tab-${key}" type="button" role="tab" data-action="breakdown-tab" data-tab="${key}" aria-selected="${active === key}" aria-controls="breakdown-panel-${key}" tabindex="${active === key ? 0 : -1}">${escapeHtml(t(label))}</button>`).join('')}</div><div id="breakdown-panel-${active}" class="breakdown-panel" role="tabpanel" aria-labelledby="breakdown-tab-${active}" tabindex="0">${panel}</div></section>`
 }
@@ -781,6 +784,11 @@ function comparisonLines(state) {
     if (code === MASS_METRIC) continue
     const improved = totals.alternative?.metrics?.[code]
     if (!improved) continue
+    // **`state.taxonomy` and not `taxonomyForResult(state)`, and this is the one read in
+    // this file where that is right.** These lines render `state.improvementResult`, which
+    // Compare Impact computed on *this* page load under the currently published set — so
+    // the fresh vocabulary is the one that named its rows. The thirteen reads that render
+    // `state.result` are the other case; see `taxonomyForResult` in `state.js`.
     const definition = findByCode(state.taxonomy.metrics, code)
     const precision = Number(cell.display_precision ?? definition?.display_precision ?? 2)
     const unit = metricUnit(cell, definition)
@@ -868,7 +876,7 @@ function wasteAmountLine(entry, taxonomy) {
 export function buildResultsReport(state) {
   const totals = state.result?.totals || {}
   const totalKg = number(totals.total_kg)
-  const summary = metricLines(totals.current, state.taxonomy, '  - ')
+  const summary = metricLines(totals.current, taxonomyForResult(state), '  - ')
   // §3: `label` is the engine's own sentence, copied verbatim. The lines under
   // it are the same three facts the page shows behind its disclosure -- paper
   // has no "open" gesture, and the PDF is the copy most likely to be forwarded
@@ -890,24 +898,24 @@ export function buildResultsReport(state) {
     ]
   })
   const entryLines = (state.result?.entry_results || []).flatMap(({ entry, response }, index) => {
-    const sector = findByCode(state.taxonomy.sectors, entry.sector)
-    const destinations = entry.current.filter(line => typed(line.qtyInput) > 0).map(line => destinationLine(line, entry, state.taxonomy))
+    const sector = findByCode(taxonomyForResult(state).sectors, entry.sector)
+    const destinations = entry.current.filter(line => typed(line.qtyInput) > 0).map(line => destinationLine(line, entry, taxonomyForResult(state)))
     const scenario = response?.current || {}
-    const impact = metricLines(scenario, state.taxonomy, '  - ')
-    const byDestination = destinationImpactLines(scenario, state.taxonomy)
+    const impact = metricLines(scenario, taxonomyForResult(state), '  - ')
+    const byDestination = destinationImpactLines(scenario, taxonomyForResult(state))
     return [
       t('Entry %(number)s: %(sector)s', { number: index + 1, sector: sector?.name || entry.sector }),
       // One leaf, one name (`leafDisplayName`). This read `Not provided` for a
       // chain that named no food while every screen the reader had just left said
       // `Not broken down by type`, and the file is the copy that gets forwarded.
-      `${t('Food type')}: ${leafDisplayName(entry, state.taxonomy)}`,
+      `${t('Food type')}: ${leafDisplayName(entry, taxonomyForResult(state))}`,
       // A container entry has no `totalAmount` — the visitor said "two 240 L wheelie
       // bins", not "139.20 kilograms" — so reading that field printed **0.00 kilograms**
       // into a report whose whole job is to be attached to an email and believed. The
       // report says what was entered and the kilograms it came to, in that order, and
       // `entryTotal` is the same reconciliation the form uses rather than a second copy
       // of it. `preset.label` is staff-typed and is published as written (§7.7.7).
-      wasteAmountLine(entry, state.taxonomy),
+      wasteAmountLine(entry, taxonomyForResult(state)),
       `${t('Destinations')}:`, ...destinations,
       ...(impact.length ? [`${t('Impact for this entry')}:`, ...impact] : []),
       ...(byDestination.length ? [`${t('Impact by destination')}:`, ...byDestination] : []),
@@ -1364,6 +1372,15 @@ export async function contributeCalculation(state, toPublicMessage = error => er
   try {
     await contribute(state.token)
     setState({ contributing: false, contributed: true, contributeCelebrating: true })
+    // **§7.2a: the choice has to outlive the page load, or the interface forgets it.** A
+    // visitor who contributed, left for the methodology page and pressed Back must not be
+    // invited to contribute again — §5.3's token upsert means no second row would be
+    // written, but the page would be telling them it had forgotten. `liveState` rather than
+    // the `state` parameter: this function is handed a snapshot taken up to five seconds
+    // ago by `armContribute`'s timer, and `setState` has just mutated the live object.
+    // `contributeCelebrating` is deliberately not in `RESULT_KEYS`, so the flower does not
+    // travel with the flag.
+    writeResultSnapshot(liveState)
     setTimeout(() => setState({ contributeCelebrating: false }), CONTRIBUTE_CELEBRATE_MS)
   } catch (error) {
     setState({ contributing: false, contributed: false, contributeTicked: false, contributeError: toPublicMessage(error) })
@@ -1400,8 +1417,8 @@ function categoryAverageFoods(state) {
     if (response?.item_basis !== 'category' || !response?.food_item) continue
     if (seen.has(response.food_item)) continue
     seen.add(response.food_item)
-    const item = findByCode(state.taxonomy?.food_items || [], response.food_item)
-    const category = findByCode(state.taxonomy?.food_categories || [], item?.food_category ?? response.food_category)
+    const item = findByCode(taxonomyForResult(state)?.food_items || [], response.food_item)
+    const category = findByCode(taxonomyForResult(state)?.food_categories || [], item?.food_category ?? response.food_category)
     out.push({
       // The code is the fallback, never a blank: a taxonomy row can be
       // retired after a submission named it (contract §5.2), and a notice
@@ -1850,7 +1867,7 @@ export function renderResults(state) {
       // true. The noun is dropped rather than replaced with a second count nobody asked
       // for; the review step is where the two numbers are reconciled.
       : t('Results returned by the calculation service for %(count)s entries.', { count: entryResults.length }))}</p>${resultsPeriod(state)}${warning}${averagedNotice}
-    <section class="results-section" id="impact-summary" aria-labelledby="summary-title"><div class="result-section-heading"><span class="section-number">01</span><div><h2 id="summary-title">${escapeHtml(t('Impact summary'))}</h2><p>${escapeHtml(t('A high-level view of the recorded food waste.'))}</p></div></div><div class="results-grid">${summaryCards(totals, state.taxonomy)}</div>${moneySummary(totals)}</section>
+    <section class="results-section" id="impact-summary" aria-labelledby="summary-title"><div class="result-section-heading"><span class="section-number">01</span><div><h2 id="summary-title">${escapeHtml(t('Impact summary'))}</h2><p>${escapeHtml(t('A high-level view of the recorded food waste.'))}</p></div></div><div class="results-grid">${summaryCards(totals, taxonomyForResult(state))}</div>${moneySummary(totals)}</section>
     <section class="results-section" id="tangible-equivalents" aria-labelledby="equivalents-title"><div class="result-section-heading"><span class="section-number">02</span><div><h2 id="equivalents-title">${escapeHtml(t('Tangible equivalents'))}</h2><p>${escapeHtml(t('Plain-language comparisons appear when supplied by the calculation service.'))}</p></div></div>${equivalences(totals, mock)}</section>
     ${breakdownSection(state, entryResults)}
     ${ImprovementScenario(state)}

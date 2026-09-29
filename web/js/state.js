@@ -4,8 +4,28 @@
 // `leafDisplayName` below needs it, because a leaf's name is the one piece of state that
 // is also a sentence.
 import { t } from './i18n.js'
+// The visitor's own answers, kept across a page load (§7.2a). `snapshot.js` imports
+// nothing at all, for the same reason `i18n.js` does not: this module is the one every
+// other may import, which is only true while what it imports imports nothing back.
+import { clearSnapshot } from './snapshot.js'
+// The history entries the steps pushed (§7.2b). `history.js` imports nothing at all
+// either - it is handed `state` and `subscribe` at install time by `main.js`, precisely so
+// that this line closes no cycle - and every one of its exports is inert until that
+// install has run, which is why `resetCalculator` may call it under Node.
+import { unwindStepHistory } from './history.js'
 
-const storedToken = sessionStorage.getItem('kaiCalculatorToken')
+// **Read in a `try`, because a browser may refuse to hand it over.** In a private window
+// or with site data blocked, `sessionStorage` is either absent or throws on access - and
+// this line runs at module load, so an exception here is the whole calculator not
+// starting. It was written bare when the token was the only stored value; the snapshot
+// beside it made the same hazard worth closing on both.
+const storedToken = (() => {
+  try {
+    return sessionStorage.getItem('kaiCalculatorToken')
+  } catch {
+    return null
+  }
+})()
 
 export const state = {
   taxonomy: null,
@@ -153,6 +173,27 @@ export const state = {
   // this note is unchanged.
   entries: [],
   result: null,
+  // **§6.1's response as it was when `result` was computed** — the second use of the
+  // taxonomy, pointing the opposite way from the first (§7.2a).
+  //
+  // `taxonomy` above is the **form's**: fetched fresh on every page load, cached across
+  // loads nowhere, because a stale one is "a form offering codes the current set does not
+  // price" (§6.1). This one is the **result's**, and a result is history: `submission`
+  // stamps `factor_set_id` so historical results stay reproducible, and every §6.2 response
+  // carries its own `factor_set`. Re-showing a calculation under the set that produced it
+  // is more honest than silently renaming its rows out of a vocabulary the visitor never
+  // saw, and a publish that lands in between takes effect on their next calculation.
+  //
+  // **Set in the same `setState` as `result`, every time, not only on a restore.** One code
+  // path rather than two: during a live page load it holds the very object `taxonomy` holds,
+  // so the restored case exercises the same reads as the ordinary one. It is also the answer
+  // to the one live case that used to go unnoticed — `submitCalculation` re-fetches the
+  // taxonomy on `UNKNOWN_CODE`, so `taxonomy` can move underneath a result that is still on
+  // screen.
+  //
+  // Read through `taxonomyForResult` below and never off `state` directly, so that every
+  // site says which of the two taxonomies it means.
+  resultTaxonomy: null,
   loading: true,
   error: null,
   // **Where `error` belongs, when it belongs to one leaf's field.** `{leaf, field}` or
@@ -321,6 +362,15 @@ export const state = {
   // once it has downloaded, only whether one is in flight right now.
   pdfExporting: false,
   pdfError: null,
+  // **What a restore had to throw away, and nothing else.** `[]` or a list of
+  // `{kind, code}` - see `pruneAnswers` in `snapshot.js`, which is what fills it, and
+  // `restoreNotice` in `calculator.js`, which is what prints it. It is not an error and
+  // is deliberately not held in `error`: `error` is cleared by every step transition and
+  // this has to survive the visitor walking back to the step the dropped answer was on.
+  //
+  // **It is never stored.** A snapshot is rewritten pruned at the next checkpoint, so the
+  // notice belongs to the page load that did the dropping and to no other.
+  restoreDropped: [],
 }
 
 /**
@@ -482,6 +532,42 @@ export function leafFigures(chain, leaf) {
 export const draftLeafFigures = leaf => leafFigures(state, leaf)
 
 /**
+ * **The taxonomy a result is rendered from — which is not the one the form is offered
+ * from.** §7.2a, and the distinction is the whole point of the function existing.
+ *
+ * There are two uses of §6.1's response now and they point in opposite directions:
+ *
+ * | use | source | why |
+ * | --- | --- | --- |
+ * | the form, still being filled in | `state.taxonomy`, fetched fresh every load | §6.1: a taxonomy cached across a publish is "a form offering codes the current set does not price" |
+ * | a result, which is history | `state.resultTaxonomy`, stored beside the result | the calculation named its rows out of *that* vocabulary, and `submission.factor_set_id` exists so it stays reproducible |
+ *
+ * **Every site that renders the calculation calls this; nothing calls it for the form.**
+ * `results.js` reads the taxonomy fourteen times and thirteen of them are the result — the
+ * metric definitions, the destination names, the sector names, the food names, and the same
+ * four in the text export and in the PDF payload. The fourteenth is `comparisonLines`, which
+ * renders `state.improvementResult`, and that one keeps `state.taxonomy` because Compare
+ * Impact is a **new** submission run on this page load. `improvement.js` keeps
+ * `state.taxonomy` throughout for the stronger version of the same reason: its sliders are a
+ * *form*, they offer destinations to allocate to, and §6.1's rule is exactly about that.
+ *
+ * **Written down here rather than left to each call site's judgement**, because left
+ * implicit a stored taxonomy reads as a violation of §6.1 and the next reader deletes it.
+ *
+ * The fallback is load-bearing and not defensive dressing: `results.js` does
+ * `findByCode(taxonomy.destinations, …)` on the return, and `null.destinations` is a
+ * `TypeError` inside `render()` — a blank page. The results screen is only reached past
+ * `render()`'s own `!state.taxonomy` guard, so falling back to `state.taxonomy` guarantees
+ * an object. Nothing reachable takes that branch today: `resultTaxonomy` is set in the same
+ * `setState` as `result`, and a restored result whose taxonomy snapshot failed its shape
+ * check is not restored at all (`readResultSnapshot`).
+ *
+ * @param {object} viewState The state the results view is being rendered from
+ * @returns {object} §6.1's response as the displayed calculation used it
+ */
+export const taxonomyForResult = viewState => viewState.resultTaxonomy || viewState.taxonomy
+
+/**
  * Pairs the entries the user typed with the per-entry results §6.2 returns, which
  * preserve request order.
  *
@@ -526,7 +612,26 @@ export function subscribe(fn) {
 }
 
 export function resetCalculator() {
-  sessionStorage.removeItem('kaiCalculatorToken')
+  try {
+    sessionStorage.removeItem('kaiCalculatorToken')
+  } catch {
+    // See `storedToken` above: a browser that refuses storage has nothing to remove.
+  }
+  // **The snapshot goes with the token, or the Clear button is a false statement.**
+  // "Clear all calculator data and return to the introduction?" is what both doors ask -
+  // the header's Clear and the results page's *Start over* - and a snapshot that outlived
+  // it would put every one of those answers back on the next page load.
+  clearSnapshot()
+  // **And the step history goes with them** (§7.2b). One entry per step means six of them
+  // sit behind Back by the time a visitor reaches the results, and "Clear all calculator
+  // data and return to the introduction?" must not leave a Back press that walks into a
+  // step of the calculation just cleared. Entries cannot be deleted, so this travels back
+  // to the entry the calculator opened in and rewrites it as the introduction - Back from
+  // there leaves the site, which is what it did before the visitor started.
+  //
+  // **Before the patch below, not after.** It records the step as -1 synchronously, so the
+  // patch's own `step: -1` is not a change this module's subscriber would push an entry for.
+  unwindStepHistory()
   setState({
     token: null,
     sector: null,
@@ -544,6 +649,7 @@ export function resetCalculator() {
     periodClock: null,
     entries: [],
     result: null,
+    resultTaxonomy: null,
     error: null,
     errorAt: null,
     errorCode: null,
@@ -581,5 +687,7 @@ export function resetCalculator() {
     contributeCelebrating: false,
     pdfExporting: false,
     pdfError: null,
+    // The notice about a restore goes too: there is nothing left that it was about.
+    restoreDropped: [],
   })
 }

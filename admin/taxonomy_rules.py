@@ -14,16 +14,6 @@ from sqlalchemy.orm import Session
 
 from admin.factor_models import FactorSet, FactorSetStatus
 from admin.taxonomy_models import Destination, FoodCategory
-from db.types import PREVENTION_CODE as _PREVENTION_CODE
-
-#: The destination expressing "this waste did not happen". The engine looks
-#: it up by this exact string; it is not configurable.
-#:
-#: Re-exported from `db/types.py` rather than defined here, because `api/`
-#: enforces §6.2's "not in a current scenario" rule against the same string
-#: and may not import from `admin/`. Same object, one definition -- see the
-#: note at its definition.
-PREVENTION_CODE = _PREVENTION_CODE
 
 
 class TaxonomyInvariantError(Exception):
@@ -62,55 +52,78 @@ def check_single_standard_mix(session: Session) -> None:
     )
 
 
-def check_prevention_intact(session: Session) -> None:
-    """Contract §2.1: the `prevention` destination must exist and be usable.
+def check_prevention_destination(session: Session) -> None:
+    """Contract §2.1: at least one usable prevention destination must exist.
 
-    All of its factors are zero, which is how "waste avoided" is expressed
-    while keeping the current and alternative scenarios mass-conserving. The
-    engine resolves it by code, so renaming it and deleting it are the same
-    event as far as a calculation is concerned.
+    A prevention destination's factors are zero, which is how "waste avoided"
+    is expressed while keeping the current and alternative scenarios
+    mass-conserving. Without one the improvement panel still renders its
+    sliders and §6.2 still requires the two scenarios to describe the same
+    mass, so the form silently loses the only thing it is for. Redirecting
+    mass between real destinations stays expressible; saying "we wasted less"
+    does not.
 
-    "Usable" also requires its *group* to be active, not only the row
-    itself: every active-destination listing is built by joining through
-    `destination_group`, so a deactivated group drops `prevention` out of
-    service exactly as surely as deactivating `prevention` directly would -
-    and is the likelier route, since a staff member tidying up the group
-    list acts on `DestinationGroup` rows, never on `prevention` by name.
+    **The role, not the row.** This checked for the literal code `prevention`
+    until the flag existed, which made renaming the row and deleting it the
+    same event — and the client has not settled what it will be called. Rename
+    it freely now; the invariant is that *something* still carries
+    `is_prevention`.
+
+    **At least one, not exactly one**, which is where this departs from
+    `check_single_standard_mix` above. Two vocabularies share these global
+    tables (§10.3) and each brings its own prevention row, so "exactly one"
+    would refuse the state this deployment is already in. There is no ambiguity
+    to resolve either: the standard mix has an upper bound because §6.2 must
+    resolve a null `food_category` to *one* code, and nothing anywhere has to
+    choose between prevention destinations.
+
+    Counted over **active** rows, and over rows whose *group* is active too:
+    every active-destination listing is built by joining through
+    `destination_group`, so a deactivated group takes its destinations out of
+    service exactly as surely as deactivating them directly would — and is the
+    likelier route, since a staff member tidying up the group list acts on
+    `DestinationGroup` rows and never on this one by name.
 
     Skipped entirely on an empty destination table. A database with no
     destinations at all is one that has not been seeded yet, and refusing to
-    create the first destination group because `prevention` does not exist
+    create the first destination group because no prevention destination exists
     yet would make the panel impossible to bootstrap by hand.
     """
     any_destination = session.scalar(select(Destination).limit(1))
     if any_destination is None:
         return
-    prevention = session.scalar(
-        select(Destination).where(Destination.code == PREVENTION_CODE)
-    )
-    if prevention is None:
+    flagged = session.scalars(
+        select(Destination).where(Destination.is_prevention.is_(True))
+    ).all()
+    if not flagged:
         raise TaxonomyInvariantError(
-            f"No destination with the code '{PREVENTION_CODE}' exists. It is "
+            "No destination is marked as the prevention destination. One is "
             "required: it represents waste that was avoided, and without it "
-            "the calculator cannot express an improved scenario. Restore it "
-            "before saving."
+            "the calculator cannot express an improved scenario. Mark one "
+            "destination as the prevention destination before saving."
         )
-    if not prevention.active:
+    if any(row.active and row.group.active for row in flagged):
+        return
+    inactive_group = next(
+        (row for row in flagged if row.active and not row.group.active), None
+    )
+    if inactive_group is not None:
         raise TaxonomyInvariantError(
-            f"The '{PREVENTION_CODE}' destination is deactivated. It is "
-            "required and must stay active: it represents waste that was "
-            "avoided, and without it the calculator cannot express an "
-            "improved scenario."
+            f"The destination group '{inactive_group.group.code}', which "
+            f"contains the prevention destination "
+            f"'{inactive_group.code}', is deactivated. It must stay active: "
+            "deactivating the group removes the destination from every "
+            "active-destination listing just as surely as deactivating the "
+            "destination itself, and without it the calculator cannot express "
+            "an improved scenario. Reactivate the group before saving."
         )
-    if not prevention.group.active:
-        raise TaxonomyInvariantError(
-            f"The destination group '{prevention.group.code}', which contains "
-            f"'{PREVENTION_CODE}', is deactivated. It must stay active: "
-            f"deactivating the group removes '{PREVENTION_CODE}' from every "
-            "active-destination listing just as surely as deactivating "
-            "'prevention' itself, and without it the calculator cannot "
-            "express an improved scenario. Reactivate the group before saving."
-        )
+    listed = ", ".join(sorted(f"'{row.code}'" for row in flagged))
+    raise TaxonomyInvariantError(
+        f"Every prevention destination ({listed}) is deactivated. At least one "
+        "is required and must stay active: it represents waste that was "
+        "avoided, and without it the calculator cannot express an improved "
+        "scenario."
+    )
 
 
 def check_single_published_set(session: Session) -> None:

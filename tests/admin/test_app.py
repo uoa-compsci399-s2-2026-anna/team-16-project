@@ -202,7 +202,7 @@ async def test_startup_prints_the_credentials_in_the_cli_bootstrap_wording(
     which was true when it was written: bootstrap goes through
     ``create_staff``, which since v1.15 stores each password encrypted until
     the account claims it, so one lost line is recoverable *by the other
-    administrator* from /admin/staff. Losing both is still terminal for the
+    administrator* from /admin/staff/list. Losing both is still terminal for the
     panel — a reveal needs a signed-in administrator and there is nobody else —
     and the output has to name the way back from that, which is
     ``kaicalc-admin issue-password`` on the container. An operator told the
@@ -218,8 +218,28 @@ async def test_startup_prints_the_credentials_in_the_cli_bootstrap_wording(
     assert "cannot be recovered" not in out, (
         "the sentence that stopped being true in v1.15 is back"
     )
-    assert "the other administrator can read it back from /admin/staff" in out
-    assert "kaicalc-admin issue-password admin" in out
+    # Names the full path, not the prefix. The prefix form was what this line
+    # asserted, and `/admin/staff` is a 404 that `/admin/staff/list` contains -
+    # so the assertion was true of the broken message and of the fix alike, and
+    # said nothing about either. tests/admin/test_operator_guidance.py resolves
+    # the path over HTTP; this keeps the sentence itself pinned.
+    assert (
+        "the other administrator can read it back from /admin/staff/list" in out
+    )
+    # Names the form that works from where the reader is standing, and refuses
+    # the one that does not. `docker exec` runs no entrypoint, so the bare
+    # console script exits on `MissingSettingError: SECRET_KEY is not set` -
+    # while `kaicalc-admin --help` works, which is what kept the wrong form
+    # looking right until a deployment test read the sentence and tried it.
+    #
+    # Both halves are needed. The positive alone passes against a message
+    # carrying both forms in either order; the negative alone passes against a
+    # message that names no command at all. The negative is written against
+    # `kaicalc-admin issue-password` rather than `kaicalc-admin`, because the
+    # sentence legitimately offers that spelling as the second option for a
+    # `pip install`ed CLI with no container to exec into.
+    assert "docker exec kaicalc-admin kaicalc issue-password admin" in out
+    assert "run `kaicalc-admin issue-password admin` on the container" not in out
     assert "Do not send them by email." in out
 
 

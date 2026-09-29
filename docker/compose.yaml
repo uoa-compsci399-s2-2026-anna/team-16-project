@@ -19,16 +19,37 @@
 # The two can run side by side: this file's database is not published at all
 # and its containers are named differently.
 #
-# PORTS. Nothing binds 80, 8000, 8080, 3000 or 5000 - a clean machine very
-# often has something on all of them already, and a port clash on the first
-# `up` is precisely the out-of-the-box failure this arrangement exists to
-# prevent (8000 was already occupied on the machine this was developed on).
-# Every published port is an environment variable with a high default:
+# PORTS. NGINX IS THE ONLY WAY IN, AND THAT IS WHAT MAKES THE PROTECTION WORK.
+# Exactly one port is published:
 #
-#   KAICALC_WEB_PORT     18080   nginx - the only one that MUST be published
-#   KAICALC_API_PORT     18000   the public API, direct (development only)
-#   KAICALC_ADMIN_PORT   18001   the admin panel, direct (development only)
+#   KAICALC_WEB_PORT     18080   nginx - the calculator, the API and the panel
+#   api / admin           ----   NOT PUBLISHED. Reached through nginx.
 #   MySQL                 ----   NOT PUBLISHED. Compose-internal only.
+#
+# 18080 is a high port on purpose: nothing here binds 80, 8000, 8080, 3000 or
+# 5000, because a clean machine very often has something on all of them
+# already and a port clash on the first `up` is precisely the out-of-the-box
+# failure this arrangement exists to prevent (8000 was already occupied on the
+# machine this was developed on).
+#
+# THE API AND THE PANEL USED TO BE PUBLISHED ON 18000 AND 18001, AND STOPPING
+# THAT IS WHAT LETS `PROTECTION_TRUSTED_PROXY` DEFAULT TO true BELOW. While
+# they were published, a caller could reach either application directly and
+# send any `X-Forwarded-For` it liked, so the applications could not be
+# allowed to believe that header - and not believing it meant every proxied
+# visitor arrived as this nginx's one container address: one rate-limit
+# bucket for everyone, and one `ip_block` row denying everyone. Measured, both
+# ways round, on the running stack; the note beside the setting on the `api`
+# service has the numbers.
+#
+# YOU CAN HAVE THEM BACK, AS ONE COMMAND AND AS A MATCHED PAIR:
+#
+#     docker compose -f docker/compose.yaml -f docker/compose.direct-ports.yaml up
+#
+# That override republishes both ports AND puts `PROTECTION_TRUSTED_PROXY`
+# back to false, because those two facts must move together and putting them
+# in one file is the only way this project has found to stop half of the pair
+# landing on its own. Read its header before you use it.
 #
 # RUNNING AN ADMIN COMMAND AGAINST A LIVE STACK.
 #
@@ -82,7 +103,50 @@ services:
     volumes:
       - db-data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD:-devroot}"]
+      # THIS CHECK SPEAKS TCP, AND THAT IS THE ENTIRE POINT OF IT.
+      #
+      # It used to be `mysqladmin ping -h localhost`, and that check reported
+      # healthy roughly two seconds BEFORE the database existed. Measured, on a
+      # clean machine:
+      #
+      #   04:54:04.29  healthcheck exits 0   (temporary server, "port: 0")
+      #   04:54:04.83  migrate starts
+      #   04:54:06.30  migrate dies: (2003, "Can't connect to MySQL server on
+      #                'db' ([Errno 111] Connection refused)")
+      #   04:54:06.89  the real server binds 3306 - 0.6 s too late
+      #
+      # migrate exits non-zero, so api, admin and web never start at all
+      # (`service_completed_successfully` is never met) and the site answers
+      # nothing. The second `up -d` works, because migrate is idempotent, which
+      # is why this was reported as "it needs starting twice" rather than as a
+      # bug. Three things combine:
+      #
+      #   1. mysql:8.0's entrypoint runs a TEMPORARY server for the duration of
+      #      initialisation, with --skip-networking. Its own log says
+      #      "ready for connections ... port: 0". No TCP socket exists yet.
+      #   2. `-h localhost` makes a mysql client use the UNIX SOCKET, not TCP -
+      #      so it reaches that temporary server.
+      #   3. `mysqladmin ping` EXITS 0 while printing "Access denied": to the
+      #      ping command a server that refuses your credentials is still a
+      #      server that answered.
+      #
+      # start_period cannot fix this. start_period suppresses FAILURES during
+      # the window; it does not suppress a premature SUCCESS, and a success is
+      # what this was producing.
+      #
+      # So: `--protocol=TCP` with an address rather than `localhost` (both,
+      # deliberately - the flag survives someone "tidying" the address back),
+      # against the port the application will use, AND a real query as the
+      # application's own user against the application's own database. The
+      # temporary server has no TCP listener to accept any of it, and a
+      # connection refused is a non-zero exit, which is a failure, which is
+      # what retries and start_period are for. Nothing but the real server,
+      # with the real grants applied, can answer this.
+      test: ["CMD", "mysql",
+             "--protocol=TCP", "-h", "127.0.0.1", "-P", "3306",
+             "-u", "${MYSQL_USER:-kaicalc}", "-p${MYSQL_PASSWORD:-devpass}",
+             "-D", "${MYSQL_DATABASE:-kaicalc}",
+             "-e", "SELECT 1"]
       interval: 5s
       timeout: 3s
       retries: 30
@@ -158,25 +222,52 @@ services:
       # raised on either side. That is why it is a shared volume and not two
       # `openssl rand` calls.
       SECRET_KEY: ${SECRET_KEY:-}
-      # See docker/nginx-proxy-headers.conf for the full argument. False while
-      # the direct `ports:` below are published; flip it and remove them
-      # together, never one without the other.
+      # TRUE HERE, AND THE `ports:` BLOCK THAT USED TO SIT BELOW IS WHY.
       #
-      # THE COST OF LEAVING IT FALSE IS NOT ABSTRACT. api/router.py allows 600
-      # GETs and 120 calculates per hour, keyed on the caller's address - and
-      # behind this proxy every caller IS the proxy, so those become 600 and
-      # 120 SITE-WIDE per hour rather than per visitor. In production the
-      # pairing below is required, not a refinement.
-      PROTECTION_TRUSTED_PROXY: ${PROTECTION_TRUSTED_PROXY:-false}
+      # It asks one question: may this application believe the
+      # `X-Forwarded-For` that OUR nginx sends it? With nothing published but
+      # 18080, the only process that can set that header on a request reaching
+      # this service is our own nginx - and docker/nginx-proxy-headers.conf
+      # OVERWRITES it with the peer nginx actually saw rather than appending
+      # to whatever arrived, so a visitor cannot smuggle a value through it
+      # either. Both halves are needed and both are now true, so the answer is
+      # yes.
+      #
+      # WHAT IT COSTS TO GET THIS WRONG, IN BOTH DIRECTIONS, MEASURED RATHER
+      # THAN REASONED ABOUT:
+      #
+      #   false WITH this proxy in front (what this file shipped until now).
+      #   db/detection.py's client_ip reads the TCP peer, which is the nginx
+      #   container - 172.20.0.5, the same value for every visitor on earth.
+      #   api/router.py's 600 GETs and 120 calculates per hour stop being per
+      #   visitor and become SITE-WIDE per hour, and one ip_block row denies
+      #   everyone. Demonstrated on this stack: one container sent 34 requests
+      #   through :18080, exhausted the panel's minute at the 30th, and a
+      #   SECOND container's next request was refused 429 on its first try.
+      #
+      #   true with the direct ports published (the state this pairing
+      #   forbids). A caller who skips nginx sets X-Forwarded-For to anything
+      #   it likes and is measured as that address - out of the rate-limit
+      #   bucket and out of the blocklist. Strictly worse than the above,
+      #   which is why the ports had to go first and why
+      #   docker/compose.direct-ports.yaml puts this back to false when it
+      #   republishes them.
+      #
+      # THE CODE DEFAULT IS STILL false, AND THAT IS NOT A DISAGREEMENT.
+      # api/app.py and admin/config.py cannot see their own topology: a bare
+      # `./run.sh api` on a laptop has no proxy in front, and there `true`
+      # would let any caller forge any address for nothing gained. This file
+      # is the thing that MAKES nginx the only way in, so this file is the
+      # thing entitled to assert it. One variable still governs both
+      # applications (contract 6.5) - the same expansion is handed to api,
+      # admin and web below, so the three cannot disagree.
+      PROTECTION_TRUSTED_PROXY: ${PROTECTION_TRUSTED_PROXY:-true}
     volumes:
       - secret:/var/lib/kaicalc
-    ports:
-      # DEVELOPMENT CONVENIENCE, NOT A REQUIREMENT. nginx reaches this service
-      # over the compose network as `api:18000` and does not need it published.
-      # Remove this block (and admin's) when you set
-      # PROTECTION_TRUSTED_PROXY=true - while it is here, a caller can bypass
-      # nginx and send any X-Forwarded-For they like.
-      - "${KAICALC_API_PORT:-18000}:18000"
+    # NO `ports:`. nginx reaches this service over the compose network as
+    # `api:18000`; the host does not need it and must not have it. See the
+    # PORTS note at the head of this file, and docker/compose.direct-ports.yaml
+    # if you want it back.
     healthcheck:
       # No curl in python:3.11-slim, and adding one for a health check is 4 MB
       # of attack surface for a one-line urllib call.
@@ -204,7 +295,11 @@ services:
     environment:
       DATABASE_URL: mysql+pymysql://${MYSQL_USER:-kaicalc}:${MYSQL_PASSWORD:-devpass}@db:3306/${MYSQL_DATABASE:-kaicalc}
       SECRET_KEY: ${SECRET_KEY:-}
-      PROTECTION_TRUSTED_PROXY: ${PROTECTION_TRUSTED_PROXY:-false}
+      # The same expansion the api service above carries, with the same
+      # default and for the same reason - one deployment fact, one setting
+      # (contract 6.5). The long argument is on the api service; do not let
+      # these two drift.
+      PROTECTION_TRUSTED_PROXY: ${PROTECTION_TRUSTED_PROXY:-true}
 
       # WHERE THE PANEL FINDS POST /api/v1/calculate. Used by /admin/try (the
       # dry-run view) and by the pre-publish comparison view; both fail with
@@ -233,10 +328,10 @@ services:
       SESSION_HTTPS_ONLY: ${KAICALC_SESSION_HTTPS_ONLY:-false}
     volumes:
       - secret:/var/lib/kaicalc
-    ports:
-      # Same note as the api service above: development convenience. nginx
-      # reaches the panel as `admin:18001`.
-      - "${KAICALC_ADMIN_PORT:-18001}:18001"
+    # NO `ports:`, for the reason given on the api service above. nginx reaches
+    # the panel as `admin:18001` and serves it at /admin on 18080. A panel
+    # published on its own port is a second, unproxied door into the one
+    # application in this stack that can publish a factor set.
     healthcheck:
       # A TCP connect, not an HTTP request. Every HTML path under /admin is
       # behind ProtectionMiddleware's headless-client detection, which refuses
@@ -269,6 +364,141 @@ services:
         condition: service_healthy
       admin:
         condition: service_healthy
+    environment:
+      # THE ONLY PLACE THE CLIENT'S DOMAIN IS WRITTEN DOWN, AND IT IS NOT IN AN
+      # IMAGE. docker/web-config.sh renders both the `connect-src`/`img-src` of
+      # the public Content-Security-Policy and web/js/config.js from this one
+      # value at container start, so the policy and the page cannot disagree
+      # about where the news feed lives. It used to be written twice - api.js and
+      # nginx.conf - and the two failed asymmetrically when they drifted: a wrong
+      # policy means the news quietly does not load, a wrong URL means the browser
+      # goes and asks a domain nobody chose. This project's deliverable is source
+      # and documentation; DNS and hosting are out of scope, which is exactly why
+      # the domain belongs to the deployment recipe and not to a built artefact.
+      #
+      # SET IT EMPTY AND THE HOME PAGE DROPS ITS NEWS SECTION ENTIRELY. That is a
+      # supported deployment, not a degraded one - most installations of this
+      # calculator have no WordPress behind them, and an unset origin is not an
+      # error to report to a reader.
+      #
+      # THE PAGE THIS CONFIGURES IS RETIRED, AND THIS DEFAULT WAS LEFT ALONE ON
+      # PURPOSE. web/home.html is the only page that reads the feed and nothing
+      # links to it any more, so on every route a visitor can take this value now
+      # grants a connect-src and an img-src that nothing uses. Emptying it would
+      # narrow the public Content-Security-Policy of every deployment - which is
+      # the safe direction, and still a security-header change made as a side
+      # effect of a layout decision. It is not made here.
+      #
+      # WHAT TO DO WHEN THE CLIENT ANSWERS. If they want no news feed, set this
+      # empty in the same commit that deletes web/home.html, web/js/home.js and
+      # web/js/news.js; the policy narrows itself, because both directives are
+      # built from this string. If they want the feed, home.html goes back into
+      # the drawer and nothing here changes at all.
+      #
+      # `${VAR-default}`, NOT `${VAR:-default}`. With the colon an empty value in
+      # the environment falls back to the default, so `KAICALC_NEWS_ORIGIN=` in a
+      # .env would silently keep pointing at the client's site and there would be
+      # no way to turn the feed off short of editing this file. Without it, unset
+      # means the client's site and empty means no feed - which are two different
+      # intentions and have to stay expressible separately.
+      KAICALC_NEWS_ORIGIN: ${KAICALC_NEWS_ORIGIN-https://kaicommitment.org.nz}
+
+      # EMPTY, AND IT SHOULD STAY EMPTY HERE. The front end builds `/api/v1`, a
+      # relative path, and nginx routes it on: same-origin is the designed
+      # topology and needs no configuration at all.
+      #
+      # It exists because the alternative was worse. Split the API onto its own
+      # subdomain and the path in api.js and the `connect-src` in nginx.conf both
+      # have to change, or every call is refused by our own policy with nothing in
+      # the failure pointing at nginx - the same two-copies defect one layer up.
+      # Set here, one value feeds both.
+      #
+      # **Weigh it as you would the nginx configuration itself.** This is the
+      # front end of a tool whose numbers are the product, and pointing it at an
+      # API the client does not control puts the client's branding over somebody
+      # else's arithmetic. It is readable only from the operator's environment,
+      # never from a URL a visitor can construct; the entrypoint refuses to start
+      # on anything that is not a bare scheme://host[:port]; and `connect-src` is
+      # generated from this same string, so the page can reach the one origin
+      # named here and no other.
+      KAICALC_API_ORIGIN: ${KAICALC_API_ORIGIN-}
+
+      # img-src only, space-separated, for a WordPress media library that serves
+      # from a CDN rather than from the site origin. Empty unless the client's
+      # does. See the note on `createNewsCard` in web/js/home.js.
+      KAICALC_NEWS_IMAGE_ORIGINS: ${KAICALC_NEWS_IMAGE_ORIGINS-}
+
+      # IS THERE ANOTHER PROXY IN FRONT OF THIS ONE? Default false, and false
+      # is what the shipped `docker compose up` wants: nginx then sets
+      # X-Forwarded-Proto and X-Forwarded-For from what it saw itself and
+      # throws away any inbound copy, so no caller can forge either.
+      #
+      # UNPUBLISHING api AND admin DID NOT CHANGE THIS ANSWER, AND THAT IS THE
+      # DISTINCTION THIS PAIR OF SETTINGS EXISTS TO KEEP. That change says
+      # nothing can reach the APPLICATIONS except through this nginx, which is
+      # why PROTECTION_TRUSTED_PROXY above could become true. It says nothing
+      # whatever about whether :18080 is reachable from the internet - on a
+      # laptop and on a bare VPS it is, and a caller who reaches it directly
+      # is exactly who this default refuses to believe. Only an operator who
+      # knows an edge they run is the only route to :18080 may set this true.
+      #
+      # Set it true when somebody else's TLS terminator fronts this stack -
+      # the ordinary shape on a public IPv4 whose port 443 already belongs to
+      # another site:
+      #
+      #     browser --https--> their nginx :443 --http--> this stack :18080
+      #
+      # Left false in that topology the panel is told the request is not on
+      # TLS, and every visitor arrives as the edge's single address. Set true
+      # while this nginx is directly reachable and any caller can claim any
+      # address and strip Secure off a live staff session cookie. It is
+      # therefore a statement about the network, not a preference.
+      #
+      # SEPARATE FROM PROTECTION_TRUSTED_PROXY ON PURPOSE - that one is about
+      # the hop from nginx to the applications, this one about the hop into
+      # nginx, and all four combinations are real deployments. See
+      # docker/nginx.conf.
+      KAICALC_TRUST_FORWARDED_HEADERS: ${KAICALC_TRUST_FORWARDED_HEADERS:-false}
+
+      # THIS STACK'S OWN PUBLIC ORIGIN, AND THE ONLY THING THAT TURNS ON THE
+      # PLAIN-HTTP REDIRECT. Empty by default, and empty means NOTHING is
+      # redirected - every deployment that does not set this behaves exactly as
+      # it does today, including a laptop's http://localhost:18080.
+      #
+      # WHAT IT IS FOR. A router can forward public 443 to your edge and public
+      # 18080 straight here, and that second path is a plaintext bypass of the
+      # first. It serves /admin in the clear, where a session cookie marked
+      # Secure by KAICALC_SESSION_HTTPS_ONLY is accepted by the browser and then
+      # never sent back - a login that fails silently. Set this to the origin
+      # visitors actually type, `https://your.host`, and nginx answers a
+      # plaintext request for that host with a 307 to it.
+      #
+      # WHY AN ORIGIN AND NOT A BOOLEAN. nginx has to know one thing a plaintext
+      # request cannot be trusted to supply - where it should have gone - and one
+      # thing that separates a public visitor from the health check, the LAN and
+      # the edge's own forwarded traffic. The host you name is both. A boolean
+      # could express neither, and "no https, therefore redirect" sends the
+      # container's own health check a 307 it cannot follow, which marks the
+      # container unhealthy and restarts the stack in a loop.
+      #
+      # IT REQUIRES KAICALC_TRUST_FORWARDED_HEADERS, AND THE CONTAINER REFUSES TO
+      # START WITHOUT IT. Without that flag nginx sees `http` for the edge's
+      # traffic too, and every page load through the edge would redirect to
+      # itself forever. Set the pair, and KAICALC_SESSION_HTTPS_ONLY=true with
+      # them. docker/nginx.conf carries the whole argument, including what was
+      # rejected.
+      #
+      # `${VAR-}` without the colon, for the reason KAICALC_NEWS_ORIGIN gives:
+      # unset and explicitly empty must stay expressible separately, even though
+      # both mean "no redirect" today.
+      KAICALC_PUBLIC_ORIGIN: ${KAICALC_PUBLIC_ORIGIN-}
+
+      # Not read by nginx. It is here so docker/web-config.sh can warn at
+      # start-up about the one combination that silently does nothing:
+      # this proxy forwarding the visitor's real address while api/ and admin/
+      # are still configured to ignore X-Forwarded-For. Same expansion as the
+      # api and admin services above, so the three cannot disagree.
+      PROTECTION_TRUSTED_PROXY: ${PROTECTION_TRUSTED_PROXY:-true}
     ports:
       - "${KAICALC_WEB_PORT:-18080}:18080"
 

@@ -1,6 +1,10 @@
 import { getTaxonomy } from './api.js'
 import { state, setState, subscribe, resetCalculator } from './state.js'
 import { bindCalculator, render, renderChrome } from './calculator.js'
+import { applyDocumentLanguage, applyToDocument, installLanguageChooser, t } from './i18n.js'
+// The site drawer's `Escape` handler and `aria-expanded`. Side-effect import: the
+// drawer is a `<details>` in the markup and works without this; see web/js/drawer.js.
+import './drawer.js'
 
 const main = document.getElementById('main-content')
 const homeButton = document.getElementById('home-button')
@@ -36,7 +40,24 @@ subscribe(() => {
 bindCalculator(main, loadTaxonomy)
 homeButton.addEventListener('click', () => resetCalculator())
 clearButton.addEventListener('click', () => {
-  if (window.confirm('Clear all calculator data and return to the introduction?')) resetCalculator()
+  if (window.confirm(t('Clear all calculator data and return to the introduction?'))) resetCalculator()
+})
+
+// The static HTML the browser parsed before any of this ran - the header, the skip
+// link, the footer, the transparency notice - plus `<html lang>`, `<html dir>` and
+// the machine-translation notice. Done once, before the first render, so nothing
+// below re-translates a string it already translated.
+applyDocumentLanguage()
+applyToDocument()
+
+// The chooser is built here rather than shipped in `index.html` so that it
+// cannot exist as a control that is present and does nothing: with scripting
+// off none of this runs, and the calculator does not render at all. Changing
+// language re-renders in place — `state` is held in memory, so a reload would
+// throw away every entry somebody had typed.
+installLanguageChooser(() => {
+  renderChrome()
+  render(main)
 })
 
 renderChrome()

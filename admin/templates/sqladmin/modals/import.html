@@ -1,0 +1,475 @@
+{# The import dialog: drag-and-drop, both file formats, and a preview that has
+   to be confirmed before anything is written.
+
+   THIS FILE REPLACES SQLADMIN'S OWN MODAL RATHER THAN INCLUDING IT, AND THAT
+   IS A CHANGE FROM WHAT STOOD HERE. Until WP4 this template was
+   `{% include "sqladmin_original/modals/import.html" %}` plus three patches
+   around it, on the rule this project follows everywhere else: reach a
+   template, do not fork it. The rule has not changed and neither has the
+   reason — a copied template is somebody else's code that rots silently at
+   the next upgrade — but three of the things this dialog has to do cannot be
+   reached from outside the markup:
+
+     * **the CSRF token has to be in the request.** sqladmin's own
+       `statics/js/main.js` builds the upload's `FormData` by hand and never
+       serialises the form, so a hidden `<input name="csrf_token">` inside its
+       form is in the DOM and in no request. WP1 carried the field past that
+       by replacing `window.fetch` for the duration of one call. It said this
+       modal's replacement would delete that wrapper, and it does:
+       /admin/static/import.js builds its own body and puts the token in it,
+       which is what every other form in this panel does.
+     * **both formats in one dialog.** The shipped input is
+       `accept="text/csv"` and the shipped heading says "Import CSV". This
+       screen takes `.csv` and `.json` on one path (admin/importing.py).
+     * **drag-and-drop.** `dragover`, `drop` and `dragenter` appear zero times
+       in what sqladmin ships; it is a plain `<input type="file">`.
+
+   NOTHING OF SQLADMIN'S IS COPIED HERE. This is not a fork of that file — it
+   is different markup for a different dialog, and every line of
+   `sqladmin/_import.py` (619 of them: the CSV parsing, the per-row
+   validation, the count check, the streaming response) still runs on the
+   server exactly as before. What changed is the browser half, which is the
+   half sqladmin could not know this panel's rules about.
+
+   THE OUTER `id="modal-import"` IS KEPT deliberately. sqladmin's own list
+   page renders the Import button with `data-bs-target="#modal-import"`, so
+   keeping the id means the button still opens this dialog without the list
+   template being touched. sqladmin's `main.js` also binds a few handlers at
+   `#modal-import-form`, `#modal-import-text` and `#modal-import-progress` —
+   none of which exist below, so jQuery matches an empty set and they do
+   nothing. That is the point: its submit handler never fires, because there
+   is no `#modal-import-form` for it to fire on.
+
+   THIS DIALOG RENDERS ONLY WHERE `can_import` IS TRUE, which on this panel is
+   an administrator on one of the fourteen importable screens — seven
+   taxonomy, the five children of a factor set, and the two comparison-
+   scenario tables (admin/importing.py, contract §8.1.1). #}
+
+<style>
+  /* Scoped to this dialog's own ids and classes, so nothing else sqladmin
+     renders changes. Inline rather than in brand.css for the same reason
+     brand/_list_table_css.html is inline: the rules and the markup they are
+     written for are read together, and a rule in another file that no page
+     but this one uses is a rule nobody finds when this page changes. */
+
+  #kaicalc-import-drop {
+    position: relative;
+    border: 2px dashed #003223;          /* Kale */
+    border-radius: 12px;
+    background: #FFFFFF;
+    padding: 1.75rem 1rem;
+    text-align: center;
+    transition: background-color .12s ease, border-color .12s ease;
+  }
+  /* The whole panel is the target, so a person can aim at the box rather
+     than at a link inside it. The input is still a real, focusable
+     `<input type="file">` underneath — drag-and-drop is added to the
+     control, never instead of it, because a keyboard user and a browser
+     with dragging disabled both have to be able to choose a file. */
+  #kaicalc-import-drop .kaicalc-drop-input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+  }
+  #kaicalc-import-drop.is-dragging {
+    border-color: #28C882;               /* Pea */
+    background: #F1FCF6;
+  }
+  #kaicalc-import-drop .kaicalc-drop-title {
+    display: block;
+    font-weight: 600;
+    color: #003223;
+  }
+  #kaicalc-import-drop .kaicalc-drop-hint {
+    display: block;
+    margin-top: .25rem;
+    font-size: .875rem;
+    color: #4a635a;
+  }
+  #kaicalc-import-filename {
+    margin: .75rem 0 0;
+    font-size: .875rem;
+    color: #003223;
+    word-break: break-all;
+  }
+  #kaicalc-import-filename.is-empty { color: #6c757d; }
+
+  /* A refusal from admin/importing.py names EVERY value it could not read,
+     one per line, with a two-space indent setting each off from the next. The
+     browser's default `white-space: normal` collapses all of it into one
+     run-on paragraph — which is the wall of text those messages were written
+     to replace. `pre-wrap` rather than `pre-line` keeps the indent and still
+     wraps a long line to the width of the dialog. */
+  #kaicalc-import-message,
+  #kaicalc-import-preview .kaicalc-import-rejections { white-space: pre-wrap; }
+
+  /* TABLER'S `.alert` IS `display: flex`, and these blocks carry that class
+     for its colours. Without this rule the summary, the count pills and each
+     list of row keys lay out side by side in one row — measured on the
+     rendered dialog, not guessed: the preview read as three narrow columns
+     jammed against each other rather than as a summary with its detail
+     beneath, while every assertion about its *text* passed.
+
+     NO `!important`, AND THAT IS NOT A STYLE PREFERENCE. Written with one,
+     this rule beat Bootstrap's `.d-none { display: none !important; }` —
+     because an id selector outranks a class at equal importance — so the
+     script could no longer hide either element, and a preview of the
+     previous file stayed on screen beside the new file's name. The browser
+     test for exactly that caught it on the next run. An id already outranks
+     `.alert`, which is not `!important`, so the rule needs nothing more. */
+  #kaicalc-import-preview,
+  #kaicalc-import-message { display: block; }
+
+  #kaicalc-import-preview .kaicalc-import-counts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    margin: .75rem 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  #kaicalc-import-preview .kaicalc-import-counts li {
+    border-radius: 999px;
+    padding: .2rem .7rem;
+    font-size: .875rem;
+    background: #E9F1EE;
+    color: #003223;
+  }
+  #kaicalc-import-preview .kaicalc-import-counts li.is-retiring { background: #FFE6E1; }
+  #kaicalc-import-preview .kaicalc-import-counts li.is-rejected { background: #FF5032; color: #FFFFFF; }
+  #kaicalc-import-preview .kaicalc-import-rows {
+    margin: .5rem 0 0;
+    padding-left: 1.1rem;
+    font-size: .875rem;
+    max-height: 11rem;
+    overflow-y: auto;
+  }
+  #kaicalc-import-preview .kaicalc-import-heading {
+    margin-top: .75rem;
+    font-size: .8125rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: #4a635a;
+  }
+
+  /* THE JSON GUIDE. Inline, scoped to its own id, for the reason written at
+     the top of this block: a rule that no page but this one uses is a rule
+     nobody finds when this page changes.
+
+     Sized for the dialog it is in rather than for a page. `modal-lg` is
+     800px at desktop widths and the whole width of the viewport below
+     576px, so the example - which is the only thing here that cannot be
+     reflowed - scrolls inside its own box instead of pushing the dialog
+     wider than the screen. */
+  #kaicalc-import-json-guide {
+    margin-top: .75rem;
+    font-size: .875rem;
+    color: #003223;
+  }
+  #kaicalc-import-json-guide > summary {
+    cursor: pointer;
+    font-weight: 600;
+  }
+  #kaicalc-import-json-guide ul {
+    margin: .5rem 0 0;
+    padding-left: 1.1rem;
+  }
+  #kaicalc-import-json-guide li { margin-top: .35rem; }
+  #kaicalc-import-json-guide .kaicalc-json-caption {
+    margin: .75rem 0 .25rem;
+    color: #4a635a;
+  }
+  #kaicalc-import-json-example {
+    margin: 0;
+    padding: .65rem .75rem;
+    border-radius: 8px;
+    background: #F1F5F3;
+    color: #003223;
+    font-size: .8125rem;
+    max-height: 13rem;
+    overflow: auto;
+  }
+  #kaicalc-import-json-guide .kaicalc-json-footnote {
+    margin: .4rem 0 0;
+    font-size: .8125rem;
+    color: #4a635a;
+  }
+</style>
+
+<div class="modal modal-blur fade" id="modal-import" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+    <div class="modal-content">
+      {# EVERY VISIBLE STRING BELOW GOES THROUGH `_()`, AND THAT IS A REPAIR.
+         This dialog replaced sqladmin's own, whose every string was wrapped;
+         the replacement's were bare literals, so the dialog left the
+         translation system as a side effect nobody noticed: it rendered in
+         English on the Chinese panel, underneath a list-page button that
+         renders 「导入」.
+         Measured before the repair: 154 `_()` calls across the 51 templates
+         under admin/templates/, and 0 in this one.
+
+         `model_view.name_plural` IS ALREADY TRANSLATED when this template
+         reads it - admin/i18n.py::translate_view_names replaces the attribute
+         with a descriptor that returns the translated string - so it is
+         interpolated INTO a translated sentence rather than wrapped again. A
+         second gettext over an already-Chinese string happens to work (a
+         missing key returns its own source) and is exactly the kind of
+         accident that stops working quietly; admin/deployment_view.py:157
+         writes the same note about the same trap.
+
+         `import_retirement_word` is NOT one of those attributes, which was
+         measured rather than assumed: admin/importing.py:2160 is a plain
+         property returning the English "deactivated" or "deleted". So the two
+         sentences it would have been interpolated into are written out in
+         full below and chosen by it, which is also the only way either one can
+         read as a sentence in a language that does not put its verb last. #}
+      <button type="button" class="btn-close" data-bs-dismiss="modal"
+              aria-label="{{ _('Close') }}"></button>
+
+      {# `action` is rendered here rather than set by script, so the dialog
+         knows where it posts even if the button that opened it did not say.
+         `method="POST"` and `enctype` are on the element for the same reason:
+         the form is a real form, and the script below only intercepts it. #}
+      <form id="kaicalc-import-form"
+            action="{{ url_for('admin:import', identity=model_view.identity) }}"
+            method="POST" enctype="multipart/form-data">
+        <div class="modal-body py-4">
+          <h3 class="mb-1">{{ _("Import into %(name)s", name=model_view.name_plural) }}</h3>
+          <p class="text-muted mb-3" style="font-size: .875rem;">
+            {{ _("The file is checked first and nothing is written until you say so.") }}
+          </p>
+
+          <div id="kaicalc-import-drop">
+            <input id="kaicalc-import-file" name="csvfile" type="file"
+                   class="kaicalc-drop-input"
+                   accept=".csv,.json,text/csv,application/json">
+            <label for="kaicalc-import-file" class="kaicalc-drop-label">
+              <span class="kaicalc-drop-title">{{ _("Drop a file here, or choose one") }}</span>
+              {# THE TWO EXTENSIONS ARE INTERPOLATED, NOT PART OF THE MSGID.
+                 `.csv` and `.json` are the same in every language and they
+                 carry markup; putting `<strong>` inside a catalogue key would
+                 make a translator responsible for a pair of tags, and putting
+                 the bare words in would lose the emphasis that is the whole
+                 reason a reader's eye finds the two formats here. `|safe`
+                 because the value is markup this template wrote itself -
+                 nothing here comes from a request. #}
+              <span class="kaicalc-drop-hint">
+                {{ _("A %(csv)s or a %(json)s file, written the way this screen's own Export writes one — a file exported from here can be corrected and sent straight back.",
+                     csv="<strong>.csv</strong>"|safe, json="<strong>.json</strong>"|safe) }}
+              </span>
+            </label>
+          </div>
+          {# `data-empty` IS READ BACK BY THE SCRIPT when the file is cleared,
+             so it is translated here rather than in import.js - the same
+             string in the same place, said once. `No file selected` is
+             sqladmin's own msgid and is already in the catalogue; a second
+             key spelling it `No file chosen` would be one sentence with two
+             translations, drifting from the day it was added. #}
+          <p id="kaicalc-import-filename" class="is-empty"
+             data-empty="{{ _('No file selected') }}">{{ _("No file selected") }}</p>
+
+          {# WHAT A .JSON FILE HAS TO LOOK LIKE, AND WHY IT IS SPELT OUT HERE.
+             The hint above says a file is "written the way this screen's own
+             Export writes one", which is true and is not enough to write one
+             from scratch - and JSON is the format a staff member is most
+             likely to open in an editor and change by hand.
+
+             EVERY RULE BELOW IS READ OUT OF admin/importing.py, not composed
+             from what the format ought to be:
+
+               * array of objects, refused by shape, naming what was found -
+                 `rows_from_json` / `_json_is_not_a_list`;
+               * every import column present in every object -
+                 `rows_from_json`'s `missing` check, which is STRICTER than
+                 "the keys are the import columns": a column left out is a
+                 refusal, not a blank;
+               * one value per cell, `null` for a blank - `_json_cell`;
+               * UTF-8 with a tolerated BOM - `content.decode("utf-8-sig")`;
+               * line numbers from 2 - `line = index + 2`, and JSON_LINE_NOTE,
+                 which is the sentence the server itself adds to a refusal;
+               * foreign keys by natural key - `natural_key_column` and
+                 `_unknown_code`, and `_NATURAL_KEY_COLUMNS` for why a factor
+                 set is named by its version label;
+               * the upsert matches on the row's own natural key - MODE_UPSERT
+                 and `_key_cells`.
+
+             THE CSV RULES ARE NOT RESTATED. This is the JSON format only.
+
+             `<details>` RATHER THAN A BOOTSTRAP COLLAPSE. It needs no script,
+             so it opens on a panel whose JavaScript failed to load - which is
+             exactly the panel whose visitor most needs to read a file format -
+             and a browser announces it as a disclosure control without any
+             `aria-expanded` this template would have to keep in step with the
+             widget's state. Closed by default: the dialog's job is to take a
+             file, and a reader who already has one should not have to scroll
+             past the manual to reach the button. #}
+          <details id="kaicalc-import-json-guide">
+            <summary>{{ _("What a .json file for this screen has to look like") }}</summary>
+            <ul>
+              <li>{{ _("The whole file is one JSON array, and every entry in it is one row of this table, written as an object. A file that is anything else is refused, and the refusal says what was found instead.") }}</li>
+              <li>{{ _("Every object carries every column this screen imports — the same columns Export writes. A column meant to be blank is written with an empty string or null, never left out.") }}</li>
+              <li>{{ _("A value is text, a number, true, false or null. A list or another object is refused: one cell holds one value.") }}</li>
+              <li>{{ _("Save the file as UTF-8. A byte-order mark is tolerated, so a file an editor on Windows put one into without asking is still read.") }}</li>
+              <li>{{ _("Line numbers start at 2: the first object in the array is line 2, the second is line 3. Line 1 is the header row a .csv file would have, so a refusal names the same row the same way in both formats.") }}</li>
+              <li>{{ _("A column naming a row of another table carries that row's own code — a factor set is named by its version label — and never its id number. Ids differ between one deployment and the next, so a file written with them could only ever be loaded back into the database it came from.") }}</li>
+              <li>{{ _("Whether a row is updated or added is decided by the row's own key, so a mistyped key is silently a new row rather than a correction. That is what checking the file first is for: read the preview before you confirm.") }}</li>
+            </ul>
+
+            {# THE EXAMPLE IS THIS SCREEN'S OWN, not a generic one, and the
+               column names come from `model_view._import_prop_names` - the
+               very list `rows_from_json` iterates when it decides whether a
+               row is missing a column. Read off that attribute rather than
+               re-derived here, so the example cannot describe a different set
+               of columns from the one the reader's file is checked against; a
+               worked example that does not match the screen is worse than no
+               example at all.
+
+               The values are placeholders and the footnote says so. Real ones
+               cannot be produced per screen without inventing data, and a
+               plausible-looking wrong value is the thing a reader would copy.
+               What the example is for is the SHAPE: an array, two objects,
+               every column present in both, every value a string - and the two
+               line numbers a refusal will use for them. #}
+            <p class="kaicalc-json-caption">{{ _("Two rows for this screen. The first object is line 2, the second is line 3.") }}</p>
+            <pre id="kaicalc-import-json-example">[
+  {
+  {%- for name in model_view._import_prop_names %}
+    "{{ name }}": "…"{% if not loop.last %},{% endif %}
+  {%- endfor %}
+  },
+  {
+  {%- for name in model_view._import_prop_names %}
+    "{{ name }}": "…"{% if not loop.last %},{% endif %}
+  {%- endfor %}
+  }
+]</pre>
+            <p class="kaicalc-json-footnote">{{ _("Every value above stands in for a real one; the column names are this screen's own.") }}</p>
+          </details>
+
+          {# THE WORDING OF THE SECOND OPTION IS THE POINT.
+             `model_view.import_retirement_word` is "deactivated" on the nine
+             tables that carry an `active` column and "deleted" on the five
+             that do not (admin/importing.py's `retirement_for`), so the option
+             says what this screen will actually do. A control labelled "delete
+             rows not in the file" on a table where nothing is deleted, or
+             "deactivate" on one where the rows are gone for good, is the panel
+             telling a staff member something false about an act with no
+             undo. #}
+          <div class="mt-3 text-start">
+            <label class="form-label" for="kaicalc-import-mode">
+              {{ _("Rows already in this table") }}
+            </label>
+            <select id="kaicalc-import-mode" name="import_mode" class="form-select">
+              <option value="update_and_add" selected>
+                {{ _("Update and add — a row the file names is updated, a row it does not name is left alone") }}
+              </option>
+              {# TWO WHOLE SENTENCES, CHOSEN BY THE WORD, rather than one
+                 sentence with the word interpolated into it. The word is
+                 English (see the note at the top of this file), so
+                 interpolating it would put "deactivated" in the middle of a
+                 Chinese sentence - and translating it separately would hand a
+                 translator a verb with no sentence around it, which in a
+                 language whose verb does not land in the same place is a
+                 sentence nobody can write correctly. #}
+              <option value="deactivate_missing">
+                {%- if model_view.import_retirement_word == "deactivated" %}
+                {{ _("Update and add, and every row the file does not name is deactivated") }}
+                {%- else %}
+                {{ _("Update and add, and every row the file does not name is deleted") }}
+                {%- endif %}
+              </option>
+            </select>
+          </div>
+
+          {# THE PREVIEW. Filled from the dry run's own JSON — every count and
+             every line number in it was computed by the code that would do the
+             writing (admin/importing.py's `build_import_plan`), not by the
+             browser. `role="status"` rather than `role="alert"`: it is the
+             answer to something the visitor asked for, not an interruption. #}
+          {# THE SCRIPT'S OWN STRINGS LIVE HERE, on the element each belongs
+             to, read back with `getAttribute`. That is `security.js`'s
+             pattern and this panel's established one, and the alternative -
+             a second mechanism, a JSON blob of strings or a `_()` reachable
+             from JavaScript - would be a second place to look for a sentence.
+
+             THE FOUR PREVIEW HEADINGS SURVIVE A MODE CHANGE because all four
+             are rendered here, once, whatever the mode is. The mode decides
+             which LISTS the server's plan carries, not which labels exist; a
+             mode changed in the browser therefore needs no reload and no
+             second request to have its heading, and `forgetThePreview` empties
+             the element's children without touching its attributes.
+
+             `{count}`, `{key}` and `{line}` rather than `%(count)s`: these are
+             substituted by the script, and jinja2's newstyle `_()` applies
+             `translated % variables` to every string it returns - so a `%()s`
+             left for later raises KeyError at render time. Measured, not
+             feared. #}
+          <div id="kaicalc-import-preview" class="mt-3 d-none" role="status"
+               data-count-created="{{ _('{count} to add') }}"
+               data-count-updated="{{ _('{count} to update') }}"
+               data-count-deactivated="{{ _('{count} to deactivate') }}"
+               data-count-deleted="{{ _('{count} to delete') }}"
+               data-count-rejected="{{ _('{count} rejected') }}"
+               data-heading-created="{{ _('Would be added') }}"
+               data-heading-updated="{{ _('Would be updated') }}"
+               data-heading-deactivated="{{ _('Would be deactivated') }}"
+               data-heading-deleted="{{ _('Would be deleted') }}"
+               data-heading-rejected="{{ _('Refused') }}"
+               data-row-line="{{ _('{key}  (line {line})') }}"></div>
+
+          <div id="kaicalc-import-message" class="mt-3 d-none" role="alert"
+               data-msg-no-file="{{ _('Choose a .csv or .json file first.') }}"
+               data-msg-check-failed="{{ _('This file could not be checked.') }}"
+               data-msg-check-error="{{ _('The file could not be checked: {error}') }}"
+               data-msg-refused="{{ _('The import was refused.') }}"
+               data-msg-incomplete="{{ _('The import did not complete.') }}"
+               data-msg-send-error="{{ _('The import could not be sent: {error}') }}"
+               data-msg-reloading="{{ _('Reloading the list…') }}"></div>
+        </div>
+
+        <div class="modal-footer">
+          <div class="w-100">
+            <div class="row g-2">
+              <div class="col">
+                <a href="#" class="btn w-100" data-bs-dismiss="modal">{{ _("Cancel") }}</a>
+              </div>
+              <div class="col">
+                {# `data-label` is the word the script puts BACK when a request
+                   finishes, and `data-busy-label` the one it shows while one
+                   is in flight. Both on the button they belong to, so the
+                   label a reader sees and the label the script restores can
+                   never be two different sentences. #}
+                <button id="kaicalc-import-check" type="submit" class="btn btn-primary w-100"
+                        data-label="{{ _('Check this file') }}"
+                        data-busy-label="{{ _('Checking…') }}">{{ _("Check this file") }}</button>
+              </div>
+              {# HIDDEN UNTIL THE PREVIEW HAS BEEN SEEN, and hidden again the
+                 moment the file or the mode changes. Upsert is what makes the
+                 preview necessary rather than pleasant: a mistyped `code` is
+                 silently a NEW ROW instead of a correction, and the preview is
+                 the only place a reader catches it. A confirm button that
+                 stayed live after the file changed would be a confirmation of
+                 something else. #}
+              <div class="col d-none" id="kaicalc-import-confirm-cell">
+                <button id="kaicalc-import-confirm" type="button" class="btn btn-green w-100"
+                        data-label="{{ _('Import') }}"
+                        data-busy-label="{{ _('Importing…') }}">{{ _("Import") }}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {# The token this panel checks on every state-changing form
+           (admin/csrf.py). A real field in the POST, put there by
+           /admin/static/import.js, which builds the request body itself. #}
+        <input type="hidden" id="kaicalc-import-csrf" value="{{ kaicalc_csrf_token(request) }}">
+      </form>
+    </div>
+  </div>
+</div>
+
+<script src="/admin/static/import.js"></script>

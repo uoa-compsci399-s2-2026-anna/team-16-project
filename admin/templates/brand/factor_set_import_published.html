@@ -1,0 +1,113 @@
+{% extends "brand/base.html" %}
+{% import "brand/_help_tip.html" as help %}
+{% block title %}{{ _("Import the published set") }}{% endblock %}
+
+{# The same generic dialog module brand/factor_set_clear_placeholder.html,
+   brand/delete_staff.html, brand/security.html and brand/new_staff.html
+   load - it opens any [data-dialog] target and closes any
+   [data-close-dialog]. Nothing here needs the reauthentication half of that
+   file's own page; see import_published_page's own docstring
+   (admin/factor_views.py) for why this operation does not ask for it. #}
+{% block head %}
+  <script type="module" src="/admin/static/security.js" defer></script>
+{% endblock %}
+
+{% block shell %}
+<main class="page">
+
+  <header class="page__head">
+    <div class="page__mark" aria-hidden="true"></div>
+    <h1>{{ _("Import the published set into %(version_label)s", version_label=factor_set.version_label) }}</h1>
+  </header>
+
+  {% if error and not open_dialog %}
+    <div class="notice notice--error" role="alert">{{ error }}</div>
+  {% endif %}
+
+  {% if not is_draft %}
+    <section class="panel">
+      <p>
+        {{ _("%(version_label)s is %(status)s, not draft. Only a draft can be overwritten this way - a published or archived set's own numbers must not change in place.",
+             version_label=factor_set.version_label, status=factor_set.status) }}
+      </p>
+      <div class="actions">
+        <a class="button" href="{{ list_url }}">{{ _("Back to factor sets") }}</a>
+      </div>
+    </section>
+  {% elif not published %}
+    <section class="panel">
+      <p>
+        {{ _("No factor set is currently published, so there is nothing to import into %(version_label)s.", version_label=factor_set.version_label) }}
+      </p>
+      <div class="actions">
+        <a class="button" href="{{ list_url }}">{{ _("Back to factor sets") }}</a>
+      </div>
+    </section>
+  {% else %}
+
+  <section class="panel" aria-labelledby="what-heading">
+    <h2 id="what-heading">{{ _("What this does") }}</h2>
+    <ul>
+      <li>
+        {{ _("Every upstream factor, downstream factor, constant, formula and equivalence currently in this draft is deleted, and the published set's own rows (%(published_label)s) are copied in their place.",
+             published_label=published.version_label) }}
+      </li>
+      <li>
+        {{ _("A row this draft had added of its own, with no counterpart in the published set, is gone afterwards. This is a full replacement, not a merge.") }}
+      </li>
+      <li>
+        {{ _("This draft's version label and notes are unchanged. Its placeholder-data flag follows the data, and is set to match the published set's.") }}
+      </li>
+      <li>
+        {{ _("Nothing published changes. The public calculator keeps using %(published_label)s exactly as it is now.", published_label=published.version_label) }}
+      </li>
+      <li>
+        {{ _("The change is recorded in the audit log against your name, with the row counts discarded and written.") }}
+      </li>
+    </ul>
+  </section>
+
+  <form method="post" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {# Round-tripped so the POST acts on the draft this page described - the
+       handler reads the row back from the database anyway, so this is what
+       was shown, not what is permitted. #}
+    <input type="hidden" name="pks" value="{{ pks }}">
+
+    <div class="actions">
+      <button type="button" id="import-published" class="button button--danger"
+              data-dialog="dialog-confirm" aria-haspopup="dialog"
+              aria-controls="dialog-confirm" aria-describedby="import-published-hint">{{ _("Import the published set") }}</button>{{ help.help_tip(_("What Import the published set does"), _("Deletes every factor, constant, formula and equivalence currently in this draft and replaces them with the published set's own. Version label and notes are kept; everything else in this draft is discarded."), id="import-published-hint") }}
+      <a class="button button--quiet" href="{{ list_url }}">{{ _("Cancel") }}</a>
+    </div>
+
+    <dialog id="dialog-confirm" class="dialog"
+            aria-labelledby="dialog-confirm-title"
+            data-return-focus="import-published"
+            {% if open_dialog == 'confirm' %}open{% endif %}>
+      <h2 id="dialog-confirm-title">{{ _("Confirm the import") }}</h2>
+      {% if open_dialog == 'confirm' and error %}
+        <div class="notice notice--error" role="alert">{{ error }}</div>
+      {% endif %}
+      <p>
+        {{ _("This discards this draft's %(upstream)s upstream factors, %(downstream)s downstream factors, %(constants)s constants, %(formulas)s formulas and %(equivalences)s equivalences, and replaces them with the published set's.",
+             upstream=counts.factor_upstream, downstream=counts.factor_downstream,
+             constants=counts.constant, formulas=counts.formula,
+             equivalences=counts.equivalence) }}
+      </p>
+      <p class="muted">
+        {{ _("This cannot be undone from this page. Importing again later would discard whatever you type next.") }}
+      </p>
+
+      <div class="dialog__actions">
+        <button type="button" class="button button--quiet" data-close-dialog>{{ _("Cancel") }}</button>
+        <button type="submit" class="button button--danger" aria-describedby="confirm-import-published-hint">{{ _("Import and discard this draft's own numbers") }}</button>{{ help.help_tip("What Import and discard does, once confirmed", _("Deletes this draft's own factors, constants, formulas and equivalences and writes the published set's in their place, once your proof checks out. The published set is only read. There is no undo, and no further confirmation after this."), id="confirm-import-published-hint", glyph=false) }}
+      </div>
+    </dialog>
+  </form>
+  {% endif %}
+
+  <p><a href="{{ list_url }}">{{ _("Back to factor sets") }}</a></p>
+
+</main>
+{% endblock %}

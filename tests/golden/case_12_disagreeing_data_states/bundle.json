@@ -1,0 +1,161 @@
+{
+  "version_label": "GOLDEN-case-12",
+  "is_mock": true,
+  "sectors": [
+    {
+      "code": "primary_production",
+      "name": "Primary production",
+      "sort_order": 10
+    },
+    {
+      "code": "processing",
+      "name": "Processing / Manufacturing",
+      "sort_order": 20
+    }
+  ],
+  "food_categories": [
+    {
+      "code": "standard_mix",
+      "name": "Standard mix",
+      "is_standard_mix": true,
+      "sort_order": 0
+    },
+    {
+      "code": "vegetables",
+      "name": "Vegetables",
+      "is_standard_mix": false,
+      "sort_order": 30
+    },
+    {
+      "code": "dairy",
+      "name": "Dairy",
+      "is_standard_mix": false,
+      "sort_order": 60
+    }
+  ],
+  "destination_groups": [
+    {
+      "code": "reuse",
+      "name": "Reuse",
+      "is_waste": false,
+      "sort_order": 10
+    },
+    {
+      "code": "disposal",
+      "name": "Disposal",
+      "is_waste": true,
+      "sort_order": 30
+    }
+  ],
+  "destinations": [
+    {
+      "code": "prevention",
+      "name": "Prevention",
+      "group": "reuse",
+      "sort_order": 10,
+      "is_prevention": true
+    },
+    {
+      "code": "landfill",
+      "name": "Landfill",
+      "group": "disposal",
+      "sort_order": 120
+    }
+  ],
+  "metrics": [
+    {
+      "code": "co2e",
+      "name": "Greenhouse gases",
+      "unit": "kg CO2e",
+      "display_unit": "kg CO2e",
+      "display_precision": 1,
+      "sort_order": 10
+    },
+    {
+      "code": "mass",
+      "name": "Mass",
+      "unit": "kg",
+      "display_unit": "kg",
+      "display_precision": 1,
+      "sort_order": 50
+    }
+  ],
+  "constants": [],
+  "formulas": [
+    {
+      "metric": "co2e",
+      "expression": "qty_kg * (upstream + downstream)",
+      "notes": ""
+    },
+    {
+      "metric": "mass",
+      "expression": "qty_kg",
+      "notes": ""
+    }
+  ],
+  "upstream": [
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "1.9000000000"
+    },
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "vegetables",
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "0.4500000000"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "vegetables",
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000"
+    }
+  ],
+  "downstream": [
+    {
+      "destination": "landfill",
+      "sector": null,
+      "food_category": "dairy",
+      "metric": "co2e",
+      "value_per_kg": "0.9900000000",
+      "source_note": "A category-specific row: it wins over the generic landfill row for dairy."
+    },
+    {
+      "destination": "landfill",
+      "sector": null,
+      "food_category": null,
+      "metric": "co2e",
+      "value_per_kg": "0.7000000000",
+      "source_note": "The generic row, which is what the vegetables entry draws."
+    },
+    {
+      "destination": "prevention",
+      "sector": null,
+      "food_category": null,
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000"
+    }
+  ],
+  "equivalences": [
+    {
+      "code": "km_driven",
+      "name": "Kilometres driven",
+      "source_metric": "co2e",
+      "value_per_unit": "4.1800000000",
+      "label_template": "Equivalent to driving {value} km",
+      "sort_order": 10
+    }
+  ]
+}

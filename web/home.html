@@ -3,50 +3,192 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Use the Kai Commitment food waste impact calculator and read the latest Kai Commitment news.">
-    <title>Home | Kai Commitment Food Waste Impact Calculator</title>
+    <meta name="description" data-i18n-attr="content" content="Use the Kai Commitment food waste impact calculator and read the latest Kai Commitment news.">
+    <title data-i18n>Home | Kai Commitment Food Waste Impact Calculator</title>
     <link rel="stylesheet" href="./css/styles.css">
   </head>
   <body class="home-page">
-    <a class="skip-link" href="#main-content">Skip to main content</a>
+    <!-- **THIS PAGE IS RETIRED. NOTHING LINKS TO IT, AND `/` NO LONGER SERVES IT.**
+
+         The team dropped it as the landing page: it looked poor, and it duplicated the
+         client's own website, which already carries this material. `docker/nginx.conf`
+         says `index index.html` again, the calculator's introduction screen is back, and
+         `home.html` is gone from the drawer, from every header navigation and from the
+         wordmark link on `stats.html` and `methodology.html`.
+
+         **It is retired, not deleted, and the reason is the news feed.** The client has
+         not decided whether they want one. `web/js/home.js` and `web/js/news.js` are here
+         for the same reason and say so at the top of each file. Everything still works if
+         you type `/home.html`: the page renders, the feed loads when
+         `KAICALC_NEWS_ORIGIN` is set, and its strings are still translated in all twenty
+         catalogues, because `tests/web/i18n_keys.py` reads every `web/*.html` and
+         `web/js/*.js` in the tree and does not ask which of them anybody can reach.
+
+         **So do not delete this file, and do not wire it back up, without the client's
+         answer.** Reviving it is: one line in `docker/nginx.conf` if it is to be the
+         landing page again, one row in the drawer on three pages, and a decision about
+         the calculator's introduction screen, which is the thing this page displaced.
+         Deleting it is: this file, `home.js`, `news.js`, their catalogue keys in twenty
+         files, `KAICALC_NEWS_ORIGIN` and `KAICALC_NEWS_IMAGE_ORIGINS` and the two CSP
+         directives derived from them. Neither is a tidy-up.
+
+         What follows is the page exactly as it was reviewed, frozen.
+
+         **Every word below is already somewhere else in this front end, and that is a
+         constraint rather than a coincidence.** The hero is this page's own; the rest is
+         lifted verbatim from `index.html`'s introduction screen - deleted when this page
+         landed, restored when it was retired - and from `methodology.html` and
+         `stats.html`: pages the team wrote and the client has
+         seen. Nothing here is newly client-voiced copy, and nothing here is a placeholder
+         waiting for copy that may never arrive. It also means every string on this page is
+         already a key in twenty catalogues: a home page written in new English would have
+         been a home page in English on nineteen locales until somebody translated it.
+
+         **The subject is the calculator, never New Zealand.** The statistics standfirst
+         below says so in as many words. These are self-selected calculations, and a
+         sentence from this page screenshotted as a claim about the country is a real
+         reputational risk for the client.
+
+         See index.html: the page is rendered by ES modules, so the chooser is built by
+         js/i18n.js rather than shipped here, and this note is about the page as a whole. -->
+    <noscript>
+      <p class="noscript-notice">This page needs JavaScript to run. With scripting turned off it cannot load the latest news, or be shown in a language other than English.</p>
+    </noscript>
+    <a class="skip-link" href="#main-content" data-i18n>Skip to main content</a>
+    <!-- **THE DRAWER. One markup block, the same on all four pages.**
+
+         `<details>`, not a button and a class toggle. It folds, takes a keyboard and
+         announces its own expanded state with no script at all, which matters on
+         `home.html`, `stats.html` and `methodology.html`: they are static content and
+         must not lose their navigation when scripting is off. `web/js/drawer.js` adds
+         `Escape` and syncs `aria-expanded`; neither is load-bearing.
+
+         **It overlays and never compresses.** `position: fixed`, pinned to the page's
+         inline-start edge and vertically centred, so it takes no width from the
+         document. Horizontal space is the binding constraint on this interface - the
+         owner's laptop is a 938px CSS viewport, already under the 960 breakpoint, and
+         a destination row has a 544px floor. A 240px sidebar in flow would leave
+         698px and break the step this team measured and fixed.
+
+         It is also **not in the header row**, which is a measured budget: 93px holding
+         a 67px logo and a 44px language chooser, defended by
+         `test_a_short_step_is_not_floored_by_a_stale_min_height`. A strip of its own
+         was tried once and cost 57px. And it is vertically centred rather than pinned
+         to the bottom, because the calculator's `position: sticky; bottom: 0` step bar
+         owns the bottom edge and is what put every step's primary action above the
+         fold.
+
+         **No `aria-current` here**, deliberately. The header navigation on the three
+         content pages carries it, and a second element claiming to be the current page
+         is a page with two current pages. On the calculator nothing claims it, which is
+         what `tests/test_d_statistics_content.py` asserts. -->
+    <details class="site-drawer" id="site-drawer">
+      <summary class="site-drawer__handle">
+        <span class="sr-only" data-i18n>Site navigation</span>
+      </summary>
+      <div class="site-drawer__panel">
+        <nav class="site-drawer__nav" data-i18n-attr="aria-label" aria-label="Site navigation">
+          <a href="./home.html" data-i18n>Home</a>
+          <a href="./index.html" data-i18n>Calculator</a>
+          <a href="./stats.html" data-i18n>Statistics</a>
+          <a href="./methodology.html" data-i18n>Documentation</a>
+        </nav>
+      </div>
+    </details>
     <header class="site-header">
       <div class="header-inner public-header-inner home-header-inner">
-        <a class="brand" href="./home.html" aria-label="Kai Commitment home">
-          <img src="./assets/kai-commitment-logo.png" alt="Kai Commitment - Leading action on food waste">
-          <span class="prototype-label">Impact calculator</span>
+        <a class="brand" href="./home.html" data-i18n-attr="aria-label" aria-label="Kai Commitment home">
+          <img src="./assets/kai-commitment-logo.png" data-i18n-attr="alt" alt="Kai Commitment - Leading action on food waste">
+          <span class="prototype-label" data-i18n>Impact calculator</span>
         </a>
-        <nav class="public-nav home-nav" aria-label="Primary navigation">
-          <a href="./home.html" aria-current="page">Home</a>
-          <a href="./index.html">Calculator</a>
-          <a href="./stats.html">Statistics</a>
-          <a href="./methodology.html">Documentation</a>
+        <nav class="public-nav home-nav" data-i18n-attr="aria-label" aria-label="Primary navigation">
+          <a href="./home.html" aria-current="page" data-i18n>Home</a>
+          <a href="./index.html" data-i18n>Calculator</a>
+          <a href="./stats.html" data-i18n>Statistics</a>
+          <a href="./methodology.html" data-i18n>Documentation</a>
         </nav>
       </div>
     </header>
 
     <main class="main-content home-main" id="main-content" tabindex="-1">
+      <div class="home-hero-shell">
       <section class="home-hero" aria-labelledby="home-title">
         <div>
-          <p class="eyebrow">Food waste impact calculator</p>
-          <h1 id="home-title">Turn food waste information into action</h1>
-          <p class="lead">Estimate the environmental and financial impact of food waste, then explore how changes to its destination could affect the result.</p>
-          <a class="button button-primary button-large" href="./index.html">Use the calculator</a>
+          <p class="eyebrow" data-i18n>Food waste impact calculator</p>
+          <h1 id="home-title" data-i18n>Turn food waste information into action</h1>
+          <p class="lead" data-i18n>Estimate the environmental and financial impact of food waste, then explore how changes to its destination could affect the result.</p>
+          <!-- One click, and it used to land on step one. The calculator's introduction
+               screen is back now that this page is retired, so following this link from a
+               directly-typed /home.html reaches that screen rather than the first
+               question. Left as it is: this page is frozen at the state it was reviewed
+               in, and the link still goes to the calculator. -->
+          <a class="button button-primary button-large" href="./index.html" data-i18n>Use the calculator</a>
+          <p class="privacy-note" data-i18n>Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.</p>
         </div>
       </section>
 
+      <!-- The half-circle derived from the logo, which the brand guidelines make the
+           primary supporting graphic: an odd-numbered overlapping group at small scale.
+           It was drawn by `introduction()` in `web/js/calculator.js` and came here with
+           the rest of that screen, as static markup because nothing about it varies.
+           Decorative, so `aria-hidden`; the arches are cut out of a solid Kale band with
+           a mask, and the photograph behind shows through the holes. -->
+      <div class="hero-food-pattern" aria-hidden="true"><svg class="food-arch-mask" viewBox="0 0 1500 190" preserveAspectRatio="none"><defs><mask id="food-arch-cutouts"><rect width="1500" height="190" fill="white" /><ellipse cx="150" cy="190" rx="205" ry="166" fill="none" stroke="black" stroke-width="32"/><ellipse cx="150" cy="190" rx="151" ry="120" fill="none" stroke="black" stroke-width="28"/><ellipse cx="450" cy="190" rx="205" ry="166" fill="none" stroke="black" stroke-width="32"/><ellipse cx="450" cy="190" rx="151" ry="120" fill="none" stroke="black" stroke-width="28"/><ellipse cx="750" cy="190" rx="205" ry="166" fill="none" stroke="black" stroke-width="32"/><ellipse cx="750" cy="190" rx="151" ry="120" fill="none" stroke="black" stroke-width="28"/><ellipse cx="1050" cy="190" rx="205" ry="166" fill="none" stroke="black" stroke-width="32"/><ellipse cx="1050" cy="190" rx="151" ry="120" fill="none" stroke="black" stroke-width="28"/><ellipse cx="1350" cy="190" rx="205" ry="166" fill="none" stroke="black" stroke-width="32"/><ellipse cx="1350" cy="190" rx="151" ry="120" fill="none" stroke="black" stroke-width="28"/><path d="M 300 72 L 336 126 L 300 181 L 264 126 Z" fill="black"/><path d="M 600 72 L 636 126 L 600 181 L 564 126 Z" fill="black"/><path d="M 900 72 L 936 126 L 900 181 L 864 126 Z" fill="black"/><path d="M 1200 72 L 1236 126 L 1200 181 L 1164 126 Z" fill="black"/></mask></defs><rect width="1500" height="190" fill="currentColor" mask="url(#food-arch-cutouts)"/></svg></div>
+      </div>
+
+      <!-- Step zero: what to have to hand before starting. It is the one half of the
+           calculator's introduction screen that told the reader something, and it belongs
+           in front of the button rather than behind it. -->
+      <section class="home-needs" aria-labelledby="needs-heading">
+        <div class="needs-panel">
+          <h2 id="needs-heading" data-i18n>What you will need</h2>
+          <ul class="check-list">
+            <li data-i18n>Where the waste occurred in the food supply chain</li>
+            <li data-i18n>The food category, if known</li>
+            <li data-i18n>The total waste amount — a weight, or how many containers you fill</li>
+            <li data-i18n>How that total was distributed across waste destinations</li>
+          </ul>
+        </div>
+      </section>
+
+      <div class="home-explainers">
+        <section class="review-block home-explainer" aria-labelledby="home-method-heading">
+          <p class="eyebrow" data-i18n>Transparency</p>
+          <h2 id="home-method-heading" data-i18n>Methodology and published factors</h2>
+          <p data-i18n>Calculation factors and formulas are supplied by the calculator service so the published method remains transparent and versioned.</p>
+          <a class="home-explainer-link" href="./methodology.html" data-i18n>Documentation</a>
+        </section>
+
+        <section class="review-block home-explainer" aria-labelledby="home-stats-heading">
+          <p class="eyebrow" data-i18n>Calculator activity</p>
+          <h2 id="home-stats-heading" data-i18n>Statistics from this tool</h2>
+          <p data-i18n>These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.</p>
+          <a class="home-explainer-link" href="./stats.html" data-i18n>Statistics</a>
+        </section>
+
+        <!-- No link out of this one on purpose: the footer's transparency notice below
+             already carries "What we record" to the same anchor on every page, and two
+             links with one label to one target is a list of routes rather than a page. -->
+        <section class="review-block home-explainer" aria-labelledby="home-record-heading">
+          <p class="eyebrow" data-i18n>Important information</p>
+          <h2 id="home-record-heading" data-i18n>What we record</h2>
+          <p data-i18n>The sector, food category, the specific food where you name one, and the quantities entered into the calculator are recorded anonymously. They join the privacy-protected public statistics only if you choose to offer them. We do not record information that identifies you or your business.</p>
+        </section>
+      </div>
+
       <section class="home-news" aria-labelledby="news-heading">
-        <p class="eyebrow">From Kai Commitment</p>
-        <h2 id="news-heading">Latest news</h2>
-        <p>Updates and practical insights from the Kai Commitment website.</p>
+        <p class="eyebrow" data-i18n>From Kai Commitment</p>
+        <h2 id="news-heading" data-i18n>Latest news</h2>
+        <p data-i18n>Updates and practical insights from the Kai Commitment website.</p>
         <div id="news-feed" class="home-news-grid" aria-live="polite" aria-busy="true">
-          <p class="loading-state" role="status">Loading latest news…</p>
+          <p class="loading-state" role="status" data-i18n>Loading latest news…</p>
         </div>
       </section>
     </main>
 
     <footer>
-      <p>Kai Commitment · Food Waste Impact Calculator</p>
-      <p class="transparency-notice">This tool stores the sector, food category and quantities entered for aggregate statistics. It stores nothing that identifies you or your business. <a href="./methodology.html#what-we-record">What we record</a></p>
+      <p data-i18n>Kai Commitment · Food Waste Impact Calculator</p>
+      <p class="transparency-notice"><span data-i18n>This calculator stores the sector, food category, the specific food where you name one, and the quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.</span> <a href="./methodology.html#what-we-record" data-i18n>What we record</a></p>
     </footer>
     <script type="module" src="./js/home.js"></script>
   </body>

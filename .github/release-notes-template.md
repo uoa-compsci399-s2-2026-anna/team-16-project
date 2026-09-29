@@ -87,9 +87,11 @@ are printed by:
 docker compose -f docker/compose.yaml logs migrate
 ```
 
-Nothing binds port 80, 8000, 8080, 3000 or 5000. nginx is on 18080; the API and
-the panel are additionally published on 18000 and 18001 for development, and
-those two `ports:` blocks are meant to be removed in production (see fact 3).
+Nothing binds port 80, 8000, 8080, 3000 or 5000. **nginx is on 18080 and is the
+only published port** — the API and the panel are reached through it, which is
+what makes the rate limit and the blocklist per-visitor (see fact 3).
+`docker/compose.direct-ports.yaml` republishes them on 18000 and 18001 for
+development, and turns that guarantee back off in the same file.
 
 ---
 
@@ -134,11 +136,19 @@ a secret manager or an environment file, inject the *same value* everywhere.
 `SECRET_KEY` is also what signs the staff session cookie, so rotating it logs
 every administrator out; that part, at least, is visible.
 
-### 3. `PROTECTION_TRUSTED_PROXY` defaults to false, and there will be a proxy in front
+### 3. `PROTECTION_TRUSTED_PROXY` is true in the shipped stack, and false in the code
 
 It states one fact about the deployment: *is there a reverse proxy in front of
-this?* Left false behind one, every caller arrives as the proxy's own address,
-and the rate limits collapse into shared counters.
+this, and can it be bypassed?* Left false behind one, every caller arrives as
+the proxy's own address, and the rate limits collapse into shared counters.
+
+`docker/compose.yaml` and `docker/compose.deploy.yaml` set it **true**, and are
+entitled to: they publish nothing but nginx's port, so nothing can reach the
+applications except the proxy that overwrites `X-Forwarded-For`. The defaults
+compiled into `api/app.py` and `admin/config.py` are still **false**, because a
+process cannot see its own topology — a bare `./run.sh api` has no proxy in
+front of it. If you deploy these images yourself, behind your own proxy, that
+false is what you get and you must set it.
 
 **The cost is concrete.** The API allows 600 GETs and 120 calculates per hour,
 keyed on the caller's address. Behind a proxy with this false, every caller *is*
@@ -154,14 +164,16 @@ address, and a single block can then deny everyone. The nginx configuration
 shipped here overwrites the header with `$remote_addr`; that has been verified
 against an echo upstream.
 
-It is a **paired edit**, never one without the other:
+It is a **paired fact**, never one half without the other:
 
-* set `PROTECTION_TRUSTED_PROXY=true`, **and**
-* delete the `ports:` blocks from the `api` and `admin` services.
+* `PROTECTION_TRUSTED_PROXY=true`, **and**
+* no `ports:` blocks on the `api` and `admin` services.
 
 While those ports are published, a caller can bypass nginx entirely and send
-whatever `X-Forwarded-For` they like — and with the flag now true, it will be
-believed.
+whatever `X-Forwarded-For` they like — and with the flag true, it will be
+believed. Both halves ship together in the compose files, and
+`docker/compose.direct-ports.yaml` reverses both together; if you assemble a
+deployment yourself, keep them paired.
 
 ### 4. `SESSION_HTTPS_ONLY` is false in the shipped compose file
 
@@ -170,8 +182,9 @@ with the flag true the browser accepts the login, receives a `Secure` cookie,
 refuses to send it back, and bounces straight to the login page — a panel
 nobody can enter.
 
-**Anyone putting TLS in front must set it to `true`**, at the same time as
-removing the direct `ports:` blocks in fact 3. Over HTTPS, leaving it false is
+**Anyone putting TLS in front must set it to `true`.** (The direct `ports:`
+blocks that used to have to be removed alongside it are already gone — see
+fact 3.) Over HTTPS, leaving it false is
 what lets a single plain-HTTP navigation on the admin origin hand a live staff
 session to anyone watching the network.
 

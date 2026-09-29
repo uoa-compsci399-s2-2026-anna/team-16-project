@@ -1,0 +1,2018 @@
+"""`api/pdf_render.py` — the server-rendered export document.
+
+**What these tests refuse to accept as evidence.** `len(pdf) > 0` and
+`pdf[:5] == b"%PDF-"` prove nothing about this file. The export it replaces
+produced a structurally valid PDF that opened in every reader and said
+`K?mara`; another shape of the same defect produced a 71 KB image with no
+extractable text at all. Both are "a PDF". So every test below either extracts
+the text and asserts on what a reader will actually see, or walks the laid-out
+box tree and asserts on where the layout engine actually put it.
+
+The three defects the task exists to close each have a test here that fails if
+it comes back:
+
+* a title 84pt off a 595pt page  ->  `test_no_text_runs_off_the_page`
+* Arabic ordered left-to-right   ->  `test_an_rtl_locale_sets_the_base_direction`
+* `Kūmara` becoming `K?mara`     ->  `test_a_macron_survives_the_document`
+
+and the constraint that outranks all three - §2.2's mandatory,
+non-dismissible placeholder warning while O-1 stands - has three:
+`test_the_mock_warning_is_in_the_pdf_text`,
+`test_the_mock_warning_repeats_on_every_page` and
+`test_deleting_the_warning_from_the_template_refuses_to_render`.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import re
+import unicodedata
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
+from pathlib import Path
+
+import pytest
+
+from api import pdf_render
+from api.pdf_render import (
+    ABSENT,
+    MOCK_WARNING_FLAG,
+    _CATEGORY_AVERAGE_BODY,
+    _CATEGORY_AVERAGE_FLAG,
+    _PERIOD_SENTENCE,
+    _TIME_FRAME_LABELS,
+    MockWarningMissingError,
+    build_context,
+    render_html,
+    render_results_pdf,
+    text_direction,
+)
+from db.types import (
+    DestinationGroupSpec,
+    DestinationSpec,
+    FoodCategorySpec,
+    MetricSpec,
+    SectorSpec,
+    TaxonomySnapshot,
+)
+from engine.types import (
+    UpstreamBasis,
+    DATA_COMPLETE,
+    DATA_INCOMPLETE,
+    DATA_NOT_SUPPLIED,
+    DATA_UNDEFINED,
+    BreakdownRow,
+    CalculationResult,
+    CalculationTotals,
+    DataState,
+    EntryResult,
+    EquivalenceResult,
+    MetricResult,
+    MoneyResult,
+    ScenarioResult,
+)
+from api import i18n
+from api.pdf_render import DOCUMENT_STRINGS, MOCK_WARNING_BODY, UndrawableCharacterError
+from tests.support.pdf import (
+    border_widths,
+    document_language,
+    extract_text,
+    laid_out_lines,
+    overflowing_boxes,
+    requires_weasyprint,
+)
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+# --------------------------------------------------------------------------
+# Fixtures. Engine-shaped objects, built from `engine/types.py`'s own
+# dataclasses rather than from a hand-written stand-in, so a field renamed in
+# the contract breaks these tests instead of letting them drift.
+# --------------------------------------------------------------------------
+
+#: A staff-typed destination name carrying a macron. THE POINT OF THE WHOLE
+#: TASK IS IN THIS STRING: `ū` (U+016B) is outside WinAnsi, and the browser
+#: export either rasterised the page or wrote `K?mara`. It is also exactly the
+#: kind of name a New Zealand food-waste taxonomy will really contain.
+MACRON_NAME = "Kūmara peelings to compost"
+
+#: A German compound of the length that put a title 84pt off the page. Nothing
+#: here clamps or truncates it; CSS breaks it across lines.
+LONG_NAME = (
+    "Lebensmittelabfallvermeidungsmaßnahmenbewertungsverordnungsdurchführung "
+    "Rückverfolgbarkeitsdokumentationspflichtenverzeichnis"
+)
+
+
+def _metric(
+    code: str, total: str, *, unit: str = "kg CO2e", precision: int = 1, rows=()
+) -> MetricResult:
+    return MetricResult(
+        metric_code=code,
+        unit=unit,
+        display_precision=precision,
+        total=Decimal(total),
+        by_destination=tuple(rows),
+    )
+
+
+def _row(destination: str, qty: str, value: str) -> BreakdownRow:
+    return BreakdownRow(
+        destination_code=destination,
+        qty_kg=Decimal(qty),
+        upstream=Decimal("2.5"),
+        downstream=Decimal("-0.4"),
+        value=Decimal(value),
+        #: v1.59. An entry-level row, so a member rather than `None`. The
+        #: PDF does not print the basis per line -- it prints the entry's
+        #: roll-up -- but the field is required on the dataclass precisely so
+        #: that a builder cannot leave the question unanswered.
+        upstream_basis=UpstreamBasis.CATEGORY_EVERY_DESTINATION,
+    )
+
+
+def _scenario(total_kg: str, metrics: dict[str, MetricResult], labels=()) -> ScenarioResult:
+    return ScenarioResult(
+        total_kg=Decimal(total_kg),
+        metrics=metrics,
+        equivalences=tuple(
+            EquivalenceResult(
+                code=f"eq{index}",
+                label=label,
+                value=Decimal("1"),
+                source_metric_code="co2e",
+            )
+            for index, label in enumerate(labels)
+        ),
+    )
+
+
+def _money() -> MoneyResult:
+    """A filled-in §4.5 money block.
+
+    The default fixture used to leave `money=None`, which meant the document's
+    whole money section - and its four translated labels - were never rendered
+    by any test. A locale that had lost one of those four keys would have gone
+    to production green.
+    """
+    return MoneyResult(
+        total_value_nzd=Decimal("18000.00"),
+        wasted_value_nzd=Decimal("3600.00"),
+        wasted_share_percent=Decimal("20.00"),
+        saving_nzd=Decimal("2400.00"),
+    )
+
+
+def _result(
+    *,
+    co2e: str = "4449.0",
+    is_mock: bool = True,
+    entry_count: int = 1,
+    destination_code: str = "landfill",
+) -> CalculationResult:
+    rows = (_row(destination_code, "1200.500", "3600.0"), _row("compost", "300.000", "849.0"))
+    current = _scenario(
+        "1500.500",
+        {"co2e": _metric("co2e", co2e, rows=rows)},
+        labels=["Equivalent to 18,024 km driven in an average car"],
+    )
+    alternative = _scenario(
+        "1500.500", {"co2e": _metric("co2e", "1200.0", rows=(_row("prevention", "1500.500", "0.0"),))}
+    )
+    entry = EntryResult(
+        sector_code="wholesale_retail",
+        food_category_code="fruit",
+        current=current,
+        alternative=alternative,
+        net_benefit={"co2e": Decimal("3249.0")},
+    )
+    return CalculationResult(
+        factor_set_version="MOCK-v0",
+        is_mock=is_mock,
+        gwp_horizon=100,
+        totals=CalculationTotals(
+            current=current,
+            alternative=alternative,
+            net_benefit={"co2e": Decimal("3249.0")},
+            money=_money(),
+        ),
+        entries=tuple(entry for _ in range(entry_count)),
+    )
+
+
+def _taxonomy(
+    *, destination_name: str = "Landfill", sector_name: str = "Wholesale and retail"
+) -> TaxonomySnapshot:
+    return TaxonomySnapshot(
+        sectors=(SectorSpec("wholesale_retail", sector_name, None, 30),),
+        food_categories=(FoodCategorySpec("fruit", "Fruit", False, 10),),
+        #: v1.58. Empty, and deliberately: `_Taxonomy` names a food item the
+        #: same way it names a category, so a renderer that only worked when
+        #: the vocabulary was populated would work in no deployment today.
+        food_items=(),
+        destination_groups=(DestinationGroupSpec("disposal", "Disposal", True, 30),),
+        destinations=(
+            DestinationSpec("landfill", destination_name, "disposal", None, 30, False),
+            DestinationSpec("compost", "Composting", "disposal", None, 20, False),
+            DestinationSpec("prevention", "Prevented", "disposal", None, 5, True),
+        ),
+        metrics=(MetricSpec("co2e", "Greenhouse gas", "kg CO2e", None, 1, 10),),
+        unit_presets=(),
+        factor_set_version="MOCK-v0",
+        factor_set_is_mock=True,
+        factor_set_item_level_enabled=False,
+    )
+
+
+# --------------------------------------------------------------------------
+# §2.2: the placeholder warning.
+# --------------------------------------------------------------------------
+
+
+@requires_weasyprint
+def test_the_mock_warning_is_in_the_pdf_text():
+    """The whole reason this file is dangerous: it is read later, elsewhere, by
+    someone who was not there. O-1 means every figure in it is placeholder data
+    until the client supplies real factors, and §2.2 makes saying so mandatory
+    and non-dismissible on every export.
+
+    Asserted on the EXTRACTED TEXT, not on the template source. A banner styled
+    into invisibility is not drawn, so it is not in here - which is the failure
+    a source-level assertion would miss.
+    """
+    text = extract_text(render_results_pdf(_result(), _taxonomy(), "en"))
+    assert "placeholder" in text.lower()
+    # The wording moved to the catalogue's own, which is what makes the warning
+    # translatable at all - `web/js/results.js` renders these same two strings
+    # into the on-screen banner, so the paper and the page now say the same
+    # thing in the same words. The assertion is not weakened by the move: it
+    # was "mock emissions factors", it is now the whole catalogue sentence, and
+    # `test_the_mock_warning_survives_in_every_locale` checks all twenty-one.
+    assert "verified calculation factors have not yet been supplied" in text.lower()
+
+
+@requires_weasyprint
+def test_the_mock_warning_repeats_on_every_page():
+    """Page one carries the banner; every page carries the flag.
+
+    `results.css` sets a named string on the banner and prints it in the
+    `@top-center` margin box, so a reader who is handed page three of a printout
+    still learns the figures are placeholders. Rendered with enough entries to
+    paginate, and asserted page by page - a document that happens to fit on one
+    page would make this test vacuous, so the assertion checks there is more
+    than one page first.
+    """
+    from pypdf import PdfReader
+    from io import BytesIO
+
+    pdf = render_results_pdf(_result(entry_count=14), _taxonomy(), "en")
+    reader = PdfReader(BytesIO(pdf))
+    assert len(reader.pages) > 1, "not paginated - this test would prove nothing"
+    for number, page in enumerate(reader.pages, start=1):
+        text = (page.extract_text() or "").lower()
+        assert "placeholder" in text, f"page {number} does not carry the warning"
+
+
+@requires_weasyprint
+def test_a_real_factor_set_carries_no_warning():
+    """The other half of the same rule: the banner is a statement of fact about
+    the factor set, not decoration. If it appeared under a published real set it
+    would be false, and a warning that is always on is a warning nobody reads."""
+    text = extract_text(render_results_pdf(_result(is_mock=False), _taxonomy(), "en"))
+    assert "placeholder" not in text.lower()
+
+
+def test_deleting_the_warning_from_the_template_refuses_to_render(tmp_path, monkeypatch):
+    """**The mutation, automated.**
+
+    PR #46's warning survived review only because it happened to reuse
+    `buildResultsReport()`; the inheritance was the mechanism, not a decision,
+    and a warning that survives by accident will one day not. So this test
+    performs the edit that would drop it - the whole `mock-warning` block,
+    removed from a copy of the template - and asserts the renderer refuses.
+
+    Not "renders without a banner". Refuses. A placeholder document that does
+    not say it is a placeholder is worse than no document, because it is the one
+    that gets forwarded.
+    """
+    source = (ROOT / "api" / "templates" / "results.html.j2").read_text(encoding="utf-8")
+    mutated = re.sub(
+        r"\{% if doc\.is_mock %\}.*?\{% endif %\}", "", source, count=1, flags=re.S
+    )
+    assert mutated != source, "the mutation did not apply - the block was not found"
+
+    (tmp_path / "results.html.j2").write_text(mutated, encoding="utf-8")
+    monkeypatch.setattr(pdf_render, "_TEMPLATE_DIR", tmp_path)
+
+    with pytest.raises(MockWarningMissingError):
+        render_html(_result(), _taxonomy(), "en")
+
+
+def test_the_warning_cannot_be_switched_off_by_a_caller():
+    """There is no parameter, keyword or flag that suppresses it: `is_mock` is
+    read off the engine's own result and nothing else decides. Asserted against
+    the renderer's public signature so that adding such a parameter later fails
+    here rather than passing review.
+
+    `generated_at` (Task 5) is on the allow-list: it decides a date in the
+    title block, never whether the warning is drawn - `is_mock` is still read
+    unconditionally off `result`, asserted on the line below. `period` (v1.68)
+    joins it on the same terms: it decides one sentence above the figures and
+    is read for nothing else, and the assertion below - `is_mock` true for a
+    context built with no period at all - is what says so."""
+    import inspect
+
+    names = set(inspect.signature(render_results_pdf).parameters)
+    assert names == {"result", "taxonomy", "locale", "generated_at", "period"}
+    assert build_context(_result(), _taxonomy(), "en")["is_mock"] is True
+
+
+# --------------------------------------------------------------------------
+# Defect one: text that ran off the page.
+# --------------------------------------------------------------------------
+
+
+@requires_weasyprint
+def test_every_figure_comes_from_the_result():
+    """The figures are the engine's, formatted for reading and not recomputed.
+    `4449.0` at the metric's own `display_precision` of 1 is `4,449.0` - the
+    same two operations `web/js/view.js::formatNumber` performs for the screen,
+    so the paper and the page cannot disagree about one calculation."""
+    text = extract_text(render_results_pdf(_result(co2e="4449.0"), _taxonomy(), "en"))
+    assert "4,449.0" in text
+
+
+@requires_weasyprint
+def test_the_equivalence_total_is_display_formatted_not_raw():
+    """The fifth surface divergence the final review found: `_equivalence_
+    rows` built its `total` field with `f"{source.total} {source.unit}"`,
+    bypassing `_figure` entirely, so a `Decimal` at the engine's own
+    `DECIMAL(20,10)` scale printed with all ten fraction digits and no
+    thousands separator - `4449.0000000000 kg CO2e` - where the page and the
+    text export both print `4,449.0 kg CO2e`.
+
+    `test_every_figure_comes_from_the_result` above does not catch this: its
+    default `co2e` total, `"4449.0"`, already has no grouping to lose and no
+    trailing zeros to trim, and the same figure is printed a second time,
+    correctly, in the ordinary metrics block - so `"4,449.0"` was already
+    somewhere in the document regardless of what the equivalence block did.
+    This uses the shape a real `MetricResult.total` actually has.
+    """
+    text = extract_text(
+        render_results_pdf(_result(co2e="4449.0000000000"), _taxonomy(), "en")
+    )
+    assert "4,449.0 kg CO2e" in text
+    assert "4449.0000000000" not in text
+
+
+@requires_weasyprint
+def test_the_equivalence_figure_row_does_not_repeat_the_whole_sentence():
+    """The sixth divergence the final review found, caught by a scoped
+    re-review: fixing the page's stutter and leaving the PDF's turned a wart
+    both surfaces shared into a fresh disagreement between them.
+    `api/templates/results.html.j2`'s last `<dd>` used to print `row.label` a
+    second time -- the card's own heading, already printed once, two lines
+    above -- where the page now prints just the figure the equivalence
+    carries. `_equivalence_rows`'s new `figure` field
+    (`_figure(item.value, 0)`) is what the template renders there now, the
+    same operation `web/js/results.js::equivalenceBasis` performs with
+    `formatNumber(row.value, 0)` for the page's own last row.
+
+    `_scenario()`'s equivalence stand-in fixes `value=Decimal("1")`, so the
+    figure this document must print is `1` -- and the label sentence itself
+    must appear exactly once (the heading), not twice.
+    """
+    label = "Equivalent to 18,024 km driven in an average car"
+    text = extract_text(render_results_pdf(_result(), _taxonomy(), "en"))
+    assert text.count(label) == 1, f"the label sentence appears {text.count(label)} times, not once"
+    assert re.search(r"=\s*1\b", text), f"no `= 1` figure row in: {text!r}"
+
+
+@requires_weasyprint
+def test_no_text_runs_off_the_page():
+    """**Defect one.** A German compound of 70-odd characters, typed by staff
+    into a destination name, laid out at A4.
+
+    Text extraction cannot catch this - a glyph drawn two centimetres past the
+    edge of the paper is still in the content stream and still comes back. So
+    this walks the laid-out box tree and compares each text box's inline extent
+    against the page. Nothing in `api/` measured anything to make it pass: the
+    fix is two CSS declarations (`overflow-wrap: anywhere`, `word-break:
+    break-word`) and the layout engine did the rest.
+    """
+    document = pdf_render.render_document(
+        _result(),
+        _taxonomy(destination_name=LONG_NAME, sector_name=LONG_NAME),
+        "de",
+    )
+    assert overflowing_boxes(document) == []
+
+
+@requires_weasyprint
+def test_a_long_name_is_wrapped_and_not_truncated():
+    """The other half of the same defect. "Nothing runs off the page" is also
+    satisfiable by cutting the text off, which would be a corrupted export in a
+    different way - so the long name has to still be readable in full."""
+    pdf = render_results_pdf(
+        _result(), _taxonomy(destination_name=LONG_NAME), "de"
+    )
+    text = extract_text(pdf).replace(" ", "")
+    assert LONG_NAME.replace(" ", "") in text
+
+
+# --------------------------------------------------------------------------
+# Defect two: right-to-left text.
+# --------------------------------------------------------------------------
+
+
+def test_an_rtl_locale_sets_the_base_direction():
+    """**Defect two**, at the point where it is decided.
+
+    The browser export never set `direction` or `textAlign`, so Arabic came out
+    left-to-right with the full stop at the start of the line. Setting `dir` on
+    `<html>` is what makes Pango run the Unicode bidirectional algorithm in the
+    right base context; task 4 does the catalogues, but the base direction is
+    the thing the layout engine needs first and it is decided here.
+    """
+    assert 'dir="rtl"' in render_html(_result(), _taxonomy(), "ar")
+    assert 'dir="ltr"' in render_html(_result(), _taxonomy(), "en")
+    assert 'lang="ar"' in render_html(_result(), _taxonomy(), "ar")
+
+
+@pytest.mark.parametrize(
+    "locale, expected",
+    [
+        ("ar", "rtl"),
+        ("ar-EG", "rtl"),
+        ("ur-PK", "rtl"),
+        ("he", "rtl"),
+        ("az-Arab", "rtl"),
+        ("en", "ltr"),
+        ("en-NZ", "ltr"),
+        ("mi", "ltr"),
+        ("de-DE", "ltr"),
+        ("", "ltr"),
+    ],
+)
+def test_text_direction_reads_the_tag(locale, expected):
+    assert text_direction(locale) == expected
+
+
+def test_the_stylesheet_names_no_physical_side():
+    """**The constraint task 4 inherits.** Logical properties only: `left` and
+    `right` in a stylesheet are a layout that has to be unpicked before Arabic
+    can work, and unpicking one is how a mirrored document ends up half
+    mirrored. Comments are stripped first, since the reasoning above the rules
+    discusses both words at length.
+    """
+    css = re.sub(r"/\*.*?\*/", "", pdf_render._STYLESHEET.read_text(encoding="utf-8"), flags=re.S)
+    offenders = re.findall(
+        r"(?:^|[;{\s])((?:margin|padding|border)-(?:left|right)"
+        r"|text-align\s*:\s*(?:left|right)"
+        r"|(?:^|\s)(?:left|right)\s*:)",
+        css,
+        flags=re.M,
+    )
+    assert offenders == [], f"physical properties in results.css: {offenders}"
+
+
+# --------------------------------------------------------------------------
+# Defect three: a character outside WinAnsi.
+# --------------------------------------------------------------------------
+
+
+@requires_weasyprint
+def test_a_macron_survives_the_document():
+    """**Defect three, and the one that is a data-integrity bug rather than a
+    layout one.** `ū` (U+016B) is outside WinAnsi. The hand-rolled export either
+    turned the whole document into a 71 KB image with no extractable text, or
+    wrote `K?mara` - a corrupted export of a staff-typed name, in a New Zealand
+    tool, for a New Zealand client whose vocabulary is full of macrons.
+
+    Three things are asserted, and each one kills one of the old failure modes:
+
+    * the macron character itself is in the extracted text - so it was not
+      substituted, and `?` appears nowhere in the document;
+    * the rest of the name is in the extracted text, unbroken;
+    * text came back at all - a rasterised page would yield none, which is what
+      the 71 KB image did.
+
+    **Why the whole name is not compared as one string.** The shipped brand
+    subsets carry no precomposed `ū`; `test_the_brand_faces_lack_precomposed_
+    macrons` below states that as the fact it is. Kumbh Sans does carry `u` and
+    the combining macron U+0304, so Pango composes the letter out of the two -
+    correct on paper, in the brand's own face, which is the right outcome for a
+    document where macrons are common. What it costs is that WeasyPrint maps the
+    mark glyph back to the whole cluster in the PDF's ToUnicode table, so the
+    text a reader COPIES out reads `Kuūmara`: the base letter appears twice. The
+    glyphs are right and the character is there; the copy-and-paste form has a
+    stray `u`. That is a font-coverage finding, recorded rather than papered
+    over - and papering over it here, by normalising the extracted text until it
+    matched, is precisely the "test that passes for the wrong reason" this
+    project keeps producing.
+
+    **Task 4 did not fix it, and adding twelve script faces did not either.**
+    Noto Sans, now embedded for Vietnamese and Cyrillic, *does* carry a
+    precomposed U+016B - but HarfBuzz decomposes the character and finds both
+    pieces in Kumbh Sans first, so the brand face still wins and still composes.
+    The only real fix is re-cutting the brand subsets to carry Latin Extended-A,
+    which replaces a client-supplied asset that `web/assets/fonts/` also serves
+    to every visitor; that is a brand decision, not a renderer's. The exact
+    extracted form shifted from `Kuūmara` to `Ku ū mara` - the mark's own
+    advance now reads as a space - which is the same defect with different
+    whitespace, and is why the assertions below are on the pieces rather than
+    on one literal.
+    """
+    pdf = render_results_pdf(_result(), _taxonomy(destination_name=MACRON_NAME), "en")
+    text = unicodedata.normalize("NFC", extract_text(pdf))
+
+    assert "ū" in text, "the macron did not reach the document as text"
+    assert "?" not in text, "a character was substituted somewhere in the document"
+    assert "K?mara" not in text
+    assert "mara peelings to compost" in text
+    # And it is real text, not a picture of text: the paragraph beside it came
+    # back too, which a rasterised page could not have produced.
+    assert "placeholder" in text.lower()
+
+
+def test_the_brand_faces_lack_precomposed_macrons():
+    """**A finding, pinned as a test so it cannot quietly change either way.**
+
+    Both shipped brand subsets are about 228 glyphs and neither carries the
+    precomposed Latin macron letters - no `ā`, no `ū` - which in a New Zealand
+    product is a real gap: te reo Māori words are not decoration here, they are
+    the client's own vocabulary. What saves the rendering is that Kumbh Sans
+    does carry the combining macron U+0304, so the letters compose correctly on
+    the page (see the test above); what it costs is the copy-and-paste form.
+
+    If somebody re-cuts the subsets to include U+0100..U+017F this test fails,
+    and the right response is to delete it and tighten the macron test above
+    into a straight `MACRON_NAME in text`. If somebody re-cuts them WITHOUT the
+    combining macron, the macron test fails instead - which is the outcome that
+    actually matters, because that is `K?mara` coming back.
+    """
+    from fontTools.ttLib import TTFont
+
+    for name in ("kumbh-sans-regular.woff2", "geologica-bold.woff2"):
+        cmap = TTFont(ROOT / "api" / "assets" / "fonts" / name).getBestCmap()
+        assert 0x016B not in cmap, f"{name} now has a precomposed u-macron"
+    kumbh = TTFont(ROOT / "api" / "assets" / "fonts" / "kumbh-sans-regular.woff2")
+    assert 0x0304 in kumbh.getBestCmap(), (
+        "Kumbh Sans has lost the combining macron - te reo Maori names can no "
+        "longer be composed in the brand's own face"
+    )
+
+
+# --------------------------------------------------------------------------
+# §7.6 rule 7: nothing is fetched.
+# --------------------------------------------------------------------------
+
+
+def test_the_document_refuses_to_fetch_from_a_host():
+    """Contract §7.6 rule 7 forbids a runtime asset from a third-party host,
+    and a server-rendered document is the case where breaking it would be
+    invisible - the request would leave the API container, where no reviewer and
+    no user would ever see it. Enforced, not remembered."""
+    with pytest.raises(ValueError):
+        pdf_render._local_url_fetcher("https://fonts.googleapis.com/css2?family=Geologica")
+    with pytest.raises(ValueError):
+        pdf_render._local_url_fetcher("http://example.test/logo.png")
+
+
+def test_the_document_refuses_to_read_outside_its_own_assets():
+    """The same fetcher, as a path guard: a `file://` URL that climbs out of
+    `api/assets/` is refused, so the renderer cannot be turned into a file-read
+    primitive by a template that interpolates a caller-supplied string."""
+    escape = (ROOT / "pyproject.toml").resolve().as_uri()
+    with pytest.raises(ValueError):
+        pdf_render._local_url_fetcher(escape)
+
+
+def test_no_stylesheet_or_template_url_points_at_a_host():
+    source = pdf_render.stylesheet_source() + render_html(_result(), _taxonomy(), "en")
+    assert "http://" not in source
+    assert "https://" not in source
+    assert "//fonts.googleapis" not in source
+
+
+def test_the_embedded_faces_match_the_public_ones():
+    """`api/assets/fonts/` is a third copy of the brand faces and has to be -
+    package-data cannot cross a package boundary and `api/` may not import
+    `admin/`. What it must not be is a DIFFERENT copy: the exported document and
+    the page it was exported from have to be in the same type."""
+    for name in ("geologica-bold.woff2", "kumbh-sans-regular.woff2"):
+        served = (ROOT / "web" / "assets" / "fonts" / name).read_bytes()
+        embedded = (ROOT / "api" / "assets" / "fonts" / name).read_bytes()
+        assert hashlib.sha256(embedded).hexdigest() == hashlib.sha256(served).hexdigest(), name
+
+
+def test_the_embedded_logo_matches_the_public_one():
+    """The same discipline as `test_the_embedded_faces_match_the_public_ones`,
+    for the one brand asset added in the v1.50 review: `api/assets/kai-
+    commitment-logo.png` is a third copy of the same file `web/home.html`,
+    `web/methodology.html` and `web/stats.html` already print, not a
+    recompressed, recoloured or resized one - the brand guideline's rule that
+    the logo may not be altered applies to this copy exactly as it does to
+    the one nginx serves."""
+    served = (ROOT / "web" / "assets" / "kai-commitment-logo.png").read_bytes()
+    embedded = (ROOT / "api" / "assets" / "kai-commitment-logo.png").read_bytes()
+    assert hashlib.sha256(embedded).hexdigest() == hashlib.sha256(served).hexdigest()
+
+
+def test_the_logo_is_in_the_title_block_itself():
+    """**Mutation target**, the same shape as `test_the_factor_set_version_is_
+    in_the_title_block_itself` above and for the same reason: a bare
+    whole-document substring check for `kai-commitment-logo.png` would stay
+    green even if the `<img>` moved outside `<header class="cover">`
+    entirely, so this reads that region specifically. The review's own
+    finding was that the mark and six words of byline carried the whole
+    identity with no actual logo anywhere in the document; this is what
+    closes it."""
+    html = render_html(_result(), _taxonomy(), "en")
+    match = re.search(r'<header class="cover">.*?</header>', html, re.S)
+    assert match, 'no <header class="cover"> in the rendered document'
+    assert 'src="kai-commitment-logo.png"' in match.group(0)
+
+
+@requires_weasyprint
+def test_the_brand_faces_are_embedded_in_the_pdf():
+    """**That the fonts actually loaded, read back out of the file.**
+
+    This is the test the rest of this file would have been missing, and it was
+    written after a real near-miss: WeasyPrint catches whatever a URL fetcher
+    raises and merely LOGS "Failed to load", so a fetcher that fails produces a
+    perfectly good-looking document set in a fallback face, and every other
+    assertion here - the warning, the figures, the wrapping - still passes. Off
+    brand, silently, in the client's own deliverable.
+
+    So the font names are read out of the PDF's own resource dictionary. A
+    subset is named `ABCDEF+Geologica-Bold`, hence the substring match.
+    """
+    from io import BytesIO
+
+    from pypdf import PdfReader
+
+    pdf = render_results_pdf(_result(), _taxonomy(), "en")
+    names: set[str] = set()
+    for page in PdfReader(BytesIO(pdf)).pages:
+        fonts = page.get("/Resources", {}).get("/Font", {})
+        for key in fonts:
+            names.add(str(fonts[key].get_object().get("/BaseFont", "")))
+
+    joined = " ".join(names)
+    assert "Geologica" in joined, f"headings are not in the brand face: {names}"
+    assert "Kumbh" in joined, f"body text is not in the brand face: {names}"
+
+
+def test_a_missing_face_is_an_error_and_not_a_silent_fallback(monkeypatch, tmp_path):
+    """A document that quietly rendered in a system font would be off-brand with
+    nothing in the output to say so. The brand's type or nothing."""
+    monkeypatch.setattr(pdf_render, "_FONT_DIR", tmp_path)
+    with pytest.raises(FileNotFoundError):
+        pdf_render.stylesheet_source()
+
+
+# --------------------------------------------------------------------------
+# §7.6.1: the document prints, it does not calculate.
+# --------------------------------------------------------------------------
+
+
+def test_the_template_contains_no_arithmetic():
+    """§7.6.1 leaves the front end no calculation but unit conversion, and the
+    server does not grow a second summation to compensate. A template that
+    totalled a column would be a second calculation site with no golden case
+    behind it - structurally the same defect as summing in the browser, one
+    layer down."""
+    source = (ROOT / "api" / "templates" / "results.html.j2").read_text(encoding="utf-8")
+    # Jinja comments stripped first: the block at the top of the template
+    # states this rule in prose and names the filters it forbids, and a test
+    # that tripped over the rule's own statement would be a test that reads a
+    # comment rather than the code.
+    template = re.sub(r"\{#.*?#\}", "", source, flags=re.S)
+    for forbidden in ("|sum", "sum(", "|round", "round(", "|float", "float(", "|int"):
+        assert forbidden not in template, f"{forbidden!r} in results.html.j2"
+
+
+def test_no_figure_is_routed_through_a_float():
+    """§1.2: decimals travel as strings because JavaScript's Number is a double,
+    and the same reasoning binds the server that produced them. A `float()` on a
+    figure would throw away digits at exactly the point they are being written
+    down for keeps."""
+    import ast
+
+    tree = ast.parse(Path(pdf_render.__file__).read_text(encoding="utf-8"))
+    calls = [
+        node.func.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    ]
+    assert "float" not in calls
+    # Parsed rather than grepped on purpose: the module's own docstring says the
+    # words `float(value)` while explaining why it does not do that, and a
+    # substring search would be a test that reads a comment.
+
+
+def test_figures_keep_the_engines_digits():
+    """The formatter groups and quantises; it does not re-derive. Half-up on the
+    `Decimal` itself, at the metric's own `display_precision`, and exact at any
+    size - `int()` on the integer part of the digit string is arbitrary
+    precision, so a figure larger than a double can hold still prints whole."""
+    assert pdf_render._figure(Decimal("4449.0"), 1) == "4,449.0"
+    assert pdf_render._figure(Decimal("1200.500"), 3) == "1,200.500"
+    assert pdf_render._figure(Decimal("-0.455"), 2) == "-0.46"
+    assert pdf_render._figure(Decimal("825"), 2) == "825.00"
+    assert pdf_render._figure(Decimal("12345678901234567890.5"), 0) == "12,345,678,901,234,567,891"
+    assert pdf_render._figure(None, 2) == pdf_render.ABSENT
+
+
+def test_names_come_from_the_taxonomy_and_are_never_translated():
+    """`code` is the cross-layer identifier; the name is a staff-typed row. It
+    is printed as typed, in every locale - a document that translated it would
+    be putting words in the client's mouth."""
+    for locale in ("en", "ar", "de"):
+        context = build_context(_result(), _taxonomy(destination_name=MACRON_NAME), locale)
+        assert context["entries"][0]["sector"] == "Wholesale and retail"
+        assert any(row["name"] == MACRON_NAME for row in context["destinations"])
+
+
+def test_an_absent_food_category_is_not_printed_as_the_standard_mix():
+    """**They are two answers now, and the document may not print them alike.**
+
+    This assertion was the other way round: the engine resolves a NULL category
+    to the standard mix, so the document substituted the standard-mix row's name
+    for `None`. Contract v1.55's multi-select makes the two separate answers a
+    visitor gives with separate checkboxes - §5.4 requires it - and they are
+    distinguishable on the wire, because the standard mix sends its own `code`
+    while "I do not know, or my waste is not broken down by type" sends `null`.
+    Substituting printed them byte-identically, so a submission that ticked both
+    produced two rows a reader could not tell apart carrying different figures.
+
+    `ABSENT` rather than a new sentence, because `Catalogue.gettext` raises on a
+    missing key: a new string on this path would refuse to render the document
+    in every language that had not translated it yet.
+    """
+    taxonomy = _taxonomy()
+    mixed = TaxonomySnapshot(
+        sectors=taxonomy.sectors,
+        food_categories=(
+            FoodCategorySpec("standard_mix", "Mixed food waste", True, 5),
+        ),
+        food_items=taxonomy.food_items,
+        destination_groups=taxonomy.destination_groups,
+        destinations=taxonomy.destinations,
+        metrics=taxonomy.metrics,
+        unit_presets=(),
+        factor_set_version="MOCK-v0",
+        factor_set_is_mock=True,
+        factor_set_item_level_enabled=False,
+    )
+    result = _result()
+    entry = result.entries[0]
+    unspecified = CalculationResult(
+        factor_set_version=result.factor_set_version,
+        is_mock=result.is_mock,
+        gwp_horizon=result.gwp_horizon,
+        totals=result.totals,
+        entries=(
+            EntryResult(
+                sector_code=entry.sector_code,
+                food_category_code=None,
+                current=entry.current,
+                alternative=entry.alternative,
+                net_benefit=entry.net_benefit,
+            ),
+        ),
+    )
+    context = build_context(unspecified, mixed, "en")
+    assert context["entries"][0]["food_category"] != "Mixed food waste", (
+        "a submission that ticked BOTH the standard mix and \"I do not know\" "
+        "prints two rows a reader cannot tell apart"
+    )
+    assert context["entries"][0]["food_category"] == ABSENT, (
+        f"an unstated food type prints as "
+        f"{context['entries'][0]['food_category']!r}; the document's own "
+        f"convention for a field the submission did not state is ABSENT"
+    )
+
+
+def test_an_unknown_code_prints_as_itself():
+    """A taxonomy row deactivated after a factor set was published must not 500
+    the document. Naming a destination by its code is worse than naming it
+    properly and much better than losing the figures beside it."""
+    context = build_context(
+        _result(destination_code="retired_destination"), _taxonomy(), "en"
+    )
+    assert any(row["name"] == "retired_destination" for row in context["destinations"])
+
+
+def test_a_metric_is_a_row_and_not_a_call_site():
+    """Metrics are data, not code: the totals table is built by iterating what
+    the engine reported, so adding a metric adds a line to this document without
+    this file or the template being touched. There is no `if code == "co2e"`
+    anywhere in the renderer."""
+    result = _result()
+    extra = dict(result.totals.current.metrics)
+    extra["cost_nzd"] = _metric("cost_nzd", "825", unit="NZD", precision=2)
+    scenario = ScenarioResult(
+        total_kg=result.totals.current.total_kg,
+        metrics=extra,
+        equivalences=result.totals.current.equivalences,
+    )
+    grown = CalculationResult(
+        factor_set_version=result.factor_set_version,
+        is_mock=result.is_mock,
+        gwp_horizon=result.gwp_horizon,
+        totals=CalculationTotals(
+            current=scenario, alternative=None, net_benefit=None, money=None
+        ),
+        entries=result.entries,
+    )
+    codes = [row["code"] for row in build_context(grown, _taxonomy(), "en")["totals"]]
+    assert codes == ["co2e", "cost_nzd"]
+
+    # And structurally: no comparison anywhere in the renderer tests a value
+    # against a metric code. Parsed rather than grepped, because the module's
+    # own comment states the rule by quoting the thing it forbids.
+    import ast
+
+    tree = ast.parse(Path(pdf_render.__file__).read_text(encoding="utf-8"))
+    compared = {
+        node.value
+        for compare in ast.walk(tree)
+        if isinstance(compare, ast.Compare)
+        for node in compare.comparators
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    }
+    assert compared.isdisjoint({"co2e", "cost_nzd", "water_l", "prevention"})
+
+
+# --------------------------------------------------------------------------
+# Task 4: twenty languages, and the two that mirror.
+# --------------------------------------------------------------------------
+#
+# WHAT THE HAND-ROLLED EXPORT DID, so that what is asserted below is measured
+# against it rather than against "looks fine":
+#
+#   * Right-to-left was not handled at all. `context.direction` and
+#     `textAlign` were never set, so every accent bar, indent and footer
+#     stayed physically left under Arabic and the bidi algorithm put the colon
+#     on the wrong side of each label. The worst instance printed the
+#     mock-data sentence's FULL STOP AT THE START OF THE LINE.
+#   * Twelve of the twenty locales were unselectable, unsearchable and opaque
+#     to a screen reader, because one character outside WinAnsi flipped the
+#     whole document to a rasterised image.
+#
+# Neither is caught by "the PDF is not empty", and neither is caught by "there
+# is text in it". The tests below therefore assert on three different kinds of
+# evidence, and each says what it would miss on its own:
+#
+#   * the EXTRACTED TEXT - proves glyphs were drawn as text rather than as a
+#     picture, and proves *which* words. Blind to where they are on the page.
+#   * the DOCUMENT CATALOGUE's `/Lang` - what a screen reader and a search
+#     index read. Blind to what was actually drawn.
+#   * the LAID-OUT BOX TREE - the only thing that can tell a mirrored document
+#     from one that merely contains Arabic, because a PDF stores glyphs in
+#     drawing order and extraction reorders them either way.
+
+#: Twenty catalogues plus English, whose catalogue is the source strings. Read
+#: from the loader rather than listed, so a twenty-first language is covered by
+#: every test here on the day its file lands.
+ALL_LOCALES = i18n.languages()
+
+
+def _normalise(text: str) -> str:
+    """Extracted text, reduced to what can honestly be compared.
+
+    Three things are removed, and each one is a real property of PDF text
+    extraction rather than a convenience:
+
+    * **Whitespace**, because where a line ends is the layout engine's
+      decision, and because a mark composed onto a base letter can come back
+      with a space beside it (Vietnamese `so` with its two marks extracts with
+      the marks spaced away from the letter).
+    * **Hyphens**, because `hyphens: auto` plus `<html lang>` means Pyphen now
+      breaks German and French headings, and the soft hyphen is in the text.
+    * **Case**, because `text-transform: uppercase` on the placeholder flag is
+      applied by the renderer, so the drawn text is `PLATZHALTERDATEN` and the
+      catalogue says `Platzhalterdaten`.
+
+    NFC first, so a letter composed from base plus combining mark compares
+    equal to its precomposed form. What is deliberately NOT done is any
+    reordering: an assertion that reversed right-to-left text until it matched
+    would be a test that passes for the wrong reason, and that is exactly the
+    failure this project keeps producing.
+    """
+    text = unicodedata.normalize("NFC", text)
+    for stripped in ("­", "‐", "-"):
+        text = text.replace(stripped, "")
+    return re.sub(r"\s+", "", text).casefold()
+
+
+@requires_weasyprint
+@pytest.mark.parametrize("locale", ALL_LOCALES)
+def test_every_locale_renders_as_extractable_text(locale):
+    """**Defect two's second half, per language.**
+
+    Twelve of twenty locales came back as a picture. A picture yields no text,
+    so this asserts text comes back - and then asserts *which* text, because
+    "some text" is also what a document rendered entirely in English would
+    give.
+
+    Four things, and each kills a different failure:
+
+    * text comes back at all -> not rasterised;
+    * `/Lang` is this document's language -> a screen reader and a search
+      index are told what they are reading;
+    * the placeholder flag is present IN THIS LANGUAGE -> the catalogue was
+      actually used, and section 2.2's warning reached the page rather than
+      only the HTML;
+    * the staff-typed destination name is present verbatim -> section 2.1's
+      database rows are not translated, in any locale.
+
+    **What it misses:** where any of it sits on the page. A document rendered
+    left-to-right would pass every line of this, which is why
+    `test_a_right_to_left_document_is_actually_mirrored` exists and reads the
+    box tree instead.
+    """
+    pdf = render_results_pdf(_result(), _taxonomy(), locale)
+    text = extract_text(pdf)
+    assert text.strip(), f"{locale}: no extractable text - the page was rasterised"
+
+    assert document_language(pdf) == locale, (
+        f"{locale}: the document declares {document_language(pdf)!r}"
+    )
+
+    flag = i18n.catalogue(locale).gettext(MOCK_WARNING_FLAG)
+    assert _normalise(flag) in _normalise(text), (
+        f"{locale}: the placeholder warning is not on the page in this language"
+    )
+
+    assert "Landfill" in text, (
+        f"{locale}: a staff-typed destination name was lost or translated"
+    )
+
+
+@pytest.mark.parametrize("locale", ALL_LOCALES)
+def test_no_locale_falls_back_to_english(locale):
+    """**Every string the document can print, in this language, in the HTML.**
+
+    Asserted on the rendered HTML rather than on extracted text, and
+    deliberately: extraction returns a PDF's glyphs in drawing order, so a
+    right-to-left or a reordering script comes back with its clauses shuffled
+    and a whole-sentence comparison against it would fail for Arabic, Tamil and
+    Thai on grounds that have nothing to do with translation. The HTML is what
+    the catalogue produced, exactly.
+
+    **What it misses:** whether any of it was drawn. A stylesheet that hid an
+    element would leave this green, which is what
+    `test_every_locale_renders_as_extractable_text` and
+    `test_the_mock_warning_is_in_the_pdf_text` cover from the other side.
+
+    **Three renders, not one, since v1.51.** `production_share_percent` and
+    each money field are in exactly one of four states per render -
+    `complete`, `incomplete`, `undefined` or `not_supplied` - so "Data
+    incomplete" and its money counterpart can never appear in the *same*
+    document as "Undefined" or a `complete` percentage. `_result()` alone
+    (all `not_supplied`) cannot reach the `incomplete` or `undefined`
+    sentences at all, and DOCUMENT_STRINGS is deliberately every string the
+    document CAN print, not every string one render prints - so this
+    concatenates the default render with one built to hit `incomplete` on
+    every §4.6 field and one built to hit `undefined` on both ratios, and
+    checks each catalogue string reached at least one of the three.
+    """
+    from markupsafe import escape
+
+    html = (
+        render_html(_result(), _taxonomy(), locale)
+        + render_html(_incomplete_totals_result(), _taxonomy(), locale)
+        + render_html(_undefined_totals_result(), _taxonomy(), locale)
+    )
+    catalogue = i18n.catalogue(locale)
+
+    for source in DOCUMENT_STRINGS:
+        translated = catalogue.gettext(source)
+        assert str(escape(translated)) in html, (
+            f"{locale}: {source!r} did not reach the document"
+        )
+        if locale != "en" and translated != source:
+            # A plain substring check false-positives once `source` is short
+            # enough to be a shared cognate's prefix: Task 7's "Total" is
+            # correctly translated to Afrikaans/Dutch "Totaal", but "Total"
+            # is also a literal substring of "Totale"/"Totaal" wherever
+            # *another*, unrelated key (`Total food waste`) is rendered
+            # nearby -- neither of those words IS the untranslated English
+            # source. Bounded on both sides by a non-letter/digit, the same
+            # check that finds the real defect (an untranslated whole word
+            # sitting in the document) stops finding a translated word that
+            # merely starts with it.
+            pattern = r"(?<![A-Za-z0-9])" + re.escape(str(escape(source))) + r"(?![A-Za-z0-9])"
+            assert not re.search(pattern, html), (
+                f"{locale}: the English source of {source!r} is in the document"
+            )
+
+
+@requires_weasyprint
+@pytest.mark.parametrize("locale", [code for code in ALL_LOCALES if code != "en"])
+def test_no_locale_prints_the_english_title(locale):
+    """The same rule as above, read back off the PAPER rather than the HTML.
+
+    One string, because one string is all that survives this comparison for
+    every script - but it is the string a reader sees first, and a document
+    that silently rendered in English would be caught by it in any language.
+    """
+    title = "Food Waste Impact Calculator — Results"
+    text = _normalise(extract_text(render_results_pdf(_result(), _taxonomy(), locale)))
+    english = _normalise(title)
+    if _normalise(i18n.catalogue(locale).gettext(title)) != english:
+        assert english not in text, f"{locale} rendered the English title"
+
+
+@pytest.mark.parametrize("locale", [code for code in ALL_LOCALES if code != "en"])
+def test_every_document_string_is_in_every_catalogue(locale):
+    """**The check that keeps the strict lookup from ever firing in earnest.**
+
+    `Catalogue.gettext` raises rather than falling back to English, which is
+    right for a document read months later by somebody who cannot ask - but a
+    renderer that raises in production is only an improvement on a renderer
+    that lies if something catches the mismatch first. This is that something,
+    and it runs without rendering anything, so it is green or red on every
+    desk including the ones with no Pango.
+
+    **What it misses:** a translation that is present but wrong, or present but
+    still in English. `tests/web/test_i18n_web.py` owns both of those for the
+    whole catalogue; this is about the twenty-one strings the export uses.
+    """
+    catalogue = i18n.catalogue(locale)
+    missing = [key for key in DOCUMENT_STRINGS if key not in catalogue.strings]
+    assert not missing, f"{locale} has no translation for: {missing}"
+
+
+def test_a_missing_key_is_refused_rather_than_rendered_in_english(monkeypatch):
+    """**The mutation, automated.**
+
+    A catalogue with one key removed. The front end's rule - render the English
+    source - is right for a page and wrong for this: a Tamil report with an
+    English heading in the middle looks like a corrupted file, and one rendered
+    *entirely* in English would be indistinguishable from one that had been
+    asked for in English. So the render fails.
+    """
+    catalogue = i18n.catalogue("ta")
+    without = dict(catalogue.strings)
+    del without[MOCK_WARNING_BODY]
+    monkeypatch.setitem(
+        i18n._CATALOGUES,
+        "ta",
+        i18n.Catalogue("ta", without, catalogue.direction, catalogue.tags),
+    )
+    with pytest.raises(i18n.MissingTranslationError):
+        render_html(_result(), _taxonomy(), "ta")
+
+
+@requires_weasyprint
+@pytest.mark.parametrize("locale", ALL_LOCALES)
+def test_the_mock_warning_survives_in_every_locale(locale):
+    """Section 2.2 in twenty-one languages, which is the only version of
+    "non-dismissible" that means anything to a reader of one of the other
+    twenty. O-1 means every figure this document can carry is placeholder data.
+
+    The flag is checked on the paper; the body is guaranteed by the render
+    having succeeded at all, because `_assert_mock_warning_present` compares
+    BOTH translated literals against the rendered HTML and raises before
+    WeasyPrint is called.
+    """
+    pdf = render_results_pdf(_result(), _taxonomy(), locale)
+    flag = i18n.catalogue(locale).gettext(MOCK_WARNING_FLAG)
+    assert _normalise(flag) in _normalise(extract_text(pdf))
+
+
+# --------------------------------------------------------------------------
+# The two that mirror.
+# --------------------------------------------------------------------------
+
+
+@requires_weasyprint
+@pytest.mark.parametrize("locale", ["ar", "ur"])
+def test_a_right_to_left_document_is_actually_mirrored(locale):
+    """**Defect two, at the only place it can honestly be measured.**
+
+    PR #46 rendered Arabic left-to-right and printed the mock-data sentence's
+    full stop at the START of the line. Extracted text cannot catch that: a PDF
+    stores glyphs in drawing order, so Arabic comes back reordered whichever
+    base direction was used, and every text-level assertion passes on the
+    broken rendering too.
+
+    So this reads the laid-out box tree. A paragraph's LAST line is short, and
+    which end of the measure that short line sits at is precisely the base
+    direction - in a right-to-left document it hugs the right edge, and the
+    sentence therefore *ends*, with its terminal punctuation, at the left. That
+    is the visible failure, stated as a measurement.
+
+    The accent bar is checked with it, because "every accent bar, indent and
+    the footer stayed physically left" was the rest of the same finding:
+    `results.css` writes `border-inline-start` and never `border-left`, so
+    under `dir="rtl"` the bar has to resolve to the right edge.
+
+    **What it misses:** nothing about the words. A document with the right
+    geometry and the wrong language passes this, which is what the extraction
+    tests above are for.
+
+    **Mutation:** hardcode `dir="ltr"` in `results.html.j2` and both assertions
+    fail - the last line moves to the left edge and the border moves with it.
+    """
+    document = pdf_render.render_document(_result(), _taxonomy(), locale)
+    body = laid_out_lines(document, "mock-warning__body")
+
+    assert len(body["lines"]) > 1, "single-line paragraph - this proves nothing"
+    start, width = body["lines"][-1]
+    assert width < body["content_width"] - 20, (
+        "the last line fills the measure - a full line sits at both edges and "
+        "this test would prove nothing"
+    )
+
+    measure_end = body["content_x"] + body["content_width"]
+    assert abs((start + width) - measure_end) < 1.0, (
+        f"{locale}: the last line ends at {start + width:.1f} on a measure "
+        f"ending at {measure_end:.1f} - it is not right-aligned, so the "
+        "sentence's terminal punctuation is at the wrong end of the line"
+    )
+    assert start > body["content_x"] + 20, (
+        f"{locale}: the last line still starts at the left margin"
+    )
+
+    left, right = border_widths(document, "mock-warning")
+    assert right > 0 and left == 0, (
+        f"{locale}: the accent bar did not move to the right edge "
+        f"(left={left}, right={right}) - border-inline-start did not mirror"
+    )
+
+
+@requires_weasyprint
+def test_a_left_to_right_document_is_not_mirrored():
+    """The other half, and the reason the test above is not vacuous: the same
+    two measurements on English have to come out the other way round. Without
+    this, a renderer that right-aligned everything in every language would pass
+    the right-to-left test."""
+    document = pdf_render.render_document(_result(), _taxonomy(), "en")
+    body = laid_out_lines(document, "mock-warning__body")
+
+    assert len(body["lines"]) > 1
+    start, width = body["lines"][-1]
+    assert width < body["content_width"] - 20
+    assert abs(start - body["content_x"]) < 1.0, "the last line is not left-aligned"
+
+    left, right = border_widths(document, "mock-warning")
+    assert left > 0 and right == 0
+
+
+@pytest.mark.parametrize("locale", ALL_LOCALES)
+def test_the_document_direction_follows_the_catalogue(locale):
+    """`dir` is read off the catalogue's own declaration, not guessed from the
+    language subtag. Arabic and Urdu are the two right-to-left catalogues the
+    calculator ships; everything else runs the other way, and a document that
+    mirrored a language nobody had marked would be a layout defect introduced
+    by a table rather than by a translator."""
+    expected = "rtl" if locale in ("ar", "ur") else "ltr"
+    assert build_context(_result(), _taxonomy(), locale)["dir"] == expected
+
+
+def test_a_catalogue_that_does_not_declare_a_direction_reads_the_tag(monkeypatch):
+    """**The fallback that keeps `text_direction` load-bearing.**
+
+    `dir` is optional in the catalogue format, and every catalogue on disk
+    happens to carry it - so a renderer that defaulted a silent file to
+    left-to-right would look correct today and mirror a future Hebrew or
+    Persian catalogue the wrong way the day somebody forgot the key. The
+    language subtag answers instead, which is the one thing that cannot be
+    forgotten: it is the file's name.
+    """
+    catalogue = i18n.catalogue("ar")
+    silent = i18n.Catalogue("ar", catalogue.strings, None, catalogue.tags)
+    monkeypatch.setitem(i18n._CATALOGUES, "ar", silent)
+    assert build_context(_result(), _taxonomy(), "ar")["dir"] == "rtl"
+
+
+@pytest.mark.parametrize(
+    "requested, language",
+    [
+        ("ar", "ar"),
+        ("ar-EG", "ar"),
+        ("zh-TW", "zh-Hant"),
+        ("zh-HK", "zh-Hant"),
+        ("zh-CN", "zh"),
+        ("zh-Hans", "zh"),
+        ("en-NZ", "en"),
+        ("fil", "tl"),
+        ("he", "en"),
+        ("qq", "en"),
+        ("", "en"),
+    ],
+)
+def test_the_document_declares_the_language_it_is_written_in(requested, language):
+    """`zh-TW` must not truncate into Simplified Chinese, and a tag nobody
+    claims must not leave the document claiming to be in a language it is not
+    written in.
+
+    `he` is the case worth reading twice: there is no Hebrew catalogue, so the
+    document is English - and it says `lang="en"`, `dir="ltr"`. Declaring
+    `lang="he"` would tell a screen reader to pronounce English as Hebrew and
+    would mirror the page around text that runs the other way.
+    """
+    context = build_context(_result(), _taxonomy(), requested)
+    assert context["lang"] == language
+    assert 'lang="%s"' % language in render_html(_result(), _taxonomy(), requested)
+
+
+# --------------------------------------------------------------------------
+# Font coverage: a box is a defect.
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("locale", ALL_LOCALES)
+def test_every_character_the_document_can_print_has_a_glyph(locale):
+    """**The fonts actually cover the scripts in use, checked per language.**
+
+    The brand faces are 228-glyph Latin subsets and the twenty languages span
+    eleven scripts. A character with no glyph in any embedded face is drawn as
+    an empty box or dropped, which is the same class of defect as the WinAnsi
+    rasterisation this export replaces - it looks fine to whoever generated it.
+
+    Read out of the font files' own character maps, not out of a table beside
+    them: a table is a second thing to keep in step, and the day it drifts is
+    the day this passes for the wrong reason.
+
+    **What it misses:** which face a character is drawn in - Traditional
+    Chinese set in Simplified glyphs would pass. That is what the per-language
+    ordering in `results.css` is for, and what
+    `test_the_script_faces_are_embedded_in_the_pdf` checks from the file.
+    """
+    catalogue = i18n.catalogue(locale)
+    text = "".join(catalogue.gettext(key) for key in DOCUMENT_STRINGS)
+    undrawable = sorted({c for c in text if not pdf_render._is_drawable(c)})
+    assert not undrawable, (
+        f"{locale} would print these as empty boxes: "
+        f"{[hex(ord(c)) for c in undrawable]}"
+    )
+
+
+def test_no_character_in_any_catalogue_would_print_as_a_box():
+    """**The widest form of the coverage question, and it comes out clean.**
+
+    Not the twenty-one strings the document prints today - every string in
+    every catalogue, 340 of them times twenty languages, 1,861 distinct
+    characters across eleven scripts. All of them have a glyph in some embedded
+    face.
+
+    That is a stronger claim than the document needs, and it is asserted at the
+    wider scope on purpose: the export's copy is assembled from catalogue keys,
+    so the set it draws from is the set below. A key swapped for another one
+    tomorrow cannot introduce a box.
+
+    **What it misses:** a staff-typed taxonomy name, which is not in any
+    catalogue and can contain anything. That is what
+    `test_a_character_no_face_can_draw_is_refused_and_not_drawn_as_a_box`
+    covers, and why the renderer raises rather than drawing one.
+    """
+    everything = set()
+    for locale in ALL_LOCALES:
+        for value in i18n.catalogue(locale).strings.values():
+            everything.update(value)
+    assert len(everything) > 1500, f"only {len(everything)} characters - fixture broken"
+    undrawable = sorted({c for c in everything if not pdf_render._is_drawable(c)})
+    assert not undrawable, [hex(ord(c)) for c in undrawable]
+
+
+@requires_weasyprint
+def test_a_character_no_face_can_draw_is_refused_and_not_drawn_as_a_box():
+    """**What stops the CJK subsets being a silent gap.**
+
+    The four CJK faces are cut to the characters the catalogues contain,
+    because whole ones are 10.9 MiB each and there are four
+    (`api/assets/fonts/noto/PROVENANCE.md` has the measurement). A staff-typed
+    taxonomy name in Chinese could therefore contain a character no embedded
+    face has - and WeasyPrint would draw an empty box and say nothing, which is
+    the defect this whole task exists to stop.
+
+    It raises instead, naming the character. A loud failure, not tofu.
+    """
+    rare = "鱻"  # a Han character outside every embedded subset
+    assert not pdf_render._is_drawable(rare), (
+        "this character is now covered - pick another, or delete this test"
+    )
+    with pytest.raises(UndrawableCharacterError) as raised:
+        render_results_pdf(_result(), _taxonomy(destination_name=rare), "zh")
+    assert "U+9C7B" in str(raised.value)
+
+
+@requires_weasyprint
+@pytest.mark.parametrize(
+    "locale, face",
+    [
+        ("ar", "Noto-Sans-Arabic"),
+        ("ur", "Noto-Sans-Arabic"),
+        ("ja", "Noto-Sans-CJK-JP"),
+        ("ko", "Noto-Sans-CJK-KR"),
+        ("zh", "Noto-Sans-CJK-SC"),
+        ("zh-Hant", "Noto-Sans-CJK-TC"),
+        ("ta", "Noto-Sans-Tamil"),
+        ("th", "Noto-Sans-Thai"),
+        ("hi", "Noto-Sans-Devanagari"),
+        ("pa", "Noto-Sans-Gurmukhi"),
+        ("gu", "Noto-Sans-Gujarati"),
+        ("ml", "Noto-Sans-Malayalam"),
+    ],
+)
+def test_the_script_faces_are_embedded_in_the_pdf(locale, face):
+    """**Read back out of the file, because a failed fetch is silent.**
+
+    WeasyPrint catches whatever a URL fetcher raises and merely logs "Failed to
+    load", so a face that did not load produces a good-looking document set in
+    whatever the host had lying around - and on a machine with
+    `fonts-noto-core` installed that is a *different copy of the same family*,
+    which no other assertion here could tell apart. The font names in the PDF's
+    own resource dictionary can.
+
+    Traditional Chinese is in the list beside Simplified for the reason the
+    per-language ordering in `results.css` exists: the four CJK faces overlap,
+    and a single stack would set one of the two in the other's glyphs.
+    """
+    from io import BytesIO
+
+    from pypdf import PdfReader
+
+    pdf = render_results_pdf(_result(), _taxonomy(), locale)
+    names = set()
+    for page in PdfReader(BytesIO(pdf)).pages:
+        fonts = page.get("/Resources", {}).get("/Font", {})
+        for key in fonts:
+            names.add(str(fonts[key].get_object().get("/BaseFont", "")))
+    joined = " ".join(sorted(names))
+    assert face in joined, f"{locale} is not set in {face}: {sorted(names)}"
+
+    # AND NOT IN A SIBLING'S GLYPHS. This half was added after the mutation
+    # test found the first half green with the per-language ordering deleted:
+    # the four CJK subsets are each cut to their own catalogue, so a document
+    # set in the wrong one still reaches the right one for the characters that
+    # one happens to lack - and "Noto-Sans-CJK-TC is in the file" was true of a
+    # Traditional document half-set in Simplified. The claim that matters is
+    # that no sibling is there at all.
+    siblings = {
+        "Noto-Sans-CJK-JP",
+        "Noto-Sans-CJK-KR",
+        "Noto-Sans-CJK-SC",
+        "Noto-Sans-CJK-TC",
+    } - {face}
+    for sibling in sorted(siblings):
+        assert sibling not in joined, (
+            f"{locale} is partly set in {sibling} - the per-language font "
+            "ordering in results.css is not doing its job"
+        )
+
+
+def test_the_pdf_and_the_screen_word_the_fallback_disclosure_identically():
+    """Contract v1.59. The same sentence reaches a visitor three ways -- the
+    results page, its plain-text export and this document -- and the three
+    have no code in common: two of them are `web/js/results.js` and the third
+    is `api/pdf_render.py`, in a different language, in a different package.
+
+    **Two copies of a sentence is two sentences the day one is reworded.**
+    The screen's copy is the catalogue key `results.js` passes to `t()`; this
+    module's copy is a module-level constant. They are the same string or a
+    visitor who reads the caveat on screen and then opens the PDF meets a
+    differently-worded one -- and, because `api/i18n` raises on a key no
+    catalogue carries, the PDF would fail outright rather than drift, which
+    is a better failure but still a failure this catches first.
+
+    Asserted against the FRONT END's extracted keys, not against the
+    catalogues: a key both sides had wrong in the same way would sit in every
+    catalogue and agree with itself.
+    """
+    from tests.web import i18n_keys
+
+    rendered = i18n_keys.source_strings()
+    for constant in (_CATEGORY_AVERAGE_FLAG, _CATEGORY_AVERAGE_BODY):
+        assert constant in rendered, (
+            f"{constant!r} is a string this document prints and nothing in "
+            "web/js or web/*.html renders, so the PDF says something the "
+            "screen does not"
+        )
+
+
+def test_the_period_strings_are_the_screens_own_and_every_catalogue_has_them():
+    """Contract v1.68. The period line is printed on three surfaces with no
+    code in common — `web/js/results.js` renders it on the results page and
+    writes it into the text download, and `api/pdf_render.py` prints it onto
+    the PDF — and it reaches all three through the **same five catalogue
+    keys**, coined nowhere.
+
+    **Two things are asserted here and the second is why the feature works at
+    all today.**
+
+    *They are the screen's own keys.* Same rule as the fallback disclosure
+    above: a sentence this document invents is a sentence the PDF says and the
+    page does not, and `test_no_catalogue_carries_a_key_the_front_end_never_
+    asks_for` would refuse the catalogue entry for it anyway.
+
+    *They are already in every catalogue.* `api/i18n.Catalogue.gettext` raises
+    rather than falling back to English, so a period key missing from Urdu is
+    not an English word in an Urdu report — it is a 500 on a download. These
+    five predate this revision (v1.48 shipped four of them as step 5's own
+    `<select>` options and one as the results line), which is exactly what lets
+    v1.68 print a period in twenty languages without waiting on a catalogue
+    pass. **A reworded key would land here**, as twenty failures naming the
+    locale, rather than in a bug report from somebody whose download broke.
+
+    Not folded into `DOCUMENT_STRINGS`: that tuple is asserted to appear
+    verbatim in a rendered document, and `_PERIOD_SENTENCE` carries a
+    `%(period)s` placeholder and is printed only when a period was stated.
+    """
+    from tests.web import i18n_keys
+
+    rendered = i18n_keys.source_strings()
+    period_strings = (_PERIOD_SENTENCE, *_TIME_FRAME_LABELS.values())
+    for key in period_strings:
+        assert key in rendered, (
+            f"{key!r} is a string this document prints and nothing in web/js "
+            "or web/*.html renders, so the PDF says something the screen does not"
+        )
+    # English excluded for the reason `test_every_document_string_is_in_every_
+    # catalogue` excludes it: `Catalogue.gettext` is the identity function for
+    # the source language, so its catalogue is empty by construction and
+    # carries no key at all.
+    for locale in (code for code in ALL_LOCALES if code != "en"):
+        catalogue = i18n.catalogue(locale)
+        missing = [key for key in period_strings if key not in catalogue.strings]
+        assert not missing, (
+            f"{locale} has no translation for {missing} — a download in that "
+            "language raises MissingTranslationError rather than printing English"
+        )
+
+
+def test_the_embedded_catalogues_match_the_public_ones():
+    """`api/assets/locales/` is a copy of `web/locales/` and has to be -
+    package-data cannot cross a package boundary and `web/` is not in the API
+    image's build context. What it must not be is a DIFFERENT copy: a visitor
+    who reads a label on the screen and then downloads the PDF must not meet
+    two translations of it."""
+    served = sorted((ROOT / "web" / "locales").glob("*.json"))
+    embedded = sorted((ROOT / "api" / "assets" / "locales").glob("*.json"))
+    assert [p.name for p in served] == [p.name for p in embedded]
+    for one, other in zip(served, embedded):
+        assert (
+            hashlib.sha256(one.read_bytes()).hexdigest()
+            == hashlib.sha256(other.read_bytes()).hexdigest()
+        ), one.name
+
+
+def test_the_fallback_faces_ship_with_their_licence():
+    """The SIL OFL requires the licence to travel with the font. A wheel that
+    carried the faces and not the licence would be a redistribution breaking
+    its own terms, and `pyproject.toml` lists the `.txt` and `.md` patterns for
+    exactly this reason."""
+    directory = ROOT / "api" / "assets" / "fonts" / "noto"
+    faces = sorted(directory.glob("*.woff2"))
+    assert len(faces) == 12, [p.name for p in faces]
+    licences = sorted(directory.glob("LICENCE-*.txt"))
+    assert licences, "no licence beside the fonts"
+    for licence in licences:
+        # Case-insensitive: Debian's two copyright files state the same grant
+        # in two different casings ("SIL OPEN FONT LICENSE Version 1.1" as a
+        # heading, "the SIL Open Font License, Version 1.1" as a sentence), and
+        # which one a package uses is not a property worth asserting.
+        text = licence.read_text(encoding="utf-8", errors="replace").lower()
+        assert "sil open font license" in text, licence.name
+        assert "1.1" in text, licence.name
+    assert (directory / "PROVENANCE.md").is_file()
+
+
+def test_the_stylesheet_names_every_embedded_face():
+    """A face on disk that no rule names is dead weight in the wheel; a face
+    named by a rule and missing from disk is a render that silently falls back.
+    Both are caught by comparing the two lists."""
+    source = pdf_render._STYLESHEET.read_text(encoding="utf-8")
+    for placeholder, filename in pdf_render._FONT_PLACEHOLDERS.items():
+        assert placeholder in source, placeholder
+        assert (pdf_render._FONT_DIR / filename).is_file(), filename
+    on_disk = {p.name for p in (pdf_render._FONT_DIR / "noto").glob("*.woff2")}
+    declared = {
+        Path(name).name
+        for name in pdf_render._FONT_PLACEHOLDERS.values()
+        if name.startswith("noto/")
+    }
+    assert on_disk == declared
+
+
+# --------------------------------------------------------------------------
+# Task 5: the title block, and the three states §4.6 gave the totals-level
+# figures - the review finding this task closes. `api/pdf_render.py` used to
+# know nothing about `data_state`: it printed a percentage when one existed
+# and nothing otherwise, which is the two-state behaviour the results page
+# had before Task 1 - not wrong exactly, but silently disagreeing with the
+# page and the text export about a submission that answered *some* of its
+# entries. The tests below are written against the three-state contract, not
+# the two it replaces.
+# --------------------------------------------------------------------------
+
+
+def _result_with_totals_extras(
+    *,
+    production_share_percent=None,
+    data_state=None,
+    money=None,
+    keep_default_money=True,
+) -> CalculationResult:
+    """`_result()`'s shape, with the §4.6 totals-level fields threaded
+    through. `_result()` alone leaves them at `DataState()`'s default -
+    `not_supplied` for all four - which is only one of the three states and
+    not enough on its own to prove the other two render correctly."""
+    base = _result()
+    totals = base.totals
+    return CalculationResult(
+        factor_set_version=base.factor_set_version,
+        is_mock=base.is_mock,
+        gwp_horizon=base.gwp_horizon,
+        totals=CalculationTotals(
+            current=totals.current,
+            alternative=totals.alternative,
+            net_benefit=totals.net_benefit,
+            money=totals.money if keep_default_money else money,
+            production_share_percent=production_share_percent,
+            data_state=data_state or DataState(),
+        ),
+        entries=base.entries,
+    )
+
+
+def _incomplete_totals_result() -> CalculationResult:
+    """A submission with every §4.6 totals-level figure in its `incomplete`
+    state - not a shape a real submission usually takes, but the one render
+    `test_no_locale_falls_back_to_english` needs to reach `Data incomplete`
+    and its money counterpart, which the all-`not_supplied` default fixture
+    never touches."""
+    partial_money = MoneyResult(
+        total_value_nzd=None,
+        wasted_value_nzd=None,
+        wasted_share_percent=None,
+        saving_nzd=None,
+    )
+    return _result_with_totals_extras(
+        keep_default_money=False,
+        money=partial_money,
+        data_state=DataState(
+            production_share_percent=DATA_INCOMPLETE,
+            total_value_nzd=DATA_INCOMPLETE,
+            wasted_value_nzd=DATA_INCOMPLETE,
+            wasted_share_percent=DATA_INCOMPLETE,
+            saving_nzd=DATA_INCOMPLETE,
+        ),
+    )
+
+
+def _undefined_totals_result() -> CalculationResult:
+    """v1.51's fourth state, which the two fixtures above cannot reach:
+    `_result()` is all `not_supplied` and `_incomplete_totals_result()` is
+    all `incomplete`, and neither ever puts a figure at `complete` with a
+    `None` value. `total_value_nzd` and `wasted_value_nzd` are real, present
+    zeros here (`complete`, not withheld) - every entry answered - and it is
+    exactly that shape that makes the ratio built from them `undefined`
+    rather than `not_supplied`, the same shape `production_share_percent`
+    takes when every entry's own production total was zero."""
+    undefined_money = MoneyResult(
+        total_value_nzd=Decimal("0.00"),
+        wasted_value_nzd=Decimal("0.00"),
+        wasted_share_percent=None,
+        saving_nzd=None,
+    )
+    return _result_with_totals_extras(
+        keep_default_money=False,
+        money=undefined_money,
+        data_state=DataState(
+            production_share_percent=DATA_UNDEFINED,
+            total_value_nzd=DATA_COMPLETE,
+            wasted_value_nzd=DATA_COMPLETE,
+            wasted_share_percent=DATA_UNDEFINED,
+            saving_nzd=DATA_NOT_SUPPLIED,
+        ),
+    )
+
+
+# --------------------------------------------------------------------------
+# Part B: the title block.
+# --------------------------------------------------------------------------
+
+
+def test_build_context_carries_the_title_block_fields():
+    """The four facts the brief asks for, read straight off the context - not
+    through a rendered PDF, so this fails for the right reason before
+    WeasyPrint is even in the picture."""
+    generated_at = datetime(2026, 8, 31, 14, 32, tzinfo=timezone.utc)
+    context = build_context(_result(), _taxonomy(), "en", generated_at)
+    assert context["title"] == "Food Waste Impact Calculator — Results"  # what it is
+    assert context["produced_by"] == "From Kai Commitment"  # who produced it
+    assert context["generated_at"] == "2026-08-31 14:32 UTC"  # when
+    assert context["factor_set"] == "MOCK-v0 · GWP100"  # the factor-set version
+
+
+def test_generated_at_defaults_to_the_wall_clock_rather_than_raising():
+    """Most of this file's existing tests predate `generated_at` and call
+    `build_context`/`render_results_pdf` with three arguments. Those must
+    keep working - `_generated_at_text` reads the wall clock exactly when the
+    caller does not care, which is the one place in this module that is
+    allowed to."""
+    before = datetime.now(timezone.utc)
+    stamp_text = build_context(_result(), _taxonomy(), "en")["generated_at"]
+    after = datetime.now(timezone.utc)
+    stamp = datetime.strptime(stamp_text, "%Y-%m-%d %H:%M UTC").replace(tzinfo=timezone.utc)
+    assert before - timedelta(minutes=1) <= stamp <= after + timedelta(minutes=1)
+
+
+@requires_weasyprint
+def test_the_document_carries_a_title_block_in_the_visitors_locale():
+    """Part B, on the paper, in a language that is not English - so this also
+    proves the title block is not an English-only afterthought bolted onto a
+    translated body."""
+    generated_at = datetime(2026, 8, 31, 14, 32, tzinfo=timezone.utc)
+    pdf = render_results_pdf(_result(), _taxonomy(), "de", generated_at)
+    text = extract_text(pdf)
+    assert "Ergebnisse" in text  # "...Results", translated
+    assert "Kai Commitment" in text  # who produced it
+    assert "2026-08-31 14:32 UTC" in text  # when it was generated
+    assert "MOCK-v0" in text and "GWP100" in text  # the factor-set version
+
+
+def test_the_factor_set_version_is_in_the_title_block_itself():
+    """**Mutation target.** `.summary` already carried the factor-set version
+    before this task; a bare substring check on the whole document would stay
+    green even if the title block's own copy were deleted and only that
+    older, unrelated tile survived. This reads the `<header class="cover">`
+    region specifically, so it fails for the version that actually matters
+    here."""
+    html = render_html(_result(), _taxonomy(), "en")
+    match = re.search(r'<header class="cover">.*?</header>', html, re.S)
+    assert match, 'no <header class="cover"> in the rendered document'
+    assert "MOCK-v0" in match.group(0)
+    assert "GWP100" in match.group(0)
+    assert "From Kai Commitment" in match.group(0)
+
+
+def test_deleting_the_cover_from_the_template_loses_the_title_block(tmp_path, monkeypatch):
+    """The mutation named in the brief, automated: delete the `.cover` block
+    from the template and the title-block test above must fail."""
+    source = pdf_render._TEMPLATE_DIR / pdf_render._TEMPLATE_NAME
+    original = source.read_text(encoding="utf-8")
+    mutated = re.sub(r'<header class="cover">.*?</header>', "", original, flags=re.S)
+    assert mutated != original, "the cover block was not found to remove"
+    monkeypatch.setattr(pdf_render, "_TEMPLATE_DIR", tmp_path)
+    (tmp_path / pdf_render._TEMPLATE_NAME).write_text(mutated, encoding="utf-8")
+    html = render_html(_result(), _taxonomy(), "en")
+    assert re.search(r'<header class="cover">.*?</header>', html, re.S) is None
+
+
+# --------------------------------------------------------------------------
+# Part A: the three states, on the paper.
+# --------------------------------------------------------------------------
+
+
+@requires_weasyprint
+def test_the_production_share_prints_when_every_entry_answered():
+    result = _result_with_totals_extras(
+        production_share_percent=Decimal("25.00"),
+        data_state=DataState(production_share_percent=DATA_COMPLETE),
+    )
+    text = extract_text(render_results_pdf(result, _taxonomy(), "en"))
+    assert "25.00%" in text
+
+
+@requires_weasyprint
+def test_the_production_share_says_incomplete_rather_than_not_supplied():
+    """§4.6's third state, worded to match
+    `web/js/results.js::productionShareText` exactly: some entries answered
+    and some did not, so the totals-level figure is withheld - a different
+    sentence from nobody having said anything at all.
+
+    **Mutation target: collapsing `incomplete` into `not_supplied` in the
+    PDF.** That mutation makes this print "Not supplied" instead, which the
+    last assertion below catches directly.
+    """
+    result = _result_with_totals_extras(
+        data_state=DataState(production_share_percent=DATA_INCOMPLETE),
+    )
+    text = extract_text(render_results_pdf(result, _taxonomy(), "en"))
+    assert "Data incomplete" in text
+    assert "Some entries stated a production total" in text
+    assert "Not supplied" not in text
+
+
+@requires_weasyprint
+def test_the_production_share_says_not_supplied_when_nobody_answered():
+    result = _result_with_totals_extras()  # DataState() default: not_supplied
+    text = extract_text(render_results_pdf(result, _taxonomy(), "en"))
+    assert "Not supplied" in text
+    assert "You did not say how much food this covered" in text
+    assert "Data incomplete" not in text
+
+
+@requires_weasyprint
+def test_the_production_share_says_undefined_rather_than_not_supplied():
+    """v1.51's fourth state. Every entry answered a production total of
+    zero — `data_state` is `complete`, not `not_supplied` — and the ratio
+    built from what they answered is still undefined. Before v1.51 this
+    printed "Not supplied" and "You did not say how much food this covered",
+    which was false: the visitor had said none.
+
+    **Mutation target: collapsing `undefined` into `not_supplied` in the
+    PDF.** That mutation makes this print the wrong sentence, which the last
+    two assertions below catch directly.
+    """
+    result = _result_with_totals_extras(
+        data_state=DataState(production_share_percent=DATA_UNDEFINED),
+    )
+    text = extract_text(render_results_pdf(result, _taxonomy(), "en"))
+    assert "Undefined" in text
+    assert "You said this covered 0 kg in total" in text
+    assert "Not supplied" not in text
+    assert "You did not say how much food this covered" not in text
+
+
+@requires_weasyprint
+def test_money_block_shows_the_incomplete_note_rather_than_a_partial_sum():
+    """The defect Task 1 closed for the on-screen card and the text export,
+    closed here too: a partially priced submission used to be able to report
+    a short sum as though it were the whole submission's total.
+    `saving_nzd` is supplied and prints normally beside the three withheld
+    fields, so this also proves a `complete` field is not swept into the
+    same sentence as its `incomplete` neighbours.
+    """
+    partial = MoneyResult(
+        total_value_nzd=None,
+        wasted_value_nzd=None,
+        wasted_share_percent=None,
+        saving_nzd=Decimal("2400.00"),
+    )
+    result = _result_with_totals_extras(
+        keep_default_money=False,
+        money=partial,
+        data_state=DataState(
+            total_value_nzd=DATA_INCOMPLETE,
+            wasted_value_nzd=DATA_INCOMPLETE,
+            wasted_share_percent=DATA_INCOMPLETE,
+        ),
+    )
+    text = extract_text(render_results_pdf(result, _taxonomy(), "en"))
+    assert "Not every entry supplied this figure, so it cannot be totalled." in text
+    assert "NZ$2,400.00" in text
+
+
+@requires_weasyprint
+def test_money_block_omits_a_field_nobody_touched_at_all():
+    """`not_supplied` stays silence, exactly as it was before §4.6 - only
+    `incomplete` earns a sentence, so a field nobody answered must not print
+    the incomplete note and must not grow a row for nothing."""
+    partial = MoneyResult(
+        total_value_nzd=None,
+        wasted_value_nzd=Decimal("3600.00"),
+        wasted_share_percent=None,
+        saving_nzd=None,
+    )
+    result = _result_with_totals_extras(
+        keep_default_money=False,
+        money=partial,
+        data_state=DataState(wasted_value_nzd=DATA_COMPLETE),
+    )
+    text = extract_text(render_results_pdf(result, _taxonomy(), "en"))
+    assert "NZ$3,600.00" in text
+    assert "Not every entry supplied this figure" not in text
+
+
+@requires_weasyprint
+def test_money_block_shows_the_undefined_note_for_a_zero_total():
+    """v1.51's fourth state, reachable only by `wasted_share_percent`: every
+    entry answered `total_value_nzd` as zero, which is `complete` (a real
+    zero, not withheld) and makes the ratio built from it undefined. The two
+    sums either side print normally as `NZ$0.00`; only the ratio prints the
+    "cannot be calculated" sentence, and it must not be the `incomplete`
+    sentence, which is a different claim about a different kind of gap."""
+    zero_total = MoneyResult(
+        total_value_nzd=Decimal("0.00"),
+        wasted_value_nzd=Decimal("0.00"),
+        wasted_share_percent=None,
+        saving_nzd=None,
+    )
+    result = _result_with_totals_extras(
+        keep_default_money=False,
+        money=zero_total,
+        data_state=DataState(
+            total_value_nzd=DATA_COMPLETE,
+            wasted_value_nzd=DATA_COMPLETE,
+            wasted_share_percent=DATA_UNDEFINED,
+        ),
+    )
+    text = extract_text(render_results_pdf(result, _taxonomy(), "en"))
+    assert "NZ$0.00" in text
+    assert "The total value was zero, so this cannot be calculated." in text
+    assert "Not every entry supplied this figure" not in text
+
+
+@requires_weasyprint
+def test_the_money_block_carries_its_unit_per_field():
+    """**v1.50 review, item 2 - mutation target.** The page and the text
+    export print `NZ$45,000.00` and `15.00%`; this document used to print
+    `45,000.00` and `15.00` - a share of value with no `%` and a dollar
+    figure with no currency, in a document that leaves the browser and is
+    read by someone who never saw the page it came from.
+
+    `_result()`'s own `_money()` fixture (§4.5's four fields, all
+    `complete`) gives one exact figure per field, so each assertion below
+    fails on the specific field that lost its unit rather than on the
+    money block in general. Strip `_money_figure`'s prefix/suffix back to a
+    bare `_figure` call and every one of these four fails.
+    """
+    text = extract_text(render_results_pdf(_result(), _taxonomy(), "en"))
+    assert "NZ$18,000.00" in text  # total_value_nzd
+    assert "NZ$3,600.00" in text  # wasted_value_nzd
+    assert "20.00%" in text  # wasted_share_percent
+    assert "NZ$2,400.00" in text  # saving_nzd
+
+
+# --------------------------------------------------------------------------
+# Part C: the reporting period (contract v1.68).
+# --------------------------------------------------------------------------
+#
+# `time_frame` reached `ExportPayload` at v1.48 and this document printed it
+# nowhere; v1.67 added the interval beside it and this document printed that
+# nowhere either. Every assertion below reads the LAID-OUT DOCUMENT, not the
+# context and not the function that builds the sentence: a period that reaches
+# `build_context` and is dropped by the template is exactly the shape of defect
+# this file exists for, and `doc.period` sitting behind a `{% if %}` is one
+# deleted line away from it.
+
+
+class _Period:
+    """Anything carrying the three fields a period is.
+
+    `api/export.py` passes the `ExportPayload` itself, which is a Pydantic
+    model; the renderer reads the three by name, the same duck-typing it
+    already applies to `result` and `taxonomy`. This is the smallest object
+    that satisfies it, so these tests do not need the API layer to exist.
+    """
+
+    def __init__(self, time_frame=None, start=None, end=None):
+        self.time_frame = time_frame
+        self.period_start = start
+        self.period_end = end
+
+
+def context_period(period):
+    """The exact sentence `build_context` hands the template for this period."""
+    return build_context(_result(), _taxonomy(), "en", period=period)["period"]
+
+
+#: The client's own example, and the whole reason the interval exists: a shift.
+SHIFT = _Period("custom", datetime(2026, 9, 14, 8, 10), datetime(2026, 9, 14, 16, 20))
+
+#: v1.67's designed normal case - a preset that *filled* the picker, so the row
+#: carries `one_week` AND the seven days it stands for.
+PRESET_WITH_INTERVAL = _Period(
+    "one_week", datetime(2026, 9, 14, 8, 10), datetime(2026, 9, 21, 8, 10)
+)
+
+
+@requires_weasyprint
+def test_a_custom_period_prints_its_two_instants_on_the_document():
+    """The shift, on paper. Both ends, to the minute, in the sentence the
+    screen uses.
+
+    **The dates are asserted, not the sentence alone.** A document that
+    printed "These figures cover:" and nothing after it would satisfy a test
+    that looked for the label, and would tell the reader less than printing
+    nothing at all.
+    """
+    text = extract_text(render_results_pdf(_result(), _taxonomy(), "en", period=SHIFT))
+    assert "These figures cover: 14/09/2026 08:10 – 14/09/2026 16:20" in text
+
+
+@requires_weasyprint
+def test_a_custom_period_never_prints_the_word_custom():
+    """`custom` is the name of a control, not a period. A reader holding
+    their own report learns nothing from "Custom period" that they did not
+    know before they opened it, and `TIME_FRAME_LABELS` deliberately has no
+    phrase for it on either surface."""
+    text = extract_text(render_results_pdf(_result(), _taxonomy(), "en", period=SHIFT))
+    assert "custom" not in text.lower(), (
+        "the document printed the vocabulary word instead of the dates"
+    )
+
+
+@requires_weasyprint
+def test_a_preset_beside_an_interval_prints_both_and_not_half_of_it():
+    """**The case the whole v1.67 ruling turns on.** From that revision a
+    preset is a button that fills the picker, so `one_week` beside seven days
+    of dates is the ordinary shape rather than a contradiction.
+
+    Printing only "One week" would be telling half the truth, and the half
+    dropped is the one the client asks for first — *did they mean a standard
+    week, or did they choose those dates?* Printing only the dates drops the
+    other half of the same answer. Both, or the line does not answer it.
+    """
+    text = extract_text(
+        render_results_pdf(_result(), _taxonomy(), "en", period=PRESET_WITH_INTERVAL)
+    )
+    assert "One week" in text
+    assert "14/09/2026 08:10" in text and "21/09/2026 08:10" in text
+
+
+@requires_weasyprint
+def test_a_preset_with_no_interval_still_prints_its_phrase_alone():
+    """Every row in the database before v1.67 is this shape, and every
+    request from a client that predates the picker still is. It must go on
+    reading as what it always read as, with no empty brackets and no dangling
+    separator where the dates would have been."""
+    text = extract_text(
+        render_results_pdf(_result(), _taxonomy(), "en", period=_Period("one_year"))
+    )
+    assert "These figures cover: One year" in text
+    assert "These figures cover: One year ·" not in text
+
+
+@requires_weasyprint
+def test_a_document_with_no_period_prints_no_period_line():
+    """"Not stated" is the default answer to step 5 and the absent case is
+    the common one. It renders nothing — never the label with nothing after
+    it, and never a phrase implying that "not stated" is itself a period,
+    which is the same rule `web/js/results.js::resultsPeriod` follows and the
+    same one the money block follows for a figure nobody supplied."""
+    for period in (None, _Period(), _Period(None, None, None)):
+        text = extract_text(
+            render_results_pdf(_result(), _taxonomy(), "en", period=period)
+        )
+        assert "These figures cover" not in text, f"{period} drew a period line"
+
+
+@requires_weasyprint
+@pytest.mark.parametrize("locale", ["de", "fr", "ja", "ar"])
+def test_the_period_is_formatted_en_nz_in_every_language(locale):
+    """**O-4 is open and a download is the worst place to settle it.**
+
+    `web/js/stats.js` and `web/js/home.js` both pin
+    `Intl.DateTimeFormat('en-NZ', …)` with the reason written beside them, and
+    `web/js/period.js` pins the same for the boxes this date was typed into. A
+    document that reformatted it to `14.09.2026` for German would be deciding
+    O-4 for one surface, in a file that outlives the argument — and it would
+    print a date back in a shape the field that collected it would refuse.
+
+    The sentence around it is translated; that is what
+    `test_no_locale_falls_back_to_english` is for. This is about the digits
+    between the punctuation.
+
+    **`ar` is here and its text extracts mirrored, which is correct.**
+    Measured, not assumed: the extracted run is `16:20 14/09/2026 – 08:10
+    14/09/2026`, because each date and each time is a European-number run at
+    an even embedding level while the spaces and the dash between them take
+    the paragraph's own odd level (UAX #9, N1). Read right-to-left — which is
+    how the reader of that document reads — it is `14/09/2026 08:10 – …` in
+    the order it was written. That is Pango running the bidi algorithm, and it
+    is the same thing the browser does to the same string on the results page,
+    so the screen and the paper agree. **Nothing here inserts an LRM or any
+    other invisible control to "fix" it**: this module reorders no character,
+    and a bidi override buried in a date would be exactly that.
+    """
+    text = extract_text(render_results_pdf(_result(), _taxonomy(), locale, period=SHIFT))
+    # The four runs the algorithm may reorder but may not rewrite.
+    for run in ("14/09/2026", "08:10", "16:20"):
+        assert run in text, f"{locale} did not print {run}"
+    for foreign in ("14.09.2026", "09/14/2026", "2026-09-14", "2026/09/14"):
+        assert foreign not in text, f"{locale} printed the period as {foreign}"
+    if locale != "ar":
+        assert "14/09/2026 08:10 – 14/09/2026 16:20" in text, (
+            f"{locale} runs left-to-right and its period did not stay in order"
+        )
+
+
+@requires_weasyprint
+def test_the_period_line_is_not_beside_a_figure_it_could_be_read_as_scaling():
+    """§2.3: the period is a label and **nothing is scaled by it**. It is
+    printed on its own line above the summary rather than inside the summary
+    grid, for the same reason `web/js/results.js` puts it above the cards: a
+    period set beside a total invites the reader to do the one piece of
+    arithmetic this contract forbids anyone to do with it.
+
+    Asserted on the markup, because this is a claim about where the sentence
+    sits and the laid-out text carries no structure.
+    """
+    html = render_html(_result(), _taxonomy(), "en", period=SHIFT)
+    opened = html.find('<p class="period">')
+    assert opened != -1, (
+        "the period is not a paragraph of its own any more; if it moved into a "
+        "tile or a table cell it is now set like the figures beside it"
+    )
+    summary = html.find('<div class="summary">')
+    assert summary != -1, "the summary grid moved; this test's landmark is gone"
+    assert opened < summary, (
+        "the period was printed below the figures it must not be read as scaling"
+    )
+    assert "summary__value" not in html[opened : html.find("</p>", opened)]
+    # And it is not *also* in the grid: a copy inside a tile would satisfy every
+    # assertion above while putting the period beside a total anyway.
+    assert html.count(context_period(SHIFT)) == 1, (
+        "the period is printed more than once; one of them is beside a figure"
+    )

@@ -1,34 +1,106 @@
+/**
+ * The public statistics page. Contract §6.4, §7.4, §7.7.
+ *
+ * ## Two translation paths, and why the second one has to exist
+ *
+ * `applyToDocument()` walks `data-i18n` in the DOM, which covers `stats.html`
+ * and every element this module builds *as an element*. **It cannot reach a
+ * chart.** A Chart.js title (`plugins.title.text`) and the canvas's own
+ * `aria-label` are arguments to a constructor, not text nodes: once the chart
+ * exists they live inside the instance and are painted onto a bitmap, so no DOM
+ * walk can find them and no attribute change would repaint them.
+ *
+ * So a language change here **destroys every chart and builds it again**. That
+ * is what `render()` below does, through the ordinary `renderStats` path:
+ * `destroyCharts()` then `createChart` per breakdown, each reading `t()` at
+ * construction time. It is a second path and it is deliberate — see
+ * `tests/web/test_i18n_browser.py::test_the_charts_are_rebuilt_in_the_new_language`,
+ * which reads the title back off the live `Chart` instance in two languages and
+ * proves the old instance was destroyed rather than left behind the new one.
+ *
+ * **The response is held rather than re-fetched.** The figures do not depend on
+ * the language, and a page that calls the statistics service every time somebody
+ * reads a label in another language is a page that rate-limits itself. Same
+ * reasoning as `methodology.js`.
+ *
+ * ## What stays in English, on purpose
+ *
+ * **Bucket labels come from the API `label` field** — destination, sector and
+ * food-category names that staff type into the panel. §7.7.7 rules that anything
+ * a staff member can edit is published exactly as written, so they are never
+ * passed through `t()`, in the text list or in a chart legend. A Thai statistics
+ * page correctly lists English destination names.
+ *
+ * **Axis ticks and every figure are numbers**, and §7.7.7 gives them no
+ * locale-aware separator on either surface. `integer`, `sharePercent` and the
+ * date formatter below are pinned to `en-NZ` for that reason and must stay
+ * pinned: making them follow the active language is the tempting change and is
+ * the one the rule forbids. Date and number *formats* are O-4, not O-8.
+ */
+
 import { ApiError, getStats } from './api.js'
-import { renderPie, renderBar, renderLine } from './charts.js'
+import { renderBar, renderDonut } from './charts.js'
+import { applyDocumentLanguage, applyToDocument, installLanguageChooser, t } from './i18n.js'
+// The site drawer's `Escape` handler and `aria-expanded`. Side-effect import: the
+// drawer is a `<details>` in the markup and works without this; see web/js/drawer.js.
+import './drawer.js'
 
 const chartInstances = new Map()
-const chartSelections = new Map()
 let latestRequestGeneration = 0
 
-const CHART_TYPES = [
-  { value: 'pie', label: 'Pie chart', render: renderPie },
-  { value: 'bar', label: 'Bar chart', render: renderBar },
-  { value: 'line', label: 'Line graph', render: renderLine },
-]
-
+/**
+ * The three breakdowns §6.4 publishes.
+ *
+ * **All three are drawn as doughnuts, and that is only honest because of what
+ * they count.** Every value a breakdown here charts is `share`, derived in
+ * `db/repository.py::_bucketise` from `func.count()` — destination entries,
+ * supply-chain points, food categories selected. A count cannot be negative,
+ * and any bucket the suppression threshold would otherwise expose is merged
+ * into `other` before a share is computed, so the shares that remain still
+ * sum to 1: the slices are the whole. **A doughnut cannot draw a negative
+ * slice** — there is no such thing as a negative share of a whole — which is
+ * exactly why `renderBar`'s `allowNegative` exists at all: `factor_downstream`
+ * may be negative (an offset, such as the waste levy), so a future breakdown
+ * of impact *values* rather than counts needs a bar, not a doughnut. Do not
+ * switch that one on the strength of this comment; recheck what it sums.
+ *
+ * **Every string is a function, not a value**, the same shape
+ * `methodology.js::METADATA_FIELDS` uses. A constant would be read once at module
+ * evaluation and would still be in the first language after a change; a call
+ * evaluated per render is in whatever language is active now. It also keeps every
+ * key a literal argument to `t()`, so `tests/web/i18n_keys.py` finds it through
+ * its ordinary scan rather than through the indirect list, which is the list its
+ * own docstring warns about growing.
+ *
+ * `chartTitle` is spelled out per breakdown rather than composed as
+ * `` `${title} (share)` ``: a suffix glued onto a translated noun phrase is a
+ * grammar bet in twenty languages, and three whole sentences cost a translator
+ * less than one that only works in English.
+ */
 const BREAKDOWNS = [
   {
     key: 'by_destination',
-    title: 'Destinations entered',
-    description: 'Share of destination entries across calculations run in this tool by a self-selected sample. Each value is a share of destination entries, not of calculations.',
-    countLabel: 'destination entries',
+    title: () => t('Destinations entered'),
+    description: () => t('Share of destination entries across calculations contributed to this tool.'),
+    chart: 'donut',
+    chartTitle: () => t('Destinations entered (share)'),
+    count: (count) => t('%(count)s destination entries', { count }),
   },
   {
     key: 'by_sector',
-    title: 'Sectors selected',
-    description: 'Share of supply-chain points by sector in calculations run in this tool by a self-selected sample. Each value is a share of supply-chain points.',
-    countLabel: 'supply-chain points',
+    title: () => t('Sectors selected'),
+    description: () => t('Share of supply-chain points by the sector selected across calculations contributed to this tool.'),
+    chart: 'donut',
+    chartTitle: () => t('Sectors selected (share)'),
+    count: (count) => t('%(count)s supply-chain points', { count }),
   },
   {
     key: 'by_food_category',
-    title: 'Food categories selected',
-    description: 'Share of supply-chain points by food category in calculations run in this tool by a self-selected sample. Each value is a share of supply-chain points.',
-    countLabel: 'supply-chain points',
+    title: () => t('Food categories selected'),
+    description: () => t('Share of supply-chain points by the food category entered across calculations contributed to this tool.'),
+    chart: 'donut',
+    chartTitle: () => t('Food categories selected (share)'),
+    count: (count) => t('%(count)s supply-chain points', { count }),
   },
 ]
 
@@ -42,14 +114,15 @@ function element(tag, options = {}) {
   return node
 }
 
+/** `en-NZ` is pinned, not inherited from the active language — §7.7.7. */
 function integer(value) {
   const number = Number(value)
-  return Number.isFinite(number) ? Math.trunc(number).toLocaleString('en-NZ') : 'Not available'
+  return Number.isFinite(number) ? Math.trunc(number).toLocaleString('en-NZ') : t('Not available')
 }
 
 function sharePercent(value) {
   const number = Number(value)
-  if (!Number.isFinite(number)) return 'Not available'
+  if (!Number.isFinite(number)) return t('Not available')
   return number.toLocaleString('en-NZ', {
     style: 'percent',
     minimumFractionDigits: 1,
@@ -57,20 +130,32 @@ function sharePercent(value) {
   })
 }
 
+/** §1.2 decimals cross the wire as strings; §7.7.7 rules that they take no
+ *  locale-aware separator on either surface. So the transmitted string is
+ *  printed exactly as it arrived.
+ *
+ *  `toLocaleString('en-NZ', { maximumFractionDigits: 3 })` broke that twice
+ *  over. It grouped — `521952.691` rendered as `521,952.691 kg`, the only
+ *  place on the public front end still doing so — and it round-tripped through
+ *  `Number`, which dropped the significant trailing zero the service sent:
+ *  `139132.500` came out as `139,132.5`. Printing the string keeps both the
+ *  separator rule and the precision the service published. */
 function kilograms(value) {
-  const number = Number(value)
-  if (!Number.isFinite(number)) return 'Not available'
-  return `${number.toLocaleString('en-NZ', { maximumFractionDigits: 3 })} kg`
+  if (typeof value !== 'string' || !/^-?\d+(\.\d+)?$/.test(value.trim())) return t('Not available')
+  return `${value.trim()} kg`
 }
 
 function generatedTime(value) {
   const time = element('time', { attributes: { datetime: String(value || '') } })
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) {
-    time.textContent = 'Generation time unavailable'
+    time.textContent = t('Generation time unavailable')
     return time
   }
 
+  // `en-NZ`, not the active language: a date *format* is O-4 (localisation
+  // beyond language), which is open and promises nothing. The sentence around
+  // it is translated; the timestamp inside it is not reformatted.
   const local = new Intl.DateTimeFormat('en-NZ', {
     year: 'numeric',
     month: 'short',
@@ -79,7 +164,10 @@ function generatedTime(value) {
     minute: '2-digit',
     timeZoneName: 'short',
   }).format(date)
-  time.textContent = `${local} (source timestamp ${date.toISOString()}, UTC)`
+  time.textContent = t('%(local)s (source timestamp %(iso)s, UTC)', {
+    local,
+    iso: date.toISOString(),
+  })
   return time
 }
 
@@ -93,37 +181,74 @@ export function destroyCharts() {
   for (const key of [...chartInstances.keys()]) destroyChart(key)
 }
 
+/**
+ * The headline sentence, with its figure still inside a `<strong>`.
+ *
+ * The sentence is **one key** rather than three fragments concatenated around
+ * the number, because a translator handed "Across " and " calculations
+ * contributed to this tool." cannot move the figure — and in several of these
+ * twenty languages the number does not sit where English puts it. It is split
+ * on the placeholder *after* the lookup and *before* substitution, so the
+ * emphasis survives without any markup crossing the catalogue.
+ *
+ * **It takes the translated sentence, not the key, and that is not a style
+ * choice.** Written the other way — `sentenceAround('Across %(count)s …')`, with
+ * the `t()` call inside — the literal is an argument to *this* function rather
+ * than to `t()`, so `tests/web/i18n_keys.py` never extracts it, no catalogue is
+ * required to carry it, and every test passes while the headline of the
+ * statistics page renders in English on an Arabic screen. It did, and it was
+ * caught by looking at a screenshot rather than by anything in the suite.
+ */
+function sentenceAround(translated, value, className) {
+  const paragraph = element('p', { className })
+  const [before, after = ''] = translated.split('%(count)s')
+  paragraph.append(before, element('strong', { text: value }), after)
+  return paragraph
+}
+
 function renderSummary(stats, target) {
-  const calculations = integer(stats.total_calculations)
-  const threshold = integer(stats.suppression_threshold)
   const fragment = document.createDocumentFragment()
-  const headline = element('p', { className: 'stats-calculation-total' })
-  headline.append('Across ', element('strong', { text: calculations }), ' calculations run in this tool.')
-  fragment.append(headline)
+  fragment.append(sentenceAround(
+    t('Across %(count)s calculations contributed to this tool.'),
+    integer(stats.total_calculations),
+    'stats-calculation-total',
+  ))
 
   const generated = element('p')
-  generated.append('Statistics generated: ', generatedTime(stats.generated_at))
+  generated.append(`${t('Statistics generated:')} `, generatedTime(stats.generated_at))
   fragment.append(generated)
 
   fragment.append(element('p', {
-    text: `For privacy, buckets containing fewer than ${threshold} supply-chain points or destination entries are combined by the service. If the combined sample is still too small, that breakdown is not shown.`,
+    text: t(
+      'For privacy, buckets containing fewer than %(threshold)s supply-chain points or destination entries are combined by the service. If the combined sample is still too small, that breakdown is not shown.',
+      { threshold: integer(stats.suppression_threshold) },
+    ),
   }))
   target.replaceChildren(fragment)
 }
 
 function renderEquivalentList(rows, definition) {
   const region = element('div', { className: 'stats-list-region' })
-  region.append(element('h4', { className: 'sr-only', text: `${definition.title} data` }))
+  region.append(element('h4', {
+    className: 'sr-only',
+    text: t('%(title)s data', { title: definition.title() }),
+  }))
   const list = element('ul', { className: 'stats-breakdown-list' })
 
   for (const row of rows) {
     const item = element('li')
-    const heading = element('strong', { text: row?.label ?? row?.code ?? 'Unlabelled bucket' })
+    // `row.label` is the name a staff member typed into the panel. §7.7.7: it is
+    // published exactly as written and never passed through `t()`.
+    const heading = element('strong', { text: row?.label ?? row?.code ?? t('Unlabelled bucket') })
     const details = element('span')
     details.append(
-      element('span', { text: `${sharePercent(row?.share)} share` }),
-      element('span', { text: `${integer(row?.count)} ${definition.countLabel}` }),
-      element('span', { text: `${kilograms(row?.total_kg)} cumulative quantity entered into this tool` }),
+      element('span', { text: t('%(share)s share', { share: sharePercent(row?.share) }) }),
+      element('span', { text: definition.count(integer(row?.count)) }),
+      element('span', {
+        text: t('%(mass)s cumulative quantity contributed to this tool', {
+          mass: kilograms(row?.total_kg),
+        }),
+      }),
     )
     item.append(heading, details)
     list.append(item)
@@ -133,23 +258,26 @@ function renderEquivalentList(rows, definition) {
   return region
 }
 
-function chartDescription(definition, type) {
-  const lineNote = type === 'line'
-    ? " The horizontal axis follows the service's category order; this is not a time trend."
-    : ''
-  return definition.description + lineNote
-}
-
-function createChart(key, canvas, rows, definition, type) {
+/**
+ * Build one chart. **`title` is read here, at construction**, which is the whole
+ * reason a language change has to come back through this function: Chart.js
+ * copies it into the instance and paints it, and nothing outside the instance
+ * can change it afterwards.
+ */
+function createChart(key, canvas, rows, definition) {
   destroyChart(key)
   const options = {
-    title: `${definition.title} (share)`,
+    title: definition.chartTitle(),
     labelKey: 'label',
     valueKey: 'share',
-    valueFormat: 'percent',
+    // The same formatter the text list below the chart uses, so the y axis, the
+    // tooltip and the list all read `37.9%` rather than the axis reading `0.379`
+    // beside a list reading `37.9% share`.
+    formatValue: sharePercent,
   }
-  const chartType = CHART_TYPES.find((candidate) => candidate.value === type) || CHART_TYPES[0]
-  const chart = chartType.render(canvas, rows, options)
+  const chart = definition.chart === 'donut'
+    ? renderDonut(canvas, rows, options)
+    : renderBar(canvas, rows, { ...options, allowNegative: false })
   chartInstances.set(key, chart)
 }
 
@@ -158,66 +286,38 @@ function renderBreakdown(stats, definition) {
     className: 'stats-breakdown',
     attributes: { 'aria-labelledby': `${definition.key}-heading` },
   })
-  const selectedType = chartSelections.get(definition.key) || 'pie'
-  const descriptionId = `${definition.key}-chart-description`
-  const description = element('p', {
-    className: 'stats-breakdown-note',
-    text: chartDescription(definition, selectedType),
-    attributes: { id: descriptionId, 'aria-live': 'polite' },
-  })
   section.append(
-    element('h3', { text: definition.title, attributes: { id: `${definition.key}-heading` } }),
-    description,
+    element('h3', { text: definition.title(), attributes: { id: `${definition.key}-heading` } }),
+    element('p', { className: 'stats-breakdown-note', text: definition.description() }),
   )
 
   const rows = Array.isArray(stats[definition.key]) ? stats[definition.key] : []
   if (rows.length === 0) {
     section.append(element('p', {
       className: 'empty-state',
-      text: 'Not enough data yet to show this breakdown.',
+      text: t('Not enough data yet to show this breakdown.'),
       attributes: { role: 'status' },
     }))
     destroyChart(definition.key)
     return section
   }
 
-  const control = element('div', { className: 'stats-chart-controls' })
-  const selectId = `${definition.key}-chart-type`
-  const label = element('label', {
-    text: `${definition.title} chart type`,
-    attributes: { for: selectId },
-  })
-  const select = element('select', {
-    attributes: { id: selectId, 'aria-describedby': descriptionId },
-  })
-  for (const type of CHART_TYPES) {
-    select.append(element('option', { text: type.label, attributes: { value: type.value } }))
-  }
-  select.value = selectedType
-  control.append(label, select)
-
   const chartRegion = element('div', { className: 'stats-chart-region' })
+  // The canvas is a picture to a screen reader, so this attribute is the chart.
+  // It is set at build time like the title, and for the same reason is rebuilt
+  // rather than re-walked when the language changes.
   const canvas = element('canvas', {
     attributes: {
       role: 'img',
-      'aria-label': `${definition.title}, ${selectedType} chart using the API-provided share for every published bucket. The full values follow in a text list.`,
-      'aria-describedby': descriptionId,
+      'aria-label': t(
+        '%(title)s, charted using the API-provided share for every published bucket. The full values follow in a text list.',
+        { title: definition.title() },
+      ),
     },
   })
-  select.addEventListener('change', () => {
-    const type = CHART_TYPES.find((candidate) => candidate.value === select.value)
-    if (!type) {
-      select.value = chartSelections.get(definition.key) || 'pie'
-      return
-    }
-    chartSelections.set(definition.key, type.value)
-    description.textContent = chartDescription(definition, type.value)
-    canvas.setAttribute('aria-label', `${definition.title}, ${type.value} chart using the API-provided share for every published bucket. The full values follow in a text list.`)
-    createChart(definition.key, canvas, rows, definition, type.value)
-  })
   chartRegion.append(canvas)
-  section.append(control, chartRegion, renderEquivalentList(rows, definition))
-  createChart(definition.key, canvas, rows, definition, selectedType)
+  section.append(chartRegion, renderEquivalentList(rows, definition))
+  createChart(definition.key, canvas, rows, definition)
   return section
 }
 
@@ -241,18 +341,24 @@ export function renderStatsError(error, { summary, breakdowns } = {}) {
   if (summaryTarget) {
     summaryTarget.replaceChildren(element('p', {
       className: 'error-state',
-      text: error?.message || 'Statistics could not be loaded. Please try again later.',
+      text: error?.message || t('Statistics could not be loaded. Please try again later.'),
       attributes: { role: 'alert' },
     }))
   }
   if (breakdownTarget) {
     breakdownTarget.replaceChildren(element('p', {
       className: 'empty-state',
-      text: 'The breakdowns are temporarily unavailable.',
+      text: t('The breakdowns are temporarily unavailable.'),
     }))
     breakdownTarget.setAttribute('aria-busy', 'false')
   }
 }
+
+// What the last successful load returned, and what the last failed one said.
+// Held so a language change re-renders from them; see the module note on why
+// re-fetching would be both correct and wrong.
+let latestStats = null
+let latestFailure = null
 
 export async function loadStats(options = {}) {
   const generation = ++latestRequestGeneration
@@ -262,11 +368,15 @@ export async function loadStats(options = {}) {
   try {
     const stats = await (options.getStats || getStats)()
     if (generation !== latestRequestGeneration) return null
+    latestStats = stats
+    latestFailure = null
     renderStats(stats, options)
     return stats
   } catch (error) {
     if (generation !== latestRequestGeneration) return null
     if (!(error instanceof ApiError)) throw error
+    latestStats = null
+    latestFailure = error
     renderStatsError(error, options)
     return null
   } finally {
@@ -276,6 +386,24 @@ export async function loadStats(options = {}) {
   }
 }
 
+/**
+ * Redraw everything this page owns in whatever language is now active.
+ *
+ * **This is the chart-rebuild path**, and it is one line because `renderStats`
+ * already destroys and rebuilds: the DOM walk `applyToDocument()` performs
+ * covers `stats.html`, and this covers the three charts, their titles and their
+ * canvas labels — the strings that are constructor arguments and are therefore
+ * out of the DOM walk's reach. Nothing here re-fetches.
+ */
+export function rerenderInActiveLanguage() {
+  if (latestFailure !== null) {
+    renderStatsError(latestFailure)
+    return
+  }
+  if (latestStats === null) return
+  renderStats(latestStats)
+}
+
 if (typeof window !== 'undefined' && typeof document !== 'undefined') {
   const leavePage = () => {
     latestRequestGeneration += 1
@@ -283,6 +411,14 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
   }
   window.addEventListener('pagehide', leavePage)
   window.addEventListener('beforeunload', leavePage)
+  // Unconditional, for the reason spelled out at the foot of `home.js`: a page's
+  // language is not contingent on any one section of it being present. The guard below
+  // is about whether there is anywhere to *put* statistics, which is a different
+  // question from which language the page is read in.
+  applyDocumentLanguage()
+  applyToDocument()
+  installLanguageChooser(rerenderInActiveLanguage)
+
   if (document.querySelector('#stats-summary') && document.querySelector('#stats-breakdown-content')) {
     loadStats()
   }

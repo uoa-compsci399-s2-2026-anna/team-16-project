@@ -318,6 +318,53 @@ def cmd_seed_taxonomy(db_session: Session) -> dict[str, int]:
     return seed_taxonomy(db_session)
 
 
+#: The screen an administrator reads an unclaimed password back from, as it
+#: must be typed into a browser. Interpolated into every message below rather
+#: than written out at each one.
+#:
+#: **It was written out at each one, and three of the four were a 404.** They
+#: said ``/admin/staff``; sqladmin serves the staff list at
+#: ``/admin/staff/list`` and nothing at the bare prefix. The one that was
+#: right was ``rotate-key``'s, so the tree disagreed with itself and no test
+#: noticed, because the only assertion covering any of them checked for the
+#: prefix - which is a substring of both the broken form and the correct one.
+#:
+#: The cost is not cosmetic. The person following this line is an operator who
+#: has just lost a password, and the panel answering "not found" reads as "it
+#: is gone" at exactly the moment they are already worried they have locked
+#: themselves out of their own deployment.
+#:
+#: tests/admin/test_operator_guidance.py drives every ``/admin/...`` path this
+#: module and docker/init.sh name, as a real administrator over real HTTP, and
+#: fails on a 404. A constant cannot drift from itself; a path that stops
+#: being served is a different failure, and that is the one the test catches.
+UNCLAIMED_PASSWORD_SCREEN = "/admin/staff/list"
+
+#: The first line ``report_bootstrap_result`` prints when it has something to
+#: report, and the signal ``docker/init.sh`` reads to choose its closing
+#: message.
+#:
+#: **It is a signal because this function's silence is not observable from a
+#: shell.** ``kaicalc-admin bootstrap`` exits 0 whether it created accounts or
+#: found them already there — it must, because ``init.sh`` runs under ``set -e``
+#: and a non-zero exit would abort the migrate job and stop the stack — and the
+#: CLI prints its own "nothing to do" acknowledgement either way. So the only
+#: thing that distinguishes the two runs is whether this line appeared.
+#:
+#: It cost something to learn that. ``init.sh`` used to close by telling every
+#: operator the passwords were "printed above", unconditionally, on every
+#: restart of an already-bootstrapped deployment — a sentence that is false on
+#: all of them but the first, read by exactly the person hunting for a password
+#: that was never there.
+#:
+#: A shell script matching a Python string literal is a coupling, so it is
+#: pinned: ``tests/admin/test_operator_guidance.py`` fails if ``init.sh`` stops
+#: containing this value, and fails separately if this function stops printing
+#: it. Neither test alone is enough — the first passes against a constant
+#: nothing emits, the second against a constant no script reads.
+BOOTSTRAP_CREATED_MARKER = "Created initial administrator accounts."
+
+
 def report_bootstrap_result(created: list[tuple[str, str]]) -> None:
     """Print freshly created bootstrap credentials to standard output.
 
@@ -328,12 +375,20 @@ def report_bootstrap_result(created: list[tuple[str, str]]) -> None:
     are.** Bootstrap goes through ``create_staff``, so since contract v1.15
     each password is also stored encrypted until that account claims it — which
     means one lost line is recoverable *by the other administrator*, from
-    /admin/staff. Losing both is still terminal for the panel, because a reveal
+    /admin/staff/list. Losing both is still terminal for the panel, because a reveal
     needs a signed-in administrator and there is nobody else; the way back
-    there is ``kaicalc-admin issue-password`` on the container. The message
-    below says exactly that, rather than the flat "cannot be recovered" it used
-    to carry, which was true when it was written and would now send an operator
-    to rebuild a deployment they could have logged in to.
+    there is ``docker exec kaicalc-admin kaicalc issue-password`` from the host.
+    The message below says exactly that, rather than the flat "cannot be
+    recovered" it used to carry, which was true when it was written and would
+    now send an operator to rebuild a deployment they could have logged in to.
+
+    **It named ``kaicalc-admin`` on the container until 2026-08-15, and that
+    form fails.** ``docker exec`` does not run the image's entrypoint, so
+    SECRET_KEY is unresolved and the console script exits on
+    ``MissingSettingError``. The mistake survived because it is true *here* —
+    this function runs inside the entrypoint — and because ``kaicalc-admin
+    --help`` works, so the form looks correct right up to the moment somebody
+    locked out of the panel needs it.
 
     Shared with ``admin.app``'s startup hook rather than written twice.
     Both the CLI subcommand and application start reach the same
@@ -349,7 +404,7 @@ def report_bootstrap_result(created: list[tuple[str, str]]) -> None:
     """
     if not created:
         return
-    print("Created initial administrator accounts.")
+    print(BOOTSTRAP_CREATED_MARKER)
     for username, password in created:
         print(f"  {username}: {password}")
     print()
@@ -357,11 +412,22 @@ def report_bootstrap_result(created: list[tuple[str, str]]) -> None:
         "Log in with both accounts now, change both passwords, and enrol both "
         "authenticators. Do not send them by email."
     )
+    # `docker exec … kaicalc …` first, and the bare console script second, in
+    # that order because the compose stack is how this system is run and is
+    # therefore where a locked-out operator is standing. `kaicalc-admin` is
+    # correct only where the entrypoint has already resolved SECRET_KEY - which
+    # is true of this very process, and is exactly what made the wrong form look
+    # right for as long as it did. Under `docker exec` the entrypoint does not
+    # run, and the console script dies on `MissingSettingError: SECRET_KEY is
+    # not set`. Both forms are named because this message is also printed by a
+    # `pip install`ed CLI, where there is no container to exec into.
     print(
         "If you lose one of these lines, the other administrator can read it "
-        "back from /admin/staff until that account changes its password. If "
-        "you lose both, nobody can log in: run `kaicalc-admin issue-password "
-        "admin` on the container."
+        f"back from {UNCLAIMED_PASSWORD_SCREEN} until that account changes its "
+        "password. If you lose both, nobody can log in: run `docker exec "
+        "kaicalc-admin kaicalc issue-password admin` from the host, or "
+        "`kaicalc-admin issue-password admin` where the environment is already "
+        "set up."
     )
 
 
@@ -461,10 +527,10 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(
                 "If it is lost before they use it, it is still recoverable: an "
-                "administrator can read it back from /admin/staff, under `Show "
-                "the password waiting to be collected`, until the account "
-                f"changes it. Failing that, `kaicalc-admin issue-password "
-                f"{username}` mints another."
+                f"administrator can read it back from {UNCLAIMED_PASSWORD_SCREEN}, "
+                "under `Show the password waiting to be collected`, until the "
+                f"account changes it. Failing that, `docker exec kaicalc-admin "
+                f"kaicalc issue-password {username}` mints another."
             )
         elif args.command == "reset-mfa":
             cmd_reset_mfa(db_session, args.username)
@@ -487,8 +553,9 @@ def main(argv: list[str] | None = None) -> int:
             print("  They must change it at their next login. Hand it over in person.")
             print(
                 "  If this line is lost, the password is not: an administrator "
-                "can read it back from /admin/staff, under `Show the password "
-                "waiting to be collected`, until the account changes it."
+                f"can read it back from {UNCLAIMED_PASSWORD_SCREEN}, under "
+                "`Show the password waiting to be collected`, until the "
+                "account changes it."
             )
         elif args.command == "delete-staff":
             try:

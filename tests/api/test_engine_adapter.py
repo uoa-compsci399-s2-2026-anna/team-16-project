@@ -12,7 +12,9 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 from api.engine_adapter import DefaultEngineAdapter
+from api.schemas import CalculatePayload, EntryPayload, ScenarioLinePayload
 from api.serialization import wire
+from engine.types import ItemBasis, UpstreamBasis
 
 
 def _breakdown(destination, qty, value):
@@ -22,6 +24,29 @@ def _breakdown(destination, qty, value):
         upstream=Decimal("1.9000000000"),
         downstream=Decimal("0.9900000000"),
         value=Decimal(value),
+        #: v1.59. An entry-level row was priced by exactly one of §2.2's
+        #: candidates, so a stand-in for one carries a member rather than
+        #: `None` -- `None` is the totals-level answer and belongs to
+        #: `_rolled_up_breakdown` below, which is the distinction this pair
+        #: of builders exists to keep visible.
+        upstream_basis=UpstreamBasis.CATEGORY_EVERY_DESTINATION,
+    )
+
+
+def _rolled_up_breakdown(destination, qty, value):
+    """v1.48, amending §3 rule 2: a totals-level row. Unlike `_breakdown`
+    above, the two rate fields are zero — they are per-kilogram rates that
+    can differ between the entries sharing a destination, so a cross-entry
+    row cannot state one."""
+    return SimpleNamespace(
+        destination_code=destination,
+        qty_kg=Decimal(qty),
+        upstream=Decimal("0.0000000000"),
+        downstream=Decimal("0.0000000000"),
+        value=Decimal(value),
+        #: v1.59, `None` for the same reason the two rates above are zero:
+        #: a sum across entries was priced by no single row.
+        upstream_basis=None,
     )
 
 
@@ -35,6 +60,15 @@ def _metric(total, by_destination=()):
     )
 
 
+#: v1.52. Verbatim from `tests/fixtures/factors.json`'s `km_driven` row --
+#: it contains an em dash, so it is copied rather than retyped.
+KM_DRIVEN_SOURCE_NOTE = (
+    "PLACEHOLDER. Open item O-3 — the New Zealand basis for this conversion "
+    "is not settled. Roughly one kilometre of an average light petrol "
+    "vehicle per 0.24 kg CO2e."
+)
+
+
 def _scenario(total_kg, metric, equivalence_value):
     return SimpleNamespace(
         total_kg=Decimal(total_kg),
@@ -45,9 +79,82 @@ def _scenario(total_kg, metric, equivalence_value):
                 label="Equivalent to driving 14,500 km",
                 value=Decimal(equivalence_value),
                 source_metric_code="co2e",
+                name="Kilometres driven",
+                value_per_unit=Decimal("4.1800000000"),
+                value_per_unit_display="4.18",
+                source_note=KM_DRIVEN_SOURCE_NOTE,
             ),
         ),
     )
+
+
+def _result_with_equivalence(**kwargs):
+    """v1.52. A one-entry, one-scenario result whose single equivalence
+    carries the given fields, defaulted to the `km_driven` fixture values
+    where not overridden -- so a test only names what it is exercising."""
+    fields = dict(
+        code="km_driven",
+        label="Equivalent to driving 14,500 km",
+        value=Decimal("14500.0000000000"),
+        source_metric_code="co2e",
+        name="Kilometres driven",
+        value_per_unit=Decimal("4.1800000000"),
+        value_per_unit_display="4.18",
+        source_note=KM_DRIVEN_SOURCE_NOTE,
+    )
+    fields.update(kwargs)
+    scenario = SimpleNamespace(
+        total_kg=Decimal("100.000"),
+        metrics={"co2e": _metric("100.0000000000")},
+        equivalences=(SimpleNamespace(**fields),),
+    )
+    entry = SimpleNamespace(
+        sector_code="processing",
+        food_category_code="dairy",
+        #: v1.58. Present on every stand-in for an `EntryResult`, because
+        #: `_entry()` reads it unguarded: a real result always carries it (the
+        #: dataclass field is defaulted, not optional), and a `getattr`
+        #: fallback in the mapping would hide an engine that stopped setting
+        #: it behind a `null` on the wire.
+        #: v1.59. Present for the reason `food_item_code` above is: `_entry()`
+        #: reads it unguarded, and a `getattr` fallback in the mapping would
+        #: hide an engine that stopped setting it behind a `not_applicable`
+        #: on the wire -- which is a claim about a visitor's answer, not an
+        #: absence of one.
+        item_basis=ItemBasis.NOT_APPLICABLE,
+        food_item_code=None,
+        current=scenario,
+        alternative=None,
+        net_benefit=None,
+        production_share_percent=None,
+    )
+    totals = SimpleNamespace(
+        current=scenario,
+        alternative=None,
+        net_benefit=None,
+        money=None,
+        production_share_percent=None,
+        data_state=SimpleNamespace(
+            production_share_percent="not_supplied",
+            total_value_nzd="not_supplied",
+            wasted_value_nzd="not_supplied",
+            wasted_share_percent="not_supplied",
+            saving_nzd="not_supplied",
+        ),
+    )
+    return SimpleNamespace(
+        factor_set_version="MOCK-v0 — PLACEHOLDER",
+        is_mock=True,
+        gwp_horizon=100,
+        totals=totals,
+        entries=(entry,),
+    )
+
+
+def _scenario_body_for(result):
+    """The wire-format `current` scenario body -- the level `equivalences`
+    actually lives at, so a caller can index straight into it."""
+    return DefaultEngineAdapter().serialize_result(result)["totals"]["current"]
 
 
 def _result(*, with_alternative=True):
@@ -82,9 +189,26 @@ def _result(*, with_alternative=True):
     entry = SimpleNamespace(
         sector_code="processing",
         food_category_code="dairy",
+        #: v1.58. Present on every stand-in for an `EntryResult`, because
+        #: `_entry()` reads it unguarded: a real result always carries it (the
+        #: dataclass field is defaulted, not optional), and a `getattr`
+        #: fallback in the mapping would hide an engine that stopped setting
+        #: it behind a `null` on the wire.
+        #: v1.59. Present for the reason `food_item_code` above is: `_entry()`
+        #: reads it unguarded, and a `getattr` fallback in the mapping would
+        #: hide an engine that stopped setting it behind a `not_applicable`
+        #: on the wire -- which is a claim about a visitor's answer, not an
+        #: absence of one.
+        item_basis=ItemBasis.NOT_APPLICABLE,
+        food_item_code=None,
         current=current,
         alternative=alternative,
         net_benefit=net_benefit,
+        #: §4.6. This entry supplied a production total; the second does
+        #: not, which is what makes the totals-level share `incomplete`
+        #: below. Two different values, so a carry that read the wrong
+        #: entry's figure is visible.
+        production_share_percent=Decimal("15.00"),
     )
     second_current = _scenario(
         "800.000",
@@ -107,21 +231,72 @@ def _result(*, with_alternative=True):
     second_entry = SimpleNamespace(
         sector_code="primary_production",
         food_category_code="vegetables",
+        #: v1.58. Present on every stand-in for an `EntryResult`, because
+        #: `_entry()` reads it unguarded: a real result always carries it (the
+        #: dataclass field is defaulted, not optional), and a `getattr`
+        #: fallback in the mapping would hide an engine that stopped setting
+        #: it behind a `null` on the wire.
+        #: v1.59. Present for the reason `food_item_code` above is: `_entry()`
+        #: reads it unguarded, and a `getattr` fallback in the mapping would
+        #: hide an engine that stopped setting it behind a `not_applicable`
+        #: on the wire -- which is a claim about a visitor's answer, not an
+        #: absence of one.
+        item_basis=ItemBasis.NOT_APPLICABLE,
+        food_item_code=None,
         current=second_current,
         alternative=second_alternative,
         net_benefit=second_net,
+        production_share_percent=None,
     )
     totals_net = (
         {"co2e": Decimal("2196.0000000000")} if with_alternative else None
     )
+    #: The totals-level rows are a real partition of the two figures above:
+    #: 3468 (landfill) + 456 (not_harvested) = 3924, and on the alternative
+    #: side 1368 (anaerobic_digestion) + 360 (prevention) = 1728 — the same
+    #: totals this stand-in already gave the metric before v1.48.
     totals = SimpleNamespace(
-        current=_scenario("2300.000", _metric("3924.0000000000"), "16406.0800000000"),
+        current=_scenario(
+            "2300.000",
+            _metric(
+                "3924.0000000000",
+                [
+                    _rolled_up_breakdown("landfill", "1200.000", "3468.0000000000"),
+                    _rolled_up_breakdown("not_harvested", "800.000", "456.0000000000"),
+                ],
+            ),
+            "16406.0800000000",
+        ),
         alternative=_scenario(
-            "2300.000", _metric("1728.0000000000"), "7204.8000000000"
+            "2300.000",
+            _metric(
+                "1728.0000000000",
+                [
+                    _rolled_up_breakdown(
+                        "anaerobic_digestion", "1200.000", "1368.0000000000"
+                    ),
+                    _rolled_up_breakdown("prevention", "800.000", "360.0000000000"),
+                ],
+            ),
+            "7204.8000000000",
         )
         if with_alternative
         else None,
         net_benefit=totals_net,
+        #: §4.5, v1.48. Not exercised by this file's own numbers -- none of
+        #: this stand-in's entries carry a money figure -- but present
+        #: because `_totals()` reads `totals.money` unconditionally.
+        money=None,
+        #: §4.6. One of the two entries above supplied a production total,
+        #: so the submission-wide share is withheld and the state says why.
+        production_share_percent=None,
+        data_state=SimpleNamespace(
+            production_share_percent="incomplete",
+            total_value_nzd="not_supplied",
+            wasted_value_nzd="not_supplied",
+            wasted_share_percent="not_supplied",
+            saving_nzd="not_supplied",
+        ),
     )
     return SimpleNamespace(
         factor_set_version="MOCK-v0 — PLACEHOLDER",
@@ -130,6 +305,33 @@ def _result(*, with_alternative=True):
         totals=totals,
         entries=(entry, second_entry),
     )
+
+
+def test_the_share_of_production_and_its_state_are_carried_not_computed():
+    """§4.6. `serialize_result` performs no arithmetic (§4.2), so both the
+    figure and its state arrive from the engine and are copied onto the wire.
+
+    The state is what lets the front end tell "nobody supplied a production
+    total" from "some entries did and some did not" -- a bare `null` says
+    both, which is the defect the results card shipped with. It is additive:
+    every figure beside it keeps the decimal-string shape §1.2 requires, so a
+    caller that has not learned about the key reads exactly what it read
+    before.
+    """
+    body = DefaultEngineAdapter().serialize_result(_result())
+
+    assert body["totals"]["production_share_percent"] is None
+    assert body["totals"]["data_state"] == {
+        "production_share_percent": "incomplete",
+        "total_value_nzd": "not_supplied",
+        "wasted_value_nzd": "not_supplied",
+        "wasted_share_percent": "not_supplied",
+        "saving_nzd": "not_supplied",
+    }
+    # Per entry, and each entry's own: the first supplied a production total
+    # and keeps its figure whether or not the second did.
+    assert body["entries"][0]["production_share_percent"] == Decimal("15.00")
+    assert body["entries"][1]["production_share_percent"] is None
 
 
 def test_the_top_level_keys_are_exactly_the_ones_6_2_lists():
@@ -178,11 +380,16 @@ def test_the_hoist_is_the_only_arithmetic_free_reshaping():
     assert body["entries"][1]["net_benefit"] == {"co2e": Decimal("96.0000000000")}
 
 
-def test_by_destination_is_per_entry_and_omitted_at_the_totals_level():
-    """§3 rule 2."""
+def test_by_destination_is_per_entry_and_rolled_up_at_the_totals_level():
+    """§3 rule 2, as v1.48 amends it: `by_destination` is real at both
+    levels now. Per entry it carries each line's own rate; at the totals
+    level the rates are zero and only `qty_kg`/`value` are meaningful.
+
+    v1.59 puts `upstream_basis` in the same position, and for the same
+    reason: one entry's line was priced by one of §2.2's candidate rows, and
+    a row summed across entries was priced by none of them, so it is `None`
+    there rather than a member naming one of the rows that contributed."""
     body = DefaultEngineAdapter().serialize_result(_result())
-    assert "by_destination" not in body["totals"]["current"]["metrics"]["co2e"]
-    assert "by_destination" not in body["totals"]["alternative"]["metrics"]["co2e"]
     assert body["entries"][0]["current"]["metrics"]["co2e"]["by_destination"] == [
         {
             "destination": "landfill",
@@ -190,7 +397,46 @@ def test_by_destination_is_per_entry_and_omitted_at_the_totals_level():
             "upstream": Decimal("1.9000000000"),
             "downstream": Decimal("0.9900000000"),
             "value": Decimal("3468.0000000000"),
+            # v1.59. The member, not `None`: this row is one entry's line and
+            # it was priced by one candidate.
+            "upstream_basis": UpstreamBasis.CATEGORY_EVERY_DESTINATION,
         }
+    ]
+    assert body["totals"]["current"]["metrics"]["co2e"]["by_destination"] == [
+        {
+            "destination": "landfill",
+            "qty_kg": Decimal("1200.000"),
+            "upstream": Decimal("0.0000000000"),
+            "downstream": Decimal("0.0000000000"),
+            "value": Decimal("3468.0000000000"),
+            "upstream_basis": None,
+        },
+        {
+            "destination": "not_harvested",
+            "qty_kg": Decimal("800.000"),
+            "upstream": Decimal("0.0000000000"),
+            "downstream": Decimal("0.0000000000"),
+            "value": Decimal("456.0000000000"),
+            "upstream_basis": None,
+        },
+    ]
+    assert body["totals"]["alternative"]["metrics"]["co2e"]["by_destination"] == [
+        {
+            "destination": "anaerobic_digestion",
+            "qty_kg": Decimal("1200.000"),
+            "upstream": Decimal("0.0000000000"),
+            "downstream": Decimal("0.0000000000"),
+            "value": Decimal("1368.0000000000"),
+            "upstream_basis": None,
+        },
+        {
+            "destination": "prevention",
+            "qty_kg": Decimal("800.000"),
+            "upstream": Decimal("0.0000000000"),
+            "downstream": Decimal("0.0000000000"),
+            "value": Decimal("360.0000000000"),
+            "upstream_basis": None,
+        },
     ]
 
 
@@ -206,9 +452,13 @@ def test_the_engines_trailing_code_suffixes_are_dropped_on_the_wire():
     assert "metric_code" not in entry["current"]["metrics"]["co2e"]
     assert entry["current"]["equivalences"][0] == {
         "code": "km_driven",
+        "name": "Kilometres driven",
         "label": "Equivalent to driving 14,500 km",
         "value": Decimal("14500.0000000000"),
+        "value_per_unit": Decimal("4.1800000000"),
+        "value_per_unit_display": "4.18",
         "source_metric": "co2e",
+        "source_note": KM_DRIVEN_SOURCE_NOTE,
     }
 
 
@@ -233,3 +483,90 @@ def test_every_decimal_leaves_as_a_string_once_wired():
         ]
         == "0.9900000000"
     )
+
+
+def test_the_money_block_is_carried_present_and_not_summed_here():
+    """§4.5, v1.48. `serialize_result` performs no arithmetic (§4.2): the four
+    `MoneyResult` fields arrive already computed and this module only renames
+    the object, on the same "present and null, not omitted" terms as
+    `totals.alternative` and `totals.net_benefit`."""
+    result = _result()
+    result.totals.money = SimpleNamespace(
+        total_value_nzd=Decimal("120000.00"),
+        wasted_value_nzd=Decimal("4500.00"),
+        wasted_share_percent=Decimal("3.75"),
+        saving_nzd=None,
+    )
+    body = DefaultEngineAdapter().serialize_result(result)
+    assert body["totals"]["money"] == {
+        "total_value_nzd": Decimal("120000.00"),
+        "wasted_value_nzd": Decimal("4500.00"),
+        "wasted_share_percent": Decimal("3.75"),
+        "saving_nzd": None,
+    }
+
+
+def test_the_money_block_is_null_when_the_engine_produced_none():
+    body = DefaultEngineAdapter().serialize_result(_result())
+    assert body["totals"]["money"] is None
+
+
+def test_the_adapter_carries_the_new_entry_numbers_into_the_engine():
+    """The three per-entry numbers reach `EntryInput`.
+
+    **`time_frame` deliberately does not.** The engine is a pure function of
+    a request and a bundle, and the client ruled that the period computes
+    nothing - so putting it on `CalculationRequest` would be handing the
+    engine a value it must promise never to use. It is stored by the
+    repository and rendered by the front end, and the engine never sees it.
+    """
+    payload = CalculatePayload(
+        gwp_horizon=100,
+        time_frame="one_month",
+        entries=[
+            EntryPayload(
+                sector="processing",
+                food_category="bread_bakery",
+                total_input_kg=Decimal("50000.000"),
+                total_value_nzd=Decimal("120000.00"),
+                wasted_value_nzd=Decimal("4500.00"),
+                current=[
+                    ScenarioLinePayload(destination="landfill", qty_kg="1200.500")
+                ],
+            )
+        ],
+    )
+
+    request = DefaultEngineAdapter().make_request(payload)
+
+    entry = request.entries[0]
+    assert entry.total_input_kg == Decimal("50000.000")
+    assert entry.total_value_nzd == Decimal("120000.00")
+    assert entry.wasted_value_nzd == Decimal("4500.00")
+    assert not hasattr(request, "time_frame"), (
+        "the engine must not be handed a value it is required never to use"
+    )
+
+
+def test_an_equivalence_reaches_the_wire_with_its_basis():
+    """v1.52. All four fields are additive -- a v1.51 consumer reading only
+    code/label/value/source_metric is unaffected."""
+    body = _scenario_body_for(_result_with_equivalence(
+        name="Passenger vehicles",
+        value_per_unit=Decimal("0.00041493775933609958"),
+        value_per_unit_display="0.000414938",
+        source_note="GHG (t CO2e) / 2.41 t CO2e per vehicle per year.",
+    ))
+    row = body["equivalences"][0]
+    assert row["name"] == "Passenger vehicles"
+    assert row["value_per_unit"] == Decimal("0.00041493775933609958")
+    assert row["value_per_unit_display"] == "0.000414938"
+    assert row["source_note"] == "GHG (t CO2e) / 2.41 t CO2e per vehicle per year."
+
+
+def test_a_missing_basis_is_null_on_the_wire_not_absent():
+    """A key that disappears makes a consumer branch on presence; a null lets
+    it branch on the value, which is what the three surfaces do."""
+    row = _scenario_body_for(_result_with_equivalence(source_note=None))["equivalences"][0]
+    assert "source_note" in row
+    assert row["source_note"] is None

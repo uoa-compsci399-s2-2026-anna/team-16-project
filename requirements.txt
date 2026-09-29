@@ -1,6 +1,25 @@
 # Kai Commitment Impact Calculator - Python dependencies
 # Python 3.11+
 
+# EVERY VERSION BELOW IS A FLOOR, AND A FLOOR IS NOT AN ENVIRONMENT. This file
+# says WHAT is required; docker/constraints.txt says WHICH VERSIONS were
+# tested, and the line below makes an install from this file use them. Both
+# images already build with `pip install --constraint docker/constraints.txt`
+# (docker/api.Dockerfile, docker/admin.Dockerfile), so without this line a
+# developer's checkout resolves each floor to whatever PyPI published most
+# recently and is a different set of software from the one that ships.
+#
+# That is not hypothetical. The pin moved to sqladmin 0.31.0 on 10 August and
+# the desk stayed on 0.30.0, so admin/templates/sqladmin/_macros.html - a copy
+# of a template out of that package, added on 13 August - was taken from a
+# version the panel has never run and shipped 0.30.0's menu markup on 0.31.0.
+# It is the reason tests/admin/test_i18n.py now asserts the installed version
+# against the pin.
+#
+# pip resolves this path relative to THIS FILE, not the working directory, so
+# `pip install -r requirements.txt` works from anywhere.
+-c docker/constraints.txt
+
 # --- Web ---
 fastapi>=0.115
 uvicorn[standard]>=0.32
@@ -12,6 +31,24 @@ sqlalchemy>=2.0
 alembic>=1.14
 pymysql>=1.1               # pure Python; avoids the mysqlclient build toolchain
                            # on a team split across Windows and macOS
+
+# --- PDF export (api/pdf_render.py) ---
+# Runtime, not test-only: POST /api/v1/export/pdf is a public route and an
+# install without these answers it with a 500. WeasyPrint additionally needs
+# Pango, HarfBuzz and GObject as SYSTEM libraries, which pip cannot install -
+# docker/api.Dockerfile and docker/admin.Dockerfile apt-get them, and
+# api/pdf_render.py imports weasyprint lazily so a desk without them can still
+# run the rest of the suite. 62 is the floor because it is the first release
+# that draws through pydyf rather than cairo.
+#
+# NOTHING HERE IS A LAYOUT LIBRARY WE DRIVE BY HAND. WeasyPrint is given HTML
+# and CSS; Pango and HarfBuzz do the shaping, the bidi and the line breaking.
+# That is the whole point of the task that added it - the export it replaced
+# measured text in JavaScript, and a text-measuring routine in Python would
+# have been the same mistake in a different language.
+weasyprint>=62
+jinja2>=3.1                # the export template; also sqladmin's renderer, but
+                           # api/pdf_render.py imports it by name
 
 # --- Admin panel ---
 sqladmin>=0.20
@@ -46,3 +83,8 @@ python-dotenv>=1.0
 # installing the package does not get a test runner:  pip install -e ".[dev]"
 pytest>=8.3
 pytest-asyncio>=0.24
+pypdf>=5.1                 # tests/api/test_pdf_render.py extracts the text of a
+                           # rendered PDF and asserts on it. A test that only
+                           # checks the bytes start with %PDF- proves nothing:
+                           # the defect this export exists to fix produced a
+                           # perfectly valid PDF that said "K?mara".

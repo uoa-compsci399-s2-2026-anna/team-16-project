@@ -11,14 +11,32 @@
           "unit": "kg CO2e",
           "display_precision": 1,
           "total": "456.0000000000",
-          "by_destination": []
+          "by_destination": [
+            {
+              "destination_code": "not_harvested",
+              "qty_kg": "800.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "456.0000000000",
+              "upstream_basis": null
+            }
+          ]
         },
         "mass": {
           "metric_code": "mass",
           "unit": "kg",
           "display_precision": 1,
           "total": "800.0000000000",
-          "by_destination": []
+          "by_destination": [
+            {
+              "destination_code": "not_harvested",
+              "qty_kg": "800.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "800.0000000000",
+              "upstream_basis": null
+            }
+          ]
         }
       },
       "equivalences": [
@@ -26,7 +44,11 @@
           "code": "km_driven",
           "label": "Equivalent to driving 1,906 km",
           "value": "1906.0800000000",
-          "source_metric_code": "co2e"
+          "source_metric_code": "co2e",
+          "name": "Kilometres driven",
+          "value_per_unit": "4.1800000000",
+          "value_per_unit_display": "4.18",
+          "source_note": null
         }
       ]
     },
@@ -38,14 +60,32 @@
           "unit": "kg CO2e",
           "display_precision": 1,
           "total": "0.0000000000",
-          "by_destination": []
+          "by_destination": [
+            {
+              "destination_code": "prevention",
+              "qty_kg": "800.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "0.0000000000",
+              "upstream_basis": null
+            }
+          ]
         },
         "mass": {
           "metric_code": "mass",
           "unit": "kg",
           "display_precision": 1,
           "total": "800.0000000000",
-          "by_destination": []
+          "by_destination": [
+            {
+              "destination_code": "prevention",
+              "qty_kg": "800.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "800.0000000000",
+              "upstream_basis": null
+            }
+          ]
         }
       },
       "equivalences": [
@@ -53,13 +93,26 @@
           "code": "km_driven",
           "label": "Equivalent to driving 0 km",
           "value": "0.0000000000",
-          "source_metric_code": "co2e"
+          "source_metric_code": "co2e",
+          "name": "Kilometres driven",
+          "value_per_unit": "4.1800000000",
+          "value_per_unit_display": "4.18",
+          "source_note": null
         }
       ]
     },
     "net_benefit": {
       "co2e": "456.0000000000",
       "mass": "0.0000000000"
+    },
+    "money": null,
+    "production_share_percent": null,
+    "data_state": {
+      "production_share_percent": "not_supplied",
+      "total_value_nzd": "not_supplied",
+      "wasted_value_nzd": "not_supplied",
+      "wasted_share_percent": "not_supplied",
+      "saving_nzd": "not_supplied"
     }
   },
   "entries": [
@@ -80,7 +133,8 @@
                 "qty_kg": "800.000",
                 "upstream": "0.4500000000",
                 "downstream": "0.1200000000",
-                "value": "456.0000000000"
+                "value": "456.0000000000",
+                "upstream_basis": "category_every_destination"
               }
             ]
           },
@@ -95,7 +149,8 @@
                 "qty_kg": "800.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "800.0000000000"
+                "value": "800.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           }
@@ -105,7 +160,11 @@
             "code": "km_driven",
             "label": "Equivalent to driving 1,906 km",
             "value": "1906.0800000000",
-            "source_metric_code": "co2e"
+            "source_metric_code": "co2e",
+            "name": "Kilometres driven",
+            "value_per_unit": "4.1800000000",
+            "value_per_unit_display": "4.18",
+            "source_note": null
           }
         ]
       },
@@ -123,7 +182,8 @@
                 "qty_kg": "800.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "0.0000000000"
+                "value": "0.0000000000",
+                "upstream_basis": "category_at_destination"
               }
             ]
           },
@@ -138,7 +198,8 @@
                 "qty_kg": "800.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "800.0000000000"
+                "value": "800.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           }
@@ -148,14 +209,21 @@
             "code": "km_driven",
             "label": "Equivalent to driving 0 km",
             "value": "0.0000000000",
-            "source_metric_code": "co2e"
+            "source_metric_code": "co2e",
+            "name": "Kilometres driven",
+            "value_per_unit": "4.1800000000",
+            "value_per_unit_display": "4.18",
+            "source_note": null
           }
         ]
       },
       "net_benefit": {
         "co2e": "456.0000000000",
         "mass": "0.0000000000"
-      }
+      },
+      "production_share_percent": null,
+      "food_item_code": null,
+      "item_basis": "not_applicable"
     }
   ]
 }

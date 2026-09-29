@@ -48,12 +48,36 @@
   --space-md: 20px;
   --space-lg: 32px;
   --space-xl: 48px;
-  --hero-food-image: url('../assets/hero-food-image.png');
+  /* **2560px wide, not the 6000px the camera produced.** The band this fills is at
+     most the 1180px measure and 190px tall, and the photograph is only seen through
+     the holes in `.food-arch-mask`, so 2560 is already double what a 2x display can
+     resolve here. The source frame arrived as a 26.5 MB PNG - 99.3% of the whole
+     homepage - and gzip cannot touch a PNG, so every visitor paid all of it to look
+     at a strip. Re-encoding the same photograph at the same crop costs 286 KB.
+     WebP unconditionally, as `kai-commitment-logo-white.webp` already is; the band
+     keeps `background-color: var(--kai-white)` underneath, so a browser that cannot
+     decode it shows the arches on white rather than a hole in the page. */
+  --hero-food-image: url('../assets/hero-food-image.webp');
   --ink: var(--kai-kale);
   --muted: #465f56;
   --green: var(--kai-pea);
   --green-dark: var(--kai-kale);
+  /* **The green that is legible on a light ground**, for the places where a green
+     has to carry contrast rather than decorate. Pea composited 50% over Kale — a
+     shade of the brand's own green, mixed from two palette colours rather than
+     invented — because Pea itself measures 2.04:1 on #f2faf6 and 2.17:1 on white,
+     which is under the 3:1 a non-text indicator needs and less than half the 4.5:1
+     text needs. This measures 4.84:1 on #f2faf6 and 5.14:1 on white. */
+  --green-rule: #147d52;
   --mint: #dff8ed;
+  /* Step 3's zone fill and its hairline. **One step lighter than `--mint`, and
+     that is the whole reason it is a second pair of values rather than `--mint`
+     reused.** The combined-total strip is `--mint` and it sits on the same
+     screen, directly under the leaf cards; two tinted blocks of the same colour,
+     one of them a running total and the other a form group, read as the same
+     kind of thing and compete for the same attention. */
+  --zone: #f2faf6;
+  --zone-line: #dceee5;
   --cream: #fffaf0;
   --orange: var(--kai-orange);
   --blueberry: var(--kai-blueberry);
@@ -64,12 +88,26 @@
   --error: var(--kai-beetroot);
   --focus: var(--kai-blueberry);
   --shadow: 0 8px 24px rgba(0, 50, 35, 0.055);
+  /* Measured, not guessed: the rendered height of `.step-nav` at >=650px is
+     76px (a 50px button plus 12px of padding either side plus two 1px borders).
+     It is a variable because `scroll-margin-bottom` below has to clear the bar
+     by exactly this much, and the two drifting apart is how a focused input
+     ends up underneath it. The <650px value is in that media block. */
+  --step-nav-height: 76px;
 }
 
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html { scroll-behavior: smooth; }
-body { margin: 0; min-width: 0; min-height: 100vh; background: var(--kai-white); }
+/* Column flex, so `.main-content` can take the leftover height with `flex: 1`
+   instead of a hard-coded `min-height: calc(100vh - 220px)`. That 220 was
+   arithmetic over the header, the step-indicator band and the footer, and the
+   band is gone — leaving it would have floored every short step 87px taller
+   than its content, which is invisible on screen and silently reintroduces
+   scrolling on exactly the steps this change was meant to fix. A previous pass
+   found short steps at 1920 measuring exactly the floor, so shrinking their
+   content changed nothing. **Do not put the constant back.** */
+body { margin: 0; min-width: 320px; min-height: 100vh; display: flex; flex-direction: column; background: var(--kai-white); }
 .skip-link { position: fixed; z-index: 100; top: 8px; left: 8px; padding: 10px 14px; color: var(--kai-white); background: var(--kai-kale); transform: translateY(-160%); }
 .skip-link:focus { transform: translateY(0); }
 button, input, select { font: inherit; }
@@ -97,18 +135,29 @@ button:disabled { cursor: not-allowed; color: rgba(0, 50, 35, 0.56); background:
   background: var(--kai-white);
   border-bottom: 1px solid rgba(0, 50, 35, 0.1);
 }
+/* The introduction screen's header. `renderChrome()` in web/js/calculator.js toggles the
+   class, and index.html ships it so the first paint is already Kale. It is a real branch
+   again: `home.html` is retired, `/` serves index.html, and step -1 is what a visitor
+   lands on. */
 .site-header.intro-header {
   color: var(--kai-white);
   background: var(--kai-kale);
   border-bottom: 0;
 }
 
+/* `flex-wrap` is for the language chooser, which shares this row. At 390px the
+   control and the 220px wordmark cannot both fit, and without wrapping the
+   wordmark was simply clipped by the viewport edge. Wrapping puts the chooser
+   on its own line above the brand on a phone — which is the layout that was
+   drawn in the first place — and costs nothing on a desktop, where both fit on
+   one line and the row never wraps. */
 .header-inner {
   min-height: 92px;
   max-width: 1180px;
   margin: 0 auto;
   padding: 12px 20px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
@@ -132,30 +181,29 @@ button:disabled { cursor: not-allowed; color: rgba(0, 50, 35, 0.56); background:
   color: var(--kai-beetroot);
   text-decoration-thickness: 3px;
 }
-.intro-header .public-nav a { color: var(--kai-white); }
-.intro-header .public-nav a[aria-current="page"] { color: var(--kai-pea); }
-.calculator-header-actions {
-  min-width: 0;
-  flex: 1 1 540px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 4px 22px;
-}
+/* The introduction screen is full-bleed, so its header runs to the viewport edges rather
+   than stopping at the 900px measure the wizard uses.
+   **No `.intro-header .public-nav` rules**, unlike the version this was recovered from:
+   index.html has never carried the header navigation, so a colour rule for it here
+   would be a rule with no element - and this file already carries one warning about
+   exactly that failure mode over `.language-bar__label`. */
 .intro-header .header-inner {
   max-width: none;
-  padding-right: clamp(20px, 2.7vw, 56px);
-  padding-left: clamp(20px, 2.7vw, 56px);
+  padding-inline: clamp(20px, 2.7vw, 56px);
 }
 
-.brand { max-width: 100%; display: flex; align-items: center; gap: 18px; font-weight: 700; }
+/* The brand occupies the header's reading-start edge, matching the Kai Commitment
+   public site. The language control is explicitly placed at reading-end below. */
+/* `max-width: 100%` is D's, and it is kept: without it the brand is a flex item
+   whose min-content width is the wordmark's, so at 320px it widened the header
+   rather than wrapping. */
+.brand { max-width: 100%; display: flex; align-items: center; gap: 18px; margin-inline-end: auto; font-weight: 700; }
 .brand-home-button {
   border: 0;
   padding: 0;
   color: inherit;
   background: transparent;
-  text-align: left;
+  text-align: start;
 }
 .brand-home-button:hover { opacity: 0.88; }
 .brand img { width: 230px; height: 67px; display: block; object-fit: contain; }
@@ -163,13 +211,16 @@ button:disabled { cursor: not-allowed; color: rgba(0, 50, 35, 0.56); background:
 
 .prototype-label {
   color: var(--muted);
-  border-left: 1px solid var(--border);
-  padding-left: 10px;
+  border-inline-start: 1px solid var(--border);
+  padding-inline-start: 10px;
   font-size: 0.82rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+/* Hidden on the introduction screen, where the full-size wordmark says it. The element
+   stays in the DOM, which is why `_mirror_measurements` in tests/web/test_i18n_browser.py
+   can still read its logical border and prove the header mirrors. */
 .intro-header .prototype-label {
   display: none;
 }
@@ -189,20 +240,17 @@ button:disabled { cursor: not-allowed; color: rgba(0, 50, 35, 0.56); background:
 .text-button:hover { text-decoration-thickness: 2px; }
 .text-button.danger { color: var(--error); }
 
-.step-indicator {
-  background: #fff;
-  border-bottom: 1px solid rgba(0, 50, 35, 0.1);
-  padding: 16px 20px;
-}
-.step-indicator ol { display: none; }
-.step-mobile { max-width: 760px; margin: 0 auto; color: var(--muted); }
-
 .main-content {
+  flex: 1 0 auto;
+  width: 100%;
   max-width: 900px;
-  min-height: calc(100vh - 220px);
   margin: 0 auto;
   padding: 46px 20px 70px;
 }
+/* The introduction screen is a full-bleed Kale panel rather than a 900px column, so it
+   takes the page's measure and padding off. `:has()` rather than the `.introduction-main`
+   class `render()` also sets, because the class is what a test can assert and this is what
+   the browser needs; both are set from the one `state.step === -1`. */
 .main-content:has(.hero) {
   max-width: none;
   padding: 0;
@@ -213,7 +261,24 @@ button:disabled { cursor: not-allowed; color: rgba(0, 50, 35, 0.56); background:
 
 h1, h2, h3, p { margin-top: 0; }
 h1, h2, h3, .brand, .eyebrow { font-family: var(--font-heading); font-weight: 700; }
-h1 { max-width: 760px; margin-bottom: 18px; font-size: clamp(2.15rem, 8vw, 4.4rem); line-height: 1.03; letter-spacing: -0.04em; }
+/* `overflow-wrap: anywhere` - not load-bearing over `break-word` here specifically:
+   this is a plain block-level `<h1>`, not a shrink-to-fit context, so the two would
+   break the same word in the same place (`break-word`'s difference from `anywhere`
+   only shows up when it changes an element's own preferred/min-content size, which
+   a block box sized by its container never asks it to). `anywhere` is used simply
+   because it is what every other long-content rule on this sheet already uses
+   (`.destination-group__name`, `.review-destinations dd`, `.home-page .home-hero h1`)
+   - one property for "this text may need to break mid-word", not two. Every step's
+   own `<h1>` shares this rule (`amountStep()` and its four siblings all render a
+   plain `<h1>`, styled only here), and German is why it is not optional: "Welche Art
+   von Lebensmittelabfall erfassen Sie?" at 320px puts `Lebensmittelabfall` alone past
+   the 280px column `.main-content`'s padding leaves at that width: the word - not the
+   box - carries 22px past the `<h1>`'s own right edge, of which 20px lands back
+   inside `.main-content`'s own right padding and the last 2px is what actually
+   crosses the viewport's edge - the entire `documentElement.scrollWidth` overflow
+   measured there. The heading's own border box never left its column; only its
+   unbroken text did. */
+h1 { max-width: 760px; margin-bottom: 18px; font-size: clamp(2.15rem, 8vw, 4.4rem); line-height: 1.03; letter-spacing: -0.04em; overflow-wrap: anywhere; }
 h2 { margin-bottom: 16px; font-size: clamp(1.3rem, 3vw, 1.65rem); letter-spacing: -0.02em; }
 h3 { margin-bottom: 0; font-size: 1.2rem; }
 p { line-height: 1.65; }
@@ -240,9 +305,21 @@ p { line-height: 1.65; }
   justify-content: center;
   text-align: center;
 }
-.hero-copy h1 { margin-right: auto; margin-left: auto; }
+/* **`anywhere`, not `break-word`, and the difference is the whole fix.** `.hero-copy` is
+   a column flex box with `align-items: center`, so this heading is sized to its own
+   fit-content on the cross axis - and fit-content is never smaller than min-content, which
+   for "Lebensmittelabfällen" is the whole word. `break-word` breaks a word that has already
+   overflowed but leaves min-content alone, so the box stays too wide and the page still
+   scrolls: measured on the introduction screen at 320px in German, 363 against 305 with
+   `break-word` and 320 with `anywhere`. Display-size type is where this shows first - at
+   34px a German compound is 343px wide inside a 280px column.
+
+   `hyphens: auto` reads better and measures the same here, but it is only as good as the
+   browser's hyphenation dictionary for the reader's language; a missing dictionary is a
+   silent return to the overflow. It can be layered on top of this, never instead of it. */
+.hero-copy h1 { margin-inline: auto; overflow-wrap: anywhere; }
 .hero .eyebrow { color: var(--green); }
-.hero .lead { margin-right: auto; margin-left: auto; color: rgba(255, 255, 255, 0.82); }
+.hero .lead { margin-inline: auto; color: rgba(255, 255, 255, 0.82); }
 .hero .needs-panel { color: var(--ink); }
 .hero .button-primary {
   color: var(--kai-kale);
@@ -275,7 +352,6 @@ p { line-height: 1.65; }
   padding: 56px 20px 72px;
 }
 .hero-support-grid .needs-panel { margin: 0; }
-.hero-support-grid .needs-panel h2 { text-align: center; }
 .loading-state, .error-state { text-align: center; }
 
 .disclaimer {
@@ -284,7 +360,7 @@ p { line-height: 1.65; }
   margin: 30px 0;
   padding: 20px;
   border: 1px solid rgba(135, 0, 90, 0.42);
-  border-left: 4px solid var(--beetroot);
+  border-inline-start: 4px solid var(--beetroot);
   border-radius: 14px;
   color: var(--ink);
   background: rgba(230, 190, 255, 0.38);
@@ -319,8 +395,8 @@ p { line-height: 1.65; }
   box-shadow: var(--shadow);
 }
 .check-list { margin: 0; padding: 0; list-style: none; }
-.check-list li { position: relative; margin: 14px 0; padding-left: 32px; line-height: 1.5; }
-.check-list li::before { content: '✓'; position: absolute; left: 0; color: var(--green); font-weight: 700; }
+.check-list li { position: relative; margin: 14px 0; padding-inline-start: 32px; line-height: 1.5; }
+.check-list li::before { content: '✓'; position: absolute; inset-inline-start: 0; color: var(--green); font-weight: 700; }
 .privacy-note { margin: 16px 0 0; color: var(--muted); font-size: 0.92rem; }
 
 .button {
@@ -339,18 +415,94 @@ p { line-height: 1.65; }
 .button-add:hover:not(:disabled) { box-shadow: 0 4px 14px rgba(0, 50, 35, 0.1); }
 .button-large { min-height: 58px; padding-inline: 28px; font-size: 1.05rem; }
 
-.navigation-buttons {
-  margin-top: 40px;
-  padding-top: 24px;
-  border-top: 1px solid var(--border);
-  display: flex;
-  flex-direction: column-reverse;
-  gap: 12px;
+/* ---------------------------------------------------------------------------------------
+   THE STEP NAVIGATION BAR — `sticky`, NOT `fixed`, AND THE LAST CHILD OF ITS SECTION.
+
+   The client's complaint was that advancing required scrolling at every step. Measured at
+   1278x983, the primary action sat +2961px past the fold on the food-type step, +796 on
+   destinations, +630 on review and +1230 on results; at 938x898, +3046 / +899 / +715 / +1342.
+   Every content-shrinking lever together (h1 to 2rem, hiding the indicator, tighter padding,
+   two-column destinations) still left destinations at +238 / +395. Pinning this row is the
+   only measure that moved every step at both viewports.
+
+   `sticky` rather than `fixed`, deliberately:
+     * it sits in its natural place on a short step and pins only when the section would push
+       it past the fold, so an intro-length screen does not grow a cookie banner;
+     * at full scroll it un-pins and returns above the footer, so nothing is *permanently*
+       hidden behind it and no page-level padding is owed to it;
+     * it is in flow, so a mobile soft keyboard that shrinks the layout viewport re-pins it
+       above the keyboard rather than stranding it behind one.
+
+   Two structural preconditions, both silent when broken:
+     * **last child of the step's `<section>`** — sticky bottom pins only while the containing
+       block extends below the fold, so anything rendered after the bar unpins it early;
+     * **after the content in the DOM** — Tab must reach the form before the navigation.
+
+   `z-index: 3` clears `.allocation-summary`'s 2: the destination step pins a summary at the
+   top and this bar at the bottom, and they must not fight. **Do not give this element or any
+   ancestor a `transform`, `filter`, `backdrop-filter` or `overflow` other than `visible`** —
+   each of those either kills this element's own stickiness or kills the summary's.
+   --------------------------------------------------------------------------------------- */
+.step-nav {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  margin-top: 34px;
+  padding: 12px 16px;
+  display: grid;
+  /* THE BRAND'S TRACK IS THE FLEXIBLE ONE, and that is not a detail.
+     Written `auto minmax(0, 1fr) auto` the brand sits in an `auto` track and
+     cannot be squeezed: at 768px in German on a wizard step its natural width
+     is 406px and the chooser's is 299px, which together push the chooser's
+     right edge to 761 against a 753px content box - 8px of sideways scroll on
+     four pages, caught by tests/web/test_horizontal_overflow.py.
+
+     The arrangement this replaced had the brand in the flexible track for the
+     same reason, and it shrank to 396px there and fitted. So the flexible track
+     moves with the brand rather than staying where it was: `minmax(0, 1fr)`
+     first, the middle item and the chooser `auto` after it. The chooser must
+     never be the one that shrinks - a clipped `<select>` value gives no sign
+     that it has been clipped. */
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--kai-white);
+  box-shadow: 0 -6px 20px rgba(0, 50, 35, 0.1);
+}
+/* No `white-space: nowrap` here, however much tidier one line looks. The primary label is
+   variable — "Calculate results for 4 entries" is a real one — and an unwrappable `auto`
+   grid track cannot shrink below its text, which is horizontal overflow at 390px. */
+.step-nav .button { min-height: 50px; padding-inline: 16px; }
+.step-nav .button-secondary { justify-self: start; }
+.step-nav-progress { margin: 0; min-width: 0; color: var(--muted); font-size: 0.86rem; line-height: 1.35; text-align: center; }
+.step-nav-label { font-weight: 700; }
+.step-nav-name { display: inline; }
+.step-nav-track {
+  display: block;
+  height: 4px;
+  max-width: 240px;
+  margin: 7px auto 0;
+  border-radius: 999px;
+  background: rgba(0, 50, 35, 0.12);
+  overflow: hidden;
+}
+.step-nav-track span { display: block; height: 100%; border-radius: inherit; background: var(--green); }
+
+/* Sequential focus navigation scrolls a newly focused control flush to the viewport edge,
+   which puts it under the pinned bar. `scroll-margin-bottom` is what the browser honours
+   there, and it has to clear the bar's real height — see `--step-nav-height`. Asserting the
+   control exists is not asserting the keyboard user can see it; six defects have reached
+   this repository through that gap. */
+.content-section :where(input, select, textarea, button, summary, a[href], [tabindex]) {
+  scroll-margin-bottom: calc(var(--step-nav-height) + 16px);
 }
 
 .form-field { margin: 25px 0; }
 .form-field label { display: block; margin-bottom: 8px; font-weight: 700; }
 .required { color: var(--kai-orange); font-size: 0.8rem; }
+.optional-tag { color: var(--muted); font-size: 0.8rem; font-weight: 400; }
 .field-hint { margin: -2px 0 8px; color: var(--muted); font-size: 0.92rem; }
 .field-error { margin: 8px 0 0; color: var(--error); font-weight: 700; }
 input, select {
@@ -406,13 +558,56 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
   background: var(--green);
 }
 .stage-card:focus-within { outline: 2px solid var(--focus); outline-offset: 3px; }
+/* **The copy is centred in this box, and the radio travels with it.** Both
+   halves matter, and the obvious one-liner gets the first at the cost of the
+   second.
+
+   *Why there is slack to centre at all.* `min-height: 92px` is not a design
+   constant - it is the arithmetic of a card carrying one line of description:
+   20 padding + 22.5 title + 6 `.stage-copy` row gap + 24 for one line of
+   `.stage-description` + 20 padding = 92.5. Every sector's `description` is
+   empty today (open item O-1: the client has not supplied the content), so the
+   floor holds 23.5px open on all six cards at every width above 480px. The
+   floor STAYS, by the repository owner's decision - the card reads comfortably
+   at that height - so the fix is to put the copy in the middle of the box
+   rather than to shrink the box onto the copy. The day O-1 resolves, the copy
+   fills the box and all of this becomes inert.
+
+   *Why not `align-items: center`.* It centres every flex child independently,
+   so the radio drifts down the block as the copy grows: measured at 16.7px
+   with one line of description and 136.7px at 320px with the fixture prose - a
+   radio beside the fifth line of its own body text. `flex-wrap: wrap` with
+   `align-content: center` centres the flex LINE as a unit instead, and
+   `align-items: flex-start` holds the radio at the top of that line, so the
+   pair moves together and the radio stays on the title it labels.
+
+   *Why `.stage-copy` carries `flex: 1 1 0`.* Turning on `flex-wrap: wrap` at
+   wide widths without it let a long description take its max-content width,
+   overflow the line and wrap BELOW the radio - which put the radio 21.5px
+   ABOVE the first line of its own title. Same defect, opposite direction.
+
+   *`gap` was `gap: 15px`, and the 15 is horizontal.* It is the space between
+   the radio and the copy, and `.selected-label`'s `margin-inline-start: 37px`
+   in the `max-width: 480px` block is hand-computed from it (22px radio + 15).
+   But that block also sets a wrap, the pill takes a second flex line, and the
+   shorthand starts paying out on the block axis too - so the pill's authored
+   `margin: 8px 0 0` was drawn as 23. `column-gap` names the axis that was
+   meant and leaves the authored 8 as the only number spacing the pill.
+
+   `tests/web/test_step_one_card_spacing.py` measures every number above in
+   three content states - empty, one line, and the fixture prose - because the
+   fix has to be right both today and the day O-1 resolves. That file exists
+   because the first attempt at this had no witness and the defect came back
+   unobserved. */
 .stage-select {
   min-width: 0;
   min-height: 92px;
   padding: 20px 12px 20px 20px;
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
-  gap: 15px;
+  align-content: center;
+  column-gap: 15px;
   cursor: pointer;
 }
 .stage-select input {
@@ -424,12 +619,12 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
   accent-color: var(--green-dark);
 }
 .stage-select input:focus-visible { outline: none; }
-.stage-copy { min-width: 0; display: grid; gap: 6px; }
+.stage-copy { flex: 1 1 0; min-width: 0; display: grid; gap: 6px; }
 .stage-title { font-size: 1.08rem; font-weight: 700; line-height: 1.3; }
 .stage-description { color: var(--muted); line-height: 1.5; }
 .selected-label {
   flex: 0 0 auto;
-  margin-left: auto;
+  margin-inline-start: auto;
   padding: 5px 9px;
   border-radius: 999px;
   color: var(--green-dark);
@@ -443,7 +638,7 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
   min-height: 48px;
   padding: 14px 18px;
   border: 0;
-  border-left: 1px solid rgba(0, 50, 35, 0.1);
+  border-inline-start: 1px solid rgba(0, 50, 35, 0.1);
   color: var(--green-dark);
   background: rgba(223, 248, 237, 0.18);
   font-weight: 700;
@@ -451,10 +646,10 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 .details-button:hover { background: rgba(40, 200, 130, 0.1); }
 .stage-card.selected .details-button {
   background: rgba(255, 255, 255, 0.78);
-  border-left-color: rgba(0, 50, 35, 0.16);
+  border-inline-start-color: rgba(0, 50, 35, 0.16);
 }
 .stage-card.selected .details-button:hover { background: rgba(223, 248, 237, 0.72); }
-.chevron { display: inline-block; margin-left: 5px; font-size: 1.2rem; line-height: 0; transform: rotate(0); transition: transform 160ms ease; }
+.chevron { display: inline-block; margin-inline-start: 5px; font-size: 1.2rem; line-height: 0; transform: rotate(0); transition: transform 160ms ease; }
 .chevron.expanded { transform: rotate(180deg); }
 .stage-details {
   grid-column: 1 / -1;
@@ -464,9 +659,18 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 }
 .stage-details p { max-width: 760px; margin: 0; color: #304d45; }
 .stage-fieldset > .field-error { margin-top: 12px; }
-.stage-fieldset.has-error .stage-card-list { padding: 5px; border-left: 4px solid var(--error); }
+.stage-fieldset.has-error .stage-card-list { padding: 5px; border-inline-start: 4px solid var(--error); }
 
-.choice-fieldset { min-width: 0; margin: 30px 0 18px; padding: 0; border: 0; }
+/* `margin-top` matches `.stage-fieldset` deliberately: both fieldsets sit in the same
+   position - directly after `.section-intro`, directly before `.step-nav` - on the two
+   steps (supply-chain stage, food type) that are structurally identical enough to be
+   compared side by side. A 30px/34px split there is a Step-1-to-Step-2 layout shift with
+   no design reason behind it; `tests/web/test_step_navigation.py`'s
+   `test_the_gap_above_the_first_panel_is_the_same_on_every_comparable_step` is what
+   catches it coming back. The bottom margin stays its own value - it clears the optional
+   "Clear optional selection" button this step alone can render below the list, which
+   `.stage-fieldset` has no equivalent of. */
+.choice-fieldset { min-width: 0; margin: 34px 0 18px; padding: 0; border: 0; }
 .simple-choice-list { display: grid; gap: 12px; }
 .simple-choice {
   min-height: 70px;
@@ -487,7 +691,151 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 .simple-choice > span:nth-of-type(1) { display: grid; gap: 4px; }
 .simple-choice small { color: var(--muted); line-height: 1.45; }
 
-.amount-grid { display: grid; gap: 0 20px; }
+/* ------------------------------------------------------------------ step 3's two zones
+
+   **Two tinted zones, symmetric, each with its own heading, and nothing collapsed.**
+   The client's feedback was that the two columns of step 3 had no visual separator:
+   reading across drifted out of one column into the next and the reader only noticed
+   when a sentence failed to line up, and reading down, nothing said where a column
+   ended. `gap: 0 20px` between two ~445px columns is what made that inevitable. The
+   fill and the hairline are `--zone` / `--zone-line`, deliberately NOT `--mint` - see
+   the note beside those two in `:root`.
+
+   **Both branches of `leafPanel` use this one layout**, the single leaf and the leaf
+   card alike. The single-leaf panel carries `amount-grid` as well, and that class now
+   has no declarations anywhere in this file: it is the hook three browser tests use to
+   address "the one element wrapping every step-3 field" (removing it and requiring the
+   document to collapse to the viewport, selecting `.amount-grid .form-field`, and
+   reading its `innerText`). Styling it a second time here would mean two rules for one
+   box, and the second would silently win.
+
+   **The zones stack below `min-width: 650px`** and the two-column template is in the
+   650px media rule, with the rest of this step's breakpoint. The stacked order is
+   already the correct single-column reading order: unit, waste amount, production
+   total, then the two NZ$ figures.
+
+   **The 25px rhythm now lives inside a zone, and the gap between the zones is this
+   rule's own `gap`.** Adjacent `.form-field`s are ordinary block siblings inside a
+   zone, so their adjoining 25px margins collapse to one 25px gap, exactly as they did
+   when they were siblings in `.amount-grid` - `.form-field`'s own declared rhythm,
+   neither doubled nor halved here. What changed is the join between the last field of
+   one zone and the first of the next: that pair used to collapse too, and a padded,
+   bordered zone box blocks a margin from escaping it, so the two zones are separated by
+   this `gap` instead. That is a stated 14px, not an accident of collapse, and
+   `test_step_three_is_a_single_column_below_the_breakpoint` pins both numbers.
+   **Do not answer a doubled gap here by removing the zone's padding** - the padding is
+   what makes the zone a zone.
+
+   No `min-inline-size: 0` on the tracks (the usual companion to `minmax(0, 1fr)`, to
+   stop a child's own min-content size forcing the track wider than the fraction asks
+   for): every field inside a zone sizes itself as a percentage of its container -
+   `input, select { width: 100% }` site-wide, `.unit-field select`'s own `50%` - never
+   to its content's min-content width, so there is nothing here for a track to blow out
+   on. If a future field in either zone ever sizes to its own content instead, this is
+   where that guard would need to come back. */
+.zones { display: grid; gap: 14px; }
+.zone {
+  padding: 16px;
+  border: 1px solid var(--zone-line);
+  border-radius: 14px;
+  background: var(--zone);
+}
+/* `h2` because the step's title is the page's `h1` and there is no heading between them
+   - see `leafPanel`. The site-wide `h2` is `clamp(1.3rem, 3vw, 1.65rem)`, which is a
+   section title; these name a group inside a panel, so they are sized to the labels they
+   sit over rather than to the page heading. */
+.zone > h2 { margin: 0 0 2px; font-size: 1rem; letter-spacing: normal; }
+.zone > .zone-sub { margin: 0 0 12px; color: var(--muted); font-size: 0.86rem; }
+/* The first field's own 25px top margin collapses against `.zone-sub`'s 12px to 25px,
+   which is the rhythm; the last field's bottom margin would instead ADD to the zone's
+   own bottom padding, because padding blocks the collapse, and leave 41px of tint under
+   the last control against 16px over the first heading. */
+.zone > .form-field:last-child { margin-block-end: 0; }
+
+/* STEP 3'S TERM TOOLTIPS. The trigger is the field NAME, not an `i` beside it, and the
+   dotted underline is the whole affordance — the client's own call, and the reason the
+   `text-decoration` here is not decoration in the droppable sense: remove it and the
+   explanations exist but nobody learns they do. `cursor: help` says the same thing to a
+   pointer that is already on the word.
+
+   **Three ways in, and the set of selectors is the point.** `:hover` for a pointer,
+   `:focus-within` for a keyboard *and* for a tap. Not `:focus-visible`: a browser withholds
+   it from a pointer-driven focus, so the phone — the viewport this step is hardest on —
+   would have got nothing at all. The tap also needs one line of JS, in
+   `bindCalculator`'s delegated `click` listener; see the note there for why CSS alone
+   cannot hold the panel open inside a `<label>`.
+
+   **The containing block is the LABEL, not the `.term`, and that is the rule this whole
+   block turns on.** `.result-explanation__body` records the same lesson one screen over:
+   anchored to its own short inline trigger, a panel has no relation to the room available,
+   and it went off-screen at 768px and below with no scroll to recover it — an overflow
+   `scrollWidth` cannot even see, because nothing overflows, the panel is simply outside the
+   viewport. The prototype for this step sized the panel `max(250px, 100%)` of the span,
+   and at 320px the zone's own content box is about 248px, so the minimum alone was wider
+   than the box. Spanning the label instead spans the zone's content width exactly, at
+   every viewport and in both directions, by construction. `inset-inline: 0` is also why
+   nothing here needs a direction-specific rule for Arabic.
+
+   **It opens DOWNWARD.** #96's `i` is at the foot of a results card, so its panel goes up;
+   a term is a label at the TOP of a field, and upward puts the panel outside the card and
+   over the page heading — observed in the prototype, not reasoned about. `calc(100% + 8px)`
+   is measured from the label's own box, so a label that wraps to two lines pushes the panel
+   down with it. It covers that field's input while open, which is the trade every tooltip
+   makes and is the lesser of the two.
+
+   Border, radius, shadow and type size are `.result-explanation__body`'s, deliberately —
+   two explanation panels on one wizard should not be two different objects. The selector is
+   this file's own: sharing `.result-explanation__body`'s would have coupled a results-page
+   rule to a form step, and the two differ in every position property they have. */
+.term { text-decoration: underline dotted var(--muted); text-underline-offset: 3px; cursor: help; }
+.term:focus-visible { outline: 3px solid var(--blueberry); outline-offset: 2px; border-radius: 3px; }
+/* Scoped to a zone rather than written as `.form-field > label`: `position: relative` on
+   every label on the site would hand any future absolutely positioned descendant of any
+   label a containing block it did not ask for, and that is the kind of rule nobody finds
+   again. Steps 3 is where the terms are. */
+.zone .form-field > label { position: relative; }
+.term > .tip {
+  position: absolute;
+  z-index: 5;
+  inset-inline: 0;
+  inset-block-start: calc(100% + 8px);
+  visibility: hidden;
+  opacity: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--green-dark);
+  box-shadow: 0 5px 18px rgba(0, 50, 35, 0.09);
+  pointer-events: none;
+  transform: translateY(4px);
+  font-weight: 400;
+  text-align: start;
+  text-decoration: none;
+}
+/* The panel is a DESCENDANT of the term, so a pointer that travels from the word down onto
+   the panel never leaves `.term:hover` — `:hover` matches up the DOM, not the box tree. */
+.term:hover > .tip, .term:focus-within > .tip { visibility: visible; opacity: 1; pointer-events: auto; transform: none; }
+.term > .tip p { margin: 0; font-size: 0.86rem; line-height: 1.45; }
+.term > .tip p + p { margin-block-start: 8px; }
+
+/* The running kilogram total, under the amount row when a container is chosen.
+
+   **It keeps its box when it is empty**, so long as a container is chosen. `aria-live`
+   announces a *change* to a region already in the accessibility tree; an element created
+   at the moment the first character is typed is a new node, not a change, and several
+   screen readers say nothing. Choosing a container re-renders the step, so the region is
+   there before any count exists.
+
+   It is not rendered at all when the unit is a weight: 24px on a step that had 50px of
+   headroom at 1278x983, spent on an empty paragraph, is what
+   `test_a_short_step_is_not_floored_by_a_stale_min_height` measures. */
+.container-total {
+  min-height: 1.5em;
+  margin: 10px 0 0;
+  font-weight: 700;
+  color: var(--green-dark);
+}
 .allocation-summary {
   position: sticky;
   top: 10px;
@@ -499,12 +847,20 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
   gap: 12px;
   border: 1px solid rgba(40, 200, 130, 0.5);
   border-radius: 14px;
-  background: rgba(223, 248, 237, 0.68);
+  /* OPAQUE, AND THE SAME COLOUR IT LOOKED BEFORE.
+     This is `position: sticky`, so the destination rows scroll underneath it —
+     and at 0.68 alpha they were legible through it, labels and input borders
+     both. The replacement is the composite, not a new colour:
+     rgba(223,248,237,0.68) over --kai-white (#fff) is 233.24 / 250.24 / 242.76,
+     which is #e9faf3 to the byte, so the summary is pixel-identical over the
+     ground it actually sits on and only stops being see-through. Same for the
+     invalid state below: rgba(255,80,50,0.07) over #fff is #fff3f1. */
+  background: #e9faf3;
   box-shadow: 0 5px 18px rgba(0, 50, 35, 0.045);
 }
 .allocation-summary div { display: grid; gap: 4px; }
 .allocation-summary span { color: var(--muted); font-size: 0.82rem; font-weight: 700; }
-.allocation-summary.invalid { border-color: var(--error); color: var(--error); background: rgba(255, 80, 50, 0.07); box-shadow: 0 0 0 2px rgba(255, 80, 50, 0.08); }
+.allocation-summary.invalid { border-color: var(--error); color: var(--error); background: #fff3f1; box-shadow: 0 0 0 2px rgba(255, 80, 50, 0.08); }
 .allocation-summary.invalid span { color: var(--error); }
 .destination-list { border: 1px solid rgba(0, 50, 35, 0.12); border-radius: 16px; background: #fff; overflow: hidden; }
 .destination-list.has-error { border-color: var(--error); }
@@ -514,13 +870,53 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 .destination-row small { color: var(--muted); font-weight: 400; }
 .destination-row.invalid { background: rgba(255, 80, 50, 0.055); }
 .destination-row.invalid input { border-color: var(--error); box-shadow: 0 0 0 2px rgba(255, 80, 50, 0.1); }
-.amount-with-unit { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; }
+/* Item ⑥ pins the second column to a range rather than `auto`, because `auto` sizes to
+   the widest thing the item could ever show — every `<option>` in the unit `<select>`,
+   containers included, not only "kilograms" currently selected — and that intrinsic width
+   left the amount input, on `minmax(0, 1fr)`, squeezed to nothing. A bounded track lets the
+   select fill it (the site-wide `input, select { width: 100% }` rule, left alone) while the
+   amount input keeps the row's other half whatever the taxonomy's longest label is. */
+.amount-with-unit { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, 45%); align-items: center; gap: 10px; }
 .amount-with-unit span { min-width: 76px; color: var(--muted); font-size: 0.9rem; }
 .review-destinations { margin: 10px 0 0; }
 .review-destinations div { padding: 10px 0; display: flex; justify-content: space-between; gap: 18px; border-top: 1px solid var(--border); }
 .review-destinations dt { display: grid; gap: 3px; }
 .review-destinations dt small { color: var(--muted); font-weight: 400; }
 .review-destinations dd { margin: 0; font-weight: 700; }
+/* THE `dd` ONLY, AND THE `dt` DELIBERATELY NOT - see the second paragraph.
+   The `dd` carries text this repository does not write: a factor set's version
+   label and its notes come from the database, and the published ReFED set's
+   notes cite a 124-character source URL. A URL has no space in it, so its
+   min-content width IS its full width - and a flex item defaults to
+   `min-width: auto`, which means "never shrink below min-content". One such
+   token therefore widened the row to 768px inside a 310px list and pushed the
+   document to 875px at a 390px viewport, scrolling the methodology page
+   sideways in every language.
+
+   ONE PROPERTY, AND IT IS `anywhere` SPECIFICALLY. `anywhere` is the only
+   value that also shrinks the min-content CONTRIBUTION, so the flex item's
+   own `min-width: auto` floor drops with it and no `min-width: 0` is needed.
+   That was measured rather than assumed: an earlier version of this rule also
+   set `min-width: 0`, and rebuilding with each half on its own showed
+   `anywhere` alone fixes it while `min-width: 0` alone does not - the text
+   simply painted outside a narrow box and the document still scrolled. The
+   redundant property is left out, so that deleting the one that matters
+   cannot be masked by the one that does not.
+   (`min-width: 0` WITH `break-word` also works. It is two properties for what
+   one does, and neither is the value that carries the meaning "this string may
+   be broken mid-word".)
+
+   THE `dt` KEEPS ITS DEFAULT `min-width: auto`, AND THAT IS LOAD-BEARING.
+   Applying the same property to the label was tried and reverted after looking
+   at the rendered page: the `dt` is a translated label, not database text, and
+   `anywhere` lets it break between any two characters. In Arabic `ملاحظات`
+   collapsed to a 1px-wide column 760px tall - one letter per line - because
+   the `dd` beside it wants every pixel and nothing was left holding the label
+   open. Its `min-width: auto` floor is its longest word, which is what a label
+   should never be narrower than, and it costs the `dd` nothing.
+   Direction-neutral; the collapse was merely worst in RTL, because no label
+   here is a long enough unbroken word in English to lose as many lines. */
+.review-destinations dd { overflow-wrap: anywhere; }
 
 .section-heading-row { display: flex; align-items: baseline; justify-content: space-between; gap: 18px; }
 .section-heading-row h2 { margin-bottom: 10px; }
@@ -530,11 +926,25 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 
 .review-block { box-shadow: none; }
 .saved-entries { margin: 32px 0; }
-.saved-entry-card { margin: 12px 0; padding: 18px 20px; display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; border: 1px solid rgba(0, 50, 35, 0.12); border-left: 3px solid var(--green); border-radius: 12px; background: #fff; box-shadow: 0 3px 12px rgba(0, 50, 35, 0.035); }
+.saved-entry-card { margin: 12px 0; padding: 18px 20px; display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; border: 1px solid rgba(0, 50, 35, 0.12); border-inline-start: 3px solid var(--green); border-radius: 12px; background: #fff; box-shadow: 0 3px 12px rgba(0, 50, 35, 0.035); }
 .saved-entry-card .eyebrow { margin-bottom: 5px; }
 .saved-entry-card h3 { margin-bottom: 5px; }
 .saved-entry-card p { margin: 0; color: var(--muted); }
 .current-entry-heading { margin-top: 38px; }
+
+/* AN ENTRY THE API NAMED. `.has-error` above reaches inputs only - it sets a
+   border colour on `input, select` - and a problem that belongs to a whole entry
+   has no input anywhere on the form. So the mark has to sit on the block itself,
+   on the same inline-start edge the card already uses to carry its status.
+
+   The message inside the card is a child of the card's TEXT block, not a third
+   child of the card: `.saved-entry-card` is `display: flex` with
+   `justify-content: space-between`, so a sibling would sit in the row beside the
+   buttons, and giving the card `flex-wrap` to push it down would change how every
+   card behaves at narrow widths whether it has an error or not. */
+.saved-entry-card.has-error { border-inline-start-color: var(--error); }
+.current-entry-heading.has-error h2 { color: var(--error); }
+.duplicate-notice .text-button { margin-top: 10px; }
 .current-entry-heading span { color: var(--green-dark); font-weight: 700; }
 .add-entry-button { width: 100%; margin: 2px 0 24px; }
 
@@ -550,7 +960,7 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 .result-section-heading p { margin: 0; color: var(--muted); }
 .section-number { flex: 0 0 auto; width: 38px; height: 38px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: var(--green-dark); font-size: 0.78rem; font-weight: 700; }
 .results-grid { display: grid; gap: 16px; margin: 26px 0 0; }
-.result-card { position: relative; padding: 23px; border: 1px solid rgba(0, 50, 35, 0.12); border-radius: 16px; background: #fff; box-shadow: 0 5px 18px rgba(0, 50, 35, 0.045); overflow: hidden; }
+.result-card { position: relative; padding: 23px; display: flex; flex-direction: column; border: 1px solid rgba(0, 50, 35, 0.12); border-radius: 16px; background: #fff; box-shadow: 0 5px 18px rgba(0, 50, 35, 0.045); overflow: visible; }
 .result-card::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--green); }
 .result-card:nth-child(2)::before { background: var(--orange); }
 .result-card:nth-child(3)::before, .result-card:nth-child(4)::before { background: var(--blueberry); }
@@ -559,12 +969,124 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 .primary-result .result-label, .primary-result .result-note { color: var(--mint); }
 .result-value { margin-bottom: 12px; font-size: clamp(1.45rem, 4vw, 2rem); line-height: 1.2; font-weight: 700; }
 .result-note { margin: 0; color: var(--muted); font-size: 0.9rem; line-height: 1.45; }
+/* Each summary number has a compact explanation at its lower inline end. The popup is
+   anchored to its icon but may extend beyond the card, so it is not clipped at a narrow
+   viewport. Pointer hover is transient; keyboard users get the same content on focus. */
+/* NOT `position: relative`. The panel's containing block is deliberately the CARD:
+   anchored to this wrapper it was 390px wide at every viewport, so at 768px and
+   below it extended past the screen edge with no scroll to recover it -- measured
+   at 390px as left:-15, and at 768px as left:-45 in LTR and right:799 in RTL.
+   `scrollWidth` cannot see that (the card does not overflow; the panel is simply
+   off-screen), so `test_horizontal_overflow.py` passes either way. Spanning the
+   card cannot go off-screen at any width, in either direction, by construction. */
+.result-explanation { align-self: end; margin: auto 0 0; padding-top: 16px; text-align: end; }
+.result-explanation__trigger { width: 24px; height: 24px; margin-inline-start: auto; padding: 0; display: grid; place-items: center; border: 1px solid currentColor; border-radius: 50%; color: var(--green-dark); background: transparent; cursor: help; font: inherit; font-size: 0.8rem; font-weight: 700; }
+.result-explanation__trigger:hover { background: var(--mint); }
+.result-explanation__trigger:focus-visible { outline: 3px solid var(--blueberry); outline-offset: 3px; }
+.primary-result .result-explanation__trigger { color: #fff; }
+.primary-result .result-explanation__trigger:hover { color: var(--green-dark); background: #fff; }
+/* `inset-block-end` is measured from the CARD's padding box, so it has to clear the
+   trigger row itself: 23px of card padding + 24px of trigger + 8px of gap. */
+.result-explanation__body { position: absolute; z-index: 3; inset-inline: 0; inset-block-end: calc(23px + 24px + 8px); visibility: hidden; max-block-size: min(420px, calc(100vh - 96px)); overflow-y: auto; padding: 14px; border: 1px solid var(--border); border-radius: 10px; opacity: 0; background: #fff; color: var(--green-dark); pointer-events: none; text-align: start; transform: translateY(4px); box-shadow: 0 5px 18px rgba(0, 50, 35, 0.09); }
+.result-explanation:hover > .result-explanation__body, .result-explanation__trigger:focus-visible + .result-explanation__body { visibility: visible; opacity: 1; pointer-events: auto; transform: none; }
+.result-explanation__body p { margin: 0; font-size: 0.86rem; line-height: 1.45; }
+.result-explanation__body p + p { margin-top: 8px; }
+
+/* §4.5's money block, rendered beside `.results-grid` inside the same "Impact summary"
+   section rather than as a section of its own - see `moneySummary` in `results.js` for
+   why. Every row is a figure the engine already summed from what the visitor typed
+   (§7.6.1); nothing here computes a width, a percentage or a total, which is also why
+   there is no bar and no fill to worry about when `wasted_share_percent` is over 100. */
+.money-summary { margin: 26px 0 0; padding-top: 22px; border-top: 1px solid var(--border); }
+.money-summary h3 { margin-bottom: 4px; font-size: 1.05rem; }
+.money-rows { display: grid; gap: 4px; margin-top: 12px; }
+.money-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; padding-block: 9px; border-bottom: 1px solid var(--border); }
+.money-row:last-of-type { border-bottom: 0; }
+.money-label { color: var(--muted); }
+.money-value { font-weight: 700; white-space: nowrap; }
+/* The saving is the figure most likely to be screenshotted (§4.5's own ruling), so it
+   carries its own caveat directly beneath it rather than in a tooltip or a footnote that
+   a screenshot would crop away. */
+.money-saving { margin-top: 6px; padding-top: 14px; border-top: 1px dashed var(--border); }
+.money-saving .money-value { color: var(--green-dark); }
+.money-caveat { margin: 6px 0 0; color: var(--muted); font-size: 0.86rem; line-height: 1.45; }
+
+/* Item ⑦: a label, never a computation (§6.2's `time_frame`) - so it sits as plain text
+   near the top of the page rather than beside any figure it might read as scaling. */
+.results-period { margin: 14px 0 0; color: var(--muted); font-weight: 700; }
 
 .equivalent-grid { display: grid; gap: 14px; margin-top: 24px; }
 .equivalent-grid article { padding: 20px; border: 1px solid rgba(255, 215, 110, 0.72); border-radius: 13px; background: rgba(255, 215, 110, 0.2); }
 .equivalent-grid article > span { width: 34px; height: 34px; margin-bottom: 14px; display: grid; place-items: center; border: 1px solid rgba(0, 50, 35, 0.55); border-radius: 50%; font-weight: 700; }
 .equivalent-grid h3 { margin-bottom: 7px; }
 .equivalent-grid p { margin: 0; color: var(--muted); font-size: 0.92rem; }
+
+/* `.equivalent-basis`: the "?" beside each equivalence, explaining how the client's
+   factor was applied. Same shape as the admin panel's `.help-tip`
+   (admin/static/brand.css) and for the same reason -- a native <details>/<summary>
+   is keyboard-operable (Tab, then Enter or Space) and touch-operable with no
+   JavaScript, where a `title` attribute or a hover-only tooltip would be neither.
+   No `title` attribute is used here and nothing depends on `:hover`.
+
+   Closed, the "?" sits at the card's lower INLINE END via the flex column's
+   auto margin and `text-align: end` -- logical properties put it on the right in
+   English and the left in Arabic without a direction-specific rule. Open, the body is a normal IN-FLOW block,
+   never absolutely positioned: an earlier version of this same affordance
+   (the admin panel's help marker) was floated over the page and measured
+   overflowing the viewport by about 27px at 320px wide. A block box can never be
+   wider than its own containing block, so this cannot repeat that failure. */
+.equivalent-basis { display: block; margin-block-start: 8px; text-align: end; }
+.equivalent-basis summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 1.4rem;
+  block-size: 1.4rem;
+  border: 1px solid var(--ink);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--ink);
+  font-family: var(--font-heading);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.equivalent-basis summary::-webkit-details-marker { display: none; }
+.equivalent-basis summary:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.equivalent-basis[open] summary { background: var(--ink); color: #fff; }
+.equivalent-basis__body {
+  margin-block-start: 8px;
+  max-inline-size: 100%;
+  padding-block: 12px;
+  padding-inline: 14px;
+  border: 1px solid rgba(0, 50, 35, 0.18);
+  border-radius: 10px;
+  background: #fff;
+  text-align: start;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+/* `flex-wrap: wrap` plus `min-width: 0` on both children: without them a flex item's
+   default `min-width: auto` refuses to shrink below its own content's width, which is
+   the exact defect `tests/web/test_horizontal_overflow.py` was written for (a `<dd>`
+   holding a long, unbreakable value pushed a 310px list to 768px). The longest row
+   here is a food-category or destination name paired with the full equivalence
+   sentence, and either can be long enough in some language to need the second line
+   this allows rather than a sideways scroll. */
+.equivalent-basis__body dl { margin: 0 0 8px; }
+.equivalent-basis__body dl > div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 10px; }
+.equivalent-basis__body dl > div + div { margin-top: 4px; }
+.equivalent-basis__body dt { min-width: 0; overflow-wrap: break-word; font-weight: 700; }
+.equivalent-basis__body dd { min-width: 0; overflow-wrap: break-word; margin: 0; text-align: end; }
+.equivalent-basis__note { margin: 8px 0 0; color: var(--muted); }
+.equivalent-basis__note:first-of-type { margin-top: 10px; }
+
 /* ---------------------------------------------------------------------------------------
    THE ARROW SHOWS THE DIRECTION OF THE IMPACT, NOT THE SIGN OF THE NUMBER.
 
@@ -605,14 +1127,262 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 .bar-track { height: 14px; border: 1px solid rgba(0, 50, 35, 0.1); border-radius: 999px; background: rgba(223, 248, 237, 0.38); overflow: hidden; }
 .bar-track span { height: 100%; display: block; border-radius: inherit; background: var(--blueberry); }
 .table-scroll { overflow-x: auto; }
+
+/* The destination-first tree (`web/js/results.js`'s `destinationTree`): destination, then
+   the entries that share it, then each entry's own food category. Three levels have to
+   read as three levels at 320px, where the track is about 280px — so each step in is a
+   small FIXED amount (`padding-inline-start`, never `padding-left`: this mirrors from `dir`
+   alone), not a percentage that would eat the narrowest viewport first, and every label is
+   left to wrap onto a second line rather than widening its row or being clipped. */
+.destination-group + .destination-group { margin-top: 34px; padding-top: 30px; border-top: 1px solid var(--border); }
+.destination-group__header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; }
+.destination-group__name { margin: 0; font-size: 1.08rem; overflow-wrap: anywhere; }
+.destination-group__total { margin: 0; font-weight: 700; white-space: nowrap; }
+.destination-group__figures { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px 18px; color: var(--muted); font-size: 0.9rem; }
+.destination-group__stages { margin: 18px 0 0; padding-inline-start: 16px; list-style: none; display: grid; gap: 16px; }
+.destination-group__stage { padding-inline-start: 14px; border-inline-start: 2px solid var(--border); }
+.destination-group__stage-row { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
+.destination-group__stage-row strong { overflow-wrap: anywhere; }
+.destination-group__stage-figures { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--muted); font-size: 0.86rem; }
+.destination-group__foods { margin: 8px 0 0; padding-inline-start: 16px; list-style: disc; display: grid; gap: 4px; }
+.destination-group__food { overflow-wrap: anywhere; }
+
 table { width: 100%; min-width: 760px; border-collapse: collapse; }
-caption { margin-bottom: 10px; text-align: left; font-weight: 700; }
-th, td { padding: 12px 10px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+caption { margin-bottom: 10px; text-align: start; font-weight: 700; }
+th, td { padding: 12px 10px; border-bottom: 1px solid var(--border); text-align: start; vertical-align: top; }
 thead th { color: var(--muted); background: #f5f8f6; font-size: 0.82rem; }
 tbody th { font-weight: 700; }
 .result-actions { margin-top: 36px; padding-top: 26px; display: flex; flex-wrap: wrap; gap: 12px; border-top: 1px solid var(--border); }
-.result-actions .button-primary { margin-left: auto; }
-.methodology-compact { margin: 34px 0; padding: 22px 24px; border: 1px solid rgba(135, 0, 90, 0.2); border-left: 3px solid var(--beetroot); border-radius: 12px; background: rgba(230, 190, 255, 0.16); }
+/* The two downloads (Task 3, 2026-08-31): one container, pushed to the row's end, holding
+   both format buttons at equal weight. `flex-wrap` here is the same allowance
+   `.result-actions` already makes for itself — at a width too narrow for both German
+   labels side by side, the second wraps onto its own line rather than overflowing. */
+.download-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-inline-start: auto; }
+.contribute-block {
+  margin: 28px 0 12px;
+  padding: 20px 24px;
+  border: 1px solid rgba(40, 200, 130, 0.4);
+  border-inline-start: 4px solid var(--green);
+  border-radius: 14px;
+  background: var(--mint);
+}
+/* Round four's own instruction: the explanation goes in smaller type. It is still the
+   sentence `#contribute`'s `aria-describedby` points at and still the one that has to
+   carry both true things — five seconds to undo, and nothing to be done from here after
+   them — so it is smaller, not shorter, and it keeps `--ink` rather than dropping to
+   `--muted`: shrinking the type and fading it at the same time is how a disclosure ends
+   up technically present and practically unreadable. */
+.contribute-sentence { margin: 0 0 14px; color: var(--ink); font-size: 0.875rem; line-height: 1.55; }
+/* Task 4 (2026-08-31): a long rounded button rather than a tick. `#contribute` stays a
+   real `input[type="checkbox"]` - not `display: none`, which would drop it from the
+   accessibility tree and the tab order alike, and not clipped to a single pixel either:
+   an input shrunk that small sits *underneath* the pill in paint order and a real click
+   (a person's or Playwright's `locator.check()` alike) lands on the pill and never
+   reaches it. Instead the input is stretched with `inset: 0` to exactly cover
+   `.contribute-toggle`'s own box and made transparent with `opacity: 0` rather than
+   `visibility: hidden` - invisible, but still the topmost element at every point over the
+   button, so it is what actually receives the click. The visible pill underneath is
+   `pointer-events: none` for exactly that reason: the input, not the label, is the
+   target. */
+/* **Round four moved `position: relative` off this element and onto `.contribute-choice`,
+   and that is a correctness fix rather than tidying.** The input below is
+   `position: absolute; inset: 0` against its nearest positioned ancestor. While that was
+   `.contribute-control` the input covered exactly the pill, because the pill was all the
+   row held. Round four put a Submit button in the same row - so a `.contribute-control`
+   that stayed positioned would have stretched the invisible checkbox across the button
+   too, and every press of Submit would have landed on the checkbox sitting over it. The
+   wrapper is what the input is sized against now, and it wraps the tick alone. */
+.contribute-control { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+/* The tick. `min-inline-size: 0` because a flex item's automatic minimum is its
+   content, and a long German label would otherwise refuse to shrink and push the row
+   past 320px. `position: relative` is load-bearing and must stay: the real checkbox
+   below is `position: absolute; inset: 0` and this is the box it is sized against —
+   the tick alone, never the row, or the invisible input would lie over the action
+   button as well and swallow every press of it. */
+.contribute-choice { position: relative; display: inline-flex; flex: 0 1 auto; min-inline-size: 0; max-inline-size: 100%; }
+/* **ONE POSITION, THREE OCCUPANTS: Submit, then Undo, then the flower.**
+   `.contribute-action { margin-inline-start: auto }` used to throw the button to the
+   far end of the block while the flower bloomed back beside the tick, so the press and
+   its answer happened at opposite edges of a 900px row with nothing joining them. The
+   slot sits immediately after the tick — the flower's own place, kept — and the action
+   is brought to it. `contributeCalculation` empties the action and sets
+   `contributeCelebrating` in one `setState`, so the render that takes Undo away is the
+   render that plants the flower, in the pixels Undo was occupying.
+
+   `min-block-size` holds the row's height steady across the handover: the buttons are
+   50px and the flower is 44, and without it the block would shrink by six pixels at
+   the moment of the bloom and again when the bloom is cleared. The slot is allowed to
+   be empty — reduced motion, and the resting contributed state, both leave it so. */
+.contribute-slot {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 50px;
+}
+.contribute-control input[type="checkbox"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+  border: 0;
+}
+.contribute-control input:disabled { cursor: default; }
+/* The input is `opacity: 0`, so the global `:focus-visible { outline }` (top of this
+   file) is painted on an element with nothing to see it against - `opacity` applies to
+   the outline along with everything else the element draws, so that ring is real but
+   invisible. Suppressed here and redrawn on the sibling label instead, keyed off the
+   input's own `:focus-visible` state - the same construction `.stage-card` and
+   `.simple-choice` use for their own visually-hidden inputs, just reached with `+`
+   rather than `:focus-within` because the toggle is a sibling, not a wrapper. */
+.contribute-control input:focus-visible { outline: none; }
+.contribute-control input:focus-visible + .contribute-toggle {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+.contribute-toggle {
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 56px;
+  padding: 10px 26px;
+  border: 2px solid var(--kai-kale);
+  border-radius: 999px;
+  /* Unchecked: Banana, a light ground - Kale text per the brand rule. */
+  background: var(--kai-banana);
+  color: var(--kai-kale);
+  font-weight: 700;
+  line-height: 1.35;
+  cursor: pointer;
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+.contribute-control input:hover:not(:disabled) + .contribute-toggle { border-color: var(--green-dark); }
+/* Checked: Pea, the brand's other light ground - still Kale text, so the state change is
+   never "dark ground swapped for light ground and the text colour flipped with it", only
+   ever one light ground for another. The shape change on `__mark` below, not this colour
+   swap, is what actually carries the state - see the rule this answers in `results.js`'s
+   own note over `contributeBlock`. */
+.contribute-control input:checked + .contribute-toggle { background: var(--kai-pea); border-color: var(--green-dark); }
+.contribute-toggle__mark {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  position: relative;
+}
+.contribute-control input:checked + .contribute-toggle .contribute-toggle__mark {
+  border-style: solid;
+  background: var(--kai-kale);
+}
+/* The check mark itself: an `::after` whose `content` and `border-style` both change
+   between the two states (read by `test_the_checked_state_is_marked_by_more_than_
+   colour`), so a screenshot in greyscale would still show a different mark, not just a
+   different shade of the same one. */
+.contribute-toggle__mark::after {
+  content: '';
+  position: absolute;
+  inset-inline-start: 8px;
+  inset-block-start: 4px;
+  width: 6px;
+  height: 12px;
+  border-style: none;
+}
+.contribute-control input:checked + .contribute-toggle .contribute-toggle__mark::after {
+  content: '';
+  border-inline-end: 2px solid #fff;
+  border-block-end: 2px solid #fff;
+  transform: rotate(40deg);
+}
+/* The flower - inline SVG only, built in `results.js`'s `contributeFlower()` from five
+   half-circles, the brand's own supporting graphic. **It is in normal flow inside
+   `.contribute-slot` now, not absolutely positioned against the tick's wrapper**: the
+   place it occupied is the place Submit and Undo have been brought to, and the point of
+   the change is that the three take that position in turn. Losing `position: absolute`
+   loses the `translateY(-50%)` the keyframes carried with it - the slot's own
+   `align-items: center` does that job, and a transform that also has to re-centre the
+   element cannot be written as a clean scale-and-rotate. `pointer-events: none` keeps
+   it from ever intercepting a click, though in the only state it renders in there is no
+   button under it. It exists in the DOM only while `state.contributeCelebrating` is
+   true and motion is allowed - see that flag's note in `state.js` - so the
+   `@media (prefers-reduced-motion: reduce)` rule at the foot of this file, which mutes
+   every *other* animation in this stylesheet, has nothing to mute here: there is
+   nothing to find. */
+.contribute-flower {
+  flex: 0 0 auto;
+  pointer-events: none;
+  animation: kc-flower-bloom 600ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+@keyframes kc-flower-bloom {
+  from { opacity: 0; transform: scale(0.15) rotate(-35deg); }
+  to { opacity: 1; transform: scale(1) rotate(0deg); }
+}
+/* THE FIVE-SECOND GRACE WINDOW.
+   =============================
+   Drawn by `contributeCountdown()` (`results.js`), and drawn *here* rather than counted
+   down in JavaScript: `render()` replaces `main.innerHTML` on every `setState`, so a
+   "4… 3… 2…" counter would rebuild the whole results page once a second, underneath a
+   visitor who may well be typing in the improvement panel while the window runs.
+
+   `--contribute-grace` is the same five seconds as `CONTRIBUTE_GRACE_MS` in
+   `results.js`, which is what actually decides when the request goes. **Change one and
+   you must change the other** - they are the timer and the picture of the timer, and a
+   bar that empties before or after the send is a control that lies about its own window.
+
+   The bar's `animation-delay` is written as a negative inline value by `results.js` on
+   every render, from the absolute deadline held on `state.contributeArmedUntil`. A CSS
+   animation restarts whenever its element is created and this element is recreated by
+   every re-render, so without that offset a keystroke in the improvement panel would
+   refill the bar to full while the real `setTimeout` ran out underneath it - the picture
+   granting a fresh five seconds the visitor does not have. */
+.contribute-block { --contribute-grace: 5000ms; }
+.contribute-countdown { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 14px 0 0; }
+.contribute-countdown__track {
+  flex: 1 1 140px;
+  max-inline-size: 260px;
+  block-size: 8px;
+  border-radius: 999px;
+  background: rgba(0, 50, 35, 0.16);
+  overflow: hidden;
+}
+/* `inline-size` rather than a `transform: scaleX()`: a scale is physical and would empty
+   the bar from the wrong end in Arabic and Urdu. One element animating its own width for
+   five seconds is not a frame-rate question. */
+.contribute-countdown__bar {
+  display: block;
+  block-size: 100%;
+  inline-size: 100%;
+  border-radius: 999px;
+  background: var(--kai-orange);
+  animation: kc-contribute-countdown var(--contribute-grace) linear both;
+}
+@keyframes kc-contribute-countdown {
+  from { inline-size: 100%; }
+  to { inline-size: 0%; }
+}
+.contribute-countdown__text { color: var(--ink); font-weight: 700; font-size: 0.92rem; }
+/* **Reduced motion gets a stepped bar, not no bar**, and this is the one animation in
+   this stylesheet that is not simply switched off for it. A visitor who has asked for no
+   motion still has exactly five seconds to press Undo, and removing the only indication
+   that the clock is running leaves them worse off than the movement did - the accessible
+   answer to a timer is not to hide the timer. `steps(5)` makes the bar jump once a
+   second instead of sliding: discrete, so there is nothing continuously moving on the
+   screen, and still visibly a countdown. The sentence above the control says "five
+   seconds" in words for everyone, so how long they have never depends on seeing this.
+
+   Written after the rule it overrides, for the reason the drawer's own reduced-motion
+   block spells out: equal specificity, so source order decides. */
+@media (prefers-reduced-motion: reduce) {
+  .contribute-countdown__bar { animation-timing-function: steps(5); }
+}
+.contribute-status { margin: 12px 0 0; color: var(--green-dark); font-weight: 700; }
+.contribute-block .field-error { margin: 12px 0 0; }
+.methodology-compact { margin: 34px 0; padding: 22px 24px; border: 1px solid rgba(135, 0, 90, 0.2); border-inline-start: 3px solid var(--beetroot); border-radius: 12px; background: rgba(230, 190, 255, 0.16); }
 .methodology-compact h2 { margin-bottom: 8px; font-size: 1.25rem; }
 .methodology-compact > p { margin: 4px 0; color: var(--muted); }
 .methodology-compact details { margin-top: 12px; }
@@ -622,25 +1392,461 @@ tbody th { font-weight: 700; }
 
 .explore-improvements, .improvement-scenario, .comparison-results { margin-top: 32px; padding: 26px; border-radius: 18px; background: rgba(223, 248, 237, 0.34); box-shadow: 0 5px 18px rgba(0, 50, 35, 0.045); }
 .explore-improvements { text-align: center; }
-.explore-improvements p, .improvement-scenario > p { max-width: 720px; margin-left: auto; margin-right: auto; color: var(--muted); }
+.explore-improvements p, .improvement-scenario > p { max-width: 720px; margin-inline: auto; color: var(--muted); }
 .improvement-scenario { background: rgba(230, 190, 255, 0.12); }
-.improvement-allocation-list { margin-top: 24px; overflow: hidden; border-radius: 14px; background: #fff; }
-.improvement-allocation-row { padding: 18px 20px; display: grid; grid-template-columns: minmax(220px, 0.8fr) minmax(320px, 1.2fr); gap: 24px; align-items: center; border-bottom: 1px solid rgba(0, 50, 35, 0.09); }
+.results-page > :where(#impact-summary, #improvement-section, #tangible-equivalents, #breakdown-section, #results-methodology) { scroll-margin-top: 24px; }
+/* THE SECTION NAV LIVES IN THE PAGE'S GUTTER, AND ONLY WHERE THERE IS ONE.
+   ========================================================================
+   It was `inset-inline-end: 18px` — pinned to the viewport's own edge, which
+   is the content column's edge as soon as the column stops being narrower
+   than the screen. Measured with `document.elementFromPoint` inside the
+   buttons' own boxes: at 390px it took the taps for *Download results*,
+   *Start a new calculation* and *Match the current allocation*; at 320px the
+   same; at 768px *Compare Impact* and *Download PDF*; and with the
+   improvement panel open, all eleven destination inputs at 320 and 390. Only
+   1278px was clean.
+
+   `test_horizontal_overflow.py` cannot see any of that. A `position: fixed`
+   box is outside document scrollable overflow, so `scrollWidth` does not
+   move: pushing this element 400px past a 375px viewport still measures zero.
+   Verified by mutation, and by the control (`min-inline-size: 2000px` on
+   `.results-grid`) which does report 1665px.
+
+   THE COLUMN'S FAR EDGE IS 490px FROM THE 50% ANCHOR, AND THAT IS MEASURED.
+   `.main-content` is a 900px box centred with 20px of inline padding, so its
+   content box is 860px; `.results-page` is `.wide` (`max-width: 1000px`) with
+   `margin-inline: -80px` from 1020px up. 860 + 160 = 1020 is past the
+   max-width, so the width clamps to 1000 and the over-constrained margin
+   resolves on the INLINE-END side — the inline-start edge keeps its whole
+   -80px, and the far edge lands at `C/2 + 490`, where C is the initial
+   containing block (`clientWidth`). Measured on the running stack in English:
+   1032.5 at C=1085, 1122.5 at 1265, 1202.5 at 1425, 1282.5 at 1585 and
+   1442.5 at 1905 — +490 from the centre at all five. In Arabic the same three
+   rules put that edge at `C/2 - 490` (measured: 222 at C=1425, 302 at 1585),
+   because the over-constrained margin resolves on the inline-end side there
+   too. So `inset-inline-start: 50%` plus `margin-inline-start: 490px` lands
+   on the column's far edge in BOTH directions, which is the pair to use here:
+   `translate` is physical and would put the nav on the wrong side in Arabic
+   and Urdu.
+
+   The offset this replaces was `calc(480px + 18px)`, taken from an estimate
+   of the column as "~960px". Being 8px past the true edge was harmless for
+   the handle and fatal for the panel, which hangs off the handle's
+   inline-start (`inset-inline-end: <handle>`) and therefore opened BACKWARDS,
+   over the column. Measured before the fix, English, column at 32–1032:
+   panel 788–1040 at a 1100px window, 878–1130 at 1280, 958–1210 at 1440,
+   1038–1290 at 1600 and 1198–1450 at 1920 — 244 of its 252px on the text at
+   every width it was drawn at, in the state a visitor gets without touching
+   anything. Arabic mirrored it exactly: panel 214–466 against a column
+   starting at 222.
+
+   **50%, never 100vw.** For a fixed box, percentages resolve against the
+   initial containing block, which excludes the scrollbar; `100vw` includes it,
+   and that is the single most common cause of overflow in this stylesheet
+   (see the note above `test_horizontal_overflow.py`'s PATHS).
+
+   TWO REGIMES, AND NEITHER DEFAULT STATE TOUCHES THE TEXT.
+   The gutter on one side is `C/2 - 490`: 52.5px at C=1085, 142.5 at 1265,
+   222.5 at 1425, 302.5 at 1585, 462.5 at 1905, all measured. Two different
+   things fit in that, and they want different amounts of room.
+
+   * **Docked, from 1600px up.** The panel itself goes in the gutter and is
+     simply there — permanent, with **no handle drawn at all** (the rule in the
+     `min-width: 1600px` block below), because there is nothing for a handle to
+     expand. It needs 24px of clearance from the column, its own
+     252px, and 16px before the viewport's inner edge: 292px, so
+     `C/2 - 490 >= 292` and `C >= 1564`. A media query is matched against the
+     window width INCLUDING the classic scrollbar — measured: this nav's own
+     1100px gate fires at a 1100px window whose `clientWidth` is 1085 — so the
+     gate has to carry a scrollbar as well: 1564 + 17 = 1581, rounded up to
+     **1600**. Below that the panel cannot be docked without either shrinking
+     it or putting it back on the text, and both were rejected.
+   * **Handle only, 1100px to 1599px.** The panel is CLOSED by default here
+     and opens over the page when the visitor asks for it: a reader who never
+     touches the handle is never covered, and one who presses it has asked for
+     the list. The handle is 52px and the gutter at the bottom of this band is
+     52.5px, so flush against the column — `margin-inline-start: 490px`, no
+     gap — is the only placement that fits. 0.5px of slack at 1100, growing
+     with the viewport.
+   * **Below 1100px, not rendered at all**, which is the original gate and its
+     reasoning is untouched: 960 of column plus 70 either side, and below it
+     there is no gutter to float in, so the nav is withheld rather than shrunk
+     into the content.
+
+   `--results-floating-nav-docked` is where the two regimes are told apart,
+   once. The stylesheet knows the viewport and `results.js` does not, so
+   `resultsNavIsDocked()` reads this property off the nav instead of repeating
+   1600 in JavaScript where the two would drift. It was read for exactly one
+   thing — which way the FIRST press of the handle goes — and now that the
+   docked regime draws no handle, a first press can only ever happen undocked,
+   where the default is closed and the answer is always "open". The property
+   and its reader are kept because `docs/interfaces.md` §7.3a publishes them,
+   but the branch they feed has one live arm. */
+.results-floating-nav { display: none; }
+
+@media (min-width: 1100px) {
+  .results-floating-nav {
+    --results-floating-nav-handle-size: 52px;
+    --results-floating-nav-panel-size: 252px;
+    --results-floating-nav-docked: 0;
+    display: block;
+    position: fixed;
+    z-index: 30;
+    inset-inline-start: 50%;
+    margin-inline-start: 490px;
+    top: 50%;
+    translate: 0 -50%;
+  }
+}
+
+.results-floating-nav__handle {
+  inline-size: var(--results-floating-nav-handle-size);
+  block-size: var(--results-floating-nav-handle-size);
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: var(--kai-white);
+  background: var(--kai-orange);
+  box-shadow: 0 5px 16px rgba(0, 50, 35, 0.28);
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+}
+/* The hover state was `translate: -2px 0`, and a physical translate is a
+   direction: in Arabic this handle sits on the left of the column, so that
+   nudge moved it INTO the column instead of away from it. A shadow says the
+   same thing on both sides, and it is not motion, so `prefers-reduced-motion`
+   has nothing to switch off. */
+.results-floating-nav__handle:hover { box-shadow: 0 7px 22px rgba(0, 50, 35, 0.4); }
+.results-floating-nav[data-open="true"] .results-floating-nav__handle { background: var(--kai-kale); }
+/* LIGHT FROSTED GLASS, KALE TEXT. This was a solid Kale card with white links.
+   It floats over a white page, and a translucent light ground reads as sitting
+   above the page rather than as a hole punched in it. The brand pairs a light
+   ground with Kale text (CLAUDE.md), so every string in here is Kale and the
+   reader's own section is Pea — also a light ground, also Kale text.
+
+   **The `@supports` fallback is not decoration.** Without `backdrop-filter`
+   the translucent white is simply transparent, and the links would be read
+   against whatever paragraph happened to be behind them, so the fallback has
+   to be OPAQUE rather than merely darker. `not (A or B)` covers the prefixed
+   spelling as well: Safari shipped only `-webkit-backdrop-filter` for years,
+   and treating that as unsupported would hand a working browser the fallback. */
+.results-floating-nav__panel {
+  position: absolute;
+  inset-inline-end: var(--results-floating-nav-handle-size);
+  top: 50%;
+  inline-size: var(--results-floating-nav-panel-size);
+  min-inline-size: 0;
+  padding: 8px;
+  border: 1px solid rgba(0, 50, 35, 0.14);
+  border-radius: 16px;
+  color: var(--kai-kale);
+  background: rgba(255, 255, 255, 0.72);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  backdrop-filter: blur(14px) saturate(1.4);
+  box-shadow: 0 14px 36px rgba(0, 50, 35, 0.18);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  translate: var(--results-floating-nav-panel-nudge, 8px) var(--results-floating-nav-panel-rise, -50%);
+  transition: opacity 140ms ease, visibility 140ms ease, translate 140ms ease;
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .results-floating-nav__panel { background: var(--kai-white); }
+}
+/* **Closed is the default, and only the docked regime above overrides it.**
+   It used to be open wherever the nav was drawn at all — `:not([data-open="false"])`
+   with no media query — which is why the overlay covered the column for a
+   visitor who had touched nothing. The request stands where it can be met: the
+   list is *there* when there is room for it, and summoned where there is not.
+
+   `:focus-within` opens it too, and that is what makes the closed default
+   reachable from a keyboard: `visibility: hidden` takes the links out of the
+   tab order, so without this rule the handle would be a button whose menu
+   could never be entered. It carries the same `:not([data-open="false"])`
+   guard as the docked default, because the handle keeps focus after a press —
+   without the guard the panel would reopen under the visitor's own close.
+   `:hover` does not open it: the panel could be visible while the button still
+   reported `aria-expanded="false"`, and a state a screen reader contradicts is
+   worse than one that needs a click. */
+.results-floating-nav[data-open="true"] .results-floating-nav__panel,
+.results-floating-nav:not([data-open="false"]):focus-within .results-floating-nav__panel {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  translate: 0 var(--results-floating-nav-panel-rise, -50%);
+}
+/* **Below the panel's own rules, not above them, and a media query does not fix
+   that.** `@media` adds no specificity, so `.results-floating-nav__panel` in here
+   and `.results-floating-nav__panel` up there are (0,1,0) against (0,1,0) and
+   source order is the whole of the difference. Written above them first: the
+   panel stayed `position: absolute`, kept hanging off the handle's inline-start,
+   and the docked panel measured 1254-1506 against a nav that starts at 1306 - the
+   same 252px over the column this whole block exists to stop. */
+@media (min-width: 1600px) {
+  .results-floating-nav {
+    --results-floating-nav-docked: 1;
+    /* Docked, the panel is in normal flow under the handle rather than hung
+       off its side, so the nav's own box IS the docked column and both
+       children start at its inline edge. The two offsets the overlay slides
+       the panel in with are zeroed here: there is nothing to slide out of, and
+       a -50% rise on a flow child would lift it over the handle. */
+    --results-floating-nav-panel-nudge: 0px;
+    --results-floating-nav-panel-rise: 0px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    inline-size: var(--results-floating-nav-panel-size);
+    margin-inline-start: calc(490px + 24px);
+  }
+  /* **DOCKED, THERE IS NO HANDLE.** The list is permanent here; a control that
+     expands and collapses something already permanent is a control with nothing
+     to do, and it was drawn anyway — 52px of orange disc above a list it could
+     not affect, in the tab order, announcing `aria-expanded` about a panel whose
+     state it no longer decided. The handle, and the whole expand/collapse idea,
+     belong to the narrow regime, where the panel would otherwise cover the text.
+
+     `display: none` rather than withholding the button from `results.js`: this is
+     a fact about the viewport, and the viewport is what the stylesheet knows.
+     `resultsFloatingNavigation` runs once per render and a resize is not a render,
+     so a button omitted in markup at 1920 would still be missing after a drag down
+     to 1280. `display: none` is also the removal that takes the button out of the
+     accessibility tree and out of the tab order in the same stroke — `visibility:
+     hidden` would do that too, `opacity: 0` would not, and neither of those would
+     reclaim the 52px. */
+  .results-floating-nav__handle { display: none; }
+  /* **Unconditionally open, with no `:not([data-open="false"])` guard, and that is
+     the other half of removing the handle.** `data-open="false"` can only have been
+     written by a press, a press can only happen in the narrow regime, and the
+     attribute survives a resize into this one — so the guard that used to stand
+     here would dock a visitor who had closed the overlay at 1280 into a nav with
+     neither a list nor a handle to bring one back. Docked, the panel is not "open":
+     it IS the nav. */
+  .results-floating-nav__panel {
+    position: static;
+    inline-size: 100%;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .results-floating-nav__panel { --results-floating-nav-panel-nudge: 0px; transition: none; }
+}
+.results-floating-nav__links { display: grid; gap: 3px; margin: 0; padding: 0; list-style: none; }
+/* **The rest of the list is pushed back, so that the reader's own section can be
+   lifted rather than painted.** Muted rather than Kale, and Kumbh Sans Regular
+   rather than Bold: `--muted` measures **6.52:1** on the panel's frosted ground
+   (#f2faf6), comfortably past the 4.5:1 body-text bar, so "pushed back" is a
+   recession in emphasis and not in legibility. 400 and 700 are the only two
+   weights this stylesheet may ask for — see `font-synthesis: none` at the top —
+   and they are exactly the two this pair needs.
+
+   The transparent border reserves the 3px the current item's rule occupies, so
+   the mark moving down the list moves nothing sideways. */
+.results-floating-nav__links a {
+  min-block-size: 44px;
+  display: flex;
+  align-items: center;
+  padding-inline: 12px;
+  border-inline-start: 3px solid transparent;
+  border-radius: 10px;
+  color: var(--muted);
+  font-weight: 400;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+/* Hover darkens to Kale as well as tinting: **10.51:1** on the composited hover
+   ground (Pea at 32% over #f2faf6 = #b1ead1), against 5.13:1 if the muted resting
+   colour were left on it. Both pass; the darker one says "this is reachable". */
+.results-floating-nav__links a:hover { color: var(--kai-kale); background: rgba(40, 200, 130, 0.32); }
+/* WHERE THE READER IS, not which page they are on. `aria-current="location"`
+   is the value for a nav item marking a position *within* the current page;
+   `"page"` is what the site drawer's own marker means and would be a different
+   claim. `results.js` writes the attribute straight onto the link — it is not on
+   `state`, because a scroll must not re-render the results page.
+
+   **AN ELEVATION AND A COLOUR, NOT A CHIP — AND THE COLOUR CANNOT BE PEA.**
+   This was `background: var(--kai-pea)`, a filled block. The obvious replacement
+   is the one the request opens with, the item's own text in the accent, and it is
+   unavailable: measured against the panel's frosted ground #f2faf6,
+
+       Pea     #28c882   2.04:1     (4.5:1 needed for body text, 3:1 for large)
+       Kale    #003223  13.36:1
+       muted   #465f56   6.52:1
+
+   so Pea glyphs would be the *least* readable item in a list whose other items
+   are at 6.52:1 — the mark would recede rather than lift. The accent is carried
+   where a colour can be that light and still do its job:
+
+   * **the rule**, `--green-rule` #147d52 — Pea composited 50% over Kale, a shade
+     of the brand's own green rather than a new hue. **4.84:1** on #f2faf6 and
+     5.14:1 on the white surface below: past 3:1, which is what WCAG 1.4.11 asks
+     of a non-text state indicator, and past 4.5:1 as well, so it would be legible
+     as text if it were ever wanted as text. That is the readable green the request
+     asked to be shown a number for; it is on the rule and not on the glyphs
+     because at 4.84:1 it would still sit *below* the 6.52:1 of the items it has
+     to stand out from.
+   * **the shadow**, tinted Pea. A shadow carries no contrast requirement because
+     it carries no information on its own — the rule, the Kale, and the weight
+     each say the same thing, and `aria-current` says it to a screen reader.
+
+   The surface is white rather than transparent because a shadow needs something
+   to be cast by; over a 72%-white frosted panel the fill itself is all but
+   invisible and the elevation is what reads. Kale on it: **14.18:1**.
+
+   Written after `:hover`, which it ties with on specificity (0,2,1 each): the
+   reader's own section keeps its lift when the pointer crosses it. */
+.results-floating-nav__links a[aria-current="location"] {
+  color: var(--kai-kale);
+  font-weight: 700;
+  background: var(--kai-white);
+  border-inline-start-color: var(--green-rule);
+  box-shadow: 0 5px 16px rgba(40, 200, 130, 0.45), 0 1px 3px rgba(0, 50, 35, 0.16);
+}
+.improvement-mode-field { max-width: 220px; margin: 20px auto 0; }
+/* **The list column's own minimum has to cover what the row inside it actually needs,
+   not merely look plausible on its own.** The row's `:has()` floor below reserves 260px
+   for its control column alone; add the row's label column (120px min), the gap between
+   them (20px) and the row's own padding (18px each side, 36px total - `box-sizing:
+   border-box` counts it inside the row's width) and the row needs at least 436px to lay
+   out without its own tracks being compressed below their stated minimums. The list
+   column's old minimum (380px) was less than that by 56px, so at any viewport narrow
+   enough to hold this editor to its bare minimums - 700px measured, but really the whole
+   band from the 480px mobile stack up to where the two-column split stops being
+   squeezed - the row was compressed well past what its own CSS says it is entitled to,
+   and the select (the row's last, narrowest track) was what ran out of room first:
+   `.improvement-allocation-list`'s `overflow: hidden` then clipped it rather than
+   showing an overflow nobody could scroll to. Not RTL-only - the clip is symmetric, off
+   whichever edge is the inline end.
+
+   **Fixed by giving both of this grid's own columns a minimum that actually adds up.**
+   At 700px this editor is given 608px total (measured, both directions, both English and
+   German - the split is pixel-based, not text-based, so it does not move with the
+   language); 144px (pie) + 440px (list) + 24px gap is exactly that, with 4px of the
+   list's own slack carried over from the row's `:has()` floor below. The pie column
+   does end up narrower at this one width than it was before this fix - there was never
+   a way to give the row what it needs inside a fixed 608px budget without taking it from
+   somewhere, and the select is exactly what this round was told not to shave further.
+   Above roughly 900px there is room for both columns past their minimums and the split
+   returns to its usual proportions. */
+.improvement-editor { margin-top: 24px; display: grid; grid-template-columns: minmax(144px, 0.72fr) minmax(440px, 1.28fr); gap: 24px; align-items: start; }
+.improvement-pie-wrap { padding: 12px; border-radius: 14px; background: #fff; }
+.improvement-pie-chart { display: block; width: 100%; height: auto; overflow: visible; }
+.improvement-pie-chart path { stroke: #fff; stroke-width: 2; }
+.improvement-pie-centre, .improvement-pie-total { pointer-events: none; }
+.improvement-pie-label polyline { fill: none; stroke-width: 1.5; }
+.improvement-pie-label text { fill: var(--green-dark); font-size: 13px; font-weight: 700; }
+.improvement-pie-total { fill: var(--green-dark); font-size: 16px; font-weight: 700; }
+.improvement-pie-total tspan + tspan { fill: var(--muted); font-size: 11px; font-weight: 500; }
+.improvement-pie-key { margin: -18px 10px 8px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 14px; }
+.improvement-pie-key > div { display: grid; grid-template-columns: 11px minmax(0, 1fr); gap: 8px; align-items: center; }
+.improvement-pie-key i { width: 11px; height: 11px; border-radius: 50%; }
+.improvement-pie-key span { min-width: 0; color: var(--muted); font-size: 0.82rem; line-height: 1.25; }
+.improvement-expand-chart { width: calc(100% - 20px); margin: 18px 10px 6px; }
+.improvement-chart-modal { position: fixed; z-index: 1000; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(0, 32, 24, 0.72); }
+.improvement-chart-expanded { position: relative; width: min(860px, 92vw); max-height: 92vh; overflow: auto; padding: 34px 44px 28px; border-radius: 20px; background: #fff; box-shadow: 0 24px 70px rgba(0, 20, 14, 0.32); }
+.improvement-chart-expanded .improvement-pie-chart { width: min(720px, 100%); margin: 0 auto; }
+.improvement-chart-expanded .improvement-pie-key { max-width: 680px; margin: -18px auto 0; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.improvement-chart-close { position: absolute; z-index: 1; inset-block-start: 14px; inset-inline-start: 14px; width: 42px; height: 42px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 50%; color: var(--green-dark); background: #fff; font-size: 1.8rem; line-height: 1; cursor: pointer; }
+.improvement-chart-close:hover { background: rgba(0, 50, 35, 0.07); }
+.improvement-allocation-list { overflow: hidden; border-radius: 14px; background: #fff; }
+.improvement-allocation-row { padding: 18px 20px; display: grid; grid-template-columns: minmax(150px, 0.8fr) minmax(230px, 1.2fr); gap: 20px; align-items: center; border-bottom: 1px solid rgba(0, 50, 35, 0.09); }
 .improvement-allocation-row:last-child { border-bottom: 0; }
 .improvement-allocation-row > div:first-child { display: grid; gap: 4px; }
 .improvement-allocation-row label { font-weight: 700; }
 .improvement-allocation-row span { color: var(--muted); }
-.improvement-control { display: grid; grid-template-columns: minmax(120px, 1fr) 118px; gap: 16px; align-items: center; }
+.improvement-control { display: grid; grid-template-columns: minmax(90px, 1fr) 108px; gap: 12px; align-items: center; }
 .improvement-control input[type="range"] { width: 100%; accent-color: var(--kai-kale); }
 .percentage-input { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 7px; }
 .percentage-input input { min-width: 0; }
-.improvement-total { margin-top: 18px; padding: 16px 18px; display: flex; justify-content: space-between; gap: 20px; border-radius: 12px; background: rgba(255, 255, 255, 0.8); }
+/* Item ⑧'s per-row unit `<select>` (tonnes, or a staff-named container, alongside
+   kilograms) replaces the plain `%`/`kg` suffix in unit mode. Its text is a translated
+   word or a staff-typed container label, either of which can run well past one
+   character - German's own "Kilogramm" already does - so a row offering the choice
+   gets more room, and the choice among range / number / select is one flat split
+   rather than two grids nested inside one another.
+
+   **`display: contents` on `.percentage-input`, only in unit mode.** Nesting a
+   nested `grid-template-columns` for the number+select pair inside `.improvement-control-unit`'s
+   own two columns split one width budget twice, and the second split always lost:
+   measured 28px for a box reading "0.00590" at a 700px viewport, where the ROW's own
+   two-column split (label | control) - unchanged by item ⑧ - already leaves `.improvement-control`
+   only ~230px, not the 320px this might suggest. `display: contents` removes `.percentage-input`
+   from layout entirely, so its two children become items of `.improvement-control-unit`'s
+   own grid directly - one budget, three tracks, sized together instead of in two
+   uncoordinated passes. Percentage mode is untouched: its own `.percentage-input` still
+   pairs a number box with a plain `%` span, in its own right.
+
+   **`:has()` on the row is what recovers enough total width to make that budget workable
+   at every measured breakpoint.** `.improvement-allocation-row`'s label/control split
+   predates item ⑧ and was already tight for two columns (a number box and a fixed 108px
+   suffix); the same split for three left too little for all three even after flattening
+   the nested grid. Already used elsewhere in this file (`.main-content:has(.hero)`), so
+   this is the same tool, not a new dependency. */
+.improvement-allocation-row:has(.improvement-control-unit) { grid-template-columns: minmax(120px, 0.55fr) minmax(260px, 1.45fr); }
+/* Item ⑨: the range is the control a visitor actually drags; the select is a choice made
+   once and does not need to compete with it for room. The three tracks were `1fr / 100px /
+   170px` - the select's own upper bound (170px) wider than the box's, and the range's lower
+   bound (50px) low enough to leave it a stub once the other two claimed their own space, which
+   is what the client's screenshot showed ("23 L kerbside foo…" next to a squeezed thumb). The
+   range now carries a real minimum of its own and the select's own ceiling is lower than the
+   range's - the range still grows into whatever the row has left (`1fr`), the select does not
+   grow past a sensible width for a closed control, and a name too long for that width relies on
+   the select's own `title` (see `DestinationAllocationRow`), not on the track widening for it.
+
+   **The three minimums must sum to no more than the row's own `:has()` floor above (260px),
+   gaps included, or the row silently overflows its own `.improvement-allocation-list`
+   (`overflow: hidden`) the moment that floor is the width actually on offer - which is every
+   viewport from the mobile stack (480px) up to where `.improvement-editor`'s two-column split
+   stops squeezing it (roughly 900px), not merely one measured breakpoint.** A first pass here
+   used `140/55/80` - 291px including gaps, 31px over the 260px floor - which fit in English
+   only by coincidence of where the row happened to sit; in `dir="rtl"` the overflow was real
+   and clipped the select half off the left edge, invisibly, because clipped content raises no
+   scrollbar.
+
+   **A track's growth past its own minimum is not "whatever's left goes to the `1fr` track
+   first" - grid fills every `minmax(min, <length>)` track up to its own fixed ceiling BEFORE
+   a `1fr` track gets anything at all** (the spec's own "Maximize Tracks" step runs before
+   "Expand Flexible Tracks"). A first pass at `110/55/65` with box/select ceilings of `90/130`
+   spent the tightest budget's entire few pixels of slack on the box and select, leaving the
+   range sitting at its bare minimum while the other two grew past theirs - the opposite of
+   the stated goal. Fixed by giving the range a minimum that is already the majority of the
+   260px floor on its own (130 of 244 available past gaps), so the outcome does not depend on
+   which track the grid algorithm happens to feed first, and by lowering the box's and
+   select's own ceilings (90/100, down from 90/130) so they stop growing sooner at wider
+   viewports too, leaving the surplus for the range rather than the select. */
+.improvement-control-unit { grid-template-columns: minmax(130px, 1fr) minmax(50px, 90px) minmax(60px, 100px); gap: 8px; }
+.improvement-control-unit .percentage-input { display: contents; }
+.improvement-row-unit { max-width: 100%; min-width: 0; font: inherit; }
+.improvement-total { margin-top: 18px; padding: 16px 18px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 20px; border-radius: 12px; background: rgba(255, 255, 255, 0.8); }
+.improvement-total-mass { color: var(--muted); font-size: 0.9rem; }
+/* One food's editor, when the chain forked. A single-leaf panel renders no wrapper at
+   all, so none of this applies to the commonest journey. Logical properties throughout,
+   per the house rule. */
+.improvement-leaf { margin-block-start: 26px; padding-block-start: 20px; border-block-start: 1px solid rgba(0, 50, 35, 0.12); }
+.improvement-leaf:first-of-type { margin-block-start: 8px; padding-block-start: 0; border-block-start: 0; }
+.improvement-leaf__heading { margin-block: 0; font-size: 1.05rem; }
+.improvement-leaf .improvement-editor { margin-block-start: 14px; }
+.improvement-submission-mass { margin-block-start: 18px; color: var(--muted); font-size: 0.9rem; text-align: end; }
 .improvement-total.invalid { color: var(--error); background: rgba(135, 0, 90, 0.06); }
 .improvement-actions { margin-top: 22px; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 12px; }
 .comparison-results { background: #fff; }
 .comparison-estimate-note { padding: 14px 16px; border-radius: 10px; color: var(--kai-kale); background: rgba(255, 215, 110, 0.28); font-weight: 700; }
 .comparison-summary { margin: 24px 0; padding: 22px; border-radius: 14px; background: rgba(40, 200, 130, 0.12); }
-.comparison-summary ul { margin-bottom: 0; padding-left: 22px; }
+/* §4.5's saving, beside the comparison that produced it rather than in the money block
+   above - see `comparisonSaving` in `improvement.js`. It borrows `.money-row` and
+   `.money-caveat` from that block so the figure reads as the same kind of thing in both
+   places; what it does not borrow is `.money-summary`'s top rule, because here it sits
+   directly under `.comparison-summary` and a second horizontal line between the two
+   would read as a section break where there is none. */
+.comparison-saving { margin: -8px 0 24px; padding-inline: 22px; }
+.comparison-saving .money-saving { margin-top: 0; border-top: 0; }
+.comparison-summary ul { margin-bottom: 0; padding-inline-start: 22px; }
 .comparison-summary li { margin: 8px 0; }
 .impact-comparison-grid { display: grid; gap: 16px; }
 .impact-comparison-card { padding: 22px; border-radius: 14px; background: rgba(0, 50, 35, 0.025); box-shadow: 0 3px 12px rgba(0, 50, 35, 0.04); }
@@ -666,7 +1872,7 @@ tbody th { font-weight: 700; }
 .comparison-bar-track span.negative-bar { background: var(--orange); }
 .comparison-equivalent-section { margin-top: 28px; }
 .comparison-equivalent-note { margin-bottom: 16px; color: var(--muted); font-size: 0.9rem; }
-.comparison-equivalents { margin: 0; padding-left: 0; list-style: none; }
+.comparison-equivalents { margin: 0; padding-inline-start: 0; list-style: none; }
 .comparison-equivalents li { margin: 14px 0; padding: 18px; border-radius: 12px; background: rgba(0, 50, 35, 0.025); }
 .comparison-equivalents .comparison-values span { display: block; color: var(--muted); font-size: 0.88rem; }
 footer { position: relative; padding: 28px 20px; color: #fff; background: var(--green-dark); text-align: center; font-size: 0.9rem; overflow: hidden; }
@@ -675,32 +1881,182 @@ footer p { margin: 0; }
 footer a { color: var(--kai-white); text-underline-offset: 3px; }
 footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; width: 110px; height: 55px; border: 1px solid rgba(40, 200, 130, 0.5); border-bottom: 0; border-radius: 110px 110px 0 0; }
 
-@media (min-width: 650px) {
-  .navigation-buttons { flex-direction: row; justify-content: space-between; }
-  .navigation-buttons .button-primary { margin-left: auto; }
-  .results-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .amount-grid { grid-template-columns: 1.6fr 1fr; }
-  .equivalent-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .impact-comparison-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+/* Under 650px the bar wraps to two rows — the position label on its own line, then the two
+   buttons side by side — rather than stacking the buttons, which is what `.navigation-buttons`
+   did. Stacked, the bar is 124px of a 700px screen; side by side it is a measured 109px
+   including the label, against the 232px the old indicator band and button row cost together. */
+/* ------------------------------------------------------------------ the fork
+   One supply-chain chain may name several food categories. Each is a LEAF: its own
+   amount, its own optional figures and its own destination allocation.
+
+   **A chain with ONE leaf renders exactly the markup it did before the fork** - no card,
+   no legend, no matrix - so everything below applies only where there is genuinely more
+   than one of something on screen. That is why none of these selectors touches
+   `.form-panel.amount-grid` or `.destination-list`, which are the one-leaf case.
+
+   Logical properties throughout: twenty locales, two of them right-to-left. */
+
+.choice-count { margin: 0 0 12px; font-weight: 700; color: var(--muted); }
+.choice-ceiling { margin: 12px 0 0; }
+.simple-choice--unspecified { border-style: dashed; }
+.simple-choice input:disabled { cursor: not-allowed; opacity: 0.45; }
+.simple-choice:has(input:disabled) { opacity: 0.55; }
+
+.duplicate-notice__list { margin: 6px 0 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.duplicate-notice__list p { margin: 0 0 4px; }
+
+/* Step 3: one card per leaf. Each card is today's panel, so every existing rule - the
+   650px two-column split, the block-flow stacking below it - applies unchanged per card. */
+.leaf-panel-list { display: grid; gap: 16px; }
+.leaf-panel { margin: 0; }
+.leaf-panel > legend {
+  padding-inline: 10px;
+  font-family: var(--font-heading, inherit);
+  font-weight: 700;
+  color: var(--kale, #003223);
+}
+/* **Nothing on a leaf card is behind a disclosure.** `.leaf-extras` and its five rules
+   are gone: the three optional scalars sat behind a `<details>` on the stated ground that
+   §7.6.3 requires advancing never to need scrolling and three full panels could not hold
+   that at 390x700. That was written when the step bar was not sticky. It is
+   `position: sticky` now, so the bar - and Continue with it - is on screen whatever the
+   panel's height, measured at all three viewports; page length is the only thing content
+   height still decides. The card uses `.zones` above, same as the single-leaf panel. */
+
+.combined-total {
+  margin: 16px 0 0;
+  padding: 14px 16px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 18px;
+  border: 1px solid rgba(40, 200, 130, 0.5);
+  border-radius: 14px;
+  background: #e9faf3;
+}
+.combined-total span { color: var(--muted); font-weight: 700; }
+
+/* Step 4, narrow: per-leaf stacked blocks. The shared side labels and column heads are
+   the matrix's furniture and are not drawn here; each cell carries its own label instead,
+   which is the `.destination-row` markup as it already was. */
+/* **The two layouts are one set of rules with a switch, not two sets of rules.**
+   Every declaration that differs between the matrix and the per-leaf blocks is written
+   once, in the `min-width: 650px` block near the end of this file, as
+   `var(--name, <matrix value>)`. Standing the matrix down is then a matter of setting
+   those custom properties to the block layout's values on `.allocation-matrix` - they
+   inherit, so one rule reaches the row labels, the column heads, the cells and the
+   summary - and the "stand down" list can be applied under whatever media-and-count
+   condition is needed without any layout rule being written a second time. A second copy
+   of a layout is a second place for it to drift. */
+.allocation-matrix { display: var(--matrix-display, block); }
+.matrix-row-label, .matrix-column-head { display: none; }
+.leaf-group {
+  margin-block: 20px;
+  border: 1px solid rgba(0, 50, 35, 0.12);
+  border-radius: 16px;
+  background: #fff;
+  overflow: hidden;
+}
+.leaf-group__heading {
+  margin: 0;
+  padding: 14px 17px;
+  font-size: 1rem;
+  border-bottom: 1px solid rgba(0, 50, 35, 0.09);
+  background: rgba(40, 200, 130, 0.07);
+}
+.allocation-matrix .allocation-summary {
+  position: static;
+  margin: 0;
+  border-radius: 0;
+  border-inline: 0;
+  border-block-start: 0;
+  box-shadow: none;
+}
+.allocation-matrix .destination-row:last-child { border-bottom: 0; }
+.allocation-matrix input, .allocation-matrix select { min-inline-size: 0; }
+
+.entry-card__leaves { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.entry-card__leaves li { display: flex; justify-content: space-between; gap: 14px; color: var(--muted); }
+.review-leaf { margin-block-start: 14px; }
+.review-leaf:first-child { margin-block-start: 0; }
+.review-leaf h3 { margin: 0 0 2px; font-size: 1rem; }
+.review-leaf p { margin: 0; }
+.leaf-count-note { margin: 12px 0 0; color: var(--muted); }
+
+@media (max-width: 649px) {
+  :root { --step-nav-height: 109px; }
+  .step-nav { grid-template-columns: auto minmax(0, 1fr); padding: 10px 12px; gap: 8px 10px; }
+  .step-nav-progress { grid-column: 1 / -1; grid-row: 1; font-size: 0.82rem; }
+  .step-nav-track { max-width: none; }
+  .step-nav > .button { grid-row: 2; }
 }
 
-@media (min-width: 850px) {
-  .step-mobile { display: none; }
-  .step-indicator ol {
-    max-width: 1100px;
-    margin: 0 auto;
-    padding: 0;
-    display: grid;
-    grid-template-columns: repeat(6, 1fr);
-    list-style: none;
-  }
-  .step-indicator li { position: relative; display: flex; flex-direction: column; align-items: center; gap: 7px; color: var(--muted); font-size: 0.78rem; text-align: center; }
-  .step-indicator li:not(:last-child)::after { content: ''; position: absolute; top: 15px; left: calc(50% + 18px); right: calc(-50% + 18px); height: 2px; background: var(--border); }
-  .step-indicator li.complete:not(:last-child)::after { background: var(--green); }
-  .step-number { z-index: 1; width: 32px; height: 32px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 50%; background: #fff; font-weight: 700; }
-  .step-indicator .current { color: var(--ink); font-weight: 700; }
-  .step-indicator .current .step-number { color: #fff; background: var(--green-dark); border-color: var(--green-dark); box-shadow: 0 0 0 3px rgba(40, 200, 130, 0.2); }
-  .step-indicator .complete .step-number { color: var(--green-dark); background: var(--green); border-color: var(--green); }
+@media (min-width: 650px) {
+  .results-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* The two zones, inline-start to inline-end, **not** a grid of five equal
+     cells and not a required/optional split: the first zone holds the unit and
+     the two quantities it measures, the second the two supporting NZ$ figures.
+     See `leafPanel()`'s own docstring for why the production total, which is
+     optional, still belongs in the first.
+     **The zones stretch to a shared height, and `align-items: start` is
+     deliberately NOT carried over from the untinted layout this replaces.**
+     That rule was written when the two groups were bare text on the card's own
+     white, where a short column beside a long one reads as nothing at all, and
+     its stated reason was that the money group "may be left entirely empty and
+     is not padded out to look otherwise". Neither half of that still holds: a
+     zone is a bordered, filled box, and a box that stops short of its
+     neighbour reads as a container the wrong size rather than as an honest
+     absence; and the group is never empty now, because it always carries a
+     heading, its sub-line and two labelled inputs. Stretching costs no height -
+     the row is already as tall as the taller zone - it only fills the shorter
+     box out to meet it.
+     `gap: 0 24px` replaces the stacked `14px`: the row gap does nothing with
+     one row, and 24px between two tinted boxes is the separation the zones
+     exist to provide. */
+  .zones { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 24px; }
+  /* The unit leads the two quantities it governs and is visibly narrower than
+     the inputs below it - that is the point of the placement: it is the unit of
+     the waste amount and the production total, not a third quantity beside
+     them. Half the field's own inline-size reads as narrow against a 100%-wide
+     sibling at every width this rule applies from; the closed control may still
+     truncate a long container label (`title` on the select carries the full
+     text - see `leafPanel()`). Applies inside a leaf card too: one leaf and
+     five are the same layout, so the unit is the same width in both. */
+  .unit-field select { inline-size: 50%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+}
+
+/* No per-zone margin override here, and there should not be one. The money pair
+   once had `margin: 16px 0` against `.form-field`'s own `25px 0`, from when it
+   sat in its own row below the primary one and the tighter margin read as
+   "these two lean on each other". Side by side, the 9px the two rhythms
+   disagreed by showed up as the two groups' first labels starting on different
+   lines - a misalignment that reads as a bug rather than as a deliberate
+   difference in weight. Both zones carry `.form-field`'s one rhythm, and both
+   open with the same `h2` and `.zone-sub`, so their first labels share a line.
+
+   **Their controls will still not line up further down**, because the first
+   zone has three fields and the second has two, and their hints wrap
+   differently - that is correct, not a regression to fix. The zones are
+   independent vertical flows; forcing every control onto a shared baseline
+   across them is what the old subgrid did, and removing it was the point. */
+
+@media (min-width: 650px) {
+  .equivalent-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  /* PIN THE "?" TO THE CARD'S FOOT, AND ONLY WHERE THE CARDS ARE A ROW.
+     Three cards side by side stretch to the tallest, so with `margin-block-start: 8px`
+     the "?" sat directly under its own text -- at 700px that was 21 / 165 / 93px from
+     each card's bottom, three icons on three different lines. `auto` pushes it to the
+     foot instead: 21 / 21 / 21, and one shared baseline.
+
+     **Scoped to this breakpoint deliberately.** Below it `.equivalent-grid` is a single
+     column, every card sizes to its own content, and there is no misalignment to fix --
+     but `display: flex` stops `h3`'s 7px bottom margin collapsing with the 8px above the
+     icon, so applying it there added 7px to every card for no benefit: measured 193->200,
+     97->104, 145->152 at 320px. Three cards' worth of extra scrolling on a phone to
+     solve a problem phones do not have. */
+  .equivalent-grid article { display: flex; flex-direction: column; }
+  .equivalent-basis { margin-block-start: auto; padding-block-start: 1px; }
+  .impact-comparison-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 /* A section may only bleed outside `.main-content` once the viewport has room for the bleed,
@@ -719,13 +2075,13 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 
    **If you change a bleed, change the breakpoint with it.** */
 @media (min-width: 960px) {
-  .wide { max-width: 1000px; margin-left: -50px; margin-right: -50px; }
+  .wide { max-width: 1000px; margin-inline: -50px; }
 }
 
 @media (min-width: 1020px) {
   /* After `.wide`, which the results page also carries — equal specificity, so source order
      decides. */
-  .results-page { margin-left: -80px; margin-right: -80px; }
+  .results-page { margin-inline: -80px; }
 }
 
 @media (max-width: 480px) {
@@ -734,7 +2090,6 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
   .prototype-label { display: none; }
   .header-inner { min-height: 74px; }
   .public-nav { width: 100%; gap: 2px 14px; }
-  .calculator-header-actions { flex-basis: 100%; justify-content: flex-start; }
   .main-content { padding-top: 34px; }
   .main-content:has(.hero) { padding-top: 0; }
   .hero-copy { min-height: 420px; padding: 64px 20px 50px; }
@@ -743,10 +2098,16 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
   .needs-panel, .form-panel, .review-block { padding: 19px; }
   .card-actions { align-self: flex-start; }
   .stage-card { grid-template-columns: 1fr; }
-  .stage-select { min-height: 0; padding: 18px; flex-wrap: wrap; }
+  /* `min-height: 0` cancels the base rule's 92px floor, which is the height of
+     a card carrying a description that would not fit on one line here anyway.
+     Below 480px the card is sized by its content and there is no slack to
+     centre, so `align-content` inherits and does nothing. The wrap the base
+     rule now declares is what lets the pill take its own line, which is what
+     it did here before the base rule declared it. */
+  .stage-select { min-height: 0; padding: 18px; }
   .stage-copy { flex: 1 1 calc(100% - 42px); }
-  .selected-label { margin: 8px 0 0 37px; }
-  .details-button { border-left: 0; border-top: 1px solid var(--border); text-align: left; }
+  .selected-label { margin: 8px 0 0; margin-inline-start: 37px; }
+  .details-button { border-inline-start: 0; border-top: 1px solid var(--border); text-align: start; }
   .stage-details { padding: 17px 18px; }
   .simple-choice { align-items: flex-start; flex-wrap: wrap; }
   .simple-choice .selected-label { margin: 6px 0 0 36px; }
@@ -757,10 +2118,17 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
   .results-section { padding: 19px; }
   .result-section-heading { gap: 11px; }
   .result-actions { flex-direction: column; }
-  .result-actions .button-primary { margin-left: 0; }
+  .download-actions { flex-direction: column; margin-inline-start: 0; }
   .explore-improvements, .improvement-scenario, .comparison-results { padding: 19px; }
+  .improvement-editor { grid-template-columns: 1fr; }
   .improvement-allocation-row { grid-template-columns: 1fr; gap: 10px; }
+  /* `:has()` gives the unit-mode row a higher specificity than the plain selector
+     above, so it needs restating here rather than inheriting the stack this rule
+     already sets - a later, lower-specificity rule cannot override an earlier,
+     more specific one just by coming second in the file. */
+  .improvement-allocation-row:has(.improvement-control-unit) { grid-template-columns: 1fr; }
   .improvement-control { grid-template-columns: 1fr; }
+  .improvement-control-unit { grid-template-columns: 1fr; }
   .improvement-actions { flex-direction: column; }
   .comparison-values { grid-template-columns: 1fr; }
   .comparison-arrow { transform: rotate(90deg); justify-self: start; }
@@ -773,64 +2141,647 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
   .chevron { transition: none; }
 }
 
+/* ------------------------------------------------------------------------------------
+   RIGHT-TO-LEFT, and the machine-translation notice.
+
+   Arabic and Urdu are two of the twenty languages, and `web/js/i18n.js` sets
+   `<html dir="rtl">` for them off the `dir` field in their catalogues. Nothing above
+   this line hard-codes a physical side any more: every `margin-left`, `padding-left`,
+   `border-left` and `text-align: left` that carried meaning became its `-inline-start`
+   form, so the whole layout mirrors from the `dir` attribute alone and there is no
+   second stylesheet to keep in step. Symmetric pairs collapsed into `margin-inline` /
+   `padding-inline` on the way through, which is the same rendering in both directions.
+
+   **Shipping a broken right-to-left page would have been worse than not shipping those
+   two languages at all**, so the conversion is the reason they ship. The rules below
+   are the residue: the places where a side is drawn rather than laid out. ------------ */
+
+/* The two arrows are decoration - both are `aria-hidden` - and neither is mirrored by
+   the bidi algorithm, so they are turned by hand. A "current → improved" arrow pointing
+   the wrong way in a right-to-left page reads as improved → current, which is the one
+   thing on the comparison screen that must not be ambiguous. */
+[dir="rtl"] .comparison-arrow { transform: scaleX(-1); display: inline-block; }
+
+/* The progress track fills from the reading-start edge. */
+[dir="rtl"] .step-nav-track > span,
+[dir="rtl"] .bar-track > span { float: right; }
+
+/* The machine-translation notice, on every page of the calculator, not dismissible.
+   Banana ground with Kale text - the brand pairing for a light ground - and full bleed
+   at the very top of the document, because it is a statement about the whole page.
+
+   The English half is set smaller and in `lang="en"` so a screen reader switches voice
+   for it: the one sentence a machine-translated page has to get right is the sentence
+   saying it was machine translated, and that sentence went through the same machine as
+   everything else on the page. */
+.machine-translation-notice {
+  margin: 0;
+  padding: 10px 20px;
+  color: var(--kai-kale);
+  background: var(--kai-banana, #FFD76E);
+  font-size: 0.88rem;
+  line-height: 1.45;
+  text-align: center;
+}
+.machine-translation-notice span { display: block; }
+.machine-translation-notice-en {
+  margin-top: 2px;
+  font-size: 0.8rem;
+  opacity: 0.82;
+  direction: ltr;
+}
+
+/* ------------------------------------------------------------------------------------
+   THE NAVIGATION DRAWER.
+
+   A drawer with a physical pull-tab: closed, a half-disc handle is the only thing at the
+   page's reading-start edge; pulled, a Kale panel slides out from behind it and the
+   handle rides to the panel's outer face, its chevron turned round to point the way back.
+
+   **THE HANDLE IS THE BRAND'S HALF-CIRCLE, WHICH IS WHY IT IS THAT SHAPE AND NOT A
+   WEDGE.** It was a flat Orange triangle with a hard offset shadow: it satisfied the
+   brief ("a triangle, Orange or Blueberry") and belonged to nothing. The half-circle
+   derived from the logo is the brand's primary supporting graphic, and the guidelines
+   give it two modes - singly at large scale, or in odd-numbered overlapping groups at
+   small scale. This is the first mode: ONE half-disc, flat edge flush to the viewport,
+   the curve bulging into the page. It is the positive form of the same primitive the
+   home page's arch band cuts holes with, so the two read as one family rather than as a
+   graphic and a control that happen to share a palette. **The group mode was considered
+   and rejected here**: three arcs inside a 44px box is 14px each, which is decoration on
+   a control rather than a supporting graphic, and the thing a thumb aims at should be
+   one object.
+
+   **Orange, because the panel's own spine is Orange.** `.site-drawer__panel` carries
+   `border-inline-end: 4px solid var(--kai-orange)` on the edge nearest the handle, so
+   open, the spine runs straight into the disc and the two are one continuous form - the
+   front of the drawer, drawn once. The chevron is white, which is the pairing the
+   guidelines set for a dark ground (Kale / Blueberry / Orange take white). Orange is
+   also the one body colour that holds on **both** grounds this handle crosses: white
+   content on three pages, and the Kale hero on the home page, where a Kale handle would
+   disappear and a white one would read as a hole.
+
+   **The shadow is soft and Kale-tinted, not a hard grey offset.** A zero-blur offset
+   shadow is what made the old handle read as a sticker laid on the page. It is now
+   `box-shadow` rather than `filter: drop-shadow` - the shape is a rounded box, so a box
+   shadow follows it exactly, which is the thing that was untrue of the triangle.
+
+   **IT OVERLAYS AND NEVER COMPRESSES, AND THAT IS THE MEASUREMENT THIS DESIGN IS BUILT
+   ON.** Horizontal space is the binding constraint on this interface: the owner's laptop
+   is a 938px CSS viewport, already under the 960 breakpoint, and one destination row on
+   step four has a 544px floor. A 240px sidebar taking width out of the document would
+   leave 698px and break the step this team measured and fixed. So the whole component is
+   `position: fixed` and the document never learns it is there.
+
+   **WHERE IT IS, AND THE TWO PLACES IT IS NOT.** Not in the header row, which is a
+   measured budget - 93px holding a 67px logo and the 44px language chooser, defended by
+   `test_a_short_step_is_not_floored_by_a_stale_min_height`, and a strip of its own was
+   built once and cost 57px on every page. Not along the bottom either, because
+   `.step-nav` is `position: sticky; bottom: 0` and is the single thing that put every
+   step's primary action above the fold; a bottom tab bar would fight it at 390px. So it
+   is pinned to the inline-start edge and vertically centred, which is also the one band
+   of the page that no step's controls occupy.
+
+   **`inset-inline-start`, `border-inline-*`, and the chevron alone turns.** The disc is
+   rounded on its `border-*-end-radius` corners, so it opens toward the reading-end in
+   English and the reading-start in Arabic with no second rule; the chevron is a square
+   wearing `border-block-start` and `border-inline-end`, so it aims the same way for the
+   same reason. Open, the DISC STAYS PUT and only the chevron rotates 180 degrees - the
+   old rule flipped the whole handle, which was free on a symmetrical triangle and would
+   put a half-disc's curve against the viewport edge with half of it off screen. Keeping
+   the disc still also keeps it a stable brand mark rather than a thing that jumps.
+
+   Two physical values cannot be written logically and are mirrored explicitly under
+   `[dir="rtl"]`: the shadow's x offset, and the chevron's rotation.
+
+   **THE HANDLE'S HIT AREA IS ITS BORDER BOX, ON PURPOSE.** A shape pressable only where
+   it is painted loses its corners, and at 390px that is the difference between hitting
+   the control and not - `border-radius` is honoured by hit testing exactly as `clip-path`
+   is. So the `<summary>` itself stays an unrounded, transparent 46x88 rectangle and every
+   pixel of it takes the press; `::before` is what is rounded and painted. Nothing about
+   the target changes when the shape does, which is what `test_the_handle_is_a_forty_four_
+   pixel_target_at_the_narrowest_width`'s four corner probes hold in place.
+
+   **The motion is an `animation`, not a `transition`, and that is a portability
+   decision.** A closed `<details>` does not render its content, so there is nothing for
+   a transition to run on when it opens; the recipes that manage it need
+   `::details-content`, `@starting-style` and `allow-discrete`, which is one engine
+   today. A keyframe animation runs the moment the panel becomes rendered, in every
+   engine, and the close is instant - which is what `<details>` does everywhere anyway.
+   `prefers-reduced-motion` removes it at the foot of this file.
+   ---------------------------------------------------------------------------------- */
+.site-drawer {
+  --drawer-width: min(268px, 74vw);
+  --drawer-handle-inline: 46px;
+  --drawer-handle-block: 88px;
+  /* Above the sticky step bar (z-index 3) and the header: the drawer is the only thing
+     on these pages that deliberately covers content. */
+  position: fixed;
+  z-index: 40;
+  inset-inline-start: 0;
+  top: 50%;
+  translate: 0 -50%;
+  display: flex;
+  /* Reversed, so the panel is at the edge and the handle is on its outer face - the
+     front of a drawer, not a label stuck to the side of one. `row-reverse` is the
+     inline axis reversed, so it mirrors from `dir` like everything else here. */
+  flex-direction: row-reverse;
+  align-items: center;
+}
+
+.site-drawer__handle {
+  /* `block`, not the UA's `list-item`: it removes the disclosure marker, which would
+     otherwise sit beside the disc this control already is. `list-style: none` is the
+     belt to that brace - the marker had nowhere to render when this element was 0x0 and
+     now it would have a 46x88 box to sit in. */
+  display: block;
+  list-style: none;
+  flex: 0 0 auto;
+  /* Deliberately square and unrounded: this is the pressable box. The shape lives on
+     ::before. */
+  position: relative;
+  inline-size: var(--drawer-handle-inline);
+  block-size: var(--drawer-handle-block);
+  background: transparent;
+  cursor: pointer;
+  transition: translate 0.16s ease;
+}
+.site-drawer__handle::-webkit-details-marker { display: none; }
+
+/* The brand's half-circle. `100% 50%` on both reading-end corners is a half-disc at any
+   box size - the horizontal radius is the full width and the vertical radius is half the
+   height - so the phone override below changes one number and not this shape. */
+.site-drawer__handle::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--kai-orange);
+  border-start-end-radius: 100% 50%;
+  border-end-end-radius: 100% 50%;
+  box-shadow: 2px 3px 12px rgba(0, 50, 35, 0.34);
+}
+
+/* The direction cue: a square wearing two adjacent logical borders, turned 45 degrees.
+   `aria-expanded` (web/js/drawer.js) is what carries this state to anyone who cannot see
+   it; this is the sighted half of the same fact. Sat at 34% of the width because the
+   disc's visual weight is toward its flat edge, not at its box centre. */
+.site-drawer__handle::after {
+  content: "";
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 34%;
+  inline-size: 10px;
+  block-size: 10px;
+  border-block-start: 3px solid var(--kai-white);
+  border-inline-end: 3px solid var(--kai-white);
+  translate: 0 -50%;
+  rotate: 45deg;
+  transition: rotate 0.2s ease;
+}
+
+.site-drawer__handle:hover { translate: 2px 0; }
+.site-drawer[open] .site-drawer__handle::after { rotate: 225deg; }
+
+/* The two values with no logical form. */
+[dir="rtl"] .site-drawer__handle::before { box-shadow: -2px 3px 12px rgba(0, 50, 35, 0.34); }
+[dir="rtl"] .site-drawer__handle::after { rotate: -45deg; }
+[dir="rtl"] .site-drawer[open] .site-drawer__handle::after { rotate: -225deg; }
+[dir="rtl"] .site-drawer__handle:hover { translate: -2px 0; }
+
+.site-drawer__panel {
+  inline-size: var(--drawer-width);
+  padding: 14px;
+  color: var(--kai-white);
+  background: var(--kai-kale);
+  /* **The panel has to be visible against a Kale ground as well as a white one.** The
+     home page's hero is Kale, and a Kale panel over it was a shadow and nothing else -
+     the links floated with no drawer around them. The hairline states the block edges;
+     the 4px Orange edge is the drawer's front face, in the handle's own colour, so the
+     tab reads as attached to the thing it pulls. The inline-start border is removed
+     because that side is flush against the edge of the screen. */
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-inline-start: 0;
+  border-inline-end: 4px solid var(--kai-orange);
+  border-start-end-radius: 18px;
+  border-end-end-radius: 18px;
+  box-shadow: 0 14px 40px rgba(0, 50, 35, 0.32);
+}
+.site-drawer[open] .site-drawer__panel { animation: drawer-open 0.26s ease-out both; }
+
+.site-drawer__nav { display: grid; }
+.site-drawer__nav a {
+  min-height: 48px;
+  padding-inline: 14px;
+  display: flex;
+  align-items: center;
+  border-radius: 10px;
+  color: var(--kai-white);
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 0.98rem;
+  text-decoration: none;
+}
+.site-drawer__nav a:hover { color: var(--kai-kale); background: var(--kai-pea); }
+.site-drawer__nav a:focus-visible { outline-offset: -2px; }
+
+@keyframes drawer-open {
+  from { opacity: 0; translate: -100% 0; }
+  to { opacity: 1; translate: 0 0; }
+}
+/* The panel comes out of the reading-start edge, so in a mirrored page it comes out of
+   the other one. Two keyframe sets rather than one, because `translate` takes physical
+   axes and there is no logical form of it. */
+[dir="rtl"] .site-drawer[open] .site-drawer__panel { animation-name: drawer-open-rtl; }
+@keyframes drawer-open-rtl {
+  from { opacity: 0; translate: 100% 0; }
+  to { opacity: 1; translate: 0 0; }
+}
+
+@media (max-width: 480px) {
+  /* The panel gives up its own padding and keeps its 48px rows, so the touch target is
+     the same on a phone as on a laptop. */
+  .site-drawer__panel { padding: 10px; }
+
+  /* **The closed handle is the one thing on these pages that sits on top of content,
+     and this is the width where that costs something.** At 1278px it is in the gutter
+     and covers nothing; at 938px it reaches 6px into a step-4 row, inside that row's
+     own padding, so no text is under it. At 390px `.main-content` has 20px of padding
+     and the document is 390px wide, so there is no gutter left: the disc covers from
+     x=20 to its own edge at its widest point, narrowing at top and bottom where the
+     curve pulls back - a few characters on one or two lines of a paragraph.
+
+     It cannot be moved out of the way. Taking width out of the document is the one
+     thing this component may not do, the header row is a measured budget and the
+     bottom edge belongs to the sticky step bar. So it is made as small as it is
+     allowed to be instead: exactly 44px in both axes, which is the touch target this
+     calculator holds everywhere and the floor `test_the_handle_is_a_forty_four_pixel_
+     target_at_the_narrowest_width` asserts. **Do not shave either number to buy back
+     more of the paragraph** - a control below 44px on a phone is a control people miss,
+     which costs more than four characters of a standfirst. */
+  .site-drawer {
+    --drawer-handle-inline: 44px;
+    --drawer-handle-block: 44px;
+  }
+  /* A 44x44 box makes the half-disc squatter than the 46x88 one - the same construction,
+     a shorter arc. The chevron does not shrink with it: it is already the smallest thing
+     on screen that still reads as an arrow. */
+  .site-drawer__handle::after { inset-inline-start: 30%; }
+}
+
+/* **Here, not in the general `prefers-reduced-motion` block above, and that is not a
+   filing preference.** These selectors have the same specificity as the ones they
+   override, so source order decides - and the general block sits earlier in this file
+   than the drawer does. Written there, `animation: none` lost to `animation:
+   drawer-open` and the panel still sprang in from the edge of the screen for exactly
+   the readers the rule exists for, with every stylesheet assertion green.
+   `test_the_drawer_does_not_animate_under_reduced_motion` measures the computed
+   `animation-name` in a browser told to prefer reduced motion, which is what caught it.
+
+   The drawer still opens and closes; it arrives rather than sliding. */
+@media (prefers-reduced-motion: reduce) {
+  .site-drawer[open] .site-drawer__panel,
+  [dir="rtl"] .site-drawer[open] .site-drawer__panel { animation: none; }
+  .site-drawer__handle { transition: none; }
+  /* The chevron still turns - it is the state, not decoration - it just turns instantly.
+     Same reasoning as the panel: the drawer arrives rather than sliding. */
+  .site-drawer__handle::after { transition: none; }
+  .site-drawer__handle:hover,
+  [dir="rtl"] .site-drawer__handle:hover { translate: 0 0; }
+}
+
+/* ------------------------------------------------------------------------------------
+   THE LANGUAGE BAR.
+
+   The language control is at **top inline-end**: top-right in left-to-right pages and
+   top-left when Arabic or Urdu mirrors the header. The brand occupies inline-start,
+   matching the Kai Commitment public-site header relationship.
+
+   The bar sits below the machine-translation notice, never above it: the notice is a
+   statement about the whole page and its own test pins it as `body.firstElementChild`.
+
+   **It IS inside `.header-inner`, and this comment used to say the opposite.** The
+   separate strip it describes was built, measured at 57px on every page, and removed -
+   see the note over `.header-inner` and contract 7.7.4. The brand concern that argued
+   for the strip is met a different way rather than abandoned: the bar is placed BESIDE
+   the lockup, which keeps its own element, its own size and its own spacing, and
+   nothing is drawn over or through it.
+
+   **THE BAR IS ONE RAISED SURFACE, AND THE `<select>` INSIDE IT HAS NO BOX OF ITS OWN.**
+   Before this it was a bare label beside a bordered `<select>`, which reads as a form
+   control somebody forgot to remove rather than as part of the header. The border, the
+   radius and the shadow now belong to the *component*; the select keeps its behaviour
+   and loses its frame. Drawing both would put a box inside a box 2px apart, which is the
+   obvious implementation and the one that looks like a mistake.
+
+   **The treatment costs zero height, deliberately.** The capsule is 44px - exactly what
+   the bare `<select>` was - because 44px is the touch target and because this row's
+   height is a measured budget (see `.header-inner` and contract 7.7.4). The select gives
+   up its own padding to the capsule instead of the capsule adding padding around it.
+   Measured after the change at 1278x983, 938x898 and 390x700: the header row is the same
+   height it was, and `test_a_short_step_is_not_floored_by_a_stale_min_height` still
+   passes. Do not grow it without re-measuring all three.
+
+   Mirroring is entirely from `dir`: the globe is at the capsule's `padding-inline-start`
+   and the select's arrow is the browser's, drawn at the select's own inline-end - so in
+   Arabic the globe is on the right and the arrow on the left, which is the same
+   arrangement read the other way. Verified in Arabic in a browser, not inferred.
+   ---------------------------------------------------------------------------------- */
+.language-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  font-size: 0.82rem;
+  --lang-hairline: rgba(0, 50, 35, 0.18);
+  min-height: 44px;
+  padding-block: 0;
+  padding-inline: 12px 4px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--kai-white);
+  /* **THE HAIRLINE IS AN INSET SHADOW, NOT A `border`, AND THAT IS ARITHMETIC RATHER
+     THAN TASTE.** The `<select>` inside is 44px because 44px is the touch target and
+     `test_the_chooser_is_present_usable_and_at_the_top_inline_end` measures it. A 1px
+     border would make the capsule 46px and the wrapped header row at 390px 2px taller
+     than it was measured at. An inset shadow draws the same 1px line and occupies no
+     layout, so the treatment costs exactly nothing: 92px header at 1278x983 and at
+     938x898, 126px wrapped at 390x700 - the same three numbers as before it.
+
+     Then two outer layers: a tight contact shadow that seats the capsule on the surface
+     and a wider soft one that lifts it off. One alone reads as either a sticker or a
+     blur. Kale rather than black, so the shade belongs to the palette.
+
+     The hairline's colour is a custom property so hover and focus can restate one value
+     instead of all three layers - three copies of a shadow list is how one of them ends
+     up different from the others. */
+  box-shadow:
+    inset 0 0 0 1px var(--lang-hairline),
+    0 1px 1px rgba(0, 50, 35, 0.05),
+    0 6px 16px -8px rgba(0, 50, 35, 0.35);
+}
+
+.language-bar:hover { --lang-hairline: rgba(0, 50, 35, 0.34); }
+
+/* **The focus ring is drawn around the capsule, not around the select**, because the
+   capsule is what a reader sees as the control - a ring around a frameless select inside
+   a frame would be a rectangle floating in a rounded box. `:focus-within` rather than
+   `:has(:focus-visible)`: it has been in every browser since 2017, and a focus indicator
+   is the last rule in this file that should depend on recent syntax. The select's own
+   outline is suppressed only here, where this rule is guaranteed to have replaced it. */
+.language-bar:focus-within {
+  --lang-hairline: var(--kai-kale);
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* The globe. Inline SVG built in `web/js/i18n.js`, never an `<img>` and never an icon
+   font: the public Content-Security-Policy is `img-src 'self' data:` with no third-party
+   origin and there is no build step, so a drawn icon is the only kind this page can have.
+   `aria-hidden` because the `<label>` beside it already names the control - announcing
+   "globe" as well would be one thing said twice.
+
+   The sphere is filled with `--mint`, the Pea tint this stylesheet already uses, so the
+   one spot of brand colour in the header comes from the palette rather than being mixed
+   for the occasion. It is the only fill; everything else is `currentColor`, which is what
+   lets the same drawing sit on the white header and the Kale one without a second rule. */
+.language-bar__globe {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  color: var(--kai-kale);
+}
+.language-bar__globe-sphere { fill: var(--mint); }
+
+/* The label is read by a screen reader in every case; it is only *drawn* where
+   there is room for it. At 390px the header already carries a 220px wordmark,
+   and the word "Language" beside it is what pushes the row into a second line.
+   `.sr-only` is the same treatment the rest of the calculator uses, so the
+   `<label for>` association - and therefore the control's accessible name -
+   survives being invisible. */
+.language-bar__label {
+  color: var(--muted);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 720px) {
+  .language-bar__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+
+/* **THE INTRO HEADER OVERRIDE IS DELETED, AND ITS ABSENCE IS THE POINT.** It read
+   `.intro-header .language-bar__label { color: rgba(255,255,255,.82) }`, which was right
+   while the label sat directly on the Kale header. The label is now inside a white
+   capsule on every surface, so that rule would paint white text on white ground - the
+   label would still be in the DOM, still be the control's accessible name, and be
+   invisible to everyone who can see. This project has shipped exactly that defect (an
+   Arabic label in a 1px column, every overflow assertion green), so the ground the label
+   is actually on is stated here rather than assumed: it is the capsule's, and the
+   capsule is white in both headers.
+
+   **`.intro-header` is back** - the introduction screen was restored when `home.html` was
+   retired - so the rule is writable again and must still not be written. Nothing above the
+   capsule changed: the label's ground is the capsule's, and the capsule is white on the
+   Kale header and on the white one alike. This is the one place in this file where
+   restoring a deleted screen must NOT restore a deleted rule. */
+
+/* 44px min-height is the touch target the rest of the calculator uses, and the reason
+   this control is a real `<select>` rather than a styled listbox: the platform's own
+   picker is reachable by keyboard, announced by every screen reader, and legible at
+   390px without a single line of script beyond the change handler. It keeps the 44px
+   even without a border of its own, so the whole capsule is the target rather than the
+   text inside it. */
+/* `max-width` is load-bearing, not cosmetic. A `<select>` sizes itself to its
+   widest option, and the widest here is an endonym followed by "machine
+   translated" - left alone it stretched to over 1100px on a desktop viewport
+   and pushed the control away from the edge it is supposed to sit against. The
+   closed control truncates; the open list does not.
+
+   **`width` IS SET AS WELL AS `max-width`, AND WITHOUT IT THE CAPSULE HAS 83px OF
+   DEAD SPACE IN IT.** A percentage inside `min()` is indefinite while a flex
+   container is being sized from its contents, so `min(100%, 22ch)` does not clamp
+   the select's max-content CONTRIBUTION - only its used width. The select rendered
+   at 183px and the capsule shrink-wrapped to 396px around it, measured. It did not
+   show while the select had a border of its own and the bar had none; the moment
+   the box moved outwards the gap became a visible hole between the value and the
+   capsule's inline-end edge. An explicit `width` makes the basis definite: 316px
+   measured, with the `max-width` kept as the narrow-viewport guard it was. */
+.language-bar__select {
+  min-height: 44px;
+  width: 22ch;
+  max-width: min(100%, 22ch);
+  padding-block: 0;
+  padding-inline: 0 6px;
+  color: var(--kai-kale);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 0.9rem;
+  /* Suppressed only because `.language-bar:focus-within` above draws the ring instead.
+     The two must be changed together; removing that rule and leaving this one is a
+     control with no focus indicator at all. */
+  outline: none;
+}
+
+/* The one page element that must NOT be translated or mirrored: it is the fallback for
+   a browser that never ran the code that would have done either. */
+.noscript-notice {
+  margin: 0;
+  padding: 12px 20px;
+  color: var(--kai-kale);
+  background: var(--kai-banana, #FFD76E);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
 /* Statistics page: kept under a page namespace so the shared public shell can be unified
    without coupling calculator controls to Chart.js layout. */
 .stats-page .stats-main { max-width: 1120px; }
-.stats-page .stats-status-panel { margin: 34px 0; padding: 22px; border-radius: 14px; background: var(--mint); }
+.stats-page .stats-introduction,
+.methodology-page .methodology-main > section:first-child { padding-top: 8px; }
+/* No `white-space: nowrap` on `#stats-title` either, for the reason written against
+   `.step-nav` a thousand lines above: an unwrappable heading cannot shrink below its own
+   text, and this one is translated. Measured with the rule in place, the page overflowed
+   by 76px at 768px in German and by 72px at 320px in English - a tablet, not a
+   narrow-phone edge case. `max-width: none` went with it: it was there to let the one
+   line run, and on a heading that wraps it only lengthens the measure. */
+.stats-page .stats-status-panel { margin: 34px 0; padding: 28px; border-radius: 18px; background: var(--mint); }
 .stats-page .stats-status-panel p:last-child { margin-bottom: 0; }
 .stats-page .stats-calculation-total { font-size: 1.2rem; }
 .stats-page .stats-breakdowns > p,
 .stats-page .stats-breakdown-note { color: var(--muted); }
-.stats-page .stats-breakdown { min-width: 0; margin-top: 28px; padding: 22px; border: 1px solid var(--border); border-radius: 16px; background: #fff; box-shadow: var(--shadow); }
-.stats-page .stats-breakdown-note { max-width: 70ch; margin: 8px 0 16px; }
-.stats-page .stats-chart-controls { display: grid; gap: 8px; max-width: 300px; }
-.stats-page .stats-chart-controls label { font-weight: 700; }
-.stats-page .stats-chart-controls select { width: 100%; min-width: 0; min-height: 44px; }
-.stats-page .stats-chart-region {
-  position: relative;
-  width: 100%;
-  max-width: 760px;
-  height: clamp(26rem, 125vw, 31rem);
-  min-width: 0;
-  margin: 22px auto 30px;
-}
-.stats-page .stats-chart-region canvas { display: block; max-width: 100%; }
+.stats-page .stats-breakdown { min-width: 0; margin-top: 28px; padding: 28px; border: 1px solid var(--border); border-radius: 18px; background: #fff; box-shadow: var(--shadow); }
+.stats-page .stats-chart-region { position: relative; min-width: 0; min-height: 320px; margin: 22px 0; }
+.stats-page .stats-chart-region canvas { max-width: 100%; }
 .stats-page .stats-breakdown-list { margin: 0; padding: 0; display: grid; gap: 8px; list-style: none; }
 .stats-page .stats-breakdown-list li { padding: 14px 0; display: grid; gap: 6px; border-top: 1px solid var(--border); }
 .stats-page .stats-breakdown-list li > span { display: grid; gap: 3px; color: var(--muted); font-size: 0.92rem; }
 
 @media (min-width: 720px) {
-  .stats-page .stats-chart-region { height: clamp(30rem, 60vw, 34rem); }
   .stats-page .stats-breakdown-list li { grid-template-columns: minmax(180px, 1fr) minmax(320px, 2fr); gap: 24px; }
   .stats-page .stats-breakdown-list li > span { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
 }
 
-@media (min-width: 960px) {
-  .stats-page .stats-breakdown:has(.stats-chart-region) {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(250px, 290px);
-    grid-template-rows: auto auto 1fr auto;
-    column-gap: 28px;
-  }
-  .stats-page .stats-breakdown:has(.stats-chart-region) > h3 { grid-column: 1 / -1; }
-  .stats-page .stats-breakdown-note { grid-column: 2; grid-row: 2; align-self: end; }
-  .stats-page .stats-chart-controls { grid-column: 2; grid-row: 3; align-self: start; }
-  .stats-page .stats-chart-region { grid-column: 1; grid-row: 2 / 4; margin: 0 0 24px; }
-  .stats-page .stats-list-region { grid-column: 1 / -1; }
-}
-
-@media (max-width: 480px) {
-  .stats-page .stats-breakdown { padding: 18px; }
-}
-
 /* Home page: isolated from calculator components so the public shell can be unified later. */
-.home-page .home-main { max-width: 1120px; }
-.home-page .home-hero { padding: clamp(36px, 7vw, 76px); border-radius: 22px; color: var(--kai-white); background: var(--kai-kale); }
+.home-page .home-main { max-width: 1120px; padding-top: 54px; padding-bottom: 88px; }
+/* The Kale ground runs edge to edge behind the hero and the arch band while the content
+   inside it stays on the 1120px measure. `box-shadow` and `clip-path` paint outside the
+   box without adding to it, which is why this technique costs no layout width - unlike a
+   `100vw` bleed, which counts the scrollbar the element's own `100%` does not. */
+.home-page .home-hero-shell {
+  margin-top: -54px;
+  padding-top: 54px;
+  background: var(--kai-kale);
+  box-shadow: 0 0 0 100vmax var(--kai-kale);
+  clip-path: inset(0 -100vmax);
+}
+.home-page .home-hero {
+  min-height: 470px;
+  padding: clamp(44px, 6vw, 72px);
+  display: flex;
+  align-items: center;
+  border-radius: 22px;
+  color: var(--kai-white);
+  background: var(--kai-kale);
+}
+/* The same German defect as the calculator's introduction hero, and the same one-word
+   answer; see the note on `.hero-copy h1`. The hero is a flex row, a flex item's default
+   `min-width: auto` means "never narrower than min-content", and the min-content width of
+   "Lebensmittelabfälle" is the whole word. Measured on this page at 390px in German: the
+   `<h1>` set 437px inside a 279px box and took the document to 485px; at 320px, to 407px.
+   `min-width: 0` lets the item shrink and `overflow-wrap: anywhere` lets the word inside
+   it stop being unbreakable. It was green in Arabic and English throughout, which is what
+   `tests/web/test_horizontal_overflow.py` running German is for. */
+.home-page .home-hero > div { width: 100%; min-width: 0; max-width: 820px; }
+.home-page .home-hero h1 { max-width: 820px; margin-bottom: 24px; overflow-wrap: anywhere; }
 .home-page .home-hero .eyebrow { color: var(--kai-pea); }
-.home-page .home-hero .lead { color: rgba(255, 255, 255, 0.84); }
-.home-page .home-hero .button-primary { display: inline-flex; align-items: center; color: var(--kai-kale); background: var(--kai-pea); text-decoration: none; }
+.home-page .home-hero .lead { max-width: 740px; margin-bottom: 26px; color: rgba(255, 255, 255, 0.84); }
+.home-page .home-hero .button-primary { min-width: 200px; display: inline-flex; align-items: center; justify-content: center; color: var(--kai-kale); background: var(--kai-pea); text-decoration: none; }
 .home-page .home-hero .button-primary:hover { background: var(--kai-white); }
-.home-page .home-news { padding-top: 64px; }
+.home-page .home-hero .privacy-note { margin-top: 18px; color: rgba(255, 255, 255, 0.72); }
+
+/* The arch band runs the full width of the hero it sits under and is clipped to the same
+   corner radius at its foot, so the two read as one block rather than a band parked below
+   a card. It came from the calculator's deleted introduction screen with its own rules
+   (`.hero-food-pattern`, `.food-arch-mask`) intact; only the placement is new.
+
+   **IT IS NOT BLED TO THE VIEWPORT, AND IT KEEPS ITS PHOTOGRAPH.** `margin-inline:
+   calc(50% - 50vw)` was tried and measured 8px of horizontal overflow on every browser
+   that draws a classic scrollbar: `50vw` counts the scrollbar and `50%` does not, so the
+   two halves of that subtraction are not the same viewport. There is no scrollbar-safe
+   version of it for an element carrying an image - the shell above bleeds with
+   `box-shadow`, which a masked photograph cannot use - so the band stays on the measure
+   and keeps the 22px foot that ties it to the hero. `background-image: none` went with
+   it: the arches are cut OUT of a Kale band so the photograph shows through the holes
+   (see home.html's own note), and without the image the mask reveals white. Restyling
+   this to a flat band is a defensible choice, but it is one that also deletes
+   `--hero-food-image` and `web/assets/hero-food-image.webp`, and it is not made here. */
+.home-page .hero-food-pattern { margin-top: -22px; border-end-end-radius: 22px; border-end-start-radius: 22px; }
+
+.home-page .home-needs { margin-top: 48px; }
+.home-page .home-needs .needs-panel { margin: 0; padding: 32px; }
+.home-page .home-needs h2 { margin-bottom: 22px; }
+
+/* Three cards, and the grid is `auto-fit` rather than a column count so that the row
+   reflows at whatever width the text needs instead of at a number chosen here. 260px is
+   the narrowest a heading of this size sets without a two-word line, measured at 938px. */
+.home-page .home-explainers {
+  margin-top: 28px;
+  display: grid;
+  gap: 24px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+.home-page .home-explainer {
+  min-height: 310px;
+  margin: 0;
+  padding: 30px;
+  display: flex;
+  flex-direction: column;
+  border-radius: 20px;
+  box-shadow: var(--shadow);
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+/* The lift is decoration on a card that is already a link target. Its
+   `prefers-reduced-motion` override is at the foot of this section, written with it. */
+.home-page .home-explainer:hover { transform: translateY(-4px); }
+.home-page .home-explainer h2 { margin-bottom: 14px; font-size: 1.2rem; line-height: 1.25; }
+.home-page .home-explainer p { color: var(--muted); }
+.home-page .home-explainer p:not(.eyebrow) { margin-bottom: 22px; }
+/* 44px, `margin-top: auto` and `align-self: start`: the link is pushed to the foot of its
+   card so three cards of unequal prose still line their links up, and the touch target is
+   the row rather than the word - but only as wide as the word, so the rest of the card is
+   not a silent hit area. */
+.home-page .home-explainer-link {
+  min-height: 44px;
+  margin-top: auto;
+  align-self: start;
+  display: inline-flex;
+  align-items: center;
+  color: var(--kai-kale);
+  font-family: var(--font-heading);
+  font-weight: 700;
+  text-underline-offset: 5px;
+}
+.home-page .home-explainer-link::after { content: '\00a0→'; }
+/* `dir` is on `<html>` and `.home-page` is on `<body>`, so the attribute is the ancestor.
+   The arrow is the one glyph on this page that points at a direction, and a right arrow
+   in a right-to-left page points back the way the reader came. */
+[dir="rtl"] .home-page .home-explainer-link::after { content: '\00a0←'; }
+
+.home-page .home-news { padding-top: 76px; }
 .home-page .home-news-grid { display: grid; gap: 20px; margin-top: 28px; }
 .home-page .home-news-grid > .empty-state,
 .home-page .home-news-grid > .loading-state { grid-column: 1 / -1; }
@@ -840,7 +2791,127 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 .home-page .home-news-card h3 { margin-bottom: 10px; }
 .home-page .home-news-link { min-height: 44px; margin-top: auto; display: inline-flex; align-items: center; color: var(--kai-kale); font-weight: 700; text-underline-offset: 4px; }
 
+/* **THE PUBLIC HEADER IS A DECLARED GRID AT THREE WIDTHS, NOT AN ACCIDENTAL WRAP.**
+   The row holds three blocks - brand lockup, page navigation, language chooser - and
+   before this it was a flex row left to wrap wherever it ran out of room, which is a
+   layout nobody chose and which differed per page because the navigation is a different
+   width on each. Measured header height, before and after: 1278px 92 -> 92, 938px
+   151 -> 143, 390px 196 -> 184, 320px 242 -> 230. It costs nothing at the desktop width
+   the 93px budget is measured at - `test_a_short_step_is_not_floored_by_a_stale_min_height`
+   is untouched - and it SAVES height at every width where the row has to fold. */
+/* **EVERY ITEM IS PLACED EXPLICITLY, AND THAT IS THE FIX FOR A COUPLING THAT BIT ONCE.**
+   The grid once relied on auto-placement, which means the order of the three areas was
+   decided by DOM order - and the chooser's DOM position is written in JavaScript, in
+   `installLanguageChooser`. The two were changed together in one word and the header
+   moved with no stylesheet having been touched. `grid-column`/`grid-row` for each item
+   at each breakpoint is what makes this a decision here rather than an emergent property
+   of a JS module.
+
+   THE ARRANGEMENT (v1.47, contract §7.7.4). The logo owns reading-start, matching the
+   Kai Commitment public site; the chooser owns reading-end; navigation or the
+   calculator's clear action takes the middle.
+
+   MEASURED, because the comment this replaced carried numbers and deleting them would
+   have left the height argument resting on nothing. Header row height, en/ar, after the
+   change - and these are the SAME figures the previous arrangement produced:
+
+       calculator    1280  92px    938  92px    390 122px    320 122px
+       methodology   1280  92px    938 143px    390 184px    320 230px
+
+   So moving the chooser along the row costs no height, which is what keeps contract
+   v1.27 item 9 satisfied: that argument was about a 57px STRIP, not about an end of a
+   row, and `test_a_short_step_is_not_floored_by_a_stale_min_height` still holds.
+
+   AND THE COST, stated rather than left to be discovered. The chooser's distance from
+   the reading-start edge, which is what v1.29 objected to when this move arrived
+   smuggled inside an unrelated commit:
+
+       1280: 20 -> 932 (en) / 993 (ar)      938: 20 -> 599 (en) / 660 (ar)
+        390: 20 -> 145                       320: 20 ->  75
+
+   Accepted here, with the argument attached this time: the header is a single row, the
+   chooser stays in it and above the fold at every width, and the brand relationship
+   matching the client's own site is what the change buys. The brand sits 20-35px from
+   the reading edge in BOTH directions, so the mirroring is real and not a fixed corner -
+   `test_the_brand_sits_at_the_reading_start_edge` drives en and ar and fails on either. */
+@media (min-width: 1000px) {
+  .public-header-inner {
+    max-width: 1240px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    column-gap: 24px;
+  }
+  .public-header-inner .brand { grid-column: 1; grid-row: 1; justify-self: start; margin-inline-end: 0; }
+  .public-header-inner .public-nav,
+  .public-header-inner #clear-button { grid-column: 2; grid-row: 1; justify-self: end; }
+  .public-header-inner .language-bar { grid-column: 3; grid-row: 1; justify-self: end; }
+}
+
+@media (max-width: 999px) {
+  .public-header-inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 8px 18px;
+  }
+  .public-header-inner .brand { grid-column: 1; grid-row: 1; justify-self: start; margin-inline-end: 0; }
+  .public-header-inner #clear-button { grid-column: 2; grid-row: 1; justify-self: end; }
+  .public-header-inner .language-bar { grid-column: 3; grid-row: 1; justify-self: end; }
+  .public-header-inner .public-nav {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 560px) {
+  .public-header-inner { grid-template-columns: 1fr; gap: 8px; padding-block: 14px; }
+  .public-header-inner .language-bar { grid-column: 1; grid-row: 1; justify-self: end; max-width: 100%; }
+  .public-header-inner .brand { grid-column: 1; grid-row: 2; justify-self: start; }
+  /* Row 3, not row 2 beside the brand. This grid is a single column here
+     (`grid-template-columns: 1fr` above), so two items naming the same cell are
+     STACKED by grid, not reflowed side by side - and `justify-self: start` and
+     `end` then slide them toward each other until they overlap. At 320px the
+     track is 280px, the wordmark is 174px, and Spanish's "Borrar todos los
+     datos" is around 165px: they meet, and the button is later in the DOM so it
+     wins the hit test. Tapping the right-hand end of the logo would open
+     "clear all data?".
+
+     Row 3 costs nothing. `#clear-button` is only ever on index.html and
+     `.public-nav` is only ever on stats.html and methodology.html, so the two
+     never share a page and never contend for this row - and row 3 is where
+     auto-placement already put the button before any of these rules existed. */
+  .public-header-inner #clear-button { grid-column: 1; grid-row: 3; justify-self: end; }
+  .public-header-inner .public-nav {
+    grid-column: 1;
+    grid-row: 3;
+    justify-content: flex-start;
+    gap: 2px 16px;
+  }
+  .home-page .home-main { padding-top: 30px; padding-bottom: 64px; }
+  .home-page .home-hero-shell { margin-top: -30px; padding-top: 30px; }
+  .home-page .home-hero { min-height: 0; padding: 34px 28px 42px; border-radius: 18px; }
+  .home-page .home-hero h1 { margin-bottom: 20px; font-size: clamp(2.2rem, 12vw, 3.2rem); }
+  .home-page .home-hero .lead { margin-bottom: 22px; font-size: 1.02rem; }
+  .home-page .home-hero .button-primary { width: 100%; }
+  .home-page .hero-food-pattern { height: 126px; margin-top: -18px; border-end-end-radius: 18px; border-end-start-radius: 18px; }
+  .home-page .home-needs { margin-top: 30px; }
+  .home-page .home-needs .needs-panel,
+  .home-page .home-explainer { padding: 22px; }
+  .home-page .home-explainer { min-height: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-page .home-explainer { transition: none; }
+  .home-page .home-explainer:hover { transform: none; }
+}
+
 @media (min-width: 700px) {
+  .home-page .home-needs .check-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 36px;
+  }
   .home-page .home-news-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
@@ -861,9 +2932,13 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 .methodology-page .methodology-metadata dd { margin: 0; overflow-wrap: anywhere; }
 .methodology-page .table-scroll { max-width: 100%; margin-top: 20px; border: 1px solid var(--border); border-radius: 12px; }
 .methodology-page table { width: 100%; min-width: 760px; border-collapse: collapse; background: var(--kai-white); }
-.methodology-page caption { padding: 14px 16px; color: var(--muted); text-align: left; font-size: 0.9rem; }
+/* `start`, not `left`. D built these two rules against v1.17, before Arabic and
+   Urdu; `test_the_stylesheet_carries_no_physical_direction_left` has forbidden a
+   physical side since, and a factor table that keeps its columns left-aligned
+   under `dir="rtl"` is exactly the half-mirrored page that rule exists to stop. */
+.methodology-page caption { padding: 14px 16px; color: var(--muted); text-align: start; font-size: 0.9rem; }
 .methodology-page th,
-.methodology-page td { padding: 13px 16px; border-top: 1px solid var(--border); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.methodology-page td { padding: 13px 16px; border-top: 1px solid var(--border); text-align: start; vertical-align: top; overflow-wrap: anywhere; }
 .methodology-page thead th { color: var(--kai-white); background: var(--kai-kale); }
 .methodology-page tbody th { font-weight: 700; }
 .methodology-page code { color: inherit; white-space: pre-wrap; }
@@ -879,4 +2954,357 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
   .methodology-page .methodology-factor-section { padding: 18px; }
   .methodology-page th,
   .methodology-page td { padding: 11px 13px; }
+}
+
+/* ------------------------------------------------- step 4 as a matrix, above 650px
+   Destinations down the side, leaves across the top - **and only above the breakpoint.**
+   It cannot be a matrix at every width and that is arithmetic rather than preference:
+   320px less the gutters is 288px, a destination label needs about 90px, and the ~198px
+   left over is 66px per column at three leaves and 40px at five.
+   `tests/web/test_horizontal_overflow.py` measures document `scrollWidth` against
+   `clientWidth` at 320 and 390 in a real browser and is a hard gate.
+
+   ONE DOM, two layouts. The cells are rendered leaf by leaf, each carrying its own
+   `--row` / `--col`; `display: contents` on the leaf group lets them join the outer grid
+   here, and below the breakpoint the group is an ordinary block again. A second copy of
+   the inputs would mean two elements holding one figure. */
+@media (min-width: 650px) {
+  .allocation-matrix {
+    display: var(--matrix-display, grid);
+    /* Bounded, not `max-content`: a long destination name would otherwise set the label
+       column to its own full width and take the space the leaf columns need.
+
+       **The leaf columns have a real minimum, and 104px is measured rather than chosen.**
+       They were `minmax(0, 1fr)`, which lets a column shrink below its own content - and
+       at 650px with five leaves they resolved to 67.22px against an input content box of
+       65px, so an amount typed into a cell was cut off and the visitor could not read
+       back the number they had just entered. A cell showing `1234.56` needs 96px of
+       content box (measured in the shipped font), plus the input's own 2.53px of border,
+       so 104px is that with a little air. A minimum the container cannot honour would push
+       the document sideways instead, which `test_horizontal_overflow.py` forbids - so the
+       stand-down block below keeps the matrix off wherever this minimum does not fit. */
+    grid-template-columns: minmax(84px, 18ch) repeat(var(--leaf-count, 1), minmax(104px, 1fr));
+    column-gap: 14px;
+    align-items: start;
+  }
+  .leaf-group { display: var(--leaf-group-display, contents); }
+  .leaf-group__heading { display: var(--leaf-heading-display, none); }
+  .matrix-row-label {
+    display: var(--matrix-label-display, block);
+    grid-row: var(--row);
+    grid-column: 1;
+    align-self: center;
+    padding-block: 17px;
+    font-weight: 700;
+    line-height: 1.35;
+  }
+  .matrix-column-head {
+    display: var(--matrix-head-display, grid);
+    gap: 2px;
+    grid-row: 1;
+    grid-column: var(--col);
+    padding-block-end: 8px;
+    font-weight: 700;
+    line-height: 1.3;
+    border-bottom: 1px solid rgba(0, 50, 35, 0.12);
+  }
+  .matrix-column-head small { color: var(--muted); font-weight: 400; }
+  .allocation-matrix .allocation-summary {
+    grid-row: 2;
+    grid-column: var(--col);
+    position: var(--summary-position, sticky);
+    top: 10px;
+    margin-block: var(--summary-margin-block, 10px);
+    padding: var(--summary-padding, 10px);
+    grid-template-columns: var(--summary-columns, minmax(0, 1fr));
+    border-radius: var(--summary-radius, 12px);
+    border: var(--summary-border, 1px solid rgba(40, 200, 130, 0.5));
+    border-block-end: var(--summary-border-block-end, 1px solid rgba(40, 200, 130, 0.5));
+  }
+  .allocation-matrix .destination-row {
+    grid-row: var(--row);
+    grid-column: var(--col);
+    grid-template-columns: var(--row-columns, minmax(0, 1fr));
+    gap: var(--row-gap, 6px);
+    padding: var(--row-padding, 10px 0);
+  }
+  /* The name is down the side once, shared by every column. The input keeps its own
+     `aria-label` ("Landfill amount in kilograms"), so nothing loses its accessible name
+     by the label being hidden. */
+  .allocation-matrix .destination-row > label { display: var(--cell-label-display, none); }
+  .allocation-matrix .amount-with-unit { grid-template-columns: var(--amount-unit-columns, minmax(0, 1fr)); gap: var(--amount-unit-gap, 6px); }
+  /* **No leaf-card override of step 3's own layout here any more.** Three rules stood
+     here: a three-column `.leaf-panel .mass-fields`, a `.leaf-panel .money-fields` pair,
+     and a `.leaf-panel .unit-field select { inline-size: 100% }` that undid the unit's
+     half-width inside a card. They existed because the card's money pair lived outside
+     the grid, behind a disclosure, and the three mass fields had to be crushed into the
+     one live column of a two-column template whose other 445px was dead - `.amount-grid
+     --leaf` was a class with no rule anywhere. The card uses `.zones` now, the same two
+     tinted columns the single-leaf panel uses, so there is nothing left to override. */
+}
+
+/* ------------------------------------------- the matrix stands down where it will not fit
+   **Arithmetic, and measured.** A matrix column has to hold a cell that can show its own
+   number: 104px (see `grid-template-columns` above). One label column of at least 84px, one
+   14px gap per leaf and 104px per leaf is what the container must have, and the container is
+   `.main-content`'s 900px - or `.wide`'s 1000px above 1020px, past which extra viewport buys
+   the grid nothing and the leaf count alone decides.
+
+   So there are two conditions, and the same stand-down list serves both. Written as custom
+   properties on `.allocation-matrix` rather than as a second copy of the block layout: they
+   inherit to the row labels, the column heads, the cells and the summary, so one rule turns
+   the whole grid off and no layout declaration exists twice.
+
+   The `:not(...)` specificity (0,2,0) beats the matrix block's (0,1,0) whatever the source
+   order, so this cannot be defeated by moving a rule. */
+@media (max-width: 1019.98px) {
+  /* Five leaves or more, before `.wide` widens the container. */
+  .allocation-matrix:not([data-leaf-count="1"], [data-leaf-count="2"], [data-leaf-count="3"], [data-leaf-count="4"]) {
+    --matrix-display: block;
+    --leaf-group-display: block;
+    --leaf-heading-display: block;
+    --matrix-label-display: none;
+    --matrix-head-display: none;
+    --cell-label-display: grid;
+    --summary-position: static;
+    --summary-margin-block: 0;
+    --summary-padding: 16px;
+    --summary-columns: repeat(3, minmax(0, 1fr));
+    --summary-radius: 0;
+    --summary-border: 0;
+    --summary-border-block-end: 1px solid rgba(40, 200, 130, 0.5);
+    --row-columns: minmax(220px, 1fr) minmax(260px, 0.8fr);
+    --row-gap: 24px;
+    --row-padding: 17px 20px;
+    --amount-unit-columns: minmax(0, 1fr) minmax(120px, 45%);
+    --amount-unit-gap: 10px;
+  }
+}
+/* Eight leaves or more is never a matrix at any width: 84 + 8x14 + 8x104 is 1028px against
+   a container that stops at 1000px, so the grid could only fit by making a cell too narrow
+   to read - and a form of eight columns of number inputs is past the point of being
+   fillable in any case. `MAX_ENTRIES` allows twenty leaves, so this is reachable. */
+.allocation-matrix:not([data-leaf-count="1"], [data-leaf-count="2"], [data-leaf-count="3"], [data-leaf-count="4"], [data-leaf-count="5"], [data-leaf-count="6"], [data-leaf-count="7"]) {
+    --matrix-display: block;
+    --leaf-group-display: block;
+    --leaf-heading-display: block;
+    --matrix-label-display: none;
+    --matrix-head-display: none;
+    --cell-label-display: grid;
+    --summary-position: static;
+    --summary-margin-block: 0;
+    --summary-padding: 16px;
+    --summary-columns: repeat(3, minmax(0, 1fr));
+    --summary-radius: 0;
+    --summary-border: 0;
+    --summary-border-block-end: 1px solid rgba(40, 200, 130, 0.5);
+    --row-columns: minmax(220px, 1fr) minmax(260px, 0.8fr);
+    --row-gap: 24px;
+    --row-padding: 17px 20px;
+    --amount-unit-columns: minmax(0, 1fr) minmax(120px, 45%);
+    --amount-unit-gap: 10px;
+}
+
+
+/* ---------------------------------------------------------------------------
+   Step 5's reporting period: two typable bounds and the calendar dialog behind
+   them (`web/js/period.js`, v1.67).
+
+   **Logical properties only, and the grid is the reason the rule is not
+   optional here.** `tests/web/test_i18n_web.py` forbids a physical direction in
+   this file because Arabic and Urdu render the calculator with `<html dir=rtl>`
+   and a half-mirrored page is worse than an unmirrored one. A seven-column
+   table does not mirror from `dir` alone the way a paragraph does — the column
+   ORDER does mirror, because that is table layout, but every offset written
+   here would not, and a `padding-left` on a day cell would draw the numbers
+   against the wrong edge of a grid that had already flipped underneath them.
+   Measured in Chromium under `?lang=ar`; see the test file.
+   ------------------------------------------------------------------------ */
+
+.period-field { margin: 18px 0 0; padding: 16px; border: 1px solid rgba(0, 50, 35, 0.14); border-radius: 12px; background: var(--kai-white); }
+.period-field > .field-hint { margin-block: 0 12px; }
+.period-bound { margin: 0 0 12px; padding: 12px; border: 1px solid rgba(0, 50, 35, 0.12); border-radius: 10px; }
+.period-bound legend { padding-inline: 6px; font-family: var(--font-heading); font-size: 0.95rem; }
+.period-bound-row { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
+.period-bound-row .form-field { flex: 1 1 200px; margin: 0; }
+.period-bound-row .period-time-field { flex: 0 1 190px; }
+.period-date-control { display: flex; gap: 6px; align-items: stretch; }
+.period-date-control .period-input { flex: 1 1 auto; min-inline-size: 0; }
+.period-input[aria-invalid="true"] { border-color: var(--error); }
+/* The icon inside is inline SVG, not a code point: U+1F5D3 defaults to text
+   presentation and Windows drew it as an empty rectangle. `display: flex` is
+   what centres a drawn glyph in a box that used to centre a character by its
+   line box, and `stroke: currentColor` in the markup is why no colour is set
+   here for either theme. */
+.period-open { display: flex; flex: 0 0 auto; align-items: center; justify-content: center; padding-inline: 12px; line-height: 1; color: var(--kai-kale); cursor: pointer; background: var(--mint); border: 1px solid rgba(0, 50, 35, 0.2); border-radius: 8px; }
+.period-open:hover { background: var(--kai-pea); }
+.period-open-icon { display: block; inline-size: 18px; block-size: 18px; }
+.period-error { margin-block-start: 4px; }
+
+.period-dialog-backdrop { position: fixed; z-index: 1000; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(0, 32, 24, 0.72); }
+.period-dialog { inline-size: min(360px, 100%); max-block-size: 90vh; overflow: auto; padding: 16px; color: var(--kai-kale); background: var(--kai-white); border-radius: 14px; }
+.period-dialog-head { display: flex; gap: var(--space-sm); align-items: center; justify-content: space-between; }
+.period-dialog-head h3 { margin: 0; font-size: 1.05rem; }
+.period-dialog-close { padding: 2px 10px; font-size: 1.4rem; line-height: 1.2; color: var(--kai-kale); cursor: pointer; background: none; border: 1px solid transparent; border-radius: 8px; }
+.period-dialog-close:hover { border-color: rgba(0, 50, 35, 0.25); }
+.period-dialog-hint { margin-block: 8px 12px; font-size: 0.85rem; color: var(--muted); }
+.period-dialog-months { display: flex; gap: var(--space-sm); align-items: center; justify-content: space-between; margin-block-end: 8px; }
+.period-dialog-month { flex: 1 1 auto; margin: 0; font-family: var(--font-heading); text-align: center; }
+/* The caption decomposed into two buttons, one per grid behind it. `font:
+   inherit` is what keeps them looking like the caption they replaced rather than
+   like form controls: a button inherits no font at all from its ancestors.
+   `aria-expanded` is the state, so it is also what the open one is coloured by —
+   the styling and the announcement cannot then disagree. */
+.period-caption { padding: 2px 8px; font: inherit; color: var(--kai-kale); cursor: pointer; background: none; border: 1px solid transparent; border-radius: 8px; }
+.period-caption:hover { border-color: rgba(0, 50, 35, 0.25); background: var(--mint); }
+.period-caption[aria-expanded="true"] { color: var(--kai-white); background: var(--kai-kale); }
+.period-caption:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.period-month-step { padding: 4px 12px; font-size: 1.2rem; line-height: 1.2; color: var(--kai-kale); cursor: pointer; background: var(--mint); border: 1px solid rgba(0, 50, 35, 0.2); border-radius: 8px; }
+.period-month-step[disabled] { color: var(--muted); cursor: not-allowed; opacity: 0.45; }
+
+/* **`min-inline-size: 0` is what makes `inline-size: 100%` mean anything here.**
+   A table box's `min-inline-size` is `auto`, which resolves to its min-content
+   width and then *wins* over the specified width -- `table-layout: fixed` does
+   not change that. Measured at a 390px viewport: the computed `min-inline-size`
+   was 760px inside a 358px dialog, seven 109px columns, so a visitor saw Monday
+   to a clipped Thursday and had to scroll the dialog sideways for the rest.
+   With it at 0 the table is 326px, which is the dialog's content box.
+   `test_horizontal_overflow.py` never saw it: it walks static pages and does not
+   open the calendar, and the dialog's own `overflow: auto` kept the overflow off
+   the document. */
+.period-grid { inline-size: 100%; min-inline-size: 0; border-collapse: collapse; table-layout: fixed; }
+.period-grid th { padding: 6px 0; font-size: 0.78rem; font-weight: 400; color: var(--muted); }
+.period-day { padding: 0; text-align: center; }
+td.period-day { block-size: 38px; border-radius: 8px; }
+td.period-day[data-day] { cursor: pointer; }
+td.period-day[data-day]:hover { background: var(--mint); }
+/* Genuinely disabled, not merely grey: the cell carries no `data-day`, no
+   `tabindex` and no click target, so it cannot be chosen by pointer, keyboard
+   or assistive technology. The colour is the last of the four signals, not the
+   only one. */
+td.period-day.is-disabled { color: var(--muted); cursor: not-allowed; opacity: 0.4; }
+td.period-day.is-selected { font-weight: 700; color: var(--kai-white); background: var(--kai-kale); }
+td.period-day:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+
+/* The month and year grids behind the caption.
+
+   **`.period-grid` is on those tables too, and that is the point.** The rule
+   above is a fix for a `<table>`'s `min-inline-size: auto`, and a new table
+   inherits none of it — fifty-seven years in five columns measured as wide as
+   its widest row's min-content otherwise. Sharing the class is what makes the
+   fix one rule rather than three that have to be kept in step.
+
+   The scroller is a `<div>`, because `overflow` on a `<table>` does nothing:
+   twelve rows of years do not fit a phone's dialog beside a caption and a hint,
+   and a dialog that scrolled as a whole would scroll the caption off the top.
+   `position: relative` makes it the `offsetParent` of its own cells, which is
+   what `period.js`'s `focusAfterRender` measures against to centre the cursor. */
+.period-scroller { position: relative; max-block-size: 232px; overflow-y: auto; }
+td.period-choice { block-size: 40px; padding: 2px; font-size: 0.9rem; text-align: center; border-radius: 8px; }
+td.period-choice[data-action] { cursor: pointer; }
+td.period-choice[data-action]:hover { background: var(--mint); }
+/* Genuinely disabled, on the same four signals as a day cell: no `data-action`,
+   no `tabindex`, `aria-disabled`, and the colour last. */
+td.period-choice.is-disabled { color: var(--muted); cursor: not-allowed; opacity: 0.4; }
+td.period-choice.is-selected { font-weight: 700; color: var(--kai-white); background: var(--kai-kale); }
+td.period-choice:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+
+
+/* ---------------------------------------------------------------------------
+   The clock beside the two time boxes (`web/js/period.js`, WP3).
+
+   **The face is drawn in SVG and positioned in its own coordinate system, and
+   that is the whole of its RTL story.** The calendar above mirrors under
+   `dir="rtl"` because a week is text laid out in reading order. A clock is not:
+   three o'clock is to the right of twelve for an Arabic reader as much as for
+   anyone else, so the face must NOT mirror. Nothing here places a number — every
+   position is an `x`/`y` in the `viewBox`, written by `faceContents` — so there
+   is no `inset-inline-start` to flip and nothing for a well-meaning change to
+   this file to get wrong. Read the note over `faceContents` before "fixing" it.
+   ------------------------------------------------------------------------ */
+
+/* The time box and its clock button, the same row the date box and its calendar
+   button make one field over. `.period-time-field`'s basis grew with the button:
+   at 140px the box and a 42px button shared 140px and the text was clipped at
+   `08:1`. Measured at a 1278px viewport. */
+.period-time-control { display: flex; gap: 6px; align-items: stretch; }
+.period-time-control .period-input { flex: 1 1 auto; min-inline-size: 0; }
+
+.period-clock-dialog { inline-size: min(340px, 100%); text-align: center; }
+/* The readout: two buttons and a colon, the same decomposition the calendar's
+   caption went through. `font-variant-numeric: tabular-nums` so the hand moving
+   from 09 to 10 does not shift the colon sideways. */
+.period-clock-readout { display: flex; gap: 2px; align-items: baseline; justify-content: center; margin-block-end: 10px; font-family: var(--font-heading); font-size: 2rem; font-variant-numeric: tabular-nums; }
+.period-clock-stage { padding: 2px 10px; font: inherit; color: var(--kai-kale); cursor: pointer; background: none; border: 1px solid transparent; border-radius: 8px; }
+.period-clock-stage:hover { border-color: rgba(0, 50, 35, 0.25); background: var(--mint); }
+.period-clock-stage[aria-pressed="true"] { color: var(--kai-white); background: var(--kai-kale); }
+.period-clock-stage:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.period-clock-colon { font-family: var(--font-heading); }
+
+/* **`touch-action: none` is not decoration.** Without it a finger dragging the
+   hand is claimed by the page's own scrolling before the second `pointermove`
+   arrives, and the dial is unusable by touch - which is the half of the control
+   the owner asked for. `margin-inline` (not `margin-left`) centres it.
+
+   **There is deliberately no `aspect-ratio: 1` here, and that is a measurement
+   rather than an omission.** It was written, and deleting it survived the phone
+   test: an `<svg viewBox="0 0 200 200">` with `inline-size: 100%` and an auto
+   block size already has an intrinsic 1:1 ratio, so the declaration decided
+   nothing. Measured in Chromium at 1278px and at 390px - 260x260 with it and
+   260x260 without, identically - and the same measurement with the viewBox
+   changed to `0 0 200 260` gave 260x338, which is what actually decides the
+   shape. `test_the_whole_clock_fits_inside_the_dialog_on_a_phone` asserts the
+   face is square to the pixel, and that assertion guards the viewBox, which is
+   the thing that answers. */
+.period-clock-face { display: block; inline-size: 100%; max-inline-size: 260px; margin-inline: auto; touch-action: none; }
+.period-clock-dial { fill: var(--mint); }
+.period-clock-stem,
+.period-clock-knob,
+.period-clock-hub { fill: var(--kai-kale); stroke: var(--kai-kale); stroke-width: 2; }
+.period-clock-tick { fill: var(--kai-white); stroke: none; }
+.period-clock-label { font-family: var(--font-body); font-size: 15px; fill: var(--kai-kale); }
+.period-clock-label.is-current { font-weight: 700; fill: var(--kai-white); }
+
+/* `transform-box: view-box` makes `transform-origin: 50% 50%` mean the centre of
+   the `viewBox` rather than the centre of the group's own bounding box, which
+   for a hand pointing at twelve is nowhere near it.
+
+   The transition is the only motion in this control, so it is also the only
+   thing `prefers-reduced-motion` has to switch off. It is dropped during a drag
+   as well: a hand that eased towards the pointer would lag behind the finger
+   dragging it, which reads as the control being broken rather than as
+   animation. */
+.period-clock-hand { transform-box: view-box; transform-origin: 50% 50%; transition: transform 180ms ease; }
+.period-clock-face.is-dragging .period-clock-hand { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .period-clock-hand { transition: none; }
+}
+
+/* The keyboard mode: two number boxes and the colon between them. This is not a
+   fallback - see `period.js`'s header - so it is laid out as a control in its
+   own right rather than squeezed under the dial. */
+.period-clock-entry { display: flex; gap: var(--space-sm); align-items: flex-end; justify-content: center; margin-block-end: 12px; }
+.period-clock-entry .period-clock-colon { padding-block-end: 8px; font-size: 1.6rem; }
+.period-clock-box { flex: 0 1 110px; margin: 0; text-align: start; }
+.period-clock-box input { inline-size: 100%; min-inline-size: 0; }
+
+/* `flex-wrap` and `min-inline-size: 0` because the mode toggle is a whole
+   sentence in most catalogues - "Enter the time on a keyboard" is 27 characters
+   in English and longer in German - and a row that could not wrap would push the
+   dialog wider than the phone it is on. Measured at 390px. */
+.period-clock-actions { display: flex; flex-wrap: wrap; gap: var(--space-sm); align-items: center; justify-content: space-between; margin-block-start: 12px; }
+.period-clock-confirm { display: flex; flex: 0 1 auto; gap: 8px; align-items: center; }
+.period-clock-mode,
+.period-clock-cancel,
+.period-clock-set { padding: 8px 14px; font: inherit; font-size: 0.9rem; cursor: pointer; border-radius: 8px; }
+.period-clock-mode,
+.period-clock-cancel { min-inline-size: 0; color: var(--kai-kale); background: none; border: 1px solid rgba(0, 50, 35, 0.25); }
+.period-clock-mode:hover,
+.period-clock-cancel:hover { background: var(--mint); }
+.period-clock-mode { flex: 1 1 auto; text-align: start; }
+.period-clock-set { font-weight: 700; color: var(--kai-white); background: var(--kai-kale); border: 1px solid var(--kai-kale); }
+.period-clock-set:hover { box-shadow: 0 4px 14px rgba(0, 50, 35, 0.24); }
+
+@media (max-width: 480px) {
+  .period-bound-row .period-time-field { flex: 1 1 100%; }
 }

@@ -1,0 +1,149 @@
+{# A COPY of sqladmin 0.31.0's own templates/sqladmin/_macros.html, with five
+   strings wrapped in `_()` and nothing else changed.
+
+   THE VERSION IN THE FIRST LINE IS THE POINT. This copy is only correct
+   against the sqladmin it was taken from, and "the sqladmin it was taken
+   from" means the version pinned in docker/constraints.txt - the one the
+   images build and the one CI installs. Not whatever a developer's machine
+   happens to have.
+
+   WHY THIS FILE IS COPIED RATHER THAN EXTENDED. Jinja can override a block;
+   it cannot override a macro. Every translatable string below sits inside a
+   macro, so `{% extends "sqladmin_original/_macros.html" %}` reaches none of
+   them. Shadowing the file is the only seam there is - sqladmin's loader
+   looks in this panel's templates_dir before its own package
+   (`Admin.init_templating_engine`), the same mechanism that already replaces
+   sqladmin/index.html and sqladmin/login.html.
+
+   WHAT IT BUYS. Three things that have no other render-time hook:
+     * `field.description` - all 82 field help texts, on every create and
+       edit form in the panel;
+     * `menu.display_name` - the left-hand navigation, whose labels are baked
+       into sqladmin's Menu at start-up and so cannot be translated per
+       request anywhere else;
+     * the required-field tooltip.
+
+   WHAT SHADOWING COSTS, which the 0.30.0 -> 0.31.0 move made concrete. A
+   copy does not merely go stale, it SUPPRESSES the original. 0.31.0 added
+   `data-sqladmin-menu-category` here and JS in sqladmin/statics/js/main.js
+   that remembers which navigation categories a staff member left open;
+   0.31.0 also dropped the `show` class that had pinned every category open
+   unconditionally. While this file still carried 0.30.0's markup, the panel
+   shipped on 0.31.0 rendered 0.30.0's always-open menu and that new JS
+   matched no element and did nothing - no error, nothing in a log. Anything
+   sqladmin adds to these macros has to be pulled through here by hand.
+
+   THE DRIFT RISK, AND WHAT HOLDS IT.
+   tests/admin/test_i18n.py::test_the_vendored_macros_copy_still_matches_its_original
+   compares this file against the installed one with the `_()` calls stripped
+   back out, so an upgrade that edits the original fails the suite instead of
+   quietly reverting a translation. That test is only meaningful when the
+   installed sqladmin IS the pinned one, so
+   test_the_installed_sqladmin_is_the_version_pinned_for_the_images asserts
+   that separately - the two failures have different causes and different
+   fixes, and reporting a version skew as "the copy has drifted" sends the
+   reader to edit the wrong file.
+
+   Diff against the original, in full:
+     line  9  {{ menu.display_name }}      -> {{ _(menu.display_name) }}
+     line 21  {{ sub_menu.display_name }}  -> {{ _(sub_menu.display_name) }}
+     line 39  {{ menu.display_name }}      -> {{ _(menu.display_name) }}
+     line 61  "This is a required field"   -> _("This is a required field")
+     line 78  {{ field.description }}      -> {{ _(field.description) }}
+#}
+{% macro menu_category(menu, request) %}
+{% if menu.is_visible(request) and menu.is_accessible(request) %}
+<li class="nav-item dropdown" data-sqladmin-menu-category="{{ menu.name }}">
+  <a class="nav-link dropdown-toggle {% if menu.is_active(request) %}active{% endif %}" data-bs-toggle="dropdown"
+    data-bs-auto-close="false" href="#" role="button" aria-expanded="false">
+    <span class="nav-link-icon d-md-none d-lg-inline-block">
+      {% if menu.icon %}<i class="{{ menu.icon }}"></i>{% endif %}
+    </span>
+    <span class="nav-link-title">{{ _(menu.display_name) }}</span>
+  </a>
+  <div class="dropdown-menu">
+    <div class="dropdown-menu-columns">
+      <div class="dropdown-menu-column">
+        {% for sub_menu in menu.children %}
+        {% if sub_menu.is_visible(request) and sub_menu.is_accessible(request) %}
+        <a class="nav-link ps-lg-3 {% if sub_menu.is_active(request) %}active{% endif %}"
+          href="{{ sub_menu.url(request) }}">
+          <span class="nav-link-icon d-md-none d-lg-inline-block">
+            {% if sub_menu.icon %}<i class="{{ sub_menu.icon }}"></i>{% endif %}
+          </span>
+          <span class="nav-link-title">{{ _(sub_menu.display_name) }}</span>
+        </a>
+        {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</li>
+{% endif %}
+{% endmacro %}
+
+{% macro menu_item(menu, request) %}
+{% if menu.is_visible(request) and menu.is_accessible(request) %}
+<li class="nav-item">
+  <a class="nav-link {% if menu.is_active(request) %}active{% endif %}" href="{{ menu.url(request) }}">
+    <span class="nav-link-icon d-md-none d-lg-inline-block">
+      {% if menu.icon %}<i class="{{ menu.icon }}"></i>{% endif %}
+    </span>
+    <span class="nav-link-title">{{ _(menu.display_name) }}</span>
+  </a>
+</li>
+{% endif %}
+{% endmacro %}
+
+{% macro display_menu(menu, request) %}
+<div class="navbar-nav">
+  {% for item in menu.items %}
+  {% if item.type_ == "View" %}
+  {{ menu_item(item, request) }}
+  {% elif item.type_ == "Category" %}
+  {{ menu_category(item, request) }}
+  {% endif %}
+  {% endfor %}
+</div>
+{% endmacro %}
+
+{% macro render_field(field, kwargs={}, ajax_lookup_url="") %}
+<div class="mb-3 form-group row">
+  {{ field.label(
+    class_="form-label col-sm-2 col-form-label" + (' required-label' if field.flags.required else ''),
+    **({'title': _("This is a required field")} if field.flags.required else {})
+  ) }}
+  <div class="col-sm-10">
+    {% if ajax_lookup_url and field.loader is defined %}
+      {% set extra = {"data_url": ajax_lookup_url} %}
+    {% else %}
+      {% set extra = {} %}
+    {% endif %}
+    {% if field.errors %}
+    {{ field(class_="form-control is-invalid", **extra) }}
+    {% else %}
+    {{ field(**extra) }}
+    {% endif %}
+    {% for error in field.errors %}
+    <div class="invalid-feedback">{{ error }}</div>
+    {% endfor %}
+    {% if field.description %}
+    <small class="text-muted">{{ _(field.description) }}</small>
+    {% endif %}
+  </div>
+</div>
+{% endmacro %}
+
+{% macro render_form_fields(form, form_opts=None, ajax_lookup_url="") %}
+{% if form.hidden_tag is defined %}
+{{ form.hidden_tag() }}
+{% else %}
+{% for f in form if f.widget.input_type == 'hidden' %}
+{{ f }}
+{% endfor %}
+{% endif %}
+
+{% for f in form if f.widget.input_type != 'hidden' %}
+{{ render_field(f, kwargs, ajax_lookup_url=ajax_lookup_url) }}
+{% endfor %}
+{% endmacro %}

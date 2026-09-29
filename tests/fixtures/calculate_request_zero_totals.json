@@ -1,0 +1,38 @@
+{
+  "token": null,
+  "gwp_horizon": 100,
+  "time_frame": "one_year",
+  "entries": [
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "food_item": null,
+      "total_input_kg": "0.000",
+      "total_value_nzd": "0.00",
+      "wasted_value_nzd": "0.00",
+      "current": [
+        {
+          "destination": "landfill",
+          "qty_kg": "1200.000"
+        }
+      ],
+      "alternative": null
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "vegetables",
+      "food_item": null,
+      "total_input_kg": "0.000",
+      "total_value_nzd": "0.00",
+      "wasted_value_nzd": "0.00",
+      "current": [
+        {
+          "destination": "not_harvested",
+          "qty_kg": "800.000"
+        }
+      ],
+      "alternative": null
+    }
+  ],
+  "dry_run": null
+}

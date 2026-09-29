@@ -13,7 +13,8 @@ from admin.modelviews import AuditedModelView
 from admin.models import AuditLog
 from admin.taxonomy_models import Destination, DestinationGroup, FoodCategory
 from admin.taxonomy_rules import (
-    TaxonomyInvariantError, check_prevention_intact, check_single_standard_mix,
+    TaxonomyInvariantError, check_prevention_destination,
+    check_single_standard_mix,
 )
 
 pytestmark = pytest.mark.db
@@ -84,67 +85,112 @@ def test_an_inactive_standard_mix_does_not_count(session):
         check_single_standard_mix(session)
 
 
-def _prevention(session, *, code="prevention", active=True):
+def _prevention(session, *, code="prevention", active=True, is_prevention=True):
     group = DestinationGroup(code="reuse", name="Reuse", is_waste=False)
     session.add(group)
     session.flush()
     session.add(Destination(group_id=group.id, code=code, name="Prevented",
-                            active=active))
+                            is_prevention=is_prevention, active=active))
     session.flush()
 
 
 def test_an_empty_destination_table_is_not_refused(session):
     """A database nobody has seeded yet must still accept its first rows."""
-    check_prevention_intact(session)  # does not raise
+    check_prevention_destination(session)  # does not raise
 
 
-def test_an_intact_prevention_is_accepted(session):
+def test_a_flagged_prevention_is_accepted(session):
     _prevention(session)
 
-    check_prevention_intact(session)  # does not raise
+    check_prevention_destination(session)  # does not raise
 
 
-def test_a_missing_prevention_is_refused(session):
-    """The engine looks this destination up by code to express "waste
-    avoided". Without it the alternative scenario cannot be built at all.
+def test_a_renamed_prevention_is_accepted(session):
+    """The point of the flag. Renaming the row was indistinguishable from
+    deleting it while the rule was stated in terms of the code `prevention`,
+    and the client has not settled what this destination will be called."""
+    _prevention(session, code="waste_avoided")
+
+    check_prevention_destination(session)  # does not raise
+
+
+def test_a_destination_named_prevention_but_unflagged_does_not_satisfy_the_rule(
+    session,
+):
+    """The mirror of the test above, and what proves the string is gone.
+
+    A row whose *code* is `prevention` and whose tick is off is an ordinary
+    destination. If this passes, the rule is still reading the name."""
+    _prevention(session, code="prevention", is_prevention=False)
+
+    with pytest.raises(TaxonomyInvariantError) as excinfo:
+        check_prevention_destination(session)
+
+    assert "prevention destination" in str(excinfo.value).lower()
+
+
+def test_no_flagged_destination_is_refused(session):
+    """Without one the alternative scenario cannot express wasting less at all.
 
     Seeds one unrelated destination first: an entirely empty destination
     table means the taxonomy has not been seeded yet (see
     test_an_empty_destination_table_is_not_refused above), which is a
-    different, tolerated case from a taxonomy that exists but is missing
-    `prevention` specifically."""
-    _prevention(session, code="not_prevention")
+    different, tolerated case from a taxonomy that exists and has no
+    prevention destination in it."""
+    _prevention(session, code="not_prevention", is_prevention=False)
 
     with pytest.raises(TaxonomyInvariantError) as excinfo:
-        check_prevention_intact(session)
+        check_prevention_destination(session)
 
     assert "prevention" in str(excinfo.value).lower()
 
 
-def test_a_renamed_prevention_is_refused(session):
-    """Renaming the code is indistinguishable from deleting it, from the
-    engine's point of view — and is what a staff member tidying up codes
-    would actually do."""
-    _prevention(session, code="avoided")
+def test_two_flagged_destinations_are_accepted(session):
+    """Where this departs from `check_single_standard_mix`, deliberately.
 
-    with pytest.raises(TaxonomyInvariantError):
-        check_prevention_intact(session)
+    Two vocabularies share these global tables (§10.3) and each brings its own
+    prevention row, so "exactly one" would refuse the state the deployment is
+    already in. Nothing has to choose between them either — unlike the standard
+    mix, which §6.2 must resolve a null `food_category` to."""
+    _prevention(session)
+    group = session.scalar(
+        select(DestinationGroup).where(DestinationGroup.code == "reuse")
+    )
+    session.add(Destination(group_id=group.id, code="refed_prevention",
+                            name="Prevention (ReFED)", is_prevention=True))
+    session.flush()
+
+    check_prevention_destination(session)  # does not raise
 
 
 def test_a_deactivated_prevention_is_refused(session):
     _prevention(session, active=False)
 
     with pytest.raises(TaxonomyInvariantError):
-        check_prevention_intact(session)
+        check_prevention_destination(session)
+
+
+def test_one_active_flagged_row_is_enough(session):
+    """Counted over the active rows, so deactivating one of two is fine."""
+    _prevention(session)
+    group = session.scalar(
+        select(DestinationGroup).where(DestinationGroup.code == "reuse")
+    )
+    session.add(Destination(group_id=group.id, code="refed_prevention",
+                            name="Prevention (ReFED)", is_prevention=True,
+                            active=False))
+    session.flush()
+
+    check_prevention_destination(session)  # does not raise
 
 
 def test_a_deactivated_group_containing_prevention_is_refused(session):
-    """`prevention` itself can stay active while the group it belongs to is
+    """The row itself can stay active while the group it belongs to is
     switched off — and every active-destination listing is built by joining
-    through the group, so `prevention` drops out of it exactly as if it had
+    through the group, so it drops out of that listing exactly as if it had
     been deactivated directly. A staff member tidying up the destination
     group list (not the destination list) is the likelier way to reach this:
-    they operate on groups, never on `prevention` by name."""
+    they operate on groups, never on this row by name."""
     _prevention(session)
     group = session.scalar(
         select(DestinationGroup).where(DestinationGroup.code == "reuse")
@@ -152,12 +198,14 @@ def test_a_deactivated_group_containing_prevention_is_refused(session):
     group.active = False
     session.flush()
 
-    with pytest.raises(TaxonomyInvariantError):
-        check_prevention_intact(session)
+    with pytest.raises(TaxonomyInvariantError) as excinfo:
+        check_prevention_destination(session)
+
+    assert "group" in str(excinfo.value).lower()
 
 
 def test_moving_prevention_into_an_inactive_group_is_refused(session):
-    """Deactivating prevention's group is refused; moving prevention into an
+    """Deactivating the group is refused; moving the row into an
     already-inactive group reaches the same broken state by another route."""
     _prevention(session)
     dormant = DestinationGroup(code="dormant", name="Dormant",
@@ -165,13 +213,13 @@ def test_moving_prevention_into_an_inactive_group_is_refused(session):
     session.add(dormant)
     session.flush()
     prevention = session.scalar(
-        select(Destination).where(Destination.code == "prevention")
+        select(Destination).where(Destination.is_prevention.is_(True))
     )
     prevention.group_id = dormant.id
     session.flush()
 
     with pytest.raises(TaxonomyInvariantError):
-        check_prevention_intact(session)
+        check_prevention_destination(session)
 
 
 def test_a_view_can_refuse_a_commit_from_the_hook(session):

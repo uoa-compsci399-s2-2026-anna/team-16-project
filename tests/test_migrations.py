@@ -128,30 +128,47 @@ def test_the_migration_chain_matches_the_models(migrated_engine):
 
 @pytest.mark.db
 @pytest.mark.parametrize(
-    "table, index, consequence",
+    "table, index, coalesced, consequence",
     [
         (
             "factor_downstream", "uq_factor_downstream_generic",
+            #: v1.31: **two** nullable columns, so two COALESCE key parts.
+            #: Collapsing only one of them leaves the other's duplicates legal
+            #: and the index looks right in every summary of it.
+            ("sector_id", "food_category_id"),
             "a second generic downstream row inserts happily and the engine's "
             "factor lookup becomes nondeterministic",
         ),
         (
             "submission_entry", "uq_submission_entry_generic",
+            #: v1.54: a second nullable column, `food_item_id`, for exactly the
+            #: reason `factor_downstream` grew one in v1.31 — and the same
+            #: two-COALESCE rule applies. Collapsing only `food_item_id` would
+            #: let two "no category breakdown" entries back in; collapsing only
+            #: `food_category_id` would let one visitor's Cheese be stored
+            #: twice. Both, or the index has stopped doing half its job.
+            ("food_category_id", "food_item_id"),
             "one user's single 'no category breakdown' answer can be stored "
             "twice for the same sector, and §5.4's by_sector aggregation "
             "counts it twice in the public statistics",
         ),
         (
             "factor_upstream", "uq_factor_upstream_generic",
+            #: v1.54: `food_item_id` joins `destination_id` here on the same
+            #: terms. An item row and the category row it refines must coexist
+            #: (that is the whole of the four-candidate lookup), so the item
+            #: column has to be a key part — and being nullable, it has to be
+            #: a COALESCE one.
+            ("destination_id", "food_item_id"),
             "a second generic upstream row inserts happily and the upstream "
             "fallback introduced for O-7 becomes nondeterministic — the same "
             "input returning a different net benefit run to run",
         ),
     ],
-    ids=lambda value: value if value.startswith("uq_") else None,
+    ids=lambda value: value if isinstance(value, str) and value.startswith("uq_") else None,
 )
 def test_the_chain_creates_the_functional_indexes_compare_metadata_cannot_see(
-    migrated_engine, table, index, consequence,
+    migrated_engine, table, index, coalesced, consequence,
 ):
     """The thing `_include_object` above deliberately stops checking.
 
@@ -189,10 +206,78 @@ def test_the_chain_creates_the_functional_indexes_compare_metadata_cannot_see(
     )
     assert all(row.NON_UNIQUE == 0 for row in rows), "the index is not unique"
 
-    expressions = [row.EXPRESSION for row in rows if row.EXPRESSION]
-    assert any("coalesce" in expr.lower() for expr in expressions), (
-        "the index exists but has no COALESCE key part, so NULLs still compare "
-        f"distinct and it does not do its job. Key parts: {rows}"
+    expressions = [row.EXPRESSION.lower() for row in rows if row.EXPRESSION]
+    #: **Every** nullable column of this index must be collapsed, and each is
+    #: named rather than counted. `any("coalesce" in ...)` was what this
+    #: asserted until v1.31 gave `factor_downstream` a second nullable column,
+    #: and it would have passed on an index that collapsed the new column and
+    #: dropped the old one — an index that exists, is unique, contains a
+    #: COALESCE, and silently stops enforcing half of what it was written for.
+    for column in coalesced:
+        assert any(
+            "coalesce" in expr and column in expr for expr in expressions
+        ), (
+            f"{index} has no COALESCE({column}, ...) key part, so NULLs in "
+            f"{column} still compare distinct and it does not do its job. "
+            f"Key parts: {rows}. Without it {consequence}."
+        )
+
+
+@pytest.mark.db
+def test_the_head_revision_round_trips(database_url_root):
+    """`upgrade head` → `downgrade -1` → `upgrade head` lands on the same
+    schema the models declare.
+
+    **A downgrade nobody ran is a downgrade that does not work.** Every test
+    above builds the chain forwards only, so a `downgrade()` that drops the
+    wrong index, sequences two MySQL operations in an order errno 1553 refuses,
+    or simply forgets a column is invisible to all of them — and it is the half
+    of a revision that runs on the day a deployment has gone wrong and nobody
+    wants surprises.
+
+    Two of this revision's operations are the kind that only fail on the way
+    back: `uq_submission_entry` and `uq_factor_upstream` both lead with the
+    column MySQL is using to back a foreign key, so whichever of the two
+    same-prefixed indexes is dropped first, the other must already exist.
+    0009's upgrade documents that trap and sequences its downgrade as the
+    mirror image; nothing until now proved either half.
+
+    Its own scratch database rather than the `migrated_engine` fixture, so a
+    chain left half-downgraded by a failure here cannot reach another test.
+    """
+    root = create_engine(database_url_root, future=True)
+    with root.connect() as conn:
+        conn.execute(text("DROP DATABASE IF EXISTS kaicalc_roundtriptest"))
+        conn.execute(text("CREATE DATABASE kaicalc_roundtriptest"))
+        conn.commit()
+
+    url = database_url_root.rsplit("/", 1)[0] + "/kaicalc_roundtriptest"
+    cfg = Config("alembic.ini")
+    cfg.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
+
+    engine = create_engine(url, future=True)
+    try:
+        command.upgrade(cfg, "head")
+        command.downgrade(cfg, "-1")
+        command.upgrade(cfg, "head")
+
+        with engine.connect() as conn:
+            ctx = MigrationContext.configure(
+                conn, opts={"include_object": _include_object}
+            )
+            difference = compare_metadata(ctx, Base.metadata)
+    finally:
+        engine.dispose()
+        with root.connect() as conn:
+            conn.execute(text("DROP DATABASE IF EXISTS kaicalc_roundtriptest"))
+            conn.commit()
+        root.dispose()
+
+    assert difference == [], (
+        "the head revision does not round-trip: after upgrade → downgrade → "
+        "upgrade the schema no longer matches the models. Each entry below is "
+        "something the downgrade removed and the upgrade did not put back, or "
+        "the reverse:\n" + "\n".join(repr(d) for d in difference)
     )
 
 
@@ -281,6 +366,125 @@ def test_the_chain_creates_the_check_constraints_compare_metadata_cannot_see(
         f"is summed into. Found: {sorted(clauses)}"
     )
     assert "qty_kg" in clauses["ck_submission_line_qty"]
+
+    #: 0017's one CHECK (contract §2.3, v1.54). Same blind spot again:
+    #: tests/db/test_food_item_schema.py proves it behaviourally off the
+    #: create_all() schema and would stay green if the op.execute here were
+    #: dropped. `food_category_id IS NULL AND food_item_id IS NOT NULL` is the
+    #: state that would file the calculator's most specific answer into §5.4's
+    #: "not broken down by type" bucket.
+    assert "ck_submission_entry_item_has_category" in clauses, (
+        "alembic upgrade head did not create "
+        "ck_submission_entry_item_has_category. Without it an entry may name a "
+        "food item and no food category, which §5.4 forbids outright. "
+        f"Found: {sorted(clauses)}"
+    )
+    assert "food_item_id" in clauses["ck_submission_entry_item_has_category"]
+    assert "food_category_id" in clauses["ck_submission_entry_item_has_category"]
+
+    #: 0018's one CHECK (contract §2.3, v1.67), and the blind spot again:
+    #: tests/db/test_submissions.py proves all six refusals behaviourally off
+    #: the create_all() schema and would stay green if the op.execute here
+    #: were dropped. This constraint is the half of v1.67's contradiction rule
+    #: that holds against a writer which is not the API -- the panel, a CLI, a
+    #: correction made by hand -- so losing it in a deployment loses exactly
+    #: the guarantee it was added for, and losing it silently.
+    assert "ck_submission_period" in clauses, (
+        "alembic upgrade head did not create ck_submission_period. Without it "
+        "a row may carry half an interval, an interval that runs backwards, "
+        "time_frame='custom' with no dates, or dates with no time_frame at "
+        f"all. Found: {sorted(clauses)}"
+    )
+    for column in ("period_start", "period_end", "time_frame"):
+        assert column in clauses["ck_submission_period"], (
+            f"ck_submission_period no longer mentions {column}; the "
+            "contradiction rule spans all three columns and a clause that "
+            "dropped one of them would still be a constraint that exists, is "
+            "named right and enforces less than it says. "
+            f"Clause: {clauses['ck_submission_period']}"
+        )
+
+    #: 0019's two CHECKs (contract §2.2, v1.71), and the blind spot a third
+    #: time: tests/db/test_equivalence_bands.py proves both refusals
+    #: behaviourally off the create_all() schema and would stay green if
+    #: either op.execute in 0019 were dropped.
+    assert "ck_equivalence_band_needs_family" in clauses, (
+        "alembic upgrade head did not create ck_equivalence_band_needs_family. "
+        "Without it a staff member can set a band on a row with no family, "
+        "where selection never looks at it -- a minimum that is stored, "
+        f"audited and can never fire. Found: {sorted(clauses)}"
+    )
+    for column in ("family", "min_value", "max_value"):
+        assert column in clauses["ck_equivalence_band_needs_family"], (
+            f"ck_equivalence_band_needs_family no longer mentions {column}; "
+            "the rule spans all three and a clause that dropped one would "
+            "still be a constraint that exists, is named right and enforces "
+            f"less than it says. Clause: "
+            f"{clauses['ck_equivalence_band_needs_family']}"
+        )
+    assert "ck_equivalence_band_ordered" in clauses, (
+        "alembic upgrade head did not create ck_equivalence_band_ordered. "
+        "Without it a band may be inverted or empty, which makes a rung that "
+        f"can never be chosen look exactly like one nobody added. Found: "
+        f"{sorted(clauses)}"
+    )
+    for column in ("min_value", "max_value"):
+        assert column in clauses["ck_equivalence_band_ordered"], (
+            f"ck_equivalence_band_ordered no longer mentions {column}. "
+            f"Clause: {clauses['ck_equivalence_band_ordered']}"
+        )
+
+
+@pytest.mark.db
+def test_the_chain_gives_the_submission_its_period_columns(migrated_engine):
+    """Contract §2.3, v1.67. `0018`'s two columns, read back out of MySQL.
+
+    `compare_metadata` would catch a missing column, so this is not closing a
+    blind spot -- it is pinning the two things about these columns that a
+    diff would happily agree with and that the design depends on:
+
+    * **`DATETIME`, never a `FLOAT` or a `DOUBLE`.** §1.2 prohibits both
+      outright. The temptation is not the instants themselves but the
+      *duration* between them, which is the natural shape for a float and
+      which this schema deliberately does not store -- nothing derives a
+      length from the period, because §2.3 forbids computing with it at all.
+    * **Nullable.** Absence is how "no period was given" is represented, for
+      every row written before this revision and for every visitor who leaves
+      step 5 at "Not stated". A NOT NULL column here would have needed a
+      backfill, and there is no instant that could be back-filled honestly.
+    """
+    with migrated_engine.connect() as conn:
+        columns = {
+            row[0]: (row[1], row[2], row[3])
+            for row in conn.execute(text("""
+                SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, DATETIME_PRECISION
+                FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'submission'
+            """)).all()
+        }
+
+    for column in ("period_start", "period_end"):
+        assert column in columns, (
+            f"alembic upgrade head did not add submission.{column}. "
+            f"Columns found: {sorted(columns)}"
+        )
+        data_type, nullable, precision = columns[column]
+        assert data_type == "datetime", (
+            f"submission.{column} is {data_type}, not datetime. §1.2 "
+            "prohibits FLOAT and DOUBLE, and a period is two instants rather "
+            "than a duration for that reason among others"
+        )
+        assert nullable == "YES", (
+            f"submission.{column} is NOT NULL. Absence is how 'no period was "
+            "given' is stored (§2.3); a NOT NULL column would demand a "
+            "backfill nobody can supply honestly"
+        )
+        assert precision == 0, (
+            f"submission.{column} carries {precision} digits of "
+            "fractional-seconds precision. The wire drops microseconds "
+            "before the value is written (api.schemas.PricingOptions) "
+            "precisely because the column does not keep them"
+        )
 
 
 @pytest.mark.db

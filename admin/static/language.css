@@ -1,0 +1,407 @@
+/* THE PANEL'S LANGUAGE CHOOSER. Contract §7.7.4, open item O-8.
+   Partial: admin/templates/brand/_language_chooser.html.
+
+   ---------------------------------------------------------------------------
+   WHY THIS IS A FILE OF ITS OWN, AND NOT MORE OF brand.css.
+
+   The panel has two skins and only one of them loads brand.css:
+
+     * the five GATE pages (login, verify, enrol, change_password, low_codes)
+       render through brand/base.html, which carries the `<link>` to brand.css;
+     * the PANEL PROPER is sqladmin's Tabler layout, whose `<head>` lives in
+       sqladmin/base.html - a file this project deliberately does not fork.
+
+   The chooser is on both. Its rules used to sit in brand.css, so on every
+   screen a signed-in person actually uses it rendered as raw platform
+   controls: `Language [English v] [Set language]` jammed against the top-left
+   edge, which is what it looked like when this was reported.
+
+   Two mechanisms were available and this is the second:
+
+     * brand/_list_table_css.html inlines a `<style>` into the Tabler page.
+       That is the right shape for rules that reach ONLY the seventeen list
+       screens, which is what it is for - but the chooser is on every screen,
+       and an inlined block is re-sent with every one of them and cannot be
+       cached.
+     * `{% block head %}` is declared in sqladmin/base.html and overridden by
+       nobody in the chain, so our own sqladmin/layout.html shadow can claim
+       it. That is a `<link>`, cached once, on every panel screen. brand/base
+       .html links the same file, so the gate pages and the panel proper are
+       styled from one source and cannot drift.
+
+   Loading brand.css itself into Tabler was the third option and is refused:
+   it styles `body`, `h1`, `input`, `button` and `table` globally and would
+   restyle a panel that is not ours to restyle.
+
+   ---------------------------------------------------------------------------
+   NO `--kale` HERE. This file is loaded on pages that do not have brand.css's
+   `:root` tokens, so it declares its own on the component. The values are the
+   brand's, and they are written out for the same reason
+   brand/_list_table_css.html writes `rgba(0, 50, 35, 0.22)` out.
+
+   ---------------------------------------------------------------------------
+   TWO GROUNDS, ONE COMPONENT. The panel proper is Tabler's light grey and the
+   five gate pages are a Kale field, and the capsule as first built assumed the
+   first: white surface, Kale shadow, Kale-filled button. On Kale a Kale shadow
+   is a shadow nobody can see, and a white capsule is a hole punched in the
+   field rather than an object floating on it.
+
+   **The component asks the page which ground it is on; the page declares
+   nothing.** Every colour here is a `--lang-*` token declared on
+   `.language-bar` itself - which keeps this file's independence from brand.css
+   intact - and one block below restates those tokens for the Kale ground,
+   selected as `body:has(> .gate) .language-bar`. That is the same derivation
+   brand.css uses for the ground itself: `.gate` is the element that PAINTS
+   Kale, so asking whether it is there is asking what the reader is looking at.
+
+   The alternatives were weighed and refused. A `--modifier` class on the form
+   would fork the partial - `brand/_language_chooser.html` is `{% include %}`d
+   identically by both skins and its opening tag is asserted verbatim by
+   tests/admin/test_i18n_pages.py. `color-scheme` and `prefers-color-scheme`
+   describe what the READER asked their operating system for, and this is not
+   that: the gate is Kale for a person whose machine is in light mode. A second
+   stylesheet is the drift this file exists to prevent.
+
+   Only colour changes across the two. Every measurement - 44px, 12px radius,
+   the margins, `width: 20ch`, the 720px label rule - is shared, so the two
+   skins cannot come to disagree about the SHAPE of the control.
+
+   ---------------------------------------------------------------------------
+   LOGICAL PROPERTIES THROUGHOUT. The panel ships English and Chinese today, but
+   the calculator ships Arabic and Urdu and its stylesheet has a test refusing a
+   physical direction property. Two surfaces disagreeing about which way "top
+   left" mirrors is the defect that rule exists to prevent, so the rule is the
+   same one here.
+   ------------------------------------------------------------------------- */
+
+/* THE CAPSULE. One raised surface holding the globe, the word, the control and
+   the button, rather than four loose elements sharing a strip.
+
+   It floats: `inline-flex` plus a margin, so the page's own ground shows around
+   it. The full-bleed white strip with a bottom rule that stood here read as
+   chrome the panel had grown, which is exactly what it was not - it is one
+   small control, and it should be the size of one. */
+.language-bar {
+  /* THE LIGHT SKIN, and the default for every ground that does not say
+     otherwise - Tabler's grey, and any brand page wearing `.page` rather than
+     `.gate`. The Kale ground restates all eight below. */
+  --lang-ink: #003223;              /* Kale */
+  --lang-surface: #FFFFFF;
+  --lang-sphere: #DFF8ED;           /* the Pea tint, for the globe's disc */
+  --lang-focus: #005AE6;            /* Blueberry, as brand.css rings an input */
+  /* **THE THREE STATES ARE NAMED AND `--lang-hairline` IS RESOLVED FROM THEM,
+     and that is a specificity fix rather than a tidy-up.** The Kale block below
+     is `body:has(> .gate) .language-bar` at 0-2-1; `.language-bar:focus-within`
+     is 0-2-0. So a ground that set `--lang-hairline` itself would BEAT the
+     focus rule, and the ring's inner line would stay at its resting
+     translucency on the one ground where the ring matters most. It did, and
+     `test_the_focus_ring_is_visible_against_the_ground_it_is_drawn_on` is what
+     found it - the hairline is drawn inside a `box-shadow` layer, so nothing
+     shorter than reading that layer's alpha back off the focused element could
+     have seen it. A ground names the three variants; only the state rules
+     assign the one the capsule paints with. */
+  --lang-hairline-rest: rgba(0, 50, 35, 0.18);
+  --lang-hairline-hover: rgba(0, 50, 35, 0.34);
+  --lang-hairline-focus: #003223;
+  --lang-hairline: var(--lang-hairline-rest);
+  --lang-button-ink: #FFFFFF;
+  --lang-button-ground: #003223;
+  --lang-button-hover: #01452F;
+  /* The whole stack is one token because the two skins light an object
+     differently, not merely in different colours - see the Kale block. The
+     hairline stays a token INSIDE it, so `:hover` and `:focus-within` restate
+     one value and the browser re-resolves the rest. */
+  --lang-elevation:
+    inset 0 0 0 1px var(--lang-hairline),
+    0 1px 1px rgba(0, 50, 35, 0.05),
+    0 6px 16px -8px rgba(0, 50, 35, 0.35);
+
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  /* **`align-self` AND `width` BOTH, and neither is redundant.** Tabler lays
+     `.page-wrapper` out as a flex COLUMN, and a flex item is blockified - so
+     `inline-flex` alone gave a capsule stretched across the entire content area,
+     a 1,250px pill holding 320px of control. `align-self` stops the stretch in
+     that context and does nothing in the gate pages' block flow; `width` is the
+     belt to its braces if the panel's own layout changes underneath us. */
+  align-self: flex-start;
+  width: fit-content;
+  /* **AND A CEILING, or the capsule hangs off a phone.** `fit-content` is the
+     sum of what is in it - a globe, a word, a 20ch control and a button - which
+     is 395px, and a 390px screen is 350px once this element's own 20px margins
+     are taken off. Measured overflowing by 45px on the gate page and 22px on a
+     Tabler page before this line existed, on the one screen a locked-out account
+     can still open. The 40px is those two margins; the select carries
+     `min-width: 0` so it is the part that gives way, which is right - it
+     truncates its closed value and the open list does not. */
+  max-width: calc(100% - 40px);
+  margin: 14px 20px;
+  min-height: 44px;
+  padding-block: 0;
+  padding-inline: 12px 0;
+  border: 0;
+  border-radius: 12px;
+  background: var(--lang-surface);
+  color: var(--lang-ink);
+  font-family: 'Kumbh Sans', Helvetica, Arial, sans-serif;
+  font-size: 0.85rem;
+  line-height: 1.2;
+  /* **THE HAIRLINE IS AN INSET SHADOW, NOT A `border`.** The `<select>` and the
+     button inside are 44px because that is the touch target; a 1px border would
+     make the capsule 46px around them. An inset shadow draws the same line and
+     occupies no layout, so the capsule is exactly as tall as the control it
+     holds. It is the same construction as the calculator's, for the same reason
+     - see web/css/styles.css, where the height is a measured budget.
+
+     Then two outer layers: a tight contact shadow that seats it and a wider soft
+     one that lifts it. Kale rather than black, so the shade belongs to the
+     palette. The hairline's colour is a custom property so hover and focus can
+     restate one value instead of all three layers. */
+  box-shadow: var(--lang-elevation);
+}
+
+.language-bar:hover { --lang-hairline: var(--lang-hairline-hover); }
+
+/* **The ring is drawn around the capsule, not around whichever part has focus**,
+   because the capsule is the object a reader sees. `:focus-within` rather than
+   `:has(:focus-visible)`: it has been in every browser since 2017, and a focus
+   indicator is the last rule that should depend on recent syntax. The select's
+   and the button's own outlines are suppressed below ONLY because this rule
+   replaces them - remove it and the control has no focus indicator at all. */
+/* **THE RING IS TWO LINES, NOT ONE, AND THAT IS WHAT MAKES IT GROUND-PROOF.**
+   The outer `outline` is the loud one and the inset hairline goes to full
+   contrast underneath it, so the indicator survives either half being lost:
+   on white it is Blueberry outside and Kale inside; on Kale it is Banana
+   outside and white inside. Both pairs are the brand's own dark/light pairing
+   for that ground, and neither is a colour a browser draws by itself.
+
+   Blueberry stays on the light ground because brand.css rings the login card's
+   own inputs with it - one page, one focus colour. It is dropped on Kale
+   because it cannot be seen there: #005AE6 on #003223 is 2.2:1, under the 3:1
+   a non-text indicator needs. Banana on Kale is 10.9:1. Choosing per ground is
+   the whole reason the tokens exist. */
+.language-bar:focus-within {
+  --lang-hairline: var(--lang-hairline-focus);
+  outline: 3px solid var(--lang-focus);
+  outline-offset: 2px;
+}
+
+/* THE GLOBE. Inline SVG in the partial, never an `<img>` and never an icon font:
+   there is no build step here and the public origin's policy forbids a
+   third-party asset, so the same drawing is used on both surfaces and both draw
+   it rather than fetch it. `aria-hidden` in the markup, because the `<label>`
+   beside it already names the control.
+
+   Colour is `currentColor` so the drawing needs no second copy for a dark
+   ground; the sphere's Pea tint is the one spot of brand colour on a Tabler
+   screen, which is where it earns its place - it says this control is the Kai
+   Commitment's and not one of sqladmin's. */
+.language-bar__globe {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+}
+.language-bar__globe-sphere { fill: var(--lang-sphere); }
+
+.language-bar__label {
+  color: var(--lang-ink);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* **The label is read by a screen reader in every case; it is only DRAWN where
+   there is room.** The same 720px rule the calculator uses, and it earns its
+   place here by measurement: the capsule is capped at the page width above, so
+   below that cap the `<select>` is what gives way - with the word still drawn it
+   was squeezed to 101px at 390px and 31px at 320px, which is not a control
+   anybody reads a language out of. With it gone the control measures 146px at
+   390px. The globe is what says what this is at those widths, which is half of
+   why it is there.
+
+   `.sr-only`'s own body rather than the class: that class is in brand.css, and
+   this file is loaded on pages that do not have it. */
+@media (max-width: 720px) {
+  .language-bar__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+
+/* THE SELECT HAS NO BOX OF ITS OWN. The capsule carries the border, the radius
+   and the shadow; drawing them again 2px inside would be a box in a box, which
+   is the obvious implementation and the one that looks like a mistake. The 44px
+   stays, because that is the touch target and it has to survive losing the
+   frame that used to give it away. */
+/* A PLAIN `width` AND NO PERCENTAGE ANYWHERE - which is deliberately not what the
+   calculator's copy of this rule says, so the difference is written down.
+
+   There it is `width: 22ch` PLUS `max-width: min(100%, 22ch)`, because its bar is
+   a flex ITEM of the header row: a percentage inside `min()` is indefinite while a
+   flex container is sized from its contents, so the clamp never reached the
+   select's max-content contribution and the capsule shrink-wrapped 83px wider than
+   the control. **This capsule does not have that problem** - it is
+   `width: fit-content` in a block flow, which resolves the clamp properly.
+   Measured both ways on both panel skins: the gap between the control and the
+   button is 8px with the explicit `width` and without it.
+
+   `min(100%, 20ch)` was here and is gone, because it is not inert - it is wrong.
+   The percentage resolved against a containing block still being sized and settled
+   the control at 146px against the 167px 20ch is; "Follow the system" measures
+   145px with its arrow, so the value fitted by one pixel and by accident. Narrow
+   viewports are handled by the capsule's ceiling above and `min-width` below
+   instead, which is the mechanism that can actually see the viewport. */
+.language-bar__select {
+  min-height: 44px;
+  width: 20ch;
+  /* A flex item's `min-width` is `auto`, which refuses to shrink below its own
+     min-content; without this the capsule's ceiling has nothing that can give
+     way and the overflow comes straight back. With it, `width` is the size the
+     control wants and the ceiling is what it settles for. */
+  min-width: 0;
+  padding-block: 0;
+  padding-inline: 0 6px;
+  color: var(--lang-ink);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+  outline: none;
+}
+
+/* THE BUTTON IS A SEGMENT OF THE CAPSULE, not a control sitting next to one.
+   It has to exist - this chooser is a real form post and works with scripting
+   off (contract §7.7.4), so there is no `onchange` to replace it - and joining
+   it to the field is what stops "a select and a button" reading as two things
+   the reader has to relate to each other.
+
+   The corner radii are logical, so the joined edge is the inline-END one in
+   both directions - the button is at the reading end of the capsule in Chinese
+   and would be at the left of it in a right-to-left catalogue, without a second
+   rule. `border-inline-start` is the divider; the capsule's inset hairline is
+   the outside, and the button paints over the stretch of it that it covers,
+   which is the right result: the button's own edge is the capsule's edge there. */
+.language-bar__submit {
+  align-self: stretch;
+  min-height: 44px;
+  padding-block: 0;
+  padding-inline: 14px;
+  color: var(--lang-button-ink);
+  background: var(--lang-button-ground);
+  border: 0;
+  border-inline-start: 1px solid var(--lang-hairline);
+  border-radius: 0;
+  border-start-end-radius: 12px;
+  border-end-end-radius: 12px;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  outline: none;
+}
+
+.language-bar__submit:hover { background: var(--lang-button-hover); }
+
+/* The stored choice names a language this panel has no catalogue for. Beetroot
+   on Lavender is the brand's light-ground pairing for a statement that is not an
+   alarm: nothing has gone wrong, and the visitor's choice is still intact.
+
+   It floats on the same margins as the capsule and directly under it, so the two
+   read as one control and its note. It is a SIBLING of the form rather than
+   inside it, because the form's opening tag is asserted verbatim by
+   tests/admin/test_i18n_pages.py and a wrapper there would be a markup change
+   with no design in it. */
+.language-bar__unavailable {
+  max-width: 46rem;
+  margin: -4px 20px 14px;
+  padding: 10px 14px;
+  color: #87005A;
+  background: #E6BEFF;
+  border-radius: 12px;
+  font-family: 'Kumbh Sans', Helvetica, Arial, sans-serif;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+/* ===========================================================================
+   THE KALE GROUND. The gate pages only - login, the code, the forced password
+   change, enrolment and the recovery codes - where brand.css runs the Kale
+   field to the top of the document and this control floats on it.
+
+   `body:has(> .gate)` is the derivation, not a class: `.gate` is the element
+   that paints Kale, so asking whether the page has one is asking what the
+   reader is actually looking at, and there is no second declaration to forget.
+   Specificity 0-2-1 against the component's own 0-1-0, so these win on the
+   same element - which is why the defaults could stay on `.language-bar` and
+   this file keep its independence from brand.css.
+
+   **NOTHING BUT COLOUR IS RESTATED.** Every measurement is shared, so the
+   panel proper and the gate cannot drift into two shapes.
+
+   THE DESIGN, in one sentence: on Kale the capsule is not a white chip laid on
+   the field, it is a piece of the same field lifted a few millimetres - lit
+   along its top edge, casting into the green beneath - with exactly one bright
+   element, the button, which is the only part of it anybody presses.
+
+   White would have been the easy answer and is refused: it is the sign-in
+   card's material, and a second white object at the top of the page reads as a
+   second card competing with the one the reader came for. The card stays the
+   only white thing in the composition.
+
+   ELEVATION IS INVERTED, not merely recoloured, which is why the whole stack
+   is one token. On a light ground an object is raised by the shade it casts;
+   on a dark one there is no shade to see - #003223 cannot be darkened
+   perceptibly at a 16px blur - so the raise is carried by a LIT top edge and a
+   hairline, and the cast shadow is a deep one that mostly seats the object.
+   Black at low alpha over Kale composites to a darker Kale, which is what a
+   shadow on this field physically is; it is not a second palette. */
+body:has(> .gate) .language-bar {
+  /* Kale at 12% white. A tint of the primary rather than a new colour: the
+     island has to be made of the field, or it is a sticker on it. 9.9:1 under
+     white text, 1.4:1 against the field - deliberately quiet, because the
+     hairline and the shadow are what say "raised" and a high-contrast slab
+     would say "alert". */
+  --lang-surface: #1F4B3D;
+  --lang-ink: #FFFFFF;
+  /* Pea, the same green as the half-circle on the card below it - the globe
+     is where the two objects on this page rhyme. */
+  --lang-sphere: #28C882;
+  --lang-focus: #FFD76E;            /* Banana: 10.9:1 on Kale */
+  /* The three variants, never `--lang-hairline` itself - see the note on the
+     component's own declarations. This block out-specifies `:hover` and
+     `:focus-within`, so assigning the painted value here would silently
+     disable both. */
+  --lang-hairline-rest: rgba(255, 255, 255, 0.28);
+  --lang-hairline-hover: rgba(255, 255, 255, 0.5);
+  --lang-hairline-focus: #FFFFFF;
+  --lang-button-ink: #003223;
+  --lang-button-ground: #FFFFFF;
+  --lang-button-hover: #DFF8ED;
+  --lang-elevation:
+    inset 0 0 0 1px var(--lang-hairline),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 2px 3px rgba(0, 0, 0, 0.24),
+    0 18px 30px -14px rgba(0, 0, 0, 0.6);
+}
+
+/* The note keeps its Lavender ground: it is a light ground carrying Kale-family
+   text, which is the brand's pairing and legible on either field. It is not
+   restated here because nothing about it stopped working when the ground did -
+   restating a colour that reads correctly would be two values to keep in step
+   for no gain. */
+

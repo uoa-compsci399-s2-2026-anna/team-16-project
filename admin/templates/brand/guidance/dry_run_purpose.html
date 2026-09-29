@@ -11,7 +11,13 @@
    mechanism is admin/calc_client.py, which sets that header on every
    request this view can make.
 
-   Pinned by tests/admin/test_guidance.py. #}
+   Pinned by tests/admin/test_guidance.py - and that test asserts the substring
+   is in the MARKUP, which is not the same as a staff member having read it.
+   The redesign put this whole block inside a closed `<details>`; the test
+   stayed green while the paragraph the page exists for went behind a click.
+   So the third paragraph is now `dry_run_warning` and is rendered outside any
+   disclosure. This file keeps the two that explain what the page does, which
+   are worth having and are fine to fold away. #}
 <section class="guidance">
   <h2>What this page is for</h2>
   <p>
@@ -25,14 +31,5 @@
     It is also the only way to watch a draft's numbers work. The public
     calculator only ever uses the published set, so until you publish, this page
     and Compare with published are the only places a draft can be seen running.
-  </p>
-  <p>
-    <strong>Do not test on the public calculator instead.</strong> Every
-    calculation a visitor runs is counted, and those counts are what the public
-    statistics page reports on the client's behalf. Twenty runs while you tune a
-    formula are twenty calculations that never happened, sitting inside a figure
-    that may be quoted in public — and nobody can take them out again afterwards,
-    because the calculator deliberately stores nothing that would say which were
-    yours.
   </p>
 </section>

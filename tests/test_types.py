@@ -17,6 +17,10 @@ from decimal import Decimal
 import pytest
 
 from engine.types import (
+    UpstreamBasis,
+    DATA_COMPLETE,
+    DATA_INCOMPLETE,
+    DATA_NOT_SUPPLIED,
     BreakdownRow,
     CalculationRequest,
     CalculationResult,
@@ -58,6 +62,8 @@ breakdown_row = BreakdownRow(
     upstream=Decimal("0.4500000000"),
     downstream=Decimal("0.1200000000"),
     value=Decimal("456.0000000000"),
+    #: v1.59. One entry's line, priced by one of §2.2's candidates.
+    upstream_basis=UpstreamBasis.CATEGORY_EVERY_DESTINATION,
 )
 metric_result = MetricResult(
     metric_code="co2e",
@@ -66,12 +72,25 @@ metric_result = MetricResult(
     total=Decimal("456.0000000000"),
     by_destination=(breakdown_row,),
 )
+#: v1.48, amending §3 rule 2: a totals-level row. Same destination and the
+#: same additive `qty_kg`/`value` as `breakdown_row` above, but the two rates
+#: are zero -- they are per-kilogram rates that can differ between the
+#: entries sharing a destination, not sums.
+rolled_up_breakdown_row = BreakdownRow(
+    destination_code="not_harvested",
+    qty_kg=Decimal("800.000"),
+    upstream=Decimal("0.0000000000"),
+    downstream=Decimal("0.0000000000"),
+    value=Decimal("456.0000000000"),
+    #: v1.59, `None` for the same reason the rates above are zero.
+    upstream_basis=None,
+)
 rolled_up_metric = MetricResult(
     metric_code="co2e",
     unit="kg CO2e",
     display_precision=1,
     total=Decimal("456.0000000000"),
-    by_destination=(),
+    by_destination=(rolled_up_breakdown_row,),
 )
 equivalence_result = EquivalenceResult(
     code="km_driven",
@@ -106,6 +125,10 @@ totals = CalculationTotals(
     ),
     alternative=alternative_result,
     net_benefit={"co2e": Decimal("456.0000000000")},
+    # §4.5, v1.48. The canonical fixture this file's figures are drawn from
+    # supplies no money figure on its one entry, so the block itself is
+    # absent -- not a computed zero.
+    money=None,
 )
 calculation_result = CalculationResult(
     factor_set_version="MOCK-v0",
@@ -195,6 +218,7 @@ def test_a_breakdown_row_accepts_a_negative_downstream():
         Decimal("1.9000000000"),
         Decimal("-0.1500000000"),
         Decimal("525.0000000000"),
+        UpstreamBasis.CATEGORY_EVERY_DESTINATION,
     )
     assert row.downstream < 0
 
@@ -208,12 +232,19 @@ def test_metric_result():
 
 
 def test_one_metric_result_type_serves_both_levels():
-    """§3 rule 2: `by_destination` is populated per entry and **empty** at the
-    totals level, because the same destination can appear under several
-    entries drawing different upstream factors. One type either way; the
-    serialiser omits the key when the tuple is empty."""
-    assert rolled_up_metric.by_destination == ()
-    assert totals.current.metrics["co2e"].by_destination == ()
+    """§3 rule 2, as v1.48 amends it: `by_destination` is populated at
+    both the entry and the totals level, in the same `MetricResult` type
+    either way. The two differ in what the rows may claim: an entry's own
+    rows carry real `upstream`/`downstream`, since they come from one
+    scenario's own lines; a totals-level row carries only the additive
+    `qty_kg` and `value`, with the two rates at zero, because the same
+    destination can appear under several entries drawing different upstream
+    factors and cannot state a single one. The serialiser still omits the
+    key when the tuple is empty, which is the "one type either way" this
+    test is named for."""
+    assert rolled_up_metric.by_destination == (rolled_up_breakdown_row,)
+    assert totals.current.metrics["co2e"].by_destination == (rolled_up_breakdown_row,)
+    assert all(row.upstream == 0 and row.downstream == 0 for row in rolled_up_metric.by_destination)
     assert entry_result.current.metrics["co2e"].by_destination != ()
 
 
@@ -266,9 +297,50 @@ def test_calculation_totals():
     assert totals.net_benefit == {"co2e": Decimal("456.0000000000")}
 
 
+def test_the_totals_always_carry_a_data_state_even_when_nothing_was_supplied():
+    """§4.6. `data_state` is not optional and is never `None`: a caller
+    that has to check whether the state object exists before reading it is a
+    caller that will forget, and the figure it guards is `None` in two
+    different situations that mean different things.
+
+    The default is `not_supplied` on every figure, which is what a submission
+    that answered none of the three optional inputs produces.
+    """
+    bare = CalculationTotals(
+        current=current_result, alternative=None, net_benefit=None, money=None
+    )
+    assert bare.production_share_percent is None
+    assert bare.data_state.production_share_percent == "not_supplied"
+    assert bare.data_state.total_value_nzd == "not_supplied"
+    assert bare.data_state.wasted_value_nzd == "not_supplied"
+    assert bare.data_state.wasted_share_percent == "not_supplied"
+    assert bare.data_state.saving_nzd == "not_supplied"
+
+
+def test_the_three_states_are_three_distinct_values():
+    """The distinction is the whole point: two of them both withhold the
+    figure, and a card that could not tell them apart is the defect §4.6
+    exists to fix."""
+    assert len({DATA_COMPLETE, DATA_INCOMPLETE, DATA_NOT_SUPPLIED}) == 3
+
+
+def test_an_entry_carries_its_own_share_and_defaults_to_absent():
+    """§4.6. Per entry, and `None` rather than zero when the entry supplied
+    no production total -- zero would read as "this site wastes none of what
+    it handles", which is a claim about the site."""
+    assert entry_result.production_share_percent is None
+    priced = EntryResult(
+        "retail", None, current_result, None, None,
+        production_share_percent=Decimal("25.00"),
+    )
+    assert priced.production_share_percent == Decimal("25.00")
+
+
 def test_totals_are_null_when_no_entry_carries_an_alternative():
     """§3 rule 4."""
-    bare = CalculationTotals(current=current_result, alternative=None, net_benefit=None)
+    bare = CalculationTotals(
+        current=current_result, alternative=None, net_benefit=None, money=None
+    )
     assert bare.alternative is None
     assert bare.net_benefit is None
 

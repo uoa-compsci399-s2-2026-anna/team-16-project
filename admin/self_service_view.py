@@ -9,7 +9,7 @@ from a stolen session. That guard removed the only way a staff member could
 change their own credentials alone. This screen puts the capability back
 through a path that actually proves who is asking.
 
-**It needs no administrator role, and that is the point.** ``/admin/staff`` is
+**It needs no administrator role, and that is the point.** ``/admin/staff/*`` is
 recovery layer L2, one administrator acting on another, and stays
 administrator-only. Managing your own second factor is not an administrative
 act and must not require finding a colleague; a `staff` member reaches this
@@ -92,8 +92,13 @@ from admin.csrf import check_token, issue_token
 from admin.runtime import get_runtime
 from admin.totp import TOTP_INTERVAL, qr_svg
 from admin.views import MIN_PASSWORD_LENGTH, _grouped, _password_problem
+from admin import i18n as admin_i18n
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+
+# Contract O-8. This environment is not sqladmin's, so it does not inherit
+# `_()` from it - see admin/i18n.py::install.
+admin_i18n.install(templates.env)
 
 #: ``MAX_DEVICE_NAME_LENGTH`` moved to ``admin/accounts.py`` and is imported
 #: above. It is now enforced by ``rename_totp_device`` as well as rendered as

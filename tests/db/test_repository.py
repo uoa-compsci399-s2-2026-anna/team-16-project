@@ -1,19 +1,28 @@
+import uuid
 from decimal import Decimal
 from types import SimpleNamespace
 
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, String, Text
 
 from db.errors import FactorSetStateError
 from db.models import (
     AuditLog,
     Constant,
+    Destination,
+    Equivalence,
+    DestinationGroup,
+    FactorDownstream,
     FactorSet,
     FactorSetStatus,
     FactorUpstream,
+    FoodCategory,
+    Formula,
+    Metric,
     Scenario,
+    Sector,
     Submission,
     SubmissionEntry,
     SubmissionLine,
@@ -29,6 +38,7 @@ from db.repository import (
     load_factor_bundle,
     publish_factor_set,
     rollback_to,
+    set_public_contribution,
     upsert_submission,
     write_audit,
 )
@@ -51,6 +61,11 @@ def _request(current="10", alternative="999", food_category="dairy"):
         food_category_code=food_category,
         current=(line(current),),
         alternative=(line(alternative),) if alternative is not None else None,
+        #: v1.48. `EntryInput` defaults all three to `None`; a hand-built
+        #: stand-in has to state that default explicitly.
+        total_input_kg=None,
+        total_value_nzd=None,
+        wasted_value_nzd=None,
     )
     return SimpleNamespace(entries=(entry,), gwp_horizon=100)
 
@@ -61,6 +76,78 @@ def _lines_of(session, submission_id):
         .join(SubmissionEntry, SubmissionLine.submission_entry_id == SubmissionEntry.id)
         .where(SubmissionEntry.submission_id == submission_id)
     ).all()
+
+
+def _prereqs(session):
+    """The taxonomy and factor-set rows a submission has to point at.
+
+    Same shape as `tests/db/test_submissions.py::_prereqs` -- a minimal,
+    self-contained set of rows on the real (MySQL) `session` fixture, not
+    `seeded_session`'s rich SQLite taxonomy, because the test below only
+    needs one sector, one destination and one published factor set to point
+    at and does not touch the engine.
+    """
+    group = DestinationGroup(code="consent_disposal", name="Disposal", is_waste=True)
+    sector = Sector(code="consent_processing", name="Processing")
+    category = FoodCategory(code="consent_dairy", name="Dairy")
+    factor_set = FactorSet(
+        version_label="consent-MOCK-v0", status=FactorSetStatus.published, is_mock=True
+    )
+    session.add_all([group, sector, category, factor_set])
+    session.flush()
+    destination = Destination(group_id=group.id, code="consent_landfill", name="Landfill")
+    session.add(destination)
+    session.flush()
+    return factor_set, sector, category, destination
+
+
+def _submission_with_mass(session, factor_set, sector, destination):
+    """A submission with one entry and one current-scenario line.
+
+    Not a bare `Submission()` row: `get_public_stats` counts `total_calculations`
+    over `submission`, but its two bucket queries only ever see a submission
+    through a `submission_entry` with a current-scenario `submission_line`
+    behind it (see that function's own docstring, point 3). A helper that
+    skipped the entry and line would make every one of this file's stats
+    assertions pass whether or not `get_public_stats` joined out to
+    `submission` at all -- the count would move for the wrong reason, or not
+    move when the predicate was silently dropped, and a null-mass row could
+    not tell the two apart.
+
+    `food_category_id` is left `None` (§5.4's `unspecified` bucket): the test
+    this exists for asserts `total_calculations` and the `by_destination`/
+    `by_sector` bucket sums, none of which needs a second taxonomy row to do
+    it.
+    """
+    now = utcnow()
+    submission = Submission(
+        token=str(uuid.uuid4()),
+        token_expires_at=now + timedelta(hours=1),
+        created_at=now,
+        updated_at=now,
+        factor_set_id=factor_set.id,
+        gwp_horizon=100,
+    )
+    session.add(submission)
+    session.flush()
+    entry = SubmissionEntry(
+        submission_id=submission.id,
+        sector_id=sector.id,
+        food_category_id=None,
+        sort_order=0,
+    )
+    session.add(entry)
+    session.flush()
+    session.add(
+        SubmissionLine(
+            submission_entry_id=entry.id,
+            scenario=Scenario.current,
+            destination_id=destination.id,
+            qty_kg=Decimal("10.000"),
+        )
+    )
+    session.flush()
+    return submission
 
 
 def test_upsert_reuses_a_valid_token_and_replaces_lines(seeded_session):
@@ -94,7 +181,15 @@ def test_upsert_reuses_a_valid_token_and_replaces_lines(seeded_session):
 
 def test_public_stats_use_current_only(seeded_session):
     from db.repository import get_published_factor_set_id
-    upsert_submission(seeded_session, None, _request("10", "999"), get_published_factor_set_id(seeded_session))
+    submission_id, _ = upsert_submission(
+        seeded_session, None, _request("10", "999"), get_published_factor_set_id(seeded_session)
+    )
+    # v1.48: `upsert_submission` never opts a row in (that is this test's
+    # subject's own rule, in `test_the_new_context_fields_are_accepted_and_
+    # stored` over in tests/api/test_api.py) -- this test is about the
+    # current/alternative split, not consent, so it opts in by hand.
+    seeded_session.get(Submission, submission_id).is_public_contributed = True
+    seeded_session.flush()
     stats = get_public_stats(seeded_session, threshold=1)
     assert stats.by_destination[0].total_kg == Decimal("10.000")
     # The scenario predicate belongs on every breakdown, not only on the one
@@ -192,6 +287,253 @@ def test_factor_bundle_cache_is_partitioned_and_explicitly_invalidated(seeded_se
     assert built == ["MOCK-v0", "DRAFT-v1", "DRAFT-v1", "MOCK-v0"]
 
 
+@pytest.mark.parametrize("started_mock, becomes", [(True, False), (False, True)])
+def test_a_change_to_is_mock_is_not_served_from_a_warm_cache(
+    seeded_session, started_mock, becomes
+):
+    """Contract §2.2. The placeholder flag is the one field of a *published*
+    set that legitimately moves while it stays published, and the panel that
+    moves it is a different process from the API that holds this cache — so
+    an invalidation call cannot carry the change across and this cache has no
+    expiry to age it out. Without the re-check in `load_factor_bundle` the
+    warm slot serves the old flag until the API is restarted.
+
+    Both directions are asserted, and the second is the one that matters
+    most: *setting* the flag is the direction §2.2 requires to be instant, so
+    that anyone who doubts a published set can put the placeholder warning in
+    front of the public immediately. A cache that defeats that makes the safe
+    direction the broken one.
+
+    Asserted on the flag the bundle was built with, not merely on object
+    identity: a version that rebuilt on every hit would pass an identity
+    check while quietly throwing the cache away, and a version that returned
+    a stale object would fail both.
+    """
+    published_id = get_published_factor_set_id(seeded_session)
+    invalidate_factor_bundle()
+    seeded_session.get(FactorSet, published_id).is_mock = started_mock
+    seeded_session.flush()
+
+    def factory(data):
+        return {"is_mock": data["is_mock"]}
+
+    first = load_factor_bundle(seeded_session, published_id, bundle_factory=factory)
+    assert first["is_mock"] is started_mock
+    # Warm: nothing changed, so the same object comes back.
+    assert load_factor_bundle(
+        seeded_session, published_id, bundle_factory=factory
+    ) is first
+
+    seeded_session.get(FactorSet, published_id).is_mock = becomes
+    seeded_session.flush()
+
+    after = load_factor_bundle(seeded_session, published_id, bundle_factory=factory)
+    assert after["is_mock"] is becomes
+
+
+def test_a_new_food_item_is_not_hidden_behind_a_warm_cache(seeded_session):
+    """v1.58. `food_item` is the **second** thing that can move under a warm
+    slot, and the first one that is not a field of the factor set at all.
+
+    §2.1 makes the vocabulary global — a factor set brings factors, not a
+    vocabulary — so a staff member adds a food to a set nobody republishes and
+    nothing invalidates anything. The panel and the API are separate services
+    (`docker/compose.yaml`), so the panel's own `invalidate_factor_bundle`
+    cannot reach the API's slot, and this cache has no expiry.
+
+    **The symptom is a form that offers a choice the calculator then refuses.**
+    §6.1 reads the vocabulary from the database and §6.2 resolves a named food
+    against the *bundle*: without this re-check, a food added at 10am is on
+    the form at 10am and answers `VALIDATION_ERROR: unknown food_item` for
+    every visitor who picks it until the API process restarts. Measured on the
+    running stack.
+
+    Asserted on the vocabulary the bundle was built with rather than on object
+    identity alone: a version that rebuilt on every hit would pass an identity
+    check while quietly throwing the cache away.
+    """
+    from db.models import FoodItem
+
+    published_id = get_published_factor_set_id(seeded_session)
+    invalidate_factor_bundle()
+    dairy = seeded_session.scalar(select(FoodCategory).where(FoodCategory.code == "dairy"))
+
+    def factory(data):
+        return {"food_items": [row["code"] for row in data["food_items"]]}
+
+    first = load_factor_bundle(seeded_session, published_id, bundle_factory=factory)
+    assert first["food_items"] == []
+    #: Warm: nothing moved, so the cache is doing its job.
+    assert load_factor_bundle(
+        seeded_session, published_id, bundle_factory=factory
+    ) is first
+
+    cheese = FoodItem(code="cheese", name="Cheese", food_category_id=dairy.id)
+    seeded_session.add(cheese)
+    seeded_session.flush()
+
+    after = load_factor_bundle(seeded_session, published_id, bundle_factory=factory)
+    assert after["food_items"] == ["cheese"], (
+        "a food added to the global vocabulary is invisible to the engine "
+        "until the process restarts, while the form already offers it"
+    )
+
+    #: Retiring one moves it the other way, and `active` is how a taxonomy row
+    #: leaves service everywhere else in this schema.
+    cheese.active = False
+    seeded_session.flush()
+    assert load_factor_bundle(
+        seeded_session, published_id, bundle_factory=factory
+    )["food_items"] == []
+
+    #: A rename is in the fingerprint too: it is what the results page and the
+    #: PDF print, so a stale one is a document naming a food by a name the
+    #: taxonomy no longer uses.
+    cheese.active = True
+    seeded_session.flush()
+    load_factor_bundle(seeded_session, published_id, bundle_factory=factory)
+
+    def naming_factory(data):
+        return {"names": [row["name"] for row in data["food_items"]]}
+
+    before_rename = load_factor_bundle(
+        seeded_session, published_id, bundle_factory=naming_factory
+    )
+    cheese.name = "Cheddar"
+    seeded_session.flush()
+    renamed = load_factor_bundle(
+        seeded_session, published_id, bundle_factory=naming_factory
+    )
+    assert renamed is not before_rename
+    assert renamed["names"] == ["Cheddar"]
+
+
+def test_a_warm_cache_hit_costs_two_queries_and_composes_nothing(seeded_session):
+    """v1.58. The two live re-reads are what a cache hit costs, and this is
+    the only thing that says so.
+
+    `load_factor_bundle`'s docstring has claimed a price since v1.4 -- one
+    primary-key SELECT of one boolean, against a bundle of some 900 factor
+    rows -- and v1.58 added a second query to it without anything measuring
+    either. A claim in prose is not a claim a later change has to keep.
+
+    **The number is pinned rather than bounded** because both directions are
+    defects. Three would mean a third live check nobody accounted for, or a
+    fingerprint that grew a join. Fewer would mean one of the two re-reads
+    stopped happening, which is a stale bundle served from a warm slot -- the
+    condition the two tests above exist for, and one that shows up here as a
+    cheaper cache rather than as a wrong answer.
+
+    Counted at the cursor, so a query issued anywhere -- lazy load, identity
+    map miss, a helper called for its side effect -- is counted whether or not
+    this module wrote it.
+    """
+    from sqlalchemy import event
+
+    published_id = get_published_factor_set_id(seeded_session)
+    invalidate_factor_bundle()
+
+    composes: list[int] = []
+
+    def factory(data):
+        composes.append(1)
+        return {"composed": len(composes)}
+
+    statements: list[str] = []
+    bind = seeded_session.get_bind()
+
+    def record(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    warm = load_factor_bundle(seeded_session, published_id, bundle_factory=factory)
+    assert composes == [1]
+
+    event.listen(bind, "before_cursor_execute", record)
+    try:
+        again = load_factor_bundle(seeded_session, published_id, bundle_factory=factory)
+    finally:
+        event.remove(bind, "before_cursor_execute", record)
+
+    assert again is warm
+    assert composes == [1], "a hit composed the bundle again"
+    assert len(statements) == 2, (
+        "a warm hit is one is_mock SELECT and one vocabulary SELECT; "
+        f"this run issued {len(statements)}: {statements}"
+    )
+    #: Named, not just counted: two queries of the right shape is the claim.
+    assert any("factor_set" in q for q in statements)
+    assert any("food_item" in q for q in statements)
+
+
+def test_a_write_during_the_compose_does_not_get_stamped_onto_the_old_bundle(
+    seeded_session,
+):
+    """v1.58. The fingerprint is read **before** `build_bundle_data`, and
+    this is the window that says why.
+
+    Composing a bundle reads some 900 factor rows, so it is not
+    instantaneous, and the vocabulary it is fingerprinted against is
+    global §2.1 taxonomy that any staff member can write at any moment.
+    A fingerprint taken *after* the compose therefore describes a database
+    the bundle in hand may already be behind -- and stamping it on the slot
+    makes every later hit compare new against new, match, and hand back the
+    stale bundle. This cache has no expiry, so 'later' means for the life
+    of the process: the exact failure the fingerprint was added to prevent,
+    reintroduced by the order it was taken in.
+
+    The factory is where the window is opened, because the factory is the
+    one thing this test can put *inside* the compose. Writing the food from
+    there is the same event as another connection writing it while these
+    rows are being read.
+
+    **The assertion is that the next call rebuilds**, not that it returns
+    the newer bundle immediately -- the request already in flight is
+    entitled to the answer it composed. Being wrong the other way is the
+    cheap direction: one needless rebuild against a wrong answer served
+    until somebody restarts the process.
+    """
+    from db.models import FoodItem
+
+    published_id = get_published_factor_set_id(seeded_session)
+    invalidate_factor_bundle()
+    dairy = seeded_session.scalar(
+        select(FoodCategory).where(FoodCategory.code == "dairy")
+    )
+    writes: list[str] = []
+
+    def factory(data):
+        #: The concurrent write, landing once, while the bundle is being
+        #: composed from rows read before it.
+        if not writes:
+            writes.append("cheese")
+            seeded_session.add(
+                FoodItem(code="cheese", name="Cheese", food_category_id=dairy.id)
+            )
+            seeded_session.flush()
+        return {"food_items": [row["code"] for row in data["food_items"]]}
+
+    first = load_factor_bundle(seeded_session, published_id, bundle_factory=factory)
+    assert first["food_items"] == [], (
+        "the compose read the vocabulary before the write landed, which is "
+        "what makes this the interesting case"
+    )
+
+    second = load_factor_bundle(seeded_session, published_id, bundle_factory=factory)
+    assert second is not first, (
+        "the slot was stamped with a fingerprint taken after the compose, so "
+        "it matches the database and the stale bundle is served for the life "
+        "of the process"
+    )
+    assert second["food_items"] == ["cheese"]
+
+    #: And it settles: nothing moved during the second compose, so the
+    #: third call is a hit. A version that rebuilt every time would pass
+    #: the assertion above for the wrong reason.
+    assert load_factor_bundle(
+        seeded_session, published_id, bundle_factory=factory
+    ) is second
+
+
 def test_the_bundle_carries_each_upstream_rows_destination(seeded_session):
     """Contract §10.2 (v1.8): every `upstream[]` row publishes a `destination`,
     `null` for the generic row that applies to every destination.
@@ -210,6 +552,105 @@ def test_the_bundle_carries_each_upstream_rows_destination(seeded_session):
     assert Decimal(rows["prevention"]["value_per_kg"]) == 0
     #: §1.1 - `code` crosses the layer boundary, never a primary key.
     assert all("destination_id" not in row for row in data["upstream"])
+
+
+def test_the_destinations_projection_carries_is_prevention(seeded_session):
+    """Contract v1.22: `destination.is_prevention` has been a real column
+    since migration 0013, and `engine.bundle.FactorBundle.is_prevention_
+    destination()` (§4.5's money block, the first caller) is how code outside
+    `db/` is meant to read it, in place of a literal `"prevention"` string --
+    the second-vocabulary row `refed_prevention` is the reason the literal was
+    retired.
+
+    Until now `get_taxonomy_for_bundle`'s `destinations` projection dropped
+    the column silently, even though the *neighbouring* projection in this
+    same file (`get_taxonomy`, feeding `GET /taxonomy`) already selects it.
+    Every existing test of the predicate built its own bundle by hand and set
+    the key itself, so a deployed bundle answering `False` for every
+    destination -- the exact shape of open item O-9 -- passed unnoticed.
+
+    Goes through the real projection and the real loader, not a hand-built
+    bundle.json: only that proves the database column actually reaches the
+    engine.
+    """
+    from engine.bundle import FactorBundle
+
+    data = build_bundle_data(seeded_session, get_published_factor_set_id(seeded_session))
+    rows = {row["code"]: row for row in data["destinations"]}
+    assert rows["prevention"]["is_prevention"] is True
+    assert rows["landfill"]["is_prevention"] is False
+
+    bundle = FactorBundle.from_json(data)
+    assert bundle.is_prevention_destination("prevention") is True
+    assert bundle.is_prevention_destination("landfill") is False
+
+
+def test_the_bundle_carries_each_downstream_rows_sector(seeded_session):
+    """Contract §10.2 (v1.31): every `downstream[]` row publishes a `sector`,
+    `null` for the row that applies to every sector.
+
+    **The seeded set cannot prove this on its own**, and that is the point.
+    All fifteen of its downstream rows leave `sector_id` NULL, so a projection
+    that hard-coded `"sector": None` — or dropped the join and let every row
+    default — would emit a byte-identical document and every other test in this
+    repository would stay green while the calculator priced every supply-chain
+    stage the same. So the test writes a sector-specific row first, and asserts
+    both states come back distinguishable.
+
+    A `key in row` check is asserted separately from the value, for the reason
+    §10.2 gives about `upstream[].destination`: `row.get("sector")` is `None`
+    both when the row applies to every sector and when the projection forgot
+    the field, and those are not the same thing.
+    """
+    from db.models import Destination, FactorDownstream, Metric, Sector
+
+    published = get_published_factor_set_id(seeded_session)
+    landfill_id = seeded_session.scalar(
+        select(Destination.id).where(Destination.code == "landfill")
+    )
+    metric_id = seeded_session.scalar(select(Metric.id).where(Metric.code == "co2e"))
+    sector_id = seeded_session.scalar(
+        select(Sector.id).where(Sector.code == "primary_production")
+    )
+    seeded_session.add(
+        FactorDownstream(
+            factor_set_id=published,
+            destination_id=landfill_id,
+            sector_id=sector_id,
+            food_category_id=None,
+            metric_id=metric_id,
+            value_per_kg=Decimal("0.3100000000"),
+        )
+    )
+    seeded_session.flush()
+
+    data = build_bundle_data(seeded_session, published)
+    landfill_co2e = [
+        row for row in data["downstream"]
+        if row["destination"] == "landfill" and row["metric"] == "co2e"
+    ]
+
+    assert all("sector" in row for row in data["downstream"]), (
+        "a downstream row published no `sector` key at all"
+    )
+    by_sector = {row["sector"]: row["value_per_kg"] for row in landfill_co2e}
+    #: The sector-specific row and the two every-sector rows, told apart.
+    assert by_sector["primary_production"] == "0.3100000000"
+    assert None in by_sector, "the every-sector rows lost their null"
+    #: §1.1 — `code` crosses the layer boundary, never a primary key.
+    assert all("sector_id" not in row for row in data["downstream"])
+
+    #: And it reaches the engine through the real path, priced only for the
+    #: sector it names. 1000 kg of primary_production/vegetables to landfill
+    #: draws 0.31 where processing/vegetables still draws the generic 0.70.
+    bundle = load_factor_bundle(seeded_session)
+    assert bundle.validate() == []
+    assert bundle.downstream(
+        "landfill", "primary_production", "vegetables", "co2e"
+    ) == Decimal("0.3100000000")
+    assert bundle.downstream(
+        "landfill", "processing", "vegetables", "co2e"
+    ) == Decimal("0.7000000000")
 
 
 def _seam_request(sector, food_category, current, alternative=None):
@@ -467,7 +908,7 @@ def test_rollback_is_deliberately_not_subject_to_the_o7_check(seeded_session):
 
 
 def test_the_o7_check_is_silent_on_a_taxonomy_with_no_prevention_row(seeded_session):
-    """An unseeded taxonomy is `check_prevention_intact`'s problem, not this
+    """An unseeded taxonomy is `check_prevention_destination`'s problem, not this
     function's. Reporting every combination in the set would be noise, and a
     second rule stated in terms of the same reserved row is a second thing to
     keep in step."""
@@ -483,6 +924,136 @@ def test_the_o7_check_is_silent_on_a_taxonomy_with_no_prevention_row(seeded_sess
     seeded_session.flush()
 
     assert find_missing_prevention_upstream(seeded_session, draft_id) == []
+
+
+def test_the_o7_guard_reads_the_flag_and_not_the_code(seeded_session):
+    """What proves the string is gone from this guard.
+
+    Clear the tick on the row called `prevention` and give the role to another
+    row. The seed's `prevention` upstream override is then an override against
+    an ordinary destination and satisfies nothing, so the guard must report the
+    tuple — and must stop reporting it once the *flagged* row has its own zero.
+    """
+    from db.models import Destination
+
+    draft_id = seeded_session.scalar(
+        select(FactorSet.id).where(FactorSet.status == FactorSetStatus.draft)
+    )
+    prevention = seeded_session.scalar(
+        select(Destination).where(Destination.code == "prevention")
+    )
+    prevention.is_prevention = False
+    avoided = Destination(group_id=prevention.group_id, code="waste_avoided",
+                          name="Waste avoided", is_prevention=True, sort_order=6)
+    seeded_session.add(avoided)
+    seeded_session.flush()
+
+    assert find_missing_prevention_upstream(seeded_session, draft_id) == [
+        ("processing", "dairy", "co2e")
+    ]
+
+    row = seeded_session.scalar(
+        select(FactorUpstream).where(
+            FactorUpstream.factor_set_id == draft_id,
+            FactorUpstream.destination_id == prevention.id,
+        )
+    )
+    row.destination_id = avoided.id
+    seeded_session.flush()
+
+    assert find_missing_prevention_upstream(seeded_session, draft_id) == []
+
+
+def test_one_flagged_destination_with_a_zero_override_satisfies_the_tuple(
+    seeded_session,
+):
+    """Not "every flagged destination", deliberately.
+
+    Two vocabularies share these tables (§10.3) and `MOCK-v0` has no
+    `refed_prevention` rows and never will. Requiring one per flagged row would
+    refuse a set for a vocabulary it was never built in.
+    """
+    from db.models import Destination
+
+    draft_id = seeded_session.scalar(
+        select(FactorSet.id).where(FactorSet.status == FactorSetStatus.draft)
+    )
+    prevention = seeded_session.scalar(
+        select(Destination).where(Destination.code == "prevention")
+    )
+    seeded_session.add(
+        Destination(group_id=prevention.group_id, code="refed_prevention",
+                    name="Prevention (ReFED)", is_prevention=True, sort_order=803)
+    )
+    seeded_session.flush()
+
+    assert find_missing_prevention_upstream(seeded_session, draft_id) == []
+    publish_factor_set(seeded_session, draft_id, "alice")
+    assert seeded_session.get(FactorSet, draft_id).status == FactorSetStatus.published
+
+
+def test_publish_refuses_a_prevention_destination_priced_at_anything_but_zero(
+    seeded_session,
+):
+    """The half nothing checked at all until the flag existed.
+
+    `find_missing_prevention_upstream` can only see a non-zero upstream value
+    where a generic row exists to compare it against, and no rule anywhere read
+    `factor_downstream`. A prevention destination priced at anything is not a
+    100% offset, so the improved scenario stops describing the same mass at no
+    cost and `net_benefit` silently reports a smaller improvement than the
+    scenario the user built.
+    """
+    from db.models import Destination
+
+    draft_id = seeded_session.scalar(
+        select(FactorSet.id).where(FactorSet.status == FactorSetStatus.draft)
+    )
+    prevention_id = seeded_session.scalar(
+        select(Destination.id).where(Destination.is_prevention.is_(True))
+    )
+    metric_id = seeded_session.scalar(select(Metric.id).where(Metric.code == "co2e"))
+    seeded_session.add(
+        FactorDownstream(
+            factor_set_id=draft_id, destination_id=prevention_id,
+            food_category_id=None, metric_id=metric_id,
+            value_per_kg=Decimal("0.5"),
+        )
+    )
+    seeded_session.flush()
+
+    with pytest.raises(FactorSetStateError) as excinfo:
+        publish_factor_set(seeded_session, draft_id, "alice")
+
+    message = str(excinfo.value)
+    assert "downstream prevention" in message
+    assert seeded_session.get(FactorSet, draft_id).status == FactorSetStatus.draft
+
+
+def test_an_absent_prevention_factor_row_is_still_legal(seeded_session):
+    """§4.1's lookup returns zero for a missing factor, so absence already *is*
+    zero. The new refusal must only ever fire on a row that exists and
+    disagrees — otherwise it would contradict the hold-out in
+    `get_taxonomy`, which is built around a set that prices a prevention
+    destination nowhere at all."""
+    from db.models import Destination
+
+    draft_id = seeded_session.scalar(
+        select(FactorSet.id).where(FactorSet.status == FactorSetStatus.draft)
+    )
+    prevention_id = seeded_session.scalar(
+        select(Destination.id).where(Destination.is_prevention.is_(True))
+    )
+    seeded_session.execute(
+        delete(FactorDownstream).where(
+            FactorDownstream.factor_set_id == draft_id,
+            FactorDownstream.destination_id == prevention_id,
+        )
+    )
+    seeded_session.flush()
+
+    publish_factor_set(seeded_session, draft_id, "alice")
+    assert seeded_session.get(FactorSet, draft_id).status == FactorSetStatus.published
 
 
 def test_clone_is_deep_and_publish_rollback_preserve_single_published(seeded_session):
@@ -536,6 +1107,77 @@ def test_clone_is_deep_and_publish_rollback_preserve_single_published(seeded_ses
     assert get_published_factor_set_id(seeded_session) == published_id
     assert seeded_session.get(FactorSet, clone_id).status == FactorSetStatus.archived
     assert seeded_session.scalar(select(func.count()).select_from(AuditLog)) >= 5
+
+
+
+def test_clone_copies_every_column_of_every_child_row(seeded_session):
+    """The generic form of the assertion above, which the specific one could
+    not give: no column of any child kind may be dropped by the clone.
+
+    **This is written generically on purpose.** The specific
+    `destination_id` check beside it was added after that one column was
+    dropped, and it fixed that one column. The hand-written field list it was
+    guarding then went on to miss `factor_downstream.sector_id` - the same
+    O-7 shape in the sector dimension - plus `source_note` and `data_quality`
+    on three tables, because nothing here was watching the other columns. A
+    check that names a column has to be rewritten every time a column is
+    added; this one does not.
+
+    Compared as whole rows rather than per column, and sorted by the full
+    tuple, because two rows of one kind can differ in a single field and a
+    per-column comparison of unordered sets would not notice which row it
+    came from.
+    """
+    published_id = get_published_factor_set_id(seeded_session)
+
+    #: **Mark every optional column before cloning, or this test passes for the
+    #: wrong reason.** The seed leaves `source_note` and `data_quality` NULL on
+    #: every row, so a clone that drops them copies None onto None and compares
+    #: equal - verified: dropping both from the clone left this test green
+    #: until these three lines existed. It is the same defect the factor-set
+    #: import review recorded, where a fixture built both sets from identical
+    #: literals and two real corruption mutations survived the whole suite.
+    #:
+    #: Foreign keys are left alone - an invented id would not resolve - and are
+    #: covered instead by the seed's own variation across `destination_id`.
+    marked = 0
+    for model in (FactorUpstream, FactorDownstream, Constant, Formula, Equivalence):
+        for index, row in enumerate(seeded_session.scalars(
+            select(model).where(model.factor_set_id == published_id)
+        )):
+            for column in model.__table__.columns:
+                if column.name in ("id", "factor_set_id") or column.foreign_keys:
+                    continue
+                if column.nullable and isinstance(column.type, (String, Text)):
+                    setattr(row, column.name, f"{model.__tablename__}-{index}")
+                    marked += 1
+    assert marked, "nothing optional was marked, so this test cannot see a dropped column"
+    seeded_session.flush()
+
+    clone_id = clone_factor_set(seeded_session, published_id, "FIDELITY-v1", "alice")
+    seeded_session.flush()
+
+    for model in (FactorUpstream, FactorDownstream, Constant, Formula, Equivalence):
+        carried = [
+            column.name for column in model.__table__.columns
+            if column.name not in ("id", "factor_set_id")
+        ]
+        assert carried, f"{model.__tablename__} has no columns worth cloning"
+
+        def rows(factor_set_id):
+            return sorted(
+                tuple(str(getattr(row, name)) for name in carried)
+                for row in seeded_session.scalars(
+                    select(model).where(model.factor_set_id == factor_set_id)
+                )
+            )
+
+        source_rows, clone_rows = rows(published_id), rows(clone_id)
+        assert source_rows, f"the published set has no {model.__tablename__} rows to clone"
+        assert clone_rows == source_rows, (
+            f"{model.__tablename__} did not survive the clone intact across "
+            f"{carried}: {source_rows} != {clone_rows}"
+        )
 
 
 def test_expired_token_creates_a_new_submission_and_preserves_history(seeded_session):
@@ -592,13 +1234,19 @@ def test_stats_exclude_staff_flagged_submissions_and_bucket_null_food_as_unspeci
     excluded_id, _ = upsert_submission(
         seeded_session, None, _request("100", None), factor_set_id
     )
-    seeded_session.get(Submission, excluded_id).excluded_from_public = True
-    upsert_submission(
+    row = seeded_session.get(Submission, excluded_id)
+    row.excluded_from_public = True
+    # v1.48: staff exclusion and visitor consent are independent (§5.3) --
+    # this test's subject is exclusion, so it opts this row in too, to prove
+    # exclusion alone still wins over consent.
+    row.is_public_contributed = True
+    kept_id, _ = upsert_submission(
         seeded_session,
         None,
         _request("7", None, food_category=None),
         factor_set_id,
     )
+    seeded_session.get(Submission, kept_id).is_public_contributed = True
     seeded_session.flush()
 
     stats = get_public_stats(seeded_session, threshold=1)
@@ -607,3 +1255,80 @@ def test_stats_exclude_staff_flagged_submissions_and_bucket_null_food_as_unspeci
     assert stats.by_food_category[0].code == "unspecified"
     assert stats.by_food_category[0].label == "Not broken down by type"
     assert stats.by_food_category[0].count == 1
+
+
+@pytest.mark.db
+def test_staff_exclusion_and_visitor_consent_are_both_required(session):
+    """**Two flags, two owners, and neither can stand in for the other.**
+
+    `excluded_from_public` is staff moderation - somebody judging a row
+    implausible. `is_public_contributed` is the visitor's own choice. Staff
+    must be able to withdraw a row the visitor offered; and a row the visitor
+    kept is not staff's to publish. Collapsing them into one column would
+    make one of those two impossible, and it would not be obvious which.
+    """
+    factor_set, sector, category, destination = _prereqs(session)
+
+    offered_and_kept = _submission_with_mass(session, factor_set, sector, destination)
+    offered_and_kept.is_public_contributed = True
+
+    offered_then_excluded = _submission_with_mass(session, factor_set, sector, destination)
+    offered_then_excluded.is_public_contributed = True
+    offered_then_excluded.excluded_from_public = True
+
+    never_offered = _submission_with_mass(session, factor_set, sector, destination)
+    session.commit()
+
+    stats = get_public_stats(session, threshold=1)
+
+    assert stats.total_calculations == 1, (
+        "only the submission that was offered AND not excluded should count"
+    )
+    # The count above is only half the claim. `get_public_stats` predicates
+    # on both flags at *three* separate query sites (§5.4) -- the
+    # `total_calculations` count, the `entries` subquery behind `by_sector`/
+    # `by_food_category`, and `by_destination` -- and every submission built
+    # above shares one sector and one destination, so a predicate dropped
+    # from either of the other two sites would let `offered_then_excluded`
+    # or `never_offered` leak into a bucket while the headline above still
+    # read 1. `threshold=1` keeps the bucket visible rather than merged into
+    # `other`, where a leaked row would be invisible to a count assertion.
+    assert sum(bucket.count for bucket in stats.by_destination) == 1, (
+        "a bucket counted a row that was excluded or never offered"
+    )
+    assert sum(bucket.count for bucket in stats.by_sector) == 1, (
+        "a bucket counted a row that was excluded or never offered"
+    )
+
+
+@pytest.mark.db
+def test_contribute_moves_only_the_matching_token(session):
+    """`set_public_contribution` is keyed on `token` alone (§2.3, §5.3): it
+    must flip the one row whose token matches and leave every other row -
+    including one that already opted in and one that never will - exactly as
+    it was.
+    """
+    factor_set, sector, category, destination = _prereqs(session)
+    target = _submission_with_mass(session, factor_set, sector, destination)
+    other = _submission_with_mass(session, factor_set, sector, destination)
+    session.commit()
+
+    moved = set_public_contribution(session, target.token)
+    session.commit()
+
+    assert moved is True
+    assert session.get(Submission, target.id).is_public_contributed is True
+    assert session.get(Submission, other.id).is_public_contributed is False
+
+
+@pytest.mark.db
+def test_contribute_on_an_unknown_token_moves_nothing(session):
+    factor_set, sector, category, destination = _prereqs(session)
+    row = _submission_with_mass(session, factor_set, sector, destination)
+    session.commit()
+
+    moved = set_public_contribution(session, "00000000-0000-4000-8000-000000000000")
+    session.commit()
+
+    assert moved is False
+    assert session.get(Submission, row.id).is_public_contributed is False

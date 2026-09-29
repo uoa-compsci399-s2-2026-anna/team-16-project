@@ -1,5 +1,5 @@
 {
-  "factor_set": { "version_label": "MOCK-v0 — PLACEHOLDER", "is_mock": true },
+  "factor_set": { "version_label": "MOCK-v0 — PLACEHOLDER", "is_mock": true, "item_level_enabled": false },
   "sectors": [
     {
       "code": "primary_production",
@@ -50,6 +50,55 @@
     { "code": "staples", "name": "Staples", "is_standard_mix": false, "sort_order": 80 },
     { "code": "beverages", "name": "Beverages (non-dairy)", "is_standard_mix": false, "sort_order": 90 }
   ],
+  "food_items": [
+    { "code": "almonds", "name": "Almonds", "food_category": "nuts_seeds", "sort_order": 10 },
+    { "code": "apples", "name": "Apples", "food_category": "fruit", "sort_order": 10 },
+    { "code": "bread", "name": "Bread", "food_category": "bakery_grains", "sort_order": 10 },
+    { "code": "cheese", "name": "Cheese", "food_category": "dairy", "sort_order": 10 },
+    { "code": "coffee", "name": "Coffee", "food_category": "beverages", "sort_order": 10 },
+    { "code": "eggs", "name": "Eggs", "food_category": "staples", "sort_order": 10 },
+    { "code": "hoki", "name": "Hoki", "food_category": "seafood", "sort_order": 10 },
+    { "code": "potatoes", "name": "Potatoes", "food_category": "vegetables", "sort_order": 10 },
+    { "code": "red_meat", "name": "Red meat", "food_category": "meat", "sort_order": 10 },
+    { "code": "bakery", "name": "Bakery", "food_category": "bakery_grains", "sort_order": 20 },
+    { "code": "fats", "name": "Fats", "food_category": "staples", "sort_order": 20 },
+    { "code": "kiwifruit", "name": "Kiwifruit", "food_category": "fruit", "sort_order": 20 },
+    { "code": "kumara", "name": "Kūmara", "food_category": "vegetables", "sort_order": 20 },
+    { "code": "milk", "name": "Milk", "food_category": "dairy", "sort_order": 20 },
+    { "code": "pork", "name": "Pork", "food_category": "meat", "sort_order": 20 },
+    { "code": "snapper", "name": "Snapper", "food_category": "seafood", "sort_order": 20 },
+    { "code": "tea", "name": "Tea", "food_category": "beverages", "sort_order": 20 },
+    { "code": "walnuts", "name": "Walnuts", "food_category": "nuts_seeds", "sort_order": 20 },
+    { "code": "beer", "name": "Beer", "food_category": "beverages", "sort_order": 30 },
+    { "code": "berries", "name": "Berries", "food_category": "fruit", "sort_order": 30 },
+    { "code": "carrots", "name": "Carrots", "food_category": "vegetables", "sort_order": 30 },
+    { "code": "cream", "name": "Cream", "food_category": "dairy", "sort_order": 30 },
+    { "code": "grains", "name": "Grains", "food_category": "bakery_grains", "sort_order": 30 },
+    { "code": "peanuts", "name": "Peanuts", "food_category": "nuts_seeds", "sort_order": 30 },
+    { "code": "poultry", "name": "Poultry", "food_category": "meat", "sort_order": 30 },
+    { "code": "salmon", "name": "Salmon", "food_category": "seafood", "sort_order": 30 },
+    { "code": "sauces_spreads_dips", "name": "Sauces, spreads and dips", "food_category": "staples", "sort_order": 30 },
+    { "code": "butter", "name": "Butter", "food_category": "dairy", "sort_order": 40 },
+    { "code": "citrus", "name": "Citrus", "food_category": "fruit", "sort_order": 40 },
+    { "code": "herbs_spices", "name": "Herbs and spices", "food_category": "staples", "sort_order": 40 },
+    { "code": "mussels", "name": "Mussels", "food_category": "seafood", "sort_order": 40 },
+    { "code": "onions", "name": "Onions", "food_category": "vegetables", "sort_order": 40 },
+    { "code": "other_meat", "name": "Other meat", "food_category": "meat", "sort_order": 40 },
+    { "code": "sunflower_seeds", "name": "Sunflower seeds", "food_category": "nuts_seeds", "sort_order": 40 },
+    { "code": "wine", "name": "Wine", "food_category": "beverages", "sort_order": 40 },
+    { "code": "fruit_juice", "name": "Fruit juice", "food_category": "beverages", "sort_order": 50 },
+    { "code": "oysters", "name": "Oysters", "food_category": "seafood", "sort_order": 50 },
+    { "code": "snack_foods_desserts", "name": "Snack foods and desserts", "food_category": "staples", "sort_order": 50 },
+    { "code": "stone_fruit", "name": "Stone fruit", "food_category": "fruit", "sort_order": 50 },
+    { "code": "tomatoes", "name": "Tomatoes", "food_category": "vegetables", "sort_order": 50 },
+    { "code": "yoghurt", "name": "Yoghurt", "food_category": "dairy", "sort_order": 50 },
+    { "code": "bananas", "name": "Bananas", "food_category": "fruit", "sort_order": 60 },
+    { "code": "leafy_greens", "name": "Leafy greens", "food_category": "vegetables", "sort_order": 60 },
+    { "code": "other_dairy", "name": "Other dairy", "food_category": "dairy", "sort_order": 60 },
+    { "code": "soft_drinks", "name": "Soft drinks", "food_category": "beverages", "sort_order": 60 },
+    { "code": "sweeteners", "name": "Sweeteners", "food_category": "staples", "sort_order": 60 },
+    { "code": "other_food_types", "name": "Other food types", "food_category": "staples", "sort_order": 70 }
+  ],
   "destination_groups": [
     { "code": "reuse", "name": "Reuse", "is_waste": false, "sort_order": 10 },
     { "code": "recycle_recovery", "name": "Recycle and recovery", "is_waste": true, "sort_order": 20 },
@@ -61,6 +110,7 @@
       "name": "Prevented — waste avoided",
       "group": "reuse",
       "description": "Food that is never wasted in the first place. Used only in the alternative scenario: moving mass here is how the calculator expresses wasting less, and it keeps the two scenarios describing the same total mass.",
+      "is_prevention": true,
       "sort_order": 5
     },
     {
@@ -68,6 +118,7 @@
       "name": "Food redistribution",
       "group": "reuse",
       "description": "Surplus food given or sold on for people to eat — food rescue organisations, food banks and secondary markets.",
+      "is_prevention": false,
       "sort_order": 10
     },
     {
@@ -75,6 +126,7 @@
       "name": "Upcycling to other food products",
       "group": "reuse",
       "description": "Surplus food remade into another food product, such as bread into beer or fruit into preserves.",
+      "is_prevention": false,
       "sort_order": 20
     },
     {
@@ -82,6 +134,7 @@
       "name": "Animal feed",
       "group": "reuse",
       "description": "Food diverted to feed livestock or other animals, either directly or after processing.",
+      "is_prevention": false,
       "sort_order": 30
     },
     {
@@ -89,6 +142,7 @@
       "name": "Composting (aerobic digestion)",
       "group": "recycle_recovery",
       "description": "Food broken down aerobically into a soil conditioner, on site or at a commercial facility.",
+      "is_prevention": false,
       "sort_order": 40
     },
     {
@@ -96,6 +150,7 @@
       "name": "Anaerobic digestion",
       "group": "recycle_recovery",
       "description": "Food broken down without oxygen to produce biogas and digestate.",
+      "is_prevention": false,
       "sort_order": 50
     },
     {
@@ -103,6 +158,7 @@
       "name": "Land application",
       "group": "recycle_recovery",
       "description": "Food spread directly onto land, without composting or digestion first.",
+      "is_prevention": false,
       "sort_order": 60
     },
     {
@@ -110,6 +166,7 @@
       "name": "Not harvested or ploughed in",
       "group": "recycle_recovery",
       "description": "Edible crop left in the field or ploughed back into the soil. Relevant mainly to primary production.",
+      "is_prevention": false,
       "sort_order": 70
     },
     {
@@ -117,6 +174,7 @@
       "name": "Processing into non-food items",
       "group": "recycle_recovery",
       "description": "Food converted into bio-based materials or chemicals. The 2025 Otago baseline recommends reclassifying this as reuse; the grouping is a table row precisely so that change is an edit, not a migration.",
+      "is_prevention": false,
       "sort_order": 80
     },
     {
@@ -124,6 +182,7 @@
       "name": "Other recovery, including biodiesel",
       "group": "recycle_recovery",
       "description": "Energy or material recovery not covered by the other routes, such as rendering to biodiesel.",
+      "is_prevention": false,
       "sort_order": 90
     },
     {
@@ -131,6 +190,7 @@
       "name": "Combustion",
       "group": "disposal",
       "description": "Food burned, with or without energy recovery.",
+      "is_prevention": false,
       "sort_order": 100
     },
     {
@@ -138,6 +198,7 @@
       "name": "Landfill",
       "group": "disposal",
       "description": "Food sent to a landfill, where it breaks down without oxygen and releases methane.",
+      "is_prevention": false,
       "sort_order": 110
     },
     {
@@ -145,6 +206,7 @@
       "name": "Refuse or discard",
       "group": "disposal",
       "description": "Food dumped, littered or otherwise discarded outside a managed waste system.",
+      "is_prevention": false,
       "sort_order": 120
     },
     {
@@ -152,6 +214,7 @@
       "name": "Sewer or wastewater",
       "group": "disposal",
       "description": "Food flushed to the sewer, including through an in-sink waste disposal unit.",
+      "is_prevention": false,
       "sort_order": 130
     }
   ],
@@ -160,13 +223,19 @@
     { "code": "ch4", "name": "Methane", "unit": "kg CH4", "display_unit": null, "display_precision": 1, "sort_order": 20 },
     { "code": "water", "name": "Water", "unit": "L", "display_unit": "L", "display_precision": 0, "sort_order": 30 },
     { "code": "cost", "name": "Cost", "unit": "NZD", "display_unit": null, "display_precision": 0, "sort_order": 40 },
-    { "code": "mass", "name": "Mass", "unit": "kg", "display_unit": "kg", "display_precision": 1, "sort_order": 50 }
+    { "code": "mass", "name": "Mass", "unit": "kg", "display_unit": "kg", "display_precision": 1, "sort_order": 50 },
+    { "code": "land", "name": "Land use", "unit": "m2", "display_unit": "m²", "display_precision": 1, "sort_order": 60 }
   ],
   "unit_presets": [
-    { "code": "bucket_10l_full", "label": "10 L bucket (full)", "food_category": null, "kg_per_unit": "3.0000" },
-    { "code": "bucket_20l_full", "label": "20 L bucket (full)", "food_category": null, "kg_per_unit": "6.0000" },
-    { "code": "crate_30l_full", "label": "30 L crate (full)", "food_category": null, "kg_per_unit": "9.0000" },
-    { "code": "wheelie_bin_120l", "label": "120 L wheelie bin (full)", "food_category": null, "kg_per_unit": "36.0000" },
-    { "code": "wheelie_bin_240l", "label": "240 L wheelie bin (full)", "food_category": null, "kg_per_unit": "72.0000" }
+    { "code": "bucket_10l_full", "label": "10 L bucket (full)", "food_category": null, "kg_per_unit": "2.9000" },
+    { "code": "bucket_20l_full", "label": "20 L bucket (full)", "food_category": null, "kg_per_unit": "5.8000" },
+    { "code": "food_scraps_bin_23l", "label": "23 L kerbside food scraps bin (full)", "food_category": null, "kg_per_unit": "6.6700" },
+    { "code": "crate_30l_full", "label": "30 L crate (full)", "food_category": null, "kg_per_unit": "8.7000" },
+    { "code": "wheelie_bin_80l", "label": "80 L wheelie bin (full)", "food_category": null, "kg_per_unit": "23.2000" },
+    { "code": "wheelie_bin_120l", "label": "120 L wheelie bin (full)", "food_category": null, "kg_per_unit": "34.8000" },
+    { "code": "wheelie_bin_140l", "label": "140 L wheelie bin (full)", "food_category": null, "kg_per_unit": "40.6000" },
+    { "code": "wheelie_bin_240l", "label": "240 L wheelie bin (full)", "food_category": null, "kg_per_unit": "69.6000" },
+    { "code": "front_loader_660l", "label": "660 L front-loader bin (full)", "food_category": null, "kg_per_unit": "191.4000" },
+    { "code": "front_loader_1100l", "label": "1100 L front-loader bin (full)", "food_category": null, "kg_per_unit": "319.0000" }
   ]
 }

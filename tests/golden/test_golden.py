@@ -12,7 +12,9 @@ what make that claim worth anything.
 
 **It compares the domain object, not the wire body.** `expected.json` mirrors
 §3 field for field — `food_category_code`, `source_metric_code`,
-`by_destination` present-and-empty at the totals level, `total_kg` on
+`by_destination` populated at both the entry and the totals level (v1.48;
+the totals-level rows carry only `qty_kg` and `value`, the two additive
+fields, with `upstream` and `downstream` left at zero), `total_kg` on
 `totals.alternative` where §6.2 has no room for it. A golden case that
 compared §6.2's body would certify `api/engine_adapter.py` as well as the
 engine, and a hoist or an omitted key there would read as an engine defect.
@@ -44,18 +46,22 @@ will type.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from decimal import Decimal
 from pathlib import Path
 
 import pytest
 
-from engine.bundle import FactorBundle
+from engine.bundle import FactorBundle, UpstreamBasis
 from engine.calculate import calculate
 from engine.types import (
+    BreakdownRow,
     CalculationRequest,
     CalculationResult,
     EntryInput,
+    EntryResult,
+    EquivalenceResult,
     ScenarioLine,
 )
 
@@ -117,6 +123,64 @@ _PROVENANCE = {
         "(`min(qty_kg * upstream, 500000)` against an uncapped 1259190), and a "
         "division inside a parenthesised sub-expression."
     ),
+    "case_10_money_per_entry_rate_and_prevention": (
+        "Hand-computed. §4.5, v1.48 (fix round 3): the only case exercising "
+        "the money block. Three entries share case_08's bundle (a copy, with "
+        "is_prevention added to the prevention row): one priced at $60,000/$9,000 "
+        "(7.50/kg) with no alternative, so it diverts nothing regardless of its own "
+        "price; one priced at $15,000/$6,000 (6.00/kg) diverting 400 of its 1,000 kg "
+        "to prevention, contributing 6.00 x 400 = 2400.00; one entirely unpriced, "
+        "diverting 300 of its own 500 kg to prevention and contributing nothing. "
+        "total_value_nzd 75000.00, wasted_value_nzd 15000.00, wasted_share_percent "
+        "20.00 (exact), saving_nzd 2400.00 (0 + 2400.00 + 0). A blended whole-form "
+        "rate answers 15000/2700 x 700 = 3888.89 instead (all three entries current "
+        "mass, all 700 kg diverted to prevention across the whole request) -- the "
+        "number this case is confirmed to reject when the per-entry rate is reverted "
+        "(see the task-5 report, fix round 3). "
+        "**\u00a74.6 changed what it is evidence of.** Its third entry is unpriced, "
+        "so `total_value_nzd` is a roll-up of an input only two of the three "
+        "entries supplied: every money figure is now withheld and "
+        "`data_state` says `incomplete` four times. It is the golden evidence "
+        "for the incomplete state -- that a partial submission reports a gap "
+        "and not 75000.00, which is two entries' money presented as three "
+        "entries' total. case_11 carries the same three entries fully "
+        "answered and keeps the per-entry-rate arithmetic above under test."
+    ),
+    "case_11_money_and_share_every_entry_answered": (
+        "case_10's bundle and request with the third entry priced "
+        "($25,000 / $2,500 = 5.00/kg, diverting 300 of its 500 kg to "
+        "prevention for 1500.00) and a production total on all three. Every "
+        "metric figure is case_10's unchanged -- the money and production "
+        "fields reach no formula -- so the only hand arithmetic is \u00a74.5's "
+        "and \u00a74.6's: total_value_nzd 100000.00, wasted_value_nzd 17500.00, "
+        "wasted_share_percent 17.50, saving_nzd 3900.00 (0 + 2400.00 + "
+        "1500.00; a blended whole-form rate answers 17500/2700 x 700 = "
+        "4537.04 instead). production_share_percent is 2700 / 19500 = 13.85, "
+        "and the three entries' own shares are 10.00, 20.00 and 20.00 -- "
+        "whose mean is 16.67, so this case rejects an averaged share as well "
+        "as a summed-over-answerers one. **This is the complete state**, and "
+        "the only golden case in which any of the five figures carries a "
+        "number."
+    ),
+    "case_12_disagreeing_data_states": (
+        "Hand-designed, engine-computed (the same discipline case_10/11 were "
+        "built with): pins the precedence `_combined_state` decides between "
+        "two non-complete states, which no case before it exercised -- every "
+        "existing money case moved `total_value_nzd` and `wasted_value_nzd` "
+        "together. Three entries share case_10's bundle: the first two "
+        "answer `total_input_kg` and only the second prices `total_value_nzd`; "
+        "no entry answers `wasted_value_nzd` at all. `production_share_percent`"
+        "'s coverage lands on `incomplete` (two of three entries answered) "
+        "and `wasted_share_percent`'s on `not_supplied` (`total_value_nzd` is "
+        "`incomplete`, `wasted_value_nzd` is `not_supplied`, and the correct "
+        "precedence is `not_supplied` wins) -- one figure `incomplete` and "
+        "another `not_supplied` in the same response, from entries that "
+        "disagree in exactly that way. Reversing `_combined_state`'s two "
+        "guards changes `wasted_share_percent`'s state to `incomplete` and "
+        "this case catches it; see `engine/calculate.py::_combined_state`'s "
+        "own docstring and `tests/test_calculator.py::"
+        "test_incomplete_and_not_supplied_together_favour_not_supplied`."
+    ),
     "case_08_mixed_alternative_rollup": (
         "Hand-computed. §3 rule 3: one entry with an alternative and one "
         "without. The entry without contributes its *current* figures to "
@@ -124,6 +188,21 @@ _PROVENANCE = {
         "net benefit exactly and nothing is inflated. Its equivalence value "
         "lands on 7210.5, which ROUND_HALF_UP and ROUND_HALF_EVEN answer "
         "differently."
+    ),
+    "case_13_equivalences_across_metrics": (
+        "Hand-computed. case_01's bundle and request with the single "
+        "km_driven equivalence (source_metric co2e) replaced by the "
+        "client's three real equivalences from Task 4: vehicles_year "
+        "(co2e, factor 1/2410), olympic_pools (water, factor "
+        "1/2,500,000) and meals (mass, factor 1/0.45). Confirms an "
+        "equivalence off water and one off mass are wired correctly and "
+        "not silently skipped or mixed up with co2e -- at the request "
+        "totals level, current co2e 4449.0000000000 x 0.0004149378 = "
+        "1.8460582722 vehicles, water 1787600.0000000000 x 0.0000004 = "
+        "0.7150400000 pools, and mass 2300.0000000000 x 2.2222222222 = "
+        "5111.1111110600 meals -- the last of which is only reachable "
+        "from the mass total (the co2e total would instead give "
+        "9886.666666...)."
     ),
 }
 
@@ -148,13 +227,25 @@ def _lines(rows) -> tuple[ScenarioLine, ...]:
     )
 
 
-def request_from_json(data) -> CalculationRequest:
-    """§3's `CalculationRequest` from `request.json`.
+def _entry_decimal(entry: dict, key: str) -> Decimal | None:
+    """A money field is optional in a request (§4.5, v1.48); a case that
+    omits the key must produce None, not KeyError, so an unpriced entry can be
+    expressed at all."""
+    value = entry.get(key)
+    return None if value is None else Decimal(value)
 
-    Lives here rather than in `engine/` on purpose: §3 and §4 specify no
-    reader for a request, `api/schemas.py` already owns the §6.2 wire shape,
+
+def request_from_json(data) -> CalculationRequest:
+    """§3's CalculationRequest from request.json.
+
+    Lives here rather than in engine/ on purpose: §3 and §4 specify no
+    reader for a request, api/schemas.py already owns the §6.2 wire shape,
     and a third parser inside the engine would be a second definition of the
     request with no contract behind it.
+
+    The three money fields (§4.5, v1.48) are read the same optional way
+    entry["alternative"] already is: absent in nine of the ten cases, and case_10
+    is the one case that needs them to reach the engine at all.
     """
     return CalculationRequest(
         entries=tuple(
@@ -165,6 +256,9 @@ def request_from_json(data) -> CalculationRequest:
                 alternative=(
                     None if entry["alternative"] is None else _lines(entry["alternative"])
                 ),
+                total_input_kg=_entry_decimal(entry, "total_input_kg"),
+                total_value_nzd=_entry_decimal(entry, "total_value_nzd"),
+                wasted_value_nzd=_entry_decimal(entry, "wasted_value_nzd"),
             )
             for entry in data["entries"]
         ),
@@ -182,22 +276,46 @@ def _decimal(value: Decimal) -> str:
     return format(value, "f")
 
 
+def _breakdown_rows(rows) -> list[dict]:
+    return [
+        {
+            "destination_code": row.destination_code,
+            "qty_kg": _decimal(row.qty_kg),
+            "upstream": _decimal(row.upstream),
+            "downstream": _decimal(row.downstream),
+            "value": _decimal(row.value),
+            #: v1.59. `None` on a totals-level row, where no single
+            #: candidate answered -- the same reason `upstream` and
+            #: `downstream` are zero there.
+            "upstream_basis": _basis(row.upstream_basis),
+        }
+        for row in rows
+    ]
+
+
 def _metric(metric) -> dict:
     return {
         "metric_code": metric.metric_code,
         "unit": metric.unit,
         "display_precision": metric.display_precision,
         "total": _decimal(metric.total),
-        "by_destination": [
-            {
-                "destination_code": row.destination_code,
-                "qty_kg": _decimal(row.qty_kg),
-                "upstream": _decimal(row.upstream),
-                "downstream": _decimal(row.downstream),
-                "value": _decimal(row.value),
-            }
-            for row in metric.by_destination
-        ],
+        "by_destination": _breakdown_rows(metric.by_destination),
+    }
+
+
+def _equivalence(equivalence) -> dict:
+    """Every field `EquivalenceResult` carries, read off `dataclasses.fields`
+    rather than restated by name here. A hand-copied list is the defect this
+    branch already fixed once (`c330025`, widening a 4-key dict that had let
+    the whole subject of this suite go unpinned in thirteen cases) — deriving
+    it means a ninth field is pinned the moment it exists on the dataclass,
+    the same guarantee `tests/api/test_fixture_consistency.py::test_the_fake_
+    adapters_equivalence_has_every_field_the_engines_does` gives the fake
+    adapter's stand-in."""
+    return {
+        f.name: _decimal(value) if isinstance(value, Decimal) else value
+        for f in dataclasses.fields(EquivalenceResult)
+        for value in (getattr(equivalence, f.name),)
     }
 
 
@@ -207,22 +325,44 @@ def _scenario(scenario) -> dict | None:
     return {
         "total_kg": _decimal(scenario.total_kg),
         "metrics": {code: _metric(metric) for code, metric in scenario.metrics.items()},
-        "equivalences": [
-            {
-                "code": equivalence.code,
-                "label": equivalence.label,
-                "value": _decimal(equivalence.value),
-                "source_metric_code": equivalence.source_metric_code,
-            }
-            for equivalence in scenario.equivalences
-        ],
+        "equivalences": [_equivalence(equivalence) for equivalence in scenario.equivalences],
     }
+
+
+def _basis(basis) -> str | None:
+    """v1.59. The enum's own `value`, and `None` left as `None`.
+
+    `str(member)` would render `ItemBasis.CATEGORY`, which is a Python
+    repr rather than the contract's token, and a case file carrying it would
+    pin the class name into the golden suite.
+    """
+    return None if basis is None else basis.value
 
 
 def _benefit(benefit) -> dict | None:
     if benefit is None:
         return None
     return {code: _decimal(value) for code, value in benefit.items()}
+
+
+def _optional_decimal(value: Decimal | None) -> str | None:
+    """Unlike `_decimal`, this may legitimately receive `None` -- every
+    `MoneyResult` field is optional (§4.5), and `None` there means "nobody
+    supplied it", not zero."""
+    return None if value is None else _decimal(value)
+
+
+def _money(money) -> dict | None:
+    """§4.5, v1.48. `None` when no entry supplied a money figure at all; not
+    a metric, so it carries none of `_scenario`'s shape."""
+    if money is None:
+        return None
+    return {
+        "total_value_nzd": _optional_decimal(money.total_value_nzd),
+        "wasted_value_nzd": _optional_decimal(money.wasted_value_nzd),
+        "wasted_share_percent": _optional_decimal(money.wasted_share_percent),
+        "saving_nzd": _optional_decimal(money.saving_nzd),
+    }
 
 
 def render(result: CalculationResult) -> dict:
@@ -236,14 +376,39 @@ def render(result: CalculationResult) -> dict:
             "current": _scenario(result.totals.current),
             "alternative": _scenario(result.totals.alternative),
             "net_benefit": _benefit(result.totals.net_benefit),
+            "money": _money(result.totals.money),
+            "production_share_percent": _optional_decimal(
+                result.totals.production_share_percent
+            ),
+            "data_state": {
+                "production_share_percent":
+                    result.totals.data_state.production_share_percent,
+                "total_value_nzd": result.totals.data_state.total_value_nzd,
+                "wasted_value_nzd": result.totals.data_state.wasted_value_nzd,
+                "wasted_share_percent":
+                    result.totals.data_state.wasted_share_percent,
+                "saving_nzd": result.totals.data_state.saving_nzd,
+            },
         },
         "entries": [
             {
                 "sector_code": entry.sector_code,
                 "food_category_code": entry.food_category_code,
+                #: v1.58's field, absent from this function until v1.59 --
+                #: which is the defect `test_render_drops_no_field` below
+                #: now makes impossible. Nothing moved numerically, because
+                #: no golden case names a food, and that is precisely why
+                #: nothing caught it: a dropped key whose value is `None` in
+                #: every case is invisible to a comparison of what is there.
+                "food_item_code": entry.food_item_code,
+                #: v1.59.
+                "item_basis": _basis(entry.item_basis),
                 "current": _scenario(entry.current),
                 "alternative": _scenario(entry.alternative),
                 "net_benefit": _benefit(entry.net_benefit),
+                "production_share_percent": _optional_decimal(
+                    entry.production_share_percent
+                ),
             }
             for entry in result.entries
         ],
@@ -327,6 +492,61 @@ def test_golden_case(case: Path):
 # ------------------------------------------------- the suite's own guardrails
 
 
+@pytest.mark.parametrize("case", _cases(), ids=lambda path: path.name)
+def test_render_drops_no_field(case: Path):
+    """`render()` says it drops nothing, and until v1.59 it dropped
+    `EntryResult.food_item_code`.
+
+    This file's whole claim rests on one sentence -- *this suite is the only
+    evidence that the calculator computes correctly* -- and a hand-written
+    projection quietly narrows what that evidence covers. The dropped field
+    was v1.58's, added to the dataclass and never added here, and **no case
+    changed when it was added**, because it is `None` in all thirteen: a key
+    that is missing from both documents is missing from the comparison too.
+    The suite went on passing while the newest thing in the engine was
+    outside it.
+
+    So the projection is checked against the dataclasses instead of trusted.
+    Every field of `EntryResult` and of `BreakdownRow` must appear in the
+    rendered document; a field added to either is pinned the day it exists,
+    which is the guarantee `_equivalence` above already gets by deriving its
+    keys and the one the rest of `render()` could not get without listing
+    them (the entry's `current`/`alternative` are reshaped, not copied).
+    """
+    bundle, request = _load(case)
+    document = render(calculate(request, bundle))
+
+    entry_fields = {f.name for f in dataclasses.fields(EntryResult)}
+    for entry in document["entries"]:
+        missing = sorted(entry_fields - set(entry))
+        assert not missing, (
+            f"{case.name}: render() drops {missing} from every entry. A field "
+            "on EntryResult that never reaches expected.json is a field the "
+            "golden suite does not certify."
+        )
+
+    row_fields = {f.name for f in dataclasses.fields(BreakdownRow)}
+    for scope in ("totals", *range(len(document["entries"]))):
+        scenarios = (
+            (document["totals"]["current"], document["totals"]["alternative"])
+            if scope == "totals"
+            else (
+                document["entries"][scope]["current"],
+                document["entries"][scope]["alternative"],
+            )
+        )
+        for scenario in scenarios:
+            if scenario is None:
+                continue
+            for code, metric in scenario["metrics"].items():
+                for row in metric["by_destination"]:
+                    missing = sorted(row_fields - set(row))
+                    assert not missing, (
+                        f"{case.name}: render() drops {missing} from the "
+                        f"{scope}/{code} breakdown rows."
+                    )
+
+
 def test_the_suite_is_not_empty():
     """A discovery bug turns this whole file into zero assertions, and a run
     of zero golden cases is green. `_cases()` is a glob, so this is the only
@@ -396,10 +616,24 @@ def test_case_03_fails_if_the_upstream_destination_dimension_is_removed(monkeypa
     case = GOLDEN / "case_03_prevention_whole_offset"
     bundle, request = _load(case)
 
-    def blind_to_destination(self, sector, food_cat, destination, metric):
-        return self.upstream_factors.get((sector, food_cat, None, metric), Decimal("0"))
+    def blind_to_destination(self, sector, food_cat, food_item, destination, metric):
+        # v1.54 signature, v1.8 behaviour: the destination argument is
+        # accepted and ignored, which is what removing the column would
+        # amount to. The item slot is carried so the stub can stand in for
+        # the real method; no golden case names an item.
+        key = (sector, food_cat, food_item, None, metric)
+        if key in self.upstream_factors:
+            return self.upstream_factors[key], UpstreamBasis.CATEGORY_EVERY_DESTINATION
+        return Decimal("0"), UpstreamBasis.ABSENT
 
-    monkeypatch.setattr(FactorBundle, "upstream", blind_to_destination)
+    #: **`upstream_with_basis`, not `upstream` (v1.59).** It was `upstream`
+    #: until this revision and the patch then landed on the method the engine
+    #: had stopped calling: `calculate_scenario` reads the basis beside the
+    #: value now, so a stub on `upstream` is applied to nothing and this test
+    #: passes 456.000 straight through -- green, and evidence of nothing. The
+    #: suite caught it, which is what it is for; it is written down because
+    #: the next person to add a lookup method inherits the same trap.
+    monkeypatch.setattr(FactorBundle, "upstream_with_basis", blind_to_destination)
 
     result = calculate(request, bundle)
     differences = _diff(_read(case, "expected.json"), render(result))

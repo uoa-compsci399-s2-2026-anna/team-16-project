@@ -1,10 +1,17 @@
 {
   "token": null,
   "gwp_horizon": 100,
+  "time_frame": "one_year",
+  "period_start": "2025-07-01T00:00:00",
+  "period_end": "2026-06-30T23:59:00",
   "entries": [
     {
       "sector": "processing",
       "food_category": "dairy",
+      "food_item": null,
+      "total_input_kg": "10000.000",
+      "total_value_nzd": "45000.00",
+      "wasted_value_nzd": "6750.00",
       "current": [
         { "destination": "landfill", "qty_kg": "1200.000" },
         { "destination": "animal_feed", "qty_kg": "300.000" }
@@ -17,6 +24,9 @@
     {
       "sector": "primary_production",
       "food_category": "vegetables",
+      "food_item": null,
+      "total_value_nzd": "5000.00",
+      "wasted_value_nzd": "4000.00",
       "current": [
         { "destination": "not_harvested", "qty_kg": "800.000" }
       ],

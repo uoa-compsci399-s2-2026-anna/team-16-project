@@ -51,3 +51,7 @@ desktop.ini
 /.codex/
 /.superpowers/
 /.claude/
+
+# Client-supplied source material (brand pack, Rawtec/Traxie data, design images).
+# Large binaries and not part of the deliverable; kept locally for reference only.
+/traxie data/

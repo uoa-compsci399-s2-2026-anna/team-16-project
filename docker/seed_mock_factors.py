@@ -61,7 +61,7 @@ from admin.factor_models import (
     Constant, Equivalence, FactorDownstream, FactorSet, FactorUpstream,
     FactorSetStatus, Formula,
 )
-from admin.taxonomy_models import Destination, FoodCategory, Metric, Sector
+from admin.taxonomy_models import Destination, FoodCategory, FoodItem, Metric, Sector
 from db.repository import publish_factor_set
 from db.session import create_session_factory
 
@@ -146,6 +146,11 @@ def main() -> int:
         foods = _codes(session, FoodCategory)
         destinations = _codes(session, Destination)
         metrics = _codes(session, Metric)
+        #: v1.54. Empty in a database seeded before the vocabulary existed,
+        #: which is why a row naming a food is looked up rather than assumed:
+        #: the lookup raises with the row index instead of writing a NULL,
+        #: which would silently price every food in the category.
+        items = _codes(session, FoodItem)
         if not (sectors and foods and destinations and metrics):
             print(
                 "seed_mock_factors: the taxonomy is empty. Run "
@@ -160,6 +165,11 @@ def main() -> int:
             version_label=data["version_label"],
             status=FactorSetStatus.draft,
             is_mock=bool(data.get("is_mock", True)),
+            #: v1.58's switch. Defaults FALSE, which is the answer for every
+            #: file written before the field existed -- and the safe default
+            #: either way: a set that released step 2.5 because nobody said
+            #: otherwise would ask a finer question than its factors answer.
+            item_level_enabled=bool(data.get("item_level_enabled", False)),
             notes=data.get("notes"),
         )
         session.add(factor_set)
@@ -201,6 +211,14 @@ def main() -> int:
                 food_category_id=_lookup(
                     foods, row["food_category"], "food_category", where
                 ),
+                #: v1.54's second nullable dimension. `None` means the row
+                #: prices every food in the category, which is what all twelve
+                #: of `case_01`'s rows mean and what every file written before
+                #: the dimension existed means.
+                food_item_id=(
+                    None if row.get("food_item") is None
+                    else _lookup(items, row["food_item"], "food_item", where)
+                ),
                 destination_id=(
                     None if dest is None
                     else _lookup(destinations, dest, "destination", where)
@@ -214,14 +232,25 @@ def main() -> int:
 
         for index, row in enumerate(data.get("downstream", [])):
             where = f"downstream[{index}]"
-            #: `food_category` is nullable and means "every food category for
-            #: this destination" - how a per-tonne charge like the waste levy
-            #: is represented.
+            #: Both `sector` and `food_category` are nullable and mean "every
+            #: value of that dimension for this destination" - a null category
+            #: is how a per-tonne charge like the waste levy is represented,
+            #: and a null sector is what a set whose disposal routes cost the
+            #: same wherever the waste arose takes on every row (v1.31).
+            #: `.get` rather than `[...]`, matching `destination` above: this
+            #: seed is the first-run path for a hand-written file, and a set
+            #: written before v1.31 has no `sector` key at all - reading it as
+            #: absent means "every sector", which is what those rows meant.
+            sector = row.get("sector")
             food = row.get("food_category")
             session.add(FactorDownstream(
                 factor_set_id=set_id,
                 destination_id=_lookup(
                     destinations, row["destination"], "destination", where
+                ),
+                sector_id=(
+                    None if sector is None
+                    else _lookup(sectors, sector, "sector", where)
                 ),
                 food_category_id=(
                     None if food is None

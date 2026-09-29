@@ -1,52 +1,88 @@
 {% extends "brand/base.html" %}
-{% block title %}Dry run result{% endblock %}
-{% block content %}
-  <h1>Dry run result</h1>
+{% import "brand/_help_tip.html" as help %}
+{% block title %}{{ _("Dry run result") }}{% endblock %}
+{% block shell %}
+{#- THE STATE IS DECIDED HERE, ONCE, BEFORE ANYTHING IS DRAWN.
+
+    `outcome == "ok"` means only that `admin/calc_client.py` did not raise. It
+    does NOT mean the calculator returned anything usable, and the difference is
+    not hypothetical: `tests/admin/test_dryrun_view.py::
+    test_a_malformed_metrics_shape_does_not_500` posts
+    `totals.current.metrics = "not-a-mapping"` on purpose, because B's endpoint
+    is not deployed and its response shape is unconfirmed. Read straight off
+    `outcome`, this page draws a green tick and "Calculation completed
+    successfully" directly above "No calculated metrics were returned."
+
+    And there is no expected value anywhere in this flow to compare against, so
+    "Test passed" claims a verdict the page has no basis for. It says what came
+    back instead.
+
+    `current_metrics` was computed further down the page, after the banner that
+    depends on it. It is hoisted here so one decision drives the pill, the
+    banner and the metric list together. -#}
+{% set current_metrics = result.totals.current.metrics
+   if result and result.totals and result.totals.current
+      and result.totals.current.metrics is mapping
+   else {} %}
+{% set is_mock = result and result.factor_set and result.factor_set.is_mock %}
+{% set state = "unavailable" if outcome == "unavailable"
+   else "refused" if outcome != "ok"
+   else "empty" if not current_metrics
+   else "mock" if is_mock
+   else "returned" %}
+<main class="dry-run-page dry-run-result-page">
+  <header class="dry-run-head">
+    <div><span class="dry-run-eyebrow">{{ _("Internal calculator tools") }}</span><h1>{{ _("Test result") }}</h1><p>{{ _("Review the calculator response, factor source and diagnostic details.") }}</p></div>
+    {%- if state == "returned" %}
+      <span class="status-pill status-pill--pass">{{ _("Result returned") }}</span>
+    {%- elif state == "mock" %}
+      <span class="status-pill status-pill--warning">{{ _("Placeholder factors") }}</span>
+    {%- elif state == "empty" %}
+      <span class="status-pill status-pill--warning">{{ _("No metrics returned") }}</span>
+    {%- elif state == "unavailable" %}
+      <span class="status-pill status-pill--error">{{ _("Service unavailable") }}</span>
+    {%- else %}
+      <span class="status-pill status-pill--error">{{ _("Refused") }}</span>
+    {%- endif %}
+  </header>
 
   {% if outcome == "unavailable" %}
-    <div class="notice notice--error">
-      <strong>The calculation service is not reachable.</strong> This is not
-      a problem with the formula being tuned — the endpoint is absent or
-      broken. Try again once it is back.
-    </div>
-    <p class="muted">{{ message }}</p>
+    {#- ERROR, not warning. The template this replaced used `notice--error`, and
+        `admin/dryrun_views.py`'s docstring is emphatic that an outage and a
+        refusal must never read as the same thing - but a yellow "Warning" pill
+        under-states an outage in the other direction, and a staff member who
+        reads it as "the scenario had a problem" will go looking at their own
+        figures for a fault that is not there. Distinct copy, distinct level. -#}
+    <section class="result-state result-state--error"><span class="result-state__icon" aria-hidden="true">×</span><div><span class="dry-run-eyebrow">{{ _("Error") }}</span><h2>{{ _("The calculation service is not reachable") }}</h2><p>{{ _("This is not a problem with the formula being tuned — the endpoint is absent or broken. Try again once it is back.") }}</p></div></section>
+    <details class="debug-panel" open><summary>{{ _("Technical details") }}</summary><pre>{{ message }}</pre></details>
   {% elif outcome == "refused" %}
-    <div class="notice notice--error">
-      <strong>{{ code }}</strong>: {{ message }}
-    </div>
-    {% if details %}
-      <ul>
-        {% for detail in details %}
-          <li>{{ detail.field }} — {{ detail.issue }}</li>
-        {% endfor %}
-      </ul>
-    {% endif %}
+    <section class="result-state result-state--error"><span class="result-state__icon" aria-hidden="true">×</span><div><span class="dry-run-eyebrow">{{ _("Error") }}</span><h2>{{ code }}</h2><p>{{ message }}</p></div></section>
+    {% if details %}<section class="validation-panel" aria-labelledby="validation-title"><h2 id="validation-title">{{ _("Validation issues") }}</h2><ul>{% for detail in details %}<li><code>{{ detail.field }}</code><span>{{ detail.issue }}</span></li>{% endfor %}</ul></section>{% endif %}
   {% else %}
-    {% if result.factor_set and result.factor_set.is_mock %}
-      <div class="notice notice--warning">
-        Placeholder data — this factor set is marked mock.
-      </div>
-    {% endif %}
-    <p class="muted">Factor source: {{ result.factor_source }}</p>
-
-    {% set current_metrics = result.totals.current.metrics
-       if result and result.totals and result.totals.current
-       and result.totals.current.metrics is mapping else {} %}
-    <table>
-      <thead>
-        <tr><th>Metric</th><th>Unit</th><th>Total</th></tr>
-      </thead>
-      <tbody>
-        {% for metric_code, metric in current_metrics.items() %}
-          <tr>
-            <td>{{ metric_code }}</td>
-            <td>{{ metric.unit }}</td>
-            <td>{{ metric.total }}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    {#- MANDATORY AND NON-DISMISSIBLE (§2.2). First on the page, before the
+        state banner, because it qualifies everything under it: the numbers are
+        structurally correct and substantively meaningless while a mock set is
+        published. It is never inside a `<details>` and never behind a tab. -#}
+    {% if is_mock %}<div class="notice notice--warning dry-run-notice"><strong>{{ _("Warning:") }}</strong> {{ _("Placeholder data — this factor set is marked mock.") }}</div>{% endif %}
+    {%- if state == "empty" %}
+      {#- The shape `test_a_malformed_metrics_shape_does_not_500` drives. The
+          call succeeded and the response carried nothing this page can read,
+          which is a real answer and not a pass. -#}
+      <section class="result-state result-state--warning"><span class="result-state__icon" aria-hidden="true">!</span><div><span class="dry-run-eyebrow">{{ _("Warning") }}</span><h2>{{ _("The calculator returned no metrics") }}</h2><p>{{ _("The request was accepted, but the response carried no metric totals this page can read. Check the formula and the factor set before reading anything into this run.") }}</p></div></section>
+    {%- elif state == "mock" %}
+      <section class="result-state result-state--warning"><span class="result-state__icon" aria-hidden="true">!</span><div><span class="dry-run-eyebrow">{{ _("Warning") }}</span><h2>{{ _("Metrics returned, against placeholder factors") }}</h2><p>{{ _("The calculation ran and the totals below are arithmetically correct — but the factor set is marked mock, so the values themselves mean nothing.") }}</p></div></section>
+    {%- else %}
+      {#- "Result returned", not "Test passed". Nothing in this flow compares
+          against an expected value, so there is no verdict to report - only
+          what came back. -#}
+      <section class="result-state result-state--pass"><span class="result-state__icon" aria-hidden="true">✓</span><div><span class="dry-run-eyebrow">{{ _("Returned") }}</span><h2>{{ _("The calculator returned a result") }}</h2><p>{{ _("The scenario was accepted and the metrics below came back. Compare them against what you expected — this page does not.") }}</p></div></section>
+    {%- endif %}
+    <section class="result-source"><span>{{ _("Factor source") }}</span><strong>{{ result.factor_source }}</strong></section>
+    <section class="dry-run-card" aria-labelledby="metrics-title">
+      <div class="dry-run-card__head"><div><span class="dry-run-step">{{ _("Result") }}</span><h2 id="metrics-title">{{ _("Calculated metrics") }}</h2><p>{{ _("Totals returned for the current scenario.") }}</p></div></div>
+      <div class="metric-grid">{% for metric_code, metric in current_metrics.items() %}<article class="metric-card"><span>{{ metric_code }}</span><strong>{{ metric.total }}</strong><small>{{ metric.unit }}</small></article>{% else %}<p class="muted">{{ _("No calculated metrics were returned.") }}</p>{% endfor %}</div>
+    </section>
   {% endif %}
-
-  <p><a href="/admin/try">Try another</a></p>
+  <div class="result-actions"><a class="button button--quiet" href="/admin/try" aria-describedby="change-configuration-hint">← {{ _("Change configuration") }}</a>{{ help.help_tip("What Change configuration does", _("Goes back to the test form, so you can change the factor set, sector, destination or quantity and run it again. This result is not kept."), id="change-configuration-hint", glyph=false) }}<a class="button dry-run-primary" href="/admin/try" aria-describedby="run-another-test-hint">{{ _("Run another test") }}</a>{{ help.help_tip("What Run another test does", _("Goes back to the test form — the same place Change configuration goes, offered at this end of the row too. This result is not kept, and no dry run is ever saved or counted in the public statistics."), id="run-another-test-hint", glyph=false) }}</div>
+</main>
 {% endblock %}

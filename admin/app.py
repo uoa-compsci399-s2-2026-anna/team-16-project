@@ -9,7 +9,6 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
-from sqladmin import Admin
 from starlette.staticfiles import StaticFiles
 
 from admin.backend import AdminAuth
@@ -17,6 +16,10 @@ from admin.bootstrap import ensure_bootstrap_admins
 from admin.calc_client import HttpCalculateClient
 from admin.cli import report_bootstrap_result
 from admin.config import Settings, load_settings
+from admin.csrf import issue_token
+from admin import i18n as admin_i18n
+from admin.importing import KaiAdmin
+from admin.language_view import register as register_language_route
 from admin.protection import ProtectionMiddleware
 from admin.runtime import Runtime
 from admin.throttle import build_throttle
@@ -136,6 +139,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         ProtectionMiddleware, session_factory=session_factory, settings=settings
     )
 
+    # Added last, so it is the OUTERMOST middleware: Starlette builds the
+    # stack in reverse registration order. That ordering is the point - a
+    # request ProtectionMiddleware refuses still has a language negotiated by
+    # the time its refusal is rendered, and the login page (the one page a
+    # locked-out person can still reach) is the page most in need of being
+    # readable by somebody who does not read English.
+    #
+    # Outermost is also the only position from which `Vary: Accept-Language`
+    # reaches EVERY response, including the ones the inner middlewares
+    # short-circuit. A 403 that omits Vary is the response a shared cache is
+    # most likely to hold and hand to the next visitor.
+    app.add_middleware(admin_i18n.LanguageMiddleware)
+
     # NOTE (Task 3, deviation from the brief): Admin() mounts sqladmin's own
     # Starlette sub-application at "/admin" as the *last* line of its
     # __init__ (a Mount whose path_regex matches any "/admin/..." prefix).
@@ -152,7 +168,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         name="brand-static",
     )
 
-    admin = Admin(
+    # The language chooser's endpoint, registered here for the same
+    # mount-ordering reason as the static files above - sqladmin's mount matches
+    # every /admin/... prefix and Starlette stops at the first match - and for a
+    # second reason of its own: @expose wraps every sqladmin route in
+    # login_required, and this one has to work before anybody has logged in.
+    # admin/language_view.py says why it carries no CSRF token.
+    register_language_route(app)
+
+    # KaiAdmin rather than sqladmin's Admin: one overridden route, the one
+    # that carries a bulk CSV upload. admin/importing.py says what it adds and
+    # why none of the three additions can live on the view instead.
+    admin = KaiAdmin(
         app,
         session_maker=session_factory,
         base_url="/admin",
@@ -177,6 +204,50 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     admin.templates.env.globals["login_max_failures"] = settings.login_max_failures
 
+    # THE CSRF TOKEN, FOR THE TEMPLATES SQLADMIN RENDERS ITSELF.
+    #
+    # Every hand-written screen in this panel is rendered by its own view,
+    # which puts `csrf_token` in the context it passes (admin/views.py,
+    # admin/accounts_view.py, admin/factor_views.py, admin/self_service_view.py).
+    # sqladmin's own list page is rendered by sqladmin, from a context this
+    # project never sees, so a template shadowed under templates/sqladmin/ has
+    # no other way to reach the session's token - the same seam, and the same
+    # reason, as the two login globals above.
+    #
+    # A callable taking the request rather than a value: a Jinja global is
+    # evaluated once per render and there is one environment per app, so a
+    # bare string here would be one session's token handed to every session.
+    # `issue_token` mints on first use and is idempotent afterwards
+    # (admin/csrf.py), and the render happens inside the endpoint, before
+    # SessionMiddleware writes the response's cookie.
+    admin.templates.env.globals["kaicalc_csrf_token"] = (
+        lambda request: issue_token(request.session)
+    )
+
+    # TRANSLATION. Contract open item O-8, and admin/i18n.py says why it is
+    # shaped this way rather than as gettext or as sqladmin's own i18n.
+    #
+    # `install_gettext_callables` REPLACES the null translations sqladmin
+    # installed for itself a few lines earlier in its own constructor
+    # (application.py's init_templating_engine: with no I18nConfig it calls
+    # install_null_translations, which makes `_()` the identity). Ours goes in
+    # afterwards and wins - which is what puts sqladmin's OWN twenty-five
+    # strings ("Save", "Delete", the pagination line, the empty-list text)
+    # through this panel's catalogue without forking a single one of its
+    # templates.
+    #
+    # newstyle=True because that is what sqladmin's templates are written
+    # against: Jinja applies `translated % variables` itself after our
+    # callable returns, so `_("Showing %(start)s to %(end)s of %(count)s
+    # items")` still interpolates. A translation that damages one of those
+    # placeholders is a rendering error rather than a wrong word, which is
+    # why tests/admin/test_i18n.py asserts they survive translation.
+    # The language globals go in alongside, named rather than reusing
+    # sqladmin's `get_locale`/`get_locale_display_name`: those are only
+    # defined when an I18nConfig is passed, and this panel deliberately
+    # passes none.
+    admin_i18n.install(admin.templates.env)
+
     # `admin.admin` is sqladmin's own mounted Starlette application - the
     # exact object `request.app` resolves to inside a view (see
     # admin/runtime.py). Attaching Runtime here rather than to a
@@ -186,7 +257,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session_factory=session_factory,
         throttle=app.state.throttle,
         settings=settings,
-        calc_client=HttpCalculateClient(base_url=settings.api_base_url),
+        # `secret_key` is what makes a dry run succeed against a real API
+        # (open item O-9). The panel signs a short-lived proof with it; the API
+        # verifies that proof with the same value, which the deployment
+        # guarantees is one value by mounting one `secret` volume into both
+        # services. A mismatch here is not a subtle bug - every dry run 401s.
+        calc_client=HttpCalculateClient(
+            base_url=settings.api_base_url, secret_key=settings.secret_key
+        ),
     )
 
     # Registered first, and that is the whole of why it is here rather than
@@ -218,6 +296,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     admin.add_base_view(DryRunView)
     admin.add_base_view(CompareView)
 
+    # The deployment read-back. A BaseView rather than a model screen because
+    # it reads no table: everything on it comes from this request's own
+    # headers and from `settings`. Registered next to the audit log and the
+    # blocklist because it shares their role floor - it describes the
+    # deployment's security posture, which contract §8.3 makes an
+    # administrator's concern - and `AdministratorOnly` keeps it out of a
+    # staff member's sidebar.
+    from admin.deployment_view import DeploymentView
+
+    admin.add_base_view(DeploymentView)
+
     from admin.modelviews import AuditLogAdmin
 
     admin.add_view(AuditLogAdmin)
@@ -230,18 +319,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     admin.add_view(IpBlockAdmin)
 
-    # The six taxonomy views of contract §8.1 landed in E-4 (this block). All
+    from admin.submission_views import SubmissionAdmin
+
+    admin.add_view(SubmissionAdmin)
+
+    # The taxonomy views of contract §8.1 landed in E-4 (this block) as six;
+    # `FoodItemAdmin` (v1.54 part two) makes seven. All
     # six of E-5's factor views - factor_set, factor_upstream,
     # factor_downstream, constant, formula, equivalence - are registered just
-    # below; a read-only submission view is still to come. All inherit
-    # AuditedModelView, so each arrives already audited.
+    # below. The submission view this comment used to call "still to come" is
+    # the line above. All inherit AuditedModelView, so each arrives already
+    # audited.
     from admin.taxonomy_views import (
-        DestinationAdmin, DestinationGroupAdmin, FoodCategoryAdmin, MetricAdmin,
-        SectorAdmin, UnitPresetAdmin,
+        DestinationAdmin, DestinationGroupAdmin, FoodCategoryAdmin,
+        FoodItemAdmin, MetricAdmin, SectorAdmin, UnitPresetAdmin,
     )
 
-    for view in (SectorAdmin, FoodCategoryAdmin, DestinationGroupAdmin,
-                 DestinationAdmin, MetricAdmin, UnitPresetAdmin):
+    #: `FoodItemAdmin` (v1.54) sits immediately after `FoodCategoryAdmin`
+    #: because it is that table's refinement: a food item's only required field
+    #: is the category it belongs to, and a staff member authoring one is
+    #: looking at the category list one line above.
+    for view in (SectorAdmin, FoodCategoryAdmin, FoodItemAdmin,
+                 DestinationGroupAdmin, DestinationAdmin, MetricAdmin,
+                 UnitPresetAdmin):
         admin.add_view(view)
 
     from admin.factor_views import (
@@ -257,5 +357,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     for view in (ComparisonScenarioAdmin, ComparisonScenarioLineAdmin):
         admin.add_view(view)
+
+    # After every view is registered, and it has to be after: this walks the
+    # registered set. sqladmin builds its menu from these same attributes, so
+    # the navigation, the page headings and the delete modal all follow from
+    # here. See admin/i18n.py::_TranslatedAttribute for why the attribute
+    # rather than the catalogue is the thing that has to change.
+    admin_i18n.translate_view_names(admin.views)
 
     return app

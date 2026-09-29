@@ -350,7 +350,7 @@ async def test_deactivating_prevention_is_refused(session, admin_client):
 async def test_deactivating_preventions_group_is_refused(session, admin_client):
     """The end-to-end proof for DestinationGroupAdmin: a staff member tidying
     up the destination-group list, not the destination list, is the likelier
-    route to breaking this invariant - see check_prevention_intact."""
+    route to breaking this invariant - see check_prevention_destination."""
     group = DestinationGroup(code="reuse", name="Reuse", is_waste=False)
     session.add(group)
     session.commit()

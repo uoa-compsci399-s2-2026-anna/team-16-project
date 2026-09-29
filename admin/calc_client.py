@@ -21,6 +21,8 @@ from typing import Any, Protocol
 
 import httpx
 
+from db.staff_proof import STAFF_PROOF_HEADER, mint_staff_proof
+
 
 class CalculateUnavailable(Exception):
     """The endpoint could not be reached, or did not answer as a service.
@@ -52,7 +54,7 @@ class CalculateClient(Protocol):
         self,
         request_body: dict,
         *,
-        cookies: dict,
+        actor: str,
         factor_set_version: str | None,
     ) -> dict:
         ...
@@ -64,19 +66,48 @@ class HttpCalculateClient:
     ``transport`` exists only so tests can substitute
     ``httpx.MockTransport``; production leaves it unset and httpx builds its
     normal transport.
+
+    ``secret_key`` is what closes open item O-9. The API refuses a dry run
+    without an authenticated staff session, and forwarding the browser's
+    cookies - which is all this client used to do - proves nothing to it: the
+    API cannot read the panel's session cookie and must not learn how (see
+    ``db/staff_proof.py``). So the panel signs a short-lived proof instead, one
+    per call, with the ``SECRET_KEY`` both services share.
+
+    It is optional only so that a test may build a client with no secret and
+    drive the unauthenticated path deliberately. **A deployment always passes
+    one** - ``admin/app.py`` reads it off the same ``Settings`` the session
+    cookie is signed from - and without it every dry run answers
+    `UNAUTHORIZED`, which is precisely the state O-9 records.
     """
 
-    def __init__(self, base_url: str, transport: httpx.BaseTransport | None = None):
+    def __init__(
+        self,
+        base_url: str,
+        transport: httpx.BaseTransport | None = None,
+        *,
+        secret_key: str | None = None,
+    ):
         self._base_url = base_url
         self._transport = transport
+        self._secret_key = secret_key
 
     def dry_run(
         self,
         request_body: dict,
         *,
-        cookies: dict,
+        actor: str,
         factor_set_version: str | None,
     ) -> dict:
+        """``actor`` is the signed-in staff username, from the panel's session.
+
+        It replaced a ``cookies`` parameter that forwarded the browser's whole
+        cookie jar to the API. That forwarding never authenticated anything -
+        the API cannot read the panel's session cookie and deliberately must
+        not learn how - so its only effect was to hand a live staff session
+        cookie to a second service on every dry run. The proof below is what
+        the API actually checks, and it is minted for this one call.
+        """
         body = dict(request_body)
         if factor_set_version is None:
             body["dry_run"] = None
@@ -86,16 +117,21 @@ class HttpCalculateClient:
                 "bundle": None,
             }
 
+        headers = {"X-Dry-Run": "true"}
+        if self._secret_key is not None:
+            headers[STAFF_PROOF_HEADER] = mint_staff_proof(
+                actor, secret_key=self._secret_key
+            )
+
         try:
             with httpx.Client(
                 base_url=self._base_url,
                 transport=self._transport,
-                cookies=cookies,
             ) as client:
                 response = client.post(
                     "/api/v1/calculate",
                     json=body,
-                    headers={"X-Dry-Run": "true"},
+                    headers=headers,
                 )
         except httpx.HTTPError as exc:
             raise CalculateUnavailable(str(exc)) from exc

@@ -1,0 +1,102 @@
+{# The published-set panel above the factor-sets list (Task: factor-set
+   import). Extends brand/model_list.html rather than sqladmin/list.html
+   directly, the same shape as brand/staff_list.html and
+   brand/ip_block_list.html and for the same reason: this view keeps every
+   other list page's scrollport fix and page-level guidance mechanism
+   (brand/_guidance.html) while adding one block of its own.
+
+   Filled in from `list_page_intro`, not `model_menu_bar` - the panel below
+   is live data about what the calculator is currently running on, not a
+   button next to the table - and placed BEFORE `{{ super() }}`, which is
+   what renders the guidance blocks next: a staff member reads what is live
+   before reading reference material about how it got that way.
+
+   The card markup (`col-12` / `card` / `card-status-start` / `card-body` /
+   `card-title`) matches every guidance block already on this same page
+   (admin/templates/brand/guidance/factor_set_lifecycle.html and friends) -
+   "follow the list's existing presentation" (Task brief) meant this, not a
+   new component: this panel and the guidance cards it sits above are drawn
+   from the same Tabler card the rest of the list page already renders, one
+   `list_page_intro` slot apart. #}
+{% extends "brand/model_list.html" %}
+
+{% block list_page_intro %}
+<div class="col-12">
+  <div class="card">
+    <div class="card-status-start" style="background: #003223;"></div>
+    <div class="card-body">
+      <h3 class="card-title">{{ _("Currently published") }}</h3>
+      {% if published_summary %}
+        <p>
+          <a href="{{ published_summary.detail_url }}">
+            <strong>{{ published_summary.version_label }}</strong>
+          </a>
+        </p>
+        <p>
+          {{ _("Published %(published_at)s by %(published_by)s.",
+               published_at=published_summary.published_at.strftime('%d %b %Y, %H:%M'),
+               published_by=published_summary.published_by) }}
+          {% if published_summary.effective_from %}
+            {{ _("Effective from %(effective_from)s.",
+                 effective_from=published_summary.effective_from.strftime('%d %b %Y')) }}
+          {% endif %}
+        </p>
+        <p class="muted">
+          {% if published_summary.last_modified_before_publication %}
+            {{ _("Last changed %(when)s, before it was published. A published set is read-only, so its numbers have not changed since.",
+                 when=published_summary.last_modified_before_publication.strftime('%d %b %Y, %H:%M')) }}
+          {% else %}
+            {{ _("No recorded change before publication.") }}
+          {% endif %}
+        </p>
+      {% else %}
+        <p>
+          {{ _("No factor set is currently published. The public calculator is showing a maintenance message until one is.") }}
+        </p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{#- Item-level coverage (v1.54). Rendered only once the food-item vocabulary
+    has rows in it: with no foods at all — the state of every deployment until
+    somebody authors them — "item-level factors for 0 of 0 foods" beside every
+    set is a card that says nothing and takes up the space above the list where
+    what is published belongs.
+
+    Shown for every draft and the published set, not only the published one,
+    because the set being decided about is the draft being prepared. `enabled`
+    and the count are deliberately printed together: the flag is a boolean and
+    the judgement behind it is not. #}
+{% if item_coverage and item_coverage[0].total %}
+<div class="col-12">
+  <div class="card">
+    <div class="card-status-start" style="background: #005AE6;"></div>
+    <div class="card-body">
+      <h3 class="card-title">{{ _("Item-level detail") }}</h3>
+      <p class="muted">
+        {{ _("Asking a visitor which food, rather than only which category. A food with no factors of its own is priced at its category's average, so a set need not price every food — but the more it prices, the more the extra question is worth asking.") }}
+      </p>
+      <ul>
+        {% for row in item_coverage %}
+        <li>
+          {#- Two whole sentences rather than one with an "on"/"off" word
+              slotted in: a bare adverb is the classic string nobody can
+              translate, because the word that fits depends on the sentence it
+              lands in. -#}
+          <strong>{{ row.version_label }}</strong> ({{ row.status }}) —
+          {% if row.enabled %}
+            {{ _("On, with item-level factors for %(priced)s of %(total)s foods.",
+                 priced=row.priced, total=row.total) }}
+          {% else %}
+            {{ _("Off, with item-level factors for %(priced)s of %(total)s foods.",
+                 priced=row.priced, total=row.total) }}
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+</div>
+{% endif %}
+{{ super() }}
+{% endblock %}

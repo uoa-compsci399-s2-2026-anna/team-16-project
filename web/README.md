@@ -5,37 +5,65 @@ build step: the browser runs the files in this directory directly.
 
 ## Public pages
 
-- `index.html` — calculator entry point (and the production `/` page)
-- `home.html` — introduction, calculator call to action and latest Kai Commitment news
+- `index.html` — **the production `/` page**, and the calculator. It opens on its own
+  introduction screen: the eyebrow, the heading, "Start the calculator", the "What you
+  will need" check-list and the privacy note. That screen costs one click before step
+  one, and the team accepted it
 - `stats.html` — privacy-protected aggregate statistics and charts
 - `methodology.html` — published methodology, factors and provenance
 
-Every page links to the other three through the shared public navigation. The calculator
-keeps its own in-page step navigation and reset controls.
+Every page links to the other two through the drawer (`js/drawer.js`), which is on all
+three; `stats.html` and `methodology.html` also carry the header navigation. The
+calculator keeps its own in-page step navigation and reset controls.
+
+### Retired, and why it is still here
+
+- `home.html`, with `js/home.js` and `js/news.js` — **retired. Nothing links to it and
+  `/` no longer serves it.** It was the landing page for one week. The team dropped it:
+  it looked poor, and it duplicated the client's own website, which already carries this
+  material.
+
+  It is **retired rather than deleted because the client has not decided about the news
+  feed** it carries, which is the one thing on it that exists nowhere else. Typing
+  `/home.html` still works — the page renders, the feed loads when `KAICALC_NEWS_ORIGIN`
+  is set, and every string on it is still translated in all twenty catalogues, because
+  `tests/web/i18n_keys.py` reads the files in this directory and does not ask which of
+  them anybody can reach.
+
+  Reviving it is one line in `docker/nginx.conf`, one drawer row on three pages, and a
+  decision about the calculator's introduction screen — the thing this page displaced.
+  Deleting it also means three modules' keys out of twenty catalogues,
+  `KAICALC_NEWS_ORIGIN`, `KAICALC_NEWS_IMAGE_ORIGINS` and the two CSP directives derived
+  from them. **Neither is a tidy-up; both need the client's answer.**
 
 ## Structure
 
 ```text
 web/
-  home.html                 Home and news page
-  index.html                Six-step calculator
+  index.html                Six-step calculator, served at `/`, opening on its
+                            own introduction screen
+  home.html                 RETIRED - see above. In the tree, reachable from
+                            nothing, pending the client's decision on the news feed
   stats.html                Aggregate statistics page
   methodology.html          Documentation and published-factor page
-  assets/                   Brand images and self-hosted fonts
-  css/styles.css            Shared design system and responsive page layouts
+  README.md                 This file
+  assets/                   Brand images and the self-hosted brand fonts
+  css/styles.css            The whole design system, mobile-first from 375px
+  locales/                  One catalogue per language, plus the manifest
   js/api.js                 The only module that calls fetch()
-  js/news.js                WordPress post normalisation
-  js/home.js                Home/news page entry point
-  js/charts.js              Chart.js adapters for pie, bar and line charts
+  js/i18n.js                Catalogues, negotiation and the language chooser
+  js/news.js                WordPress post normalisation - RETIRED with home.html
+  js/home.js                Home/news page entry point - RETIRED with home.html
+  js/charts.js              Chart.js adapters for bar and doughnut charts
   js/stats.js               Statistics page entry point
   js/methodology.js         Documentation page entry point
   js/main.js                Calculator entry point
-  js/calculator.js          Calculator wizard and delegated listeners
-  js/results.js             Calculator results view
-  js/improvement.js         Alternative scenario and comparison view
-  js/state.js               Shared calculator state and subscribers
-  js/units.js               User-entered mass conversions
-  js/view.js                Shared rendering helpers
+  js/calculator.js          The six-step wizard and its delegated listeners
+  js/results.js             The results screen
+  js/improvement.js         The alternative scenario and the comparison screen
+  js/state.js               Single shared state object with a subscriber set
+  js/units.js               Every mass conversion the front end performs
+  js/view.js                escapeHtml, formatNumber, slug, STEPS, stepNav
   vendor/chart.umd.min.js   Self-hosted Chart.js runtime
   vendor/chart.js.LICENSE.md
   vendor/chart.js.SOURCE.md
@@ -86,16 +114,6 @@ Mock calculator error states can be exercised with `mockError`, for example
 - Apart from conversion of user-entered mass in `units.js`, impact values come from the API.
 - Taxonomy, metrics and equivalences are data-driven rather than hard-coded in views.
 - Negative impact values retain their sign in text and charts.
-- Statistics renders destination, sector and food-category shares. Each breakdown has its
-  own pie, bar or line selector, with pie as the default. Switching the chart changes only
-  the presentation of the API's raw `share` values; tooltips format them as percentages.
-- The line chart's horizontal axis follows category order from the service; it does not
-  represent time or a trend. Each chart has a short explanation of what its share measures.
-- Every statistics chart is followed by a complete text list of its buckets, counts, shares
-  and cumulative quantities; the canvas is not the only representation of the data.
-- Chart colours are deterministic for stable bucket codes (or labels when no code is
-  supplied), and the palette continues to generate colours when additional buckets arrive.
-- Chart animation is disabled when `prefers-reduced-motion: reduce` matches.
 - A mock factor set produces a persistent, conditional warning in every results view.
 - The returned anonymous session token is stored in `sessionStorage` and reused.
 - Layouts are checked at 320px, 375px, the 481–849px tablet band and desktop widths.

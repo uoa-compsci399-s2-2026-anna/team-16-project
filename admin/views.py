@@ -48,8 +48,13 @@ from admin.models import utcnow
 from admin.runtime import get_runtime
 from admin.security import BCRYPT_MAX_BYTES, verify_password
 from admin.totp import qr_svg
+from admin import i18n as admin_i18n
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+
+# Contract O-8. This environment is not sqladmin's, so it does not inherit
+# `_()` from it - see admin/i18n.py::install.
+admin_i18n.install(templates.env)
 
 #: Contract 8.3 sets no policy. This was twelve and is now eight, at the
 #: repository owner's decision, taken with the argument against in front of

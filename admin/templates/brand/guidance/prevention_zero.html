@@ -7,24 +7,40 @@
    admin/factor_lifecycle.publish_factor_set - and deliberately not by
    rollback_to, which is the last paragraph here.
 
+   Says "the destination ticked as the prevention destination" and never the
+   code `prevention`: the role is destination.is_prevention now, staff may
+   rename the row, and prose naming a code would be the same magic string one
+   layer out.
+
    Written as the consequence a reader meets rather than a rule they must
    remember, per §10's own note. The `destination` field on the form below
    explains what a blank destination means; this block explains what happens
    at publish time and what to do about it. Pinned by
-   tests/admin/test_guidance.py. #}
+   tests/admin/test_guidance.py.
+
+   Closed by default (Task: admin guidance disclosure). This is what a
+   staff member reads when they hit the publish-time refusal, or before
+   adding a new sector, food category or metric - reference material
+   sought out, not a warning aimed at someone who is not looking for it -
+   so it is fine to fold. Publishing itself still refuses regardless of
+   whether this has been read. #}
 <div class="col-12">
   <div class="card">
     <div class="card-status-start" style="background: #003223;"></div>
     <div class="card-body">
       <div style="max-width: 78ch;">
-        <h3 class="card-title">Every general row needs a <code>prevention</code> row at zero</h3>
+        <h3 class="card-title">Every general row needs a prevention row at zero</h3>
+        <details class="guidance-disclosure">
+        <summary>{{ _("Why publishing is refused, and what the fix is when it is") }}</summary>
+        <div class="guidance-disclosure__body">
         <p>
           Upstream impact is the impact of having grown, made and moved the food.
           It happens before anything is thrown away, so it does not depend on
           where the waste eventually goes. Food that was never wasted, though,
           was never produced, and none of that impact belongs to it. That is what
-          the destination <code>prevention</code> means here: not somewhere the
-          food went, but waste that did not happen. Its upstream row is zero.
+          the destination ticked <strong>prevention</strong> on the destinations
+          screen means: not somewhere the food went, but waste that did not
+          happen. Its upstream row is zero.
         </p>
         <p>
           Miss one and nothing looks wrong. The calculator goes on charging
@@ -37,14 +53,17 @@
           <strong>You will meet this as a refusal rather than as a rule to
           remember.</strong> Publishing a factor set is refused while any
           combination of sector, food category and metric has a general row and
-          no <code>prevention</code> row at zero to go with it. The message lists
-          the combinations, in that order. Add one upstream row for each —
-          Destination <code>prevention</code>, Value per kg <code>0</code> — and
-          publish again.
+          no prevention row at zero to go with it. The message lists the
+          combinations, in that order, and names the prevention destinations it
+          looked for. Add one upstream row for each — Destination: one of those,
+          Value per kg <code>0</code> — and publish again.
         </p>
         <p>
-          A <code>prevention</code> row that exists but is not zero counts as
-          missing. The check reads the value, not the row.
+          A prevention row that exists but is not zero counts as missing. The
+          check reads the value, not the row. Publishing is refused outright for
+          any upstream <em>or downstream</em> row that prices a prevention
+          destination at something other than zero, whether or not a general row
+          exists to compare it against.
         </p>
         <p>
           The usual way to arrive here is adding something to a draft: a new
@@ -57,6 +76,8 @@
           emergency rollback over an incomplete table would be worse than the
           mistake the rule prevents.
         </p>
+        </div>
+        </details>
       </div>
     </div>
   </div>

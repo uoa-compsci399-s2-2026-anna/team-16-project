@@ -5,31 +5,52 @@ JavaScript test runner.  These tests therefore check the stable, reviewable
 boundary: page relationships, accessible HTML, local runtime assets, module
 exports/data flow, safe rendering invariants, fixture ownership and nginx CSP.
 
-They intentionally do *not* prescribe DOM ids, ``data-*`` hooks or CSS classes.
-The Statistics selector and Chart.js boundary are exercised with a minimal DOM;
-pixel drawing, focus movement and responsive layout remain browser acceptance.
+They intentionally do *not* prescribe DOM ids, ``data-*`` hooks, CSS classes,
+or a number of canvases/tables.  Chart drawing, focus movement and responsive
+layout remain browser-acceptance work rather than being faked here.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
-import shutil
 import subprocess
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
+
+import pytest
+
+from tests.support import red_line
 
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "web"
 FIXTURES = ROOT / "tests" / "fixtures"
 
+#: The pages a visitor can reach. `home.html` is NOT one of them any more - see
+#: `RETIRED_PAGES` - so it is out of every relationship asserted below: it is not a
+#: link any page owes, and it is not a page that owes links.
 PAGES = {
-    "home": WEB / "home.html",
     "calculator": WEB / "index.html",
     "statistics": WEB / "stats.html",
     "documentation": WEB / "methodology.html",
+}
+
+#: In the tree, served if its address is typed, reachable from nothing.
+#:
+#: `home.html` was the landing page for one week. The team dropped it - it looked poor
+#: and duplicated the client's own website, which already carries that material - and
+#: `index.html`'s introduction screen came back in its place. It is retired rather than
+#: deleted because the client has not decided about the news feed it carries.
+#:
+#: **Retired must not become rotted**, which is the whole reason this constant exists
+#: rather than the file simply falling out of the suite. `test_the_retired_home_page…`
+#: below holds it to the shape it was reviewed in, so that reviving it is a routing
+#: decision rather than a repair job.
+RETIRED_PAGES = {
+    "home": WEB / "home.html",
 }
 
 REQUIRED_CSP = {
@@ -42,8 +63,15 @@ REQUIRED_CSP = {
     "style-src": {"'self'"},
     "style-src-attr": {"'unsafe-inline'"},
     "font-src": {"'self'"},
-    "img-src": {"'self'", "data:"},
-    "connect-src": {"'self'", "https://kaicommitment.org.nz"},
+    # `img-src` and `connect-src` are PLACEHOLDERS in the template, and asserting the
+    # placeholder is deliberately not the whole test. docker/web-config.sh fills both in
+    # at container start from KAICALC_NEWS_ORIGIN, KAICALC_API_ORIGIN and
+    # KAICALC_NEWS_IMAGE_ORIGINS, and builds web/js/config.js from the same values in the
+    # same run so the policy and the page cannot name different hosts. What each renders
+    # to - configured and unconfigured - is asserted against the real image in
+    # tests/test_web_runtime_config.py, which is the only place that can see it.
+    "img-src": {"${KAICALC_CSP_IMG_SRC}"},
+    "connect-src": {"${KAICALC_CSP_CONNECT_SRC}"},
 }
 
 VOID_ELEMENTS = {
@@ -172,6 +200,26 @@ def _js_code_without_comments_or_strings(source: str) -> str:
     return "".join(output)
 
 
+def _bracket_span(source: str, opening: int) -> str:
+    """The text from ``source[opening]`` to its matching bracket, inclusive.
+
+    Counts every bracket kind, so an arrow-function body inside a call is
+    included rather than being cut off at the first ``)`` — which is exactly
+    what the regex this replaces did.
+    """
+    pairs = {"(": ")", "[": "]", "{": "}"}
+    stack: list[str] = []
+    for index in range(opening, len(source)):
+        character = source[index]
+        if character in pairs:
+            stack.append(pairs[character])
+        elif stack and character == stack[-1]:
+            stack.pop()
+            if not stack:
+                return source[opening:index + 1]
+    return source[opening:]
+
+
 def _brace_block(source: str, opening: int) -> tuple[str, int]:
     depth = 0
     for index in range(opening, len(source)):
@@ -222,344 +270,6 @@ def _exported_function(source: str, name: str) -> str:
     raise AssertionError(f"Exported function {name} has an unclosed body")
 
 
-def _node_pie_probe(path: Path) -> dict[str, object] | None:
-    """Observe the real ESM namespace and Chart config without a browser dependency."""
-
-    node = shutil.which("node")
-    if node is None:
-        return None
-    vendor = WEB / "vendor" / "chart.umd.min.js"
-    rows = [
-        {"code": f"bucket_{index}", "label": f"Bucket {index}", "share": str(index / 100)}
-        for index in range(1, 14)
-    ]
-    rows.extend([
-        {"code": "other", "label": "Other", "share": "0.14"},
-        {"code": "unspecified", "label": "Unspecified", "share": "0.15"},
-    ])
-    fallback_rows = [
-        {"label": "label-19032", "share": "0.01"},
-        {"label": "label-43502", "share": "0.02"},
-        *(
-            {"label": f"fallback-{index}", "share": str(index / 100)}
-            for index in range(3, 14)
-        ),
-    ]
-    script = (
-        f"await import({json.dumps(vendor.as_uri())});"
-        "globalThis.Chart = class {"
-        "constructor(_el, config) { this.config = config; this.data = config.data;"
-        "this.options = config.options; } destroy() {} };"
-        "globalThis.window = globalThis;"
-        "globalThis.matchMedia = () => ({matches: true});"
-        f"const module = await import({json.dumps(path.as_uri())});"
-        "const output = {exports: Object.keys(module).sort()};"
-        "if (typeof module.renderPie !== 'function') {"
-        "process.stdout.write(JSON.stringify(output));"
-        "} else {"
-        f"const rows = {json.dumps(rows)};"
-        f"const fallbackRows = {json.dumps(fallback_rows)};"
-        "const canvas = {}; canvas.getContext = () => ({canvas});"
-        "const make = values => module.renderPie(canvas, values, {"
-        "title: 'Probe', labelKey: 'label', valueKey: 'share'});"
-        "const first = make(rows);"
-        "const second = make([...rows].reverse());"
-        "const sameCodeA = make([{code: 'stable_code', label: 'Before', share: '1'}]);"
-        "const sameCodeB = make([{code: 'stable_code', label: 'After', share: '1'}]);"
-        "const fallbackFirst = make(fallbackRows);"
-        "const fallbackSecond = make([...fallbackRows].reverse());"
-        "const colours = first.data.datasets[0].backgroundColor;"
-        "const reverseColours = second.data.datasets[0].backgroundColor;"
-        "const byLabel = Object.fromEntries(first.data.labels.map((label, i) => [label, colours[i]]));"
-        "const reversedByLabel = Object.fromEntries(second.data.labels.map((label, i) => [label, reverseColours[i]]));"
-        "const fallbackColours = fallbackFirst.data.datasets[0].backgroundColor;"
-        "const reversedFallbackColours = fallbackSecond.data.datasets[0].backgroundColor;"
-        "const fallbackByLabel = Object.fromEntries(fallbackFirst.data.labels.map("
-        "(label, i) => [label, fallbackColours[i]]));"
-        "const reversedFallbackByLabel = Object.fromEntries(fallbackSecond.data.labels.map("
-        "(label, i) => [label, reversedFallbackColours[i]]));"
-        "const tooltip = first.options.plugins.tooltip.callbacks.label({"
-        "label: 'Probe', raw: 0.125, parsed: 0.125});"
-        "const signed = module.renderBar(canvas, [{label: 'Negative', value: -4}], {});"
-        "Object.assign(output, {"
-        "type: first.config.type, labels: first.data.labels, data: first.data.datasets[0].data,"
-        "firstThirteenUnique: new Set(colours.slice(0, 13)).size,"
-        "deterministic: rows.every(row => byLabel[row.label] === reversedByLabel[row.label]),"
-        "sameCodeStable: sameCodeA.data.datasets[0].backgroundColor[0] === "
-        "sameCodeB.data.datasets[0].backgroundColor[0],"
-        "fallbackThirteenUnique: new Set(fallbackColours).size,"
-        "knownFallbackCollisionResolved: fallbackByLabel['label-19032'] !== "
-        "fallbackByLabel['label-43502'],"
-        "fallbackDeterministic: fallbackRows.every(row => "
-        "fallbackByLabel[row.label] === reversedFallbackByLabel[row.label]),"
-        "animation: first.options.animation, tooltip,"
-        "signedData: signed.data.datasets[0].data});"
-        "process.stdout.write(JSON.stringify(output));"
-        "}"
-    )
-    result = subprocess.run(
-        [node, "--input-type=module", "--eval", script],
-        cwd=ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, result.stderr
-    return json.loads(result.stdout)
-
-
-def _node_stats_probe(path: Path) -> dict[str, object] | None:
-    """Exercise statistics charts and native selectors in a minimal in-memory DOM."""
-
-    node = shutil.which("node")
-    if node is None:
-        return None
-    vendor = WEB / "vendor" / "chart.umd.min.js"
-    payload = {
-        "generated_at": "2026-09-05T00:00:00Z",
-        "total_calculations": 42,
-        "suppression_threshold": 5,
-        "by_destination": [
-            {"code": "other", "label": "Other", "count": 7, "share": "0.20", "total_kg": "2.0"},
-            {"code": "landfill", "label": "Landfill", "count": 12, "share": "0.55", "total_kg": "5.0"},
-            {"code": "compost", "label": "Compost", "count": 6, "share": "0.25", "total_kg": "1.0"},
-        ],
-        "by_sector": [
-            {"code": "retail", "label": "Retail", "count": 8, "share": "0.30", "total_kg": "3.0"},
-            {"code": "processing", "label": "Processing", "count": 10, "share": "0.35", "total_kg": "4.0"},
-            {"code": "other", "label": "Other", "count": 9, "share": "0.35", "total_kg": "2.0"},
-        ],
-        "by_food_category": [
-            {"code": "unspecified", "label": "Unspecified", "count": 9, "share": "0.40", "total_kg": "4.0"},
-            {"code": "bakery", "label": "Bakery", "count": 7, "share": "0.25", "total_kg": "2.0"},
-            {"code": "produce", "label": "Produce", "count": 10, "share": "0.35", "total_kg": "3.0"},
-        ],
-    }
-    script = (
-        f"await import({json.dumps(vendor.as_uri())});\n"
-        + r"""
-const instances = [];
-const fetches = [];
-globalThis.Chart = class {
-  constructor(_el, config) {
-    this.config = config;
-    this.data = config.data;
-    this.options = config.options;
-    this.destroyed = false;
-    instances.push(this);
-  }
-  destroy() { this.destroyed = true; }
-};
-globalThis.window = globalThis;
-globalThis.location = {search: ''};
-globalThis.matchMedia = () => ({matches: false});
-globalThis.addEventListener = () => {};
-globalThis.fetch = (...args) => { fetches.push(args); throw new Error('Unexpected fetch'); };
-class Node {
-  constructor(tag = '') {
-    this.tagName = tag.toLowerCase();
-    this.children = [];
-    this.attributes = {};
-    this.textContent = '';
-    this.className = '';
-    this.listeners = {};
-    this._value = undefined;
-    this.parentNode = null;
-  }
-  append(...children) {
-    for (const child of children) {
-      if (child instanceof Node) child.parentNode = this;
-      this.children.push(child);
-    }
-  }
-  appendChild(child) { this.append(child); return child; }
-  replaceChildren(...children) { this.children = []; this.append(...children); }
-  setAttribute(name, value) { this.attributes[name] = String(value); }
-  getAttribute(name) {
-    if (name === 'id' && this.id) return this.id;
-    if (name === 'for' && this.htmlFor) return this.htmlFor;
-    return this.attributes[name] ?? null;
-  }
-  addEventListener(name, callback) { (this.listeners[name] ||= []).push(callback); }
-  dispatchEvent(event) {
-    if (!event.target) event.target = this;
-    event.currentTarget = this;
-    if (!event.stopPropagation) event.stopPropagation = () => { event._stopped = true; };
-    if (!event.preventDefault) event.preventDefault = () => { event.defaultPrevented = true; };
-    for (const callback of this.listeners[event.type] || []) callback(event);
-    if (typeof this['on' + event.type] === 'function') this['on' + event.type](event);
-    if (event.bubbles !== false && !event._stopped) this.parentNode?.dispatchEvent(event);
-    return true;
-  }
-  closest(selector) {
-    let node = this;
-    while (node) {
-      if (node.tagName === selector.toLowerCase()) return node;
-      node = node.parentNode;
-    }
-    return null;
-  }
-  querySelectorAll(selector) { return descendants(this, selector.toLowerCase()); }
-  querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
-  get value() {
-    if (this._value !== undefined) return this._value;
-    if (this.tagName === 'select') return descendants(this, 'option')[0]?.value || '';
-    return this.attributes.value || '';
-  }
-  set value(value) { this._value = String(value); }
-}
-function descendants(root, tag) {
-  const found = [];
-  for (const child of root.children || []) {
-    if (child instanceof Node) {
-      if (!tag || child.tagName === tag) found.push(child);
-      found.push(...descendants(child, tag));
-    }
-  }
-  return found;
-}
-function textTree(root) {
-  if (typeof root === 'string') return root;
-  return String(root.textContent || '') + (root.children || []).map(textTree).join('');
-}
-globalThis.document = new Node('document');
-document.createElement = tag => new Node(tag);
-document.createDocumentFragment = () => new Node('fragment');
-document.querySelector = () => null;
-"""
-        + f"const statsModule = await import({json.dumps(path.as_uri())});\n"
-        + f"const payload = {json.dumps(payload)};\n"
-        + r"""
-const summary = new Node('section');
-const breakdowns = new Node('div');
-summary.parentNode = document;
-breakdowns.parentNode = document;
-const targets = {summary, breakdowns};
-statsModule.renderStats(payload, targets);
-function sections() { return descendants(breakdowns, 'section'); }
-function controls() { return sections().map(section => descendants(section, 'select')[0] || null); }
-function lists() {
-  return sections().map(section => {
-    const equivalent = descendants(section).find(node =>
-      ['ul', 'ol', 'dl', 'table'].includes(node.tagName));
-    return equivalent ? textTree(equivalent) : null;
-  });
-}
-function accessibleName(control, section) {
-  if (!control) return '';
-  const direct = control.getAttribute('aria-label');
-  if (direct) return direct;
-  const referenced = control.getAttribute('aria-labelledby');
-  if (referenced) {
-    const names = referenced.split(/\s+/).map(id =>
-      descendants(section).find(node => node.getAttribute('id') === id))
-      .filter(Boolean).map(textTree).join(' ');
-    if (names.trim()) return names;
-  }
-  const id = control.getAttribute('id');
-  if (id) {
-    const label = descendants(section, 'label').find(node => node.getAttribute('for') === id);
-    if (label) return textTree(label);
-  }
-  let ancestor = control.parentNode;
-  while (ancestor && ancestor !== section) {
-    if (ancestor.tagName === 'label') return textTree(ancestor);
-    ancestor = ancestor.parentNode;
-  }
-  return '';
-}
-function descriptions() {
-  return sections().map(section => {
-    const canvas = descendants(section, 'canvas')[0];
-    const id = canvas?.getAttribute('aria-describedby');
-    const described = descendants(section).find(node => node.getAttribute('id') === id);
-    return {id: id || null, text: described ? textTree(described) : ''};
-  });
-}
-const original = [...instances];
-const initialControls = controls();
-const output = {
-  count: original.length,
-  types: original.map(chart => chart.config.type),
-  data: original.map(chart => chart.data.datasets[0].data),
-  labels: original.map(chart => chart.data.labels),
-  options: initialControls.map(control => control ? descendants(control, 'option').map(option => option.value) : []),
-  defaults: initialControls.map(control => control?.value || null),
-  names: initialControls.map((control, index) => accessibleName(control, sections()[index])),
-  lists: lists(),
-  descriptions: descriptions(),
-};
-if (initialControls.every(Boolean)) {
-  const beforeLists = lists();
-  initialControls[0].value = 'bar';
-  initialControls[0].dispatchEvent({type: 'change', target: initialControls[0]});
-  const bar = instances.at(-1);
-  const afterBar = {
-    types: instances.map(chart => chart.config.type),
-    destroyed: original.map(chart => chart.destroyed),
-    data: bar.data.datasets[0].data,
-    labels: bar.data.labels,
-    axis: Object.values(bar.options.scales || {}).map(scale => scale.ticks?.callback?.(0.25)).filter(Boolean),
-    tooltip: bar.options.plugins?.tooltip?.callbacks?.label?.({label: 'Other', raw: 0.25, parsed: {y: 0.25}}),
-    listsUnchanged: JSON.stringify(beforeLists) === JSON.stringify(lists()),
-    selections: controls().map(control => control.value),
-  };
-  initialControls[1].value = 'line';
-  initialControls[1].dispatchEvent({type: 'change', target: initialControls[1]});
-  const line = instances.at(-1);
-  output.switched = {
-    bar: afterBar,
-    line: {
-      types: instances.map(chart => chart.config.type),
-      destroyed: original.map(chart => chart.destroyed),
-      previousBarDestroyed: bar.destroyed,
-      data: line.data.datasets[0].data,
-      labels: line.data.labels,
-      axis: Object.values(line.options.scales || {}).map(scale => scale.ticks?.callback?.(0.25)).filter(Boolean),
-      tooltip: line.options.plugins?.tooltip?.callbacks?.label?.({label: 'Retail', raw: 0.25, parsed: {y: 0.25}}),
-      listsUnchanged: JSON.stringify(beforeLists) === JSON.stringify(lists()),
-      selections: controls().map(control => control.value),
-      fetches: fetches.length,
-      explanation: descendants(sections()[1], 'p').map(textTree).join(' '),
-    },
-  };
-  statsModule.renderStats(payload, targets);
-  output.rerenderSelections = controls().map(control => control.value);
-  statsModule.renderStats({...payload, by_sector: []}, targets);
-  const emptySections = sections();
-  output.emptySector = {
-    controls: descendants(emptySections[1], 'select').length,
-    canvases: descendants(emptySections[1], 'canvas').length,
-    otherControls: [0, 2].map(index => descendants(emptySections[index], 'select').length),
-  };
-  statsModule.renderStatsError(new Error('Unavailable'), targets);
-  output.error = {controls: descendants(breakdowns, 'select').length,
-    canvases: descendants(breakdowns, 'canvas').length};
-  let resolveOld;
-  const oldPayload = new Promise(resolve => { resolveOld = resolve; });
-  const oldLoad = statsModule.loadStats({...targets, getStats: () => oldPayload});
-  const newLoad = statsModule.loadStats({...targets, getStats: async () => payload});
-  await newLoad;
-  const chartCount = instances.length;
-  resolveOld({...payload, total_calculations: 999});
-  const oldResult = await oldLoad;
-  output.stale = {oldResult, chartCountUnchanged: instances.length === chartCount,
-    oldTextAbsent: !textTree(summary).includes('999')};
-}
-process.stdout.write(JSON.stringify(output));
-"""
-    )
-    result = subprocess.run(
-        [node, "--input-type=module", "--eval", script],
-        cwd=ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, result.stderr
-    return json.loads(result.stdout)
-
-
 def _resolve_local(owner: Path, reference: str, *, allow_image_data: bool = False) -> Path | None:
     parsed = urlsplit(reference)
     if parsed.scheme == "data":
@@ -577,6 +287,27 @@ def _resolve_local(owner: Path, reference: str, *, allow_image_data: bool = Fals
     resolved = target.resolve()
     resolved.relative_to(WEB.resolve())
     return resolved
+
+
+#: The two pages that carry the public navigation in their header. It was three
+#: pages and four links until `home.html` was retired; the calculator has never
+#: been one of them.
+#:
+#: **The calculator is not one of them, and that is a measurement.** Its header
+#: row already carries the language chooser §7.7.4 admitted to it, and its whole
+#: vertical slack on the shortest step at 1278x983 is 32px against the 44px a
+#: touch-target navigation block needs. Both arrangements were measured on a
+#: real build and both broke
+#: `tests/web/test_step_navigation.py::test_a_short_step_is_not_floored_by_a_stale_min_height`
+#: — in the header by 37px, in the footer by 26px. The full reasoning, with the
+#: numbers, is in the comment in `web/index.html`.
+#:
+#: The exemption is bounded rather than granted: the calculator still has to be
+#: linked from every one of these three, and still has to reach the
+#: documentation page itself. That is what `test_the_calculator_is_reachable…`
+#: below asserts, so "the calculator carries no nav" can never quietly become
+#: "the calculator links nowhere".
+NAVIGATED_PAGES = ("statistics", "documentation")
 
 
 def test_public_page_relationships_and_accessible_shells():
@@ -606,30 +337,116 @@ def test_public_page_relationships_and_accessible_shells():
         ), f"{path.name}: skip link must target its main content"
 
         navs = page.matching("nav")
-        assert navs and all(
+        assert all(
             nav["attrs"].get("aria-label") or nav["attrs"].get("aria-labelledby")
             for nav in navs
-        )
-        assert len(page.matching("a", **{"aria-current": "page"})) == 1
-        linked = _linked_page_names(page)
-        if any(urlsplit(href).path == "/" for href in page.values("a", "href")):
-            linked.add("index.html")
-        missing = expected_links - linked
-        assert not missing, f"{path.name}: public navigation is missing {sorted(missing)}"
+        ), f"{path.name}: every nav needs an accessible name"
+
+        if role in NAVIGATED_PAGES:
+            assert navs, f"{path.name}: needs the public navigation"
+            assert len(page.matching("a", **{"aria-current": "page"})) == 1
+            linked = _linked_page_names(page)
+            if any(urlsplit(href).path == "/" for href in page.values("a", "href")):
+                linked.add("index.html")
+            missing = expected_links - linked
+            assert not missing, f"{path.name}: public navigation is missing {sorted(missing)}"
+        else:
+            # The calculator marks no current page because it carries no nav to
+            # mark it in; a stray `aria-current` here would mean one came back.
+            assert not page.matching("a", **{"aria-current": "page"}), (
+                f"{path.name}: carries no public navigation, so nothing may claim to be "
+                "the current page — see NAVIGATED_PAGES for the measurement"
+            )
 
         scripts = page.matching("script")
         assert scripts and any(script["attrs"].get("type") == "module" for script in scripts)
-    home_text = _read(PAGES["home"]).lower()
-    assert "news" in home_text
-    assert "calculator" in home_text and "index.html" in home_text
     assert "calculator" in _read(PAGES["calculator"]).lower()
+
+
+def test_the_retired_home_page_is_still_in_the_tree_and_still_whole():
+    """Retired, not deleted - and not rotted either.
+
+    `home.html` is reachable from nothing. That is the decision, and it means no other
+    test in this file looks at the file at all, which is exactly how a retired page
+    becomes a broken one nobody notices until the client asks for it back.
+
+    So the three things that must survive the retirement are asserted here: the file
+    exists, it still carries the news section that is the reason it was kept, and it
+    still links to the calculator - so a reader who reaches it from a bookmark or a
+    search result is not stranded on a page with no way into the tool.
+
+    **It is deliberately NOT asserted to be linked from anywhere.** If a link back to
+    it ever reappears, `test_no_reachable_page_links_to_a_retired_one` below fails.
+    """
+    home = RETIRED_PAGES["home"]
+    assert home.is_file(), "home.html was deleted; it is retired pending the client's "        "decision on the news feed, which has not been given"
+    text = _read(home)
+    # **The MARKUP, not the word.** Written as `"news" in text.lower()` this passed a
+    # mutation that deleted the whole `<section class="home-news">` - because the
+    # retirement note at the top of the file says "news feed" several times, and a
+    # comment about a section is not a section. `web/js/home.js` keys on `#news-feed`
+    # and removes `.home-news` when no origin is configured, so those are the two
+    # names the page has to keep for the module above it to still have a page.
+    assert 'class="home-news"' in text, (
+        "the news section is gone from home.html. It is the reason this page is kept "
+        "rather than deleted; without it the file is a duplicate of the client's own "
+        "site and nothing else"
+    )
+    assert 'id="news-feed"' in text, (
+        "`#news-feed` is what web/js/home.js fills and what it removes when no origin "
+        "is configured; without the element the retired module has no page"
+    )
+    assert "index.html" in text, "the retired page must still reach the calculator"
+
+
+def test_no_reachable_page_links_to_a_retired_one():
+    """The other half of retirement, and the half a comment cannot enforce.
+
+    A page is retired when nothing links to it. Restoring one row to the drawer, one
+    entry to a header navigation or one `href` on a wordmark quietly un-retires it -
+    each is a one-line change that reads as a fix, and the client has not asked for it.
+    """
+    for name in (path.name for path in RETIRED_PAGES.values()):
+        for role, path in PAGES.items():
+            linked = _linked_page_names(_page(path)[1])
+            assert name not in linked, (
+                f"{path.name} links to the retired page {name}. It is in the tree "
+                "pending the client's decision on the news feed; it is not a "
+                "destination. See RETIRED_PAGES."
+            )
+
+
+def test_the_calculator_is_reachable_from_every_page_and_reaches_the_documentation():
+    """What the calculator's navigation exemption is bounded by.
+
+    The calculator carries no header navigation — see ``NAVIGATED_PAGES`` for
+    the measurement — so the two things that exemption must not cost are
+    asserted here directly: a visitor can always get *to* the calculator, and a
+    visitor *on* the calculator can always reach the page that publishes the
+    factors behind the number they are being shown.
+
+    §7.6.2 and §6.3 are why the second half matters more than it looks. The
+    factor set is mock, every results view says so, and the page that explains
+    what that means is the documentation page.
+    """
+    for role in NAVIGATED_PAGES:
+        linked = _linked_page_names(PAGES[role] and _page(PAGES[role])[1])
+        if any(urlsplit(href).path == "/" for href in _page(PAGES[role])[1].values("a", "href")):
+            linked.add("index.html")
+        assert "index.html" in linked, f"{PAGES[role].name}: does not link to the calculator"
+
+    calculator = _page(PAGES["calculator"])[1]
+    assert "methodology.html" in _linked_page_names(calculator), (
+        "index.html must reach the documentation page; it is the only public surface "
+        "that publishes the provenance of the factors its results are computed from"
+    )
 
 
 def test_every_declared_runtime_asset_is_local_and_present():
     """News article links may be external; scripts, CSS, fonts and images may not."""
 
     css_files: set[Path] = set()
-    for path in PAGES.values():
+    for path in (*PAGES.values(), *RETIRED_PAGES.values()):
         _, page = _page(path)
         references = [
             *(page.values("script", "src")),
@@ -687,21 +504,91 @@ def test_every_declared_runtime_asset_is_local_and_present():
 
 
 def test_api_js_owns_all_direct_fetch_calls_and_the_wordpress_url():
-    """Static scope: direct ``fetch(...)`` tokens; browser QA covers aliases/other APIs."""
+    """Static scope: direct ``fetch(...)`` tokens; browser QA covers aliases/other APIs.
+
+    ``js/i18n.js`` is the one permitted exception and it arrived after this test
+    was written — D branched at contract v1.17 and interface translation landed
+    at v1.24-v1.27 underneath. It fetches **catalogues**, which are static files
+    on this origin under ``web/locales/``, not API resources; routing them
+    through ``api.js`` would put the language layer behind the module that
+    reports API errors in the language the language layer has not chosen yet.
+
+    The exemption is bounded rather than granted: i18n.js has to resolve every
+    catalogue against a base declared relative to its own module URL, and may
+    name no absolute origin and no ``/api/`` path at all.  §7.1's rule — *one*
+    module owns the API — is what is being defended, not the token ``fetch``.
+    """
 
     js_files = sorted((WEB / "js").rglob("*.js"))
     callers = []
     for path in js_files:
         if re.search(r"(?<![.\w$])fetch\s*\(", _js_code_without_comments_or_strings(_read(path))):
             callers.append(path.relative_to(WEB).as_posix())
-    assert callers == ["js/api.js"], f"Only api.js may directly call fetch(), found {callers}"
+    assert callers == ["js/api.js", "js/i18n.js"], (
+        f"Only api.js and the catalogue loader may directly call fetch(), found {callers}"
+    )
+
+    i18n = _js_code_without_comments_or_strings(_read(WEB / "js" / "i18n.js"))
+    assert re.search(
+        r"new\s+URL\(\s*['\"]\.\./locales/['\"]\s*,\s*import\.meta\.url\s*\)",
+        _read(WEB / "js" / "i18n.js"),
+    ), "i18n.js must resolve catalogues against its own module URL"
+    # Prose about the API is not a call to it, so these read the executable
+    # token positions only — the same conservative source the scan above uses.
+    i18n_literals = _without_js_comments(_read(WEB / "js" / "i18n.js"))
+    assert "/api/" not in i18n_literals, "i18n.js must not reach the API; api.js owns it"
+    # **ONE EXEMPTION, AND IT IS NOT AN ORIGIN.** `http://www.w3.org/2000/svg` is
+    # the XML namespace a `<svg>` element has to be *created* in — pass anything
+    # else to `createElementNS` and the browser builds an HTML element named
+    # "svg" that renders nothing at all. It is an identifier compared by string;
+    # nothing is ever fetched from it, and the chooser's globe is drawn in the
+    # page precisely because `img-src 'self' data:` forbids fetching an icon.
+    #
+    # Removed exactly once and by exact text, so the scan below still fails on a
+    # second occurrence, on a different w3.org path, or on any other host.
+    scanned = i18n_literals.replace("http://www.w3.org/2000/svg", "", 1)
+    for scheme in ("http://", "https://", "//cdn"):
+        assert scheme not in scanned, (
+            f"i18n.js names an absolute origin ({scheme}); catalogues are same-origin"
+        )
+    assert re.search(r"(?<![.\w$])fetch\s*\(\s*url\b", i18n), (
+        "i18n.js's one fetch must take the URL built from that base"
+    )
 
     api = _read(WEB / "js" / "api.js")
     news_request = _exported_function(api, "getNewsPosts")
     assert "limit" in news_request
-    assert "https://kaicommitment.org.nz/wp-json/wp/v2/posts" in api
     assert re.search(r"per_page\s*=", api)
     assert "_embed" in api
+
+    # THE ORIGIN COMES FROM CONFIGURATION, AND THE WORDPRESS ROUTE DOES NOT.
+    # WordPress fixes `/wp-json/wp/v2/posts`; only the host is a deployment fact, and it
+    # arrives through config.js so that the same value builds the `connect-src` this
+    # fetch has to satisfy. A literal host here is half of a pair that has to agree with
+    # docker/nginx.conf, which is the defect this arrangement removed.
+    assert "/wp-json/wp/v2/posts" in api
+    assert re.search(r"import\s*\{[^}]*\bNEWS_ORIGIN\b[^}]*\}\s*from\s*'\./config\.js'", api), (
+        "api.js must take the news origin from config.js"
+    )
+    assert re.search(r"import\s*\{[^}]*\bAPI_ORIGIN\b[^}]*\}\s*from\s*'\./config\.js'", api), (
+        "api.js must take the API origin from config.js"
+    )
+    assert re.search(r"API_BASE\s*=\s*`\$\{API_ORIGIN\}/api/v1`", api), (
+        "API_BASE must stay relative when API_ORIGIN is empty - same origin is the default"
+    )
+    # `?mock=1` reads `../../tests/fixtures/`, which is a path and not an origin.
+    api_literals = _without_js_comments(api)
+    for scheme in ("http://", "https://", "//cdn"):
+        assert scheme not in api_literals, (
+            f"api.js names an absolute origin ({scheme}); origins come from config.js"
+        )
+
+    # An unset origin must not become a request to a guessed host. Most deployments of
+    # this calculator have no WordPress, and `null` is what the home page reads to drop
+    # the section rather than report an outage nobody caused.
+    assert re.search(r"if\s*\(\s*!\s*NEWS_ORIGIN\s*\)\s*return\s+null", news_request), (
+        "getNewsPosts must return null, and fetch nothing, when no news origin is set"
+    )
 
     # Existing mock mode continues to consume B's canonical fixtures.
     assert "../../tests/fixtures/" in api
@@ -731,32 +618,9 @@ def test_charts_module_has_exact_public_exports_and_vendored_chartjs():
     path = WEB / "js" / "charts.js"
     assert path.is_file()
     source = _read(path)
+    exported = set(re.findall(r"export\s+function\s+([A-Za-z_$][\w$]*)\s*\(", source))
+    assert exported == {"renderDonut", "renderBar"}
     assert re.search(r"\bnew\s+Chart\s*\(", source)
-
-    probe = _node_pie_probe(path)
-    if probe is None:
-        # Portable fallback only. With Node, the namespace and behaviour above
-        # are authoritative and permit export lists, aliases and shared helpers.
-        assert re.search(r"\bexport\b[\s\S]*\brenderPie\b", source)
-        assert re.search(r"\bexport\b[\s\S]*\brenderBar\b", source)
-        assert re.search(r"\bexport\b[\s\S]*\brenderLine\b", source)
-        assert not re.search(r"\bexport\b[^;\n]*\brenderDonut\b", source)
-        assert "prefers-reduced-motion" in source and "tooltip" in source
-        assert "Math.random" not in _js_code_without_comments_or_strings(source)
-    else:
-        assert set(probe["exports"]) == {"renderPie", "renderBar", "renderLine"}
-        assert probe["type"] == "pie"
-        assert probe["firstThirteenUnique"] == 13
-        assert probe["deterministic"] is True
-        assert probe["sameCodeStable"] is True
-        assert probe["fallbackThirteenUnique"] == 13
-        assert probe["knownFallbackCollisionResolved"] is True
-        assert probe["fallbackDeterministic"] is True
-        assert probe["animation"] is False
-        assert probe["labels"][-2:] == ["Other", "Unspecified"]
-        assert probe["data"][-2:] == [0.14, 0.15]
-        assert "12.5%" in str(probe["tooltip"])
-        assert probe["signedData"] == [-4]
 
     chart_sources = []
     for candidate in WEB.rglob("*.js"):
@@ -779,8 +643,248 @@ def test_charts_module_has_exact_public_exports_and_vendored_chartjs():
     assert "https://cdn" not in source.lower()
 
 
+#: The provenance note beside the runtime, and the two files it vouches for.
+VENDOR = WEB / "vendor"
+SOURCE_NOTE = VENDOR / "chart.js.SOURCE.md"
+
+
+def test_the_recorded_chartjs_hashes_are_the_hashes_of_the_files_on_disk():
+    """The provenance note is checked, not merely written.
+
+    ``chart.js.SOURCE.md`` records a runtime SHA-256, a licence SHA-256 and the
+    npm integrity string the tarball was verified against, and all three were
+    correct byte for byte against ``registry.npmjs.org/chart.js/4.5.1``. Nothing
+    kept them correct: the strongest claim any test made about the vendored
+    runtime was that some file contained the literal ``Chart.js v4.5.1``, which
+    a one-line file would satisfy.
+
+    That matters more here than a version pin usually would. There is no build
+    step, no lockfile and no package manager anywhere near ``web/`` — this
+    206KB blob is committed as source, and the note beside it is the only record
+    of where it came from. A hash nobody recomputes is a claim about a file
+    rather than a fact about it.
+
+    The hashes are read **out of the note** rather than repeated here, so the
+    note stays the single record and editing it to match a swapped file is the
+    same edit either way — one that has to be made deliberately, in the file
+    whose whole job is to say what was downloaded.
+    """
+    assert SOURCE_NOTE.is_file(), "the vendored runtime has no provenance note"
+    note = _read(SOURCE_NOTE)
+
+    recorded = {
+        label: match
+        for label, match in re.findall(
+            r"^-\s+(Runtime|Licence|License)\s+SHA-256:\s*`([0-9a-f]{64})`\s*$",
+            note,
+            flags=re.M,
+        )
+    }
+    assert set(recorded) & {"Runtime"}, "SOURCE.md records no runtime SHA-256"
+    assert set(recorded) & {"Licence", "License"}, "SOURCE.md records no licence SHA-256"
+
+    licence_key = "Licence" if "Licence" in recorded else "License"
+    for filename, key in (
+        ("chart.umd.min.js", "Runtime"),
+        ("chart.js.LICENSE.md", licence_key),
+    ):
+        path = VENDOR / filename
+        assert path.is_file(), f"{filename} is recorded in SOURCE.md but is not on disk"
+        actual = hashlib.sha256(path.read_bytes()).hexdigest()
+        assert actual == recorded[key], (
+            f"web/vendor/{filename} does not match the SHA-256 recorded in "
+            f"chart.js.SOURCE.md: recorded {recorded[key]}, on disk {actual}. "
+            "Either the file was replaced without updating its provenance, or the "
+            "provenance was updated without replacing the file."
+        )
+
+    # The npm integrity string is the third recorded fact and the one that ties
+    # the pair to a published release. It is not recomputable from these two
+    # files - it covers the whole tarball - so what is asserted is that it is
+    # still recorded, in the registry's own format, for the version claimed.
+    assert re.search(r"`sha512-[A-Za-z0-9+/]{86}==`", note), (
+        "SOURCE.md no longer records the npm integrity string the tarball was verified against"
+    )
+    assert "4.5.1" in note and "registry.npmjs.org/chart.js" in note
+
+
+#: The brand palette, from `Kai Commitment_Brand Guidelines_v1-Oct25.pdf`.
+#: White is excluded: it is the page ground and the segment border, so it is not
+#: available as a fill. The guidelines misprint Blueberry's RGB as 0/90/130; the
+#: hex is authoritative.
+KALE = "#003223"
+WHITE = "#FFFFFF"
+
+#: The guidelines' own dark-ground/light-ground classification. Beetroot is not
+#: classified there; at 9.64:1 against White and 1.47:1 against Kale it is a
+#: dark ground by any reading, so it is listed with the ones that are.
+BRAND_COLOURS = {
+    "#003223": ("Kale", WHITE),
+    "#FF5032": ("Orange", WHITE),
+    "#005AE6": ("Blueberry", WHITE),
+    "#87005A": ("Beetroot", WHITE),
+    "#28C882": ("Pea", KALE),
+    "#FFD76E": ("Banana", KALE),
+    "#E6BEFF": ("Lavender", KALE),
+}
+
+#: Orange on White is 3.26:1, below the 4.5:1 body-text minimum. It is the
+#: brand's own pairing, named here as the single stated exception rather than
+#: lowering the bar for every entry.
+BRAND_CONTRAST_EXCEPTIONS = {"#FF5032"}
+
+
+def _palette() -> list[tuple[str, str]]:
+    """`PALETTE`'s `{fill, ink}` pairs, read out of charts.js in order."""
+    source = _read(WEB / "js" / "charts.js")
+    match = re.search(r"export\s+const\s+PALETTE\s*=\s*\[", source)
+    assert match, "charts.js no longer exports PALETTE"
+    body = _bracket_span(source, source.index("[", match.end() - 1))
+    entries = re.findall(
+        r"\{\s*fill:\s*'(#[0-9A-Fa-f]{6})'\s*,\s*ink:\s*(WHITE|KALE|'#[0-9A-Fa-f]{6}')\s*\}",
+        body,
+    )
+    assert entries, "PALETTE's entries are no longer {fill, ink} pairs"
+    resolved = {"WHITE": WHITE, "KALE": KALE}
+    return [(fill.upper(), resolved.get(ink, ink.strip("'")).upper()) for fill, ink in entries]
+
+
+def _relative_luminance(hex_colour: str) -> float:
+    """WCAG 2.x relative luminance, computed here rather than imported from the
+    module under test, so the pairing is checked independently of the table."""
+    channels = []
+    for offset in (1, 3, 5):
+        value = int(hex_colour[offset:offset + 2], 16) / 255
+        channels.append(value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4)
+    red, green, blue = channels
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+
+
+def _contrast(a: str, b: str) -> float:
+    high, low = sorted((_relative_luminance(a), _relative_luminance(b)), reverse=True)
+    return (high + 0.05) / (low + 0.05)
+
+
+def test_the_palette_covers_the_taxonomy_without_repeating_a_colour():
+    """The palette was nine long and indexed modulo its own length, so a tenth
+    bucket drew the first one's colour — measured, `Landfill` and
+    `Other (sample too small)` were both `#005f73` in the same doughnut.
+
+    The ceiling is not hypothetical and not a guess: it is every destination the
+    taxonomy defines, plus the `other` bucket §5.4 merges the suppressed ones
+    into, which is an ordinary bucket alongside them rather than instead of one.
+    Pinning the length against the fixture is what keeps the modulo in
+    `paletteEntry` unreachable — if B adds destinations, this fails before a
+    doughnut repeats a colour on a public page.
+    """
+    palette = _palette()
+    fills = [fill for fill, _ in palette]
+    assert len(fills) == len(set(fills)), (
+        f"the palette repeats a colour: {sorted({f for f in fills if fills.count(f) > 1})}"
+    )
+
+    taxonomy = _json(FIXTURES / "taxonomy.json")
+    ceiling = len(taxonomy["destinations"]) + 1
+    assert len(palette) >= ceiling, (
+        f"the palette has {len(palette)} colours for a ceiling of {ceiling} buckets "
+        f"({len(taxonomy['destinations'])} destinations plus `other`), so the modulo in "
+        "paletteEntry() would repeat one"
+    )
+
+
+def test_the_palette_is_built_only_from_brand_colours():
+    """Not one of Kale, Orange, Pea, Blueberry, Beetroot, Banana or Lavender
+    appeared in the palette this replaces; `renderBar` drew `#0a9396` on
+    `#005f73`, neither of which is anywhere in the guidelines, on a page whose
+    every other colour comes from a `--kai-*` token.
+
+    Sixteen colours cannot all be brand colours — there are seven — so the rest
+    are mixes toward White and toward Kale. What is asserted is that every entry
+    is *on a line between two brand colours*: either one of the seven exactly,
+    or a mix of one of them with White or with Kale. That refuses an invented
+    hue while allowing the tints and shades the count needs.
+    """
+    palette = _palette()
+    for fill, _ in palette:
+        if fill in BRAND_COLOURS:
+            continue
+        target = tuple(int(fill[i:i + 2], 16) for i in (1, 3, 5))
+        derived = False
+        for base_hex in BRAND_COLOURS:
+            base = tuple(int(base_hex[i:i + 2], 16) for i in (1, 3, 5))
+            for other in ((255, 255, 255), (0, 50, 35)):
+                for step in range(1, 100):
+                    mixed = tuple(round(b + (o - b) * step / 100) for b, o in zip(base, other))
+                    if max(abs(m - t) for m, t in zip(mixed, target)) <= 1:
+                        derived = True
+                        break
+                if derived:
+                    break
+            if derived:
+                break
+        assert derived, (
+            f"{fill} is not a brand colour and is not a mix of one with White or Kale; "
+            "the brand palette is White, Kale, Orange, Pea, Blueberry, Beetroot, Banana "
+            "and Lavender"
+        )
+
+    assert set(BRAND_COLOURS) <= {fill for fill, _ in palette}, (
+        "every brand colour usable as a fill should appear in the palette before any mix does"
+    )
+
+
+def test_every_palette_ink_follows_the_brand_rule():
+    """Dark grounds take white text, light grounds take Kale.
+
+    `ink` is load-bearing rather than recorded: `renderDonut` paints the tooltip
+    on the hovered segment's own fill and takes that segment's ink, so an `ink`
+    edited out of step with its `fill` draws white text on Banana. The contrast
+    ratio is recomputed here from the hex, independently of the table, so this
+    fails on the entry that drifted rather than on the rule being restated.
+    """
+    for fill, ink in _palette():
+        assert ink in {WHITE, KALE}, f"{fill} takes {ink}, which is neither White nor Kale"
+        against_white = _contrast(fill, WHITE)
+        against_kale = _contrast(fill, KALE)
+
+        if fill in BRAND_COLOURS:
+            # The guidelines classify these seven, and the guidelines win. Orange
+            # is the case that proves the two rules differ: it is a *dark* ground
+            # taking white text, while raw contrast would pair it with Kale.
+            name, expected = BRAND_COLOURS[fill]
+            assert ink == expected, (
+                f"{name} ({fill}) is a "
+                f"{'dark' if expected == WHITE else 'light'} ground in the brand "
+                f"guidelines and takes {expected}, not {ink}"
+            )
+        else:
+            expected = WHITE if against_white >= against_kale else KALE
+            assert ink == expected, (
+                f"{fill} takes {ink}: contrast is {against_white:.2f} against White and "
+                f"{against_kale:.2f} against Kale, so it is a "
+                f"{'dark' if expected == WHITE else 'light'} ground and takes {expected}"
+            )
+
+        if fill not in BRAND_CONTRAST_EXCEPTIONS:
+            assert _contrast(fill, ink) >= 4.5, (
+                f"{fill} reaches only {_contrast(fill, ink):.2f}:1 against its own ink, "
+                "below the 4.5:1 body-text minimum the tooltip needs"
+            )
+
+    # The exception has to stay an exception: an entry listed here that now
+    # clears 4.5 is a stale exemption, and one that is not in the palette at all
+    # is a note about a colour nobody uses.
+    palette_fills = {fill for fill, _ in _palette()}
+    for fill in BRAND_CONTRAST_EXCEPTIONS:
+        assert fill in palette_fills, f"{fill} is exempted but is not in the palette"
+        ink = dict(_palette())[fill]
+        assert _contrast(fill, ink) < 4.5, (
+            f"{fill} now reaches {_contrast(fill, ink):.2f}:1 and no longer needs its exemption"
+        )
+
+
 def test_statistics_source_consumes_the_stats_contract_without_nz_generalisation():
-    """The three share charts preserve data and switch independently."""
+    """Independent empty states, negative axes and destroy timing stay in browser QA."""
 
     html = _read(PAGES["statistics"])
     source = _read(WEB / "js" / "stats.js")
@@ -788,99 +892,91 @@ def test_statistics_source_consumes_the_stats_contract_without_nz_generalisation
 
     assert "getstats" in source.lower() and "./api.js" in source
     assert "self-selected" in combined
-    assert not re.search(r"(?:distribution|statistics|picture)\s+of\s+(?:food waste\s+)?(?:in\s+)?new zealand", combined)
     assert "total_calculations" in source
     assert "generated_at" in source and "suppression_threshold" in source
-    assert "share" in source, "API-provided shares are the preferred public chart values"
     assert "tonnes recorded" not in combined
+
+    # **The API's own `share`, read as a field, not the substring "share".**
+    # `assert "share" in source` was satisfied by the function name
+    # `sharePercent` and by nothing else needing to be true: every reference to
+    # the field could have been deleted and the assertion would still have
+    # passed. Anchored on a property read instead.
+    assert re.search(r"\brow\s*\??\.\s*share\b|\[\s*['\"]share['\"]\s*\]|valueKey:\s*['\"]share['\"]", source), (
+        "the statistics page must read the API-provided `share`, not derive one"
+    )
 
     for breakdown in ("by_destination", "by_sector", "by_food_category"):
         assert breakdown in source
     assert re.search(r"\bcatch\b", source)
 
-    # `other` and `unspecified` are ordinary API buckets, not client-side filters.
-    assert not re.search(r"\.filter\s*\([^)]*(?:other|unspecified)", source)
+    # **Suppression is the service's, and the browser may not repeat it.**
+    # The guard here was `\.filter\s*\([^)]*(?:other|unspecified)`, which stops
+    # at the first `)` and so never sees the body of an arrow function. It does
+    # not catch `rows.filter(r => r.count < stats.suppression_threshold)` — the
+    # exact client-side re-suppression it exists to forbid, and the one that
+    # would silently drop the `other` bucket §6.4 says can be the largest row
+    # in the breakdown. Every `.filter(` call is now read to its matching
+    # bracket and refused if it mentions a bucket field, a threshold or a
+    # bucket code.
+    code = _js_code_without_comments_or_strings(source)
+    forbidden = ("count", "share", "total_kg", "suppression_threshold", "code", "label")
+    for match in re.finditer(r"\.filter\s*\(", code):
+        opening = code.index("(", match.start())
+        body = _bracket_span(code, opening)
+        named = sorted(word for word in forbidden if re.search(rf"\b{word}\b", body))
+        assert not named, (
+            f"stats.js filters buckets in the browser on {named}: suppression and bucket "
+            f"membership are the service's ({source[opening - 40:opening + len(body)]!r})"
+        )
 
-    probe = _node_stats_probe(WEB / "js" / "stats.js")
-    if probe is None:
-        # Portable fallback: bind the required data key to the chart creation
-        # path without prescribing named imports, aliases or helper layout.
-        assert "renderPie" in source
-        assert re.search(r"valueKey\s*:\s*['\"]share['\"]", source)
-        assert "renderLine" in source and "renderBar" in source
-    else:
-        assert probe["count"] == 3
-        assert probe["types"] == ["pie", "pie", "pie"]
-        expected_labels = [
-            ["Other", "Landfill", "Compost"],
-            ["Retail", "Processing", "Other"],
-            ["Unspecified", "Bakery", "Produce"],
-        ]
-        expected_data = [[0.2, 0.55, 0.25], [0.3, 0.35, 0.35], [0.4, 0.25, 0.35]]
-        assert probe["data"] == expected_data
-        assert probe["labels"] == expected_labels
-        assert probe["options"] == [["pie", "bar", "line"]] * 3
-        assert probe["defaults"] == ["pie", "pie", "pie"]
-        assert len(probe["names"]) == 3 and all(name.strip() for name in probe["names"])
-        for list_text, labels, shares in zip(probe["lists"], expected_labels, expected_data):
-            assert isinstance(list_text, str) and list_text.strip(), "Each chart needs an equivalent data list"
-            positions = [list_text.find(label) for label in labels]
-            assert positions == sorted(positions) and all(position >= 0 for position in positions)
-            for share in shares:
-                percent = int(round(share * 100))
-                assert re.search(rf"{percent}(?:\.0)?\s*%", list_text), (
-                    f"The data list omits the published {percent}% share"
-                )
-        assert all(description["id"] and description["text"] for description in probe["descriptions"])
-        assert "destination" in probe["descriptions"][0]["text"].lower()
-        assert "sector" in probe["descriptions"][1]["text"].lower()
-        assert "food categor" in probe["descriptions"][2]["text"].lower()
-        switched = probe["switched"]
-        assert switched["bar"]["types"] == ["pie", "pie", "pie", "bar"]
-        assert switched["bar"]["destroyed"] == [True, False, False]
-        assert switched["bar"]["data"] == expected_data[0]
-        assert switched["bar"]["labels"] == expected_labels[0]
-        assert any("25" in str(value) and "%" in str(value) for value in switched["bar"]["axis"])
-        assert "25" in str(switched["bar"]["tooltip"])
-        assert "%" in str(switched["bar"]["tooltip"])
-        assert switched["bar"]["listsUnchanged"] is True
-        assert switched["bar"]["selections"] == ["bar", "pie", "pie"]
-        assert switched["line"]["types"] == ["pie", "pie", "pie", "bar", "line"]
-        assert switched["line"]["destroyed"] == [True, True, False]
-        assert switched["line"]["previousBarDestroyed"] is False
-        assert switched["line"]["data"] == expected_data[1]
-        assert switched["line"]["labels"] == expected_labels[1]
-        assert any("25" in str(value) and "%" in str(value) for value in switched["line"]["axis"])
-        assert "25" in str(switched["line"]["tooltip"])
-        assert "%" in str(switched["line"]["tooltip"])
-        assert switched["line"]["listsUnchanged"] is True
-        assert switched["line"]["selections"] == ["bar", "line", "pie"]
-        assert re.search(r"not (?:a )?time (?:trend|series)", switched["line"]["explanation"], re.I)
-        assert switched["line"]["fetches"] == 0
-        assert probe["rerenderSelections"] == ["bar", "line", "pie"]
-        assert probe["emptySector"] == {"controls": 0, "canvases": 0, "otherControls": [1, 1]}
-        assert probe["error"] == {"controls": 0, "canvases": 0}
-        assert probe["stale"] == {
-            "oldResult": None, "chartCountUnchanged": True, "oldTextAbsent": True,
-        }
+    assert "renderDonut" in source and "renderBar" in source and "./charts.js" in source
 
 
-def test_documented_statistics_visual_contract_matches_the_public_modules():
-    interfaces = _read(ROOT / "docs" / "interfaces.md")
-    architecture = _read(ROOT / "docs" / "architecture.md")
+def test_the_statistics_page_never_makes_new_zealand_the_subject():
+    """§6.4's copy constraint, at word level over the page's own text.
 
-    assert 'date: "2026-09-17 (v1.19 draft)"' in interfaces
-    assert "### v1.19" in interfaces
-    assert "exact public exports" in interfaces.lower()
-    assert "`renderPie`, `renderBar` and" in interfaces
-    assert "`renderLine`" in interfaces
-    assert "valueFormat: 'percent'" in interfaces
-    assert "API's published `share` strings" in interfaces
-    assert "prefers-reduced-motion" in interfaces
-    assert "first thirteen distinct buckets" in interfaces
-    assert "wire or fixture contract changes" in interfaces
-    assert "notify the whole team before merging" in interfaces
-    assert "Three independent destination, sector and food-category share charts" in architecture
+    The predicate, why the phrase-order regex it replaces was decorative, and
+    the four sentences that passed it are all in ``tests/support/red_line.py``.
+    This asserts the page against it; ``test_the_red_line_guard_can_fail``
+    below asserts the predicate against those four.
+
+    The text scanned is the statistics page's static copy plus every string
+    literal ``stats.js`` can put on the screen — the module builds its DOM with
+    ``textContent``, so its literals are its rendered text. The same predicate
+    is run over the genuinely rendered ``innerText`` in
+    ``tests/web/test_statistics_browser.py``, which is the form that also sees
+    what the API sends.
+    """
+    html = _read(PAGES["statistics"])
+    literals = " ".join(
+        "".join(group) for group in re.findall(
+            r"`([^`]*)`|'((?:[^'\\]|\\.)*)'|\"((?:[^\"\\]|\\.)*)\"",
+            _read(WEB / "js" / "stats.js"),
+        )
+    )
+    offenders = red_line.violations(f"{html}\n{literals}")
+    assert not offenders, f"the statistics page makes New Zealand its subject: {offenders}"
+
+
+@pytest.mark.parametrize("sentence", red_line.COUNTEREXAMPLES)
+def test_the_red_line_guard_can_fail(sentence):
+    """Each of the four sentences the previous guard let through is caught.
+
+    Without this the rewrite would be an untested rewrite, which is the same
+    defect one layer up.
+    """
+    assert red_line.violations(sentence), f"the red-line guard does not catch {sentence!r}"
+
+
+@pytest.mark.parametrize("sentence", red_line.PERMITTED)
+def test_the_red_line_guard_is_not_merely_a_word_ban(sentence):
+    """And each sentence that may name the country is left alone.
+
+    A guard that refused the words "New Zealand" outright would pass every
+    counterexample above and be useless: the page's own copy names the country,
+    in a negation, and that sentence is the reason it passes at all.
+    """
+    assert not red_line.violations(sentence), f"the red-line guard over-reaches on {sentence!r}"
 
 
 def test_statistics_fixture_exercises_the_public_semantics():
@@ -934,6 +1030,50 @@ def test_methodology_source_consumes_collections_metadata_and_nullable_fields():
     assert re.search(r"\bcatch\b", source)
 
 
+def test_the_documentation_page_publishes_only_the_contract_s_factor_set_fields():
+    """§1.1 makes `code` the cross-layer identifier and §7 forbids the front end
+    learning a database primary key.
+
+    `METADATA_FIELDS` in `methodology.js` was written to print one. It listed
+    ``['id', 'ID', factor_set => factor_set.id]``, and §6.3's `factor_set`
+    carries `version_label`, `is_mock`, `published_at` and `notes` — so
+    `Object.hasOwn` filtered it, nothing rendered, and the page looked correct.
+    It would have begun printing a primary key on a public page the day B added
+    `id` to the projection, with nothing failing.
+
+    A projection is not a permission, so the list is asserted to be exactly
+    §6.3's four fields rather than merely free of `id`. `name`, `version` and
+    `effective_from` were equally dead, and a page that renders whatever the
+    response happens to carry is a page that publishes whatever the response
+    happens to carry.
+    """
+    source = _read(WEB / "js" / "methodology.js")
+    match = re.search(r"const\s+METADATA_FIELDS\s*=\s*\[", source)
+    assert match, "methodology.js no longer declares METADATA_FIELDS"
+    body = _bracket_span(source, source.index("[", match.end() - 1))
+
+    keys = re.findall(r"\[\s*'([a-z_]+)'", body)
+    assert keys, "METADATA_FIELDS no longer names its fields as string keys"
+    assert set(keys) == {"version_label", "published_at", "notes", "is_mock"}, (
+        f"the documentation page publishes {sorted(keys)}; §6.3's factor_set carries "
+        "version_label, is_mock, published_at and notes, and nothing else may be rendered "
+        "from it without a contract change"
+    )
+
+    # Belt and braces across the whole module, because the field list is not the
+    # only way to reach a primary key.
+    code = _js_code_without_comments_or_strings(source)
+    assert not re.search(r"factor_set\s*(?:\?)?\.\s*id\b", code), (
+        "methodology.js reads factor_set.id; the front end never learns a primary key"
+    )
+    for module in sorted((WEB / "js").glob("*.js")):
+        module_code = _js_code_without_comments_or_strings(_read(module))
+        offenders = re.findall(r"\b(?:factor_set|row|entry|bucket)\s*(?:\?)?\.\s*id\b", module_code)
+        assert not offenders, (
+            f"{module.relative_to(ROOT)} reads a database primary key: {offenders}"
+        )
+
+
 def test_factors_fixture_carries_negative_generic_and_nullable_rows():
     factors = _json(FIXTURES / "factors.json")
     assert set(factors) == {
@@ -964,7 +1104,18 @@ def test_every_public_footer_has_transparency_copy_and_what_we_record_link():
         assert len(footers) == 1
         copy = _text(footers[0]).lower()
         assert "sector" in copy and "food categor" in copy and "quantit" in copy
-        assert "aggregate statistics" in copy
+        # **"public statistics", not "aggregate statistics", and the choice with
+        # it.** Item 13 made the aggregate opt-in, and this notice renders in
+        # `index.html`'s footer - which is the calculator, so a visitor met it on
+        # the results page a few centimetres above the contribute control, being
+        # told their calculation was already in the statistics and then asked to
+        # opt in to exactly that. `tests/web/test_consent_copy.py` holds the rule
+        # this line now checks one instance of.
+        assert "public statistics" in copy
+        assert "choose to offer" in copy, (
+            f"{path.name}: the footer states the statistics as a fact rather than "
+            "as the visitor's choice"
+        )
         assert "nothing" in copy and "identif" in copy and "business" in copy
         record_links = [
             link for link in page.matching("a")
@@ -1020,6 +1171,31 @@ def test_nginx_public_static_location_has_the_required_csp_semantics():
         assert actual.get(directive) == required_values, (
             f"CSP {directive} must be exactly {sorted(required_values)}; "
             f"found {sorted(actual.get(directive, set()))}"
+        )
+
+    # NO DEPLOYMENT DOMAIN GOES BACK INTO THIS FILE. The client's production domain was
+    # written here and again in web/js/api.js, and the two had to agree; they fail
+    # asymmetrically, so nothing would have caught the drift. Both now derive from one
+    # environment variable, and re-adding a literal host to any directive - the natural
+    # fix when a resource is refused - silently re-creates the pair.
+    # The whole template, not only the policy: a host added to a `proxy_pass`, a
+    # `sub_filter` or a new `add_header` is the same defect wearing a different hat. The
+    # comments were stripped at the top of this function, so prose about the client's site
+    # is not what this reads.
+    #
+    # A DOT IS WHAT SEPARATES THE TWO KINDS OF HOST HERE. `proxy_pass http://api:18000`
+    # and `http://admin:18001` name compose services - single labels that resolve only on
+    # the internal network, are not deployment facts, and are the routing this file exists
+    # to express. Anything with a dot in it is a public name or an address: a domain, or
+    # an IP somebody wrote down.
+    for origin in re.findall(r"(?i)\bhttps?://[A-Za-z0-9][A-Za-z0-9-]*(?:\.[A-Za-z0-9-]+)+", source):
+        assert False, (
+            f"docker/nginx.conf names the literal origin {origin}. Origins reach this file "
+            "from KAICALC_NEWS_ORIGIN / KAICALC_API_ORIGIN / KAICALC_NEWS_IMAGE_ORIGINS "
+            "through docker/web-config.sh, which builds web/js/config.js from the same "
+            "values - a host written here is a second copy the front end does not follow, "
+            "and the two fail asymmetrically: a wrong policy means the news quietly does "
+            "not load, a wrong URL means the browser asks a domain nobody chose."
         )
 
 

@@ -3,55 +3,114 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Read the published formulas, constants, impact factors and provenance used by the Kai Commitment food waste impact calculator.">
-    <title>Documentation | Kai Commitment Food Waste Impact Calculator</title>
+    <meta name="description" data-i18n-attr="content" content="Read the published formulas, constants, impact factors and provenance used by the Kai Commitment food waste impact calculator.">
+    <!-- **"Documentation" won the name, and the `<title>` follows the navigation.**
+         Batch one left this reading "Methodology | …" while all four pages'
+         navigation called the page "Documentation", and recorded the choice as batch
+         two's to make: the old wording was a key in twenty catalogues and the new one
+         was in none, so settling it meant retranslating either way.
+
+         The navigation wins because it is the name the page is reached by, on every
+         page, and because the other two titles are "Home | …" and "Statistics | …" —
+         the nav label, then the site. The `<h1>` still says "Methodology and published
+         factors", which is what the page *is* rather than what it is called; the two
+         were never in conflict, only unsettled. -->
+    <title data-i18n>Documentation | Kai Commitment Food Waste Impact Calculator</title>
     <link rel="stylesheet" href="./css/styles.css">
   </head>
   <body class="methodology-page">
-    <a class="skip-link" href="#main-content">Skip to documentation</a>
+    <!-- See index.html: the page is rendered by ES modules, so the chooser is built by
+         js/i18n.js rather than shipped here, and this note is about the page as a whole. -->
+    <noscript>
+      <p class="noscript-notice">This page needs JavaScript to run. With scripting turned off it cannot load the published factors, or be shown in a language other than English.</p>
+    </noscript>
+    <a class="skip-link" href="#main-content" data-i18n>Skip to methodology</a>
+    <!-- **THE DRAWER. One markup block, the same on all three reachable pages.**
+
+         **Three rows, not four.** `home.html` is retired: the team's reading is that it
+         looked poor and duplicated the client's own website, which already carries that
+         material. The file is still in the tree (see `web/README.md`), but nothing links
+         to it, so it is not a destination and does not appear here.
+
+         `<details>`, not a button and a class toggle. It folds, takes a keyboard and
+         announces its own expanded state with no script at all, which matters on
+         `stats.html` and `methodology.html`: they are static content and must not lose
+         their navigation when scripting is off. `web/js/drawer.js` adds `Escape` and
+         syncs `aria-expanded`; neither is load-bearing.
+
+         **It overlays and never compresses.** `position: fixed`, pinned to the page's
+         inline-start edge and vertically centred, so it takes no width from the
+         document. Horizontal space is the binding constraint on this interface - the
+         owner's laptop is a 938px CSS viewport, already under the 960 breakpoint, and
+         a destination row has a 544px floor. A 240px sidebar in flow would leave
+         698px and break the step this team measured and fixed.
+
+         It is also **not in the header row**, which is a measured budget: 93px holding
+         a 67px logo and a 44px language chooser, defended by
+         `test_a_short_step_is_not_floored_by_a_stale_min_height`. A strip of its own
+         was tried once and cost 57px. And it is vertically centred rather than pinned
+         to the bottom, because the calculator's `position: sticky; bottom: 0` step bar
+         owns the bottom edge and is what put every step's primary action above the
+         fold.
+
+         **No `aria-current` here**, deliberately. The header navigation on the two
+         content pages carries it, and a second element claiming to be the current page
+         is a page with two current pages. On the calculator nothing claims it, which is
+         what `tests/test_d_statistics_content.py` asserts. -->
+    <details class="site-drawer" id="site-drawer">
+      <summary class="site-drawer__handle">
+        <span class="sr-only" data-i18n>Site navigation</span>
+      </summary>
+      <div class="site-drawer__panel">
+        <nav class="site-drawer__nav" data-i18n-attr="aria-label" aria-label="Site navigation">
+          <a href="./index.html" data-i18n>Calculator</a>
+          <a href="./stats.html" data-i18n>Statistics</a>
+          <a href="./methodology.html" data-i18n>Documentation</a>
+        </nav>
+      </div>
+    </details>
     <header class="site-header">
       <div class="header-inner public-header-inner methodology-header-inner">
-        <a class="brand" href="./home.html">
-          <img src="./assets/kai-commitment-logo.png" alt="Kai Commitment - Leading action on food waste">
-          <span class="prototype-label">Impact calculator</span>
+        <a class="brand" href="./index.html">
+          <img src="./assets/kai-commitment-logo.png" data-i18n-attr="alt" alt="Kai Commitment - Leading action on food waste">
+          <span class="prototype-label" data-i18n>Impact calculator</span>
         </a>
-        <nav class="public-nav" aria-label="Primary navigation">
-          <a href="./home.html">Home</a>
-          <a href="./index.html">Calculator</a>
-          <a href="./stats.html">Statistics</a>
-          <a href="./methodology.html" aria-current="page">Documentation</a>
+        <nav class="public-nav" data-i18n-attr="aria-label" aria-label="Primary navigation">
+          <a href="./index.html" data-i18n>Calculator</a>
+          <a href="./stats.html" data-i18n>Statistics</a>
+          <a href="./methodology.html" aria-current="page" data-i18n>Documentation</a>
         </nav>
       </div>
     </header>
 
     <main class="main-content methodology-main" id="main-content" tabindex="-1">
       <section aria-labelledby="documentation-title">
-        <p class="eyebrow">Transparency</p>
-        <h1 id="documentation-title">Methodology and published factors</h1>
-        <p class="section-intro">The calculator service supplies the versioned constants, formulas and factors shown here. Values and provenance are presented as published; this page does not calculate or reinterpret them.</p>
+        <p class="eyebrow" data-i18n>Transparency</p>
+        <h1 id="documentation-title" data-i18n>Methodology and published factors</h1>
+        <p class="section-intro" data-i18n>Calculation factors and formulas are supplied by the calculator service so the published method remains transparent and versioned.</p>
       </section>
 
       <div id="factor-status" class="methodology-status" role="status" aria-live="polite">
-        <p class="loading-state">Loading the published methodology&hellip;</p>
+        <p class="loading-state" data-i18n>Loading the published methodology…</p>
       </div>
       <div id="factor-content" aria-live="polite" aria-busy="true"></div>
 
       <section class="review-block methodology-explanation" aria-labelledby="what-we-record">
-        <h2 id="what-we-record">What we record</h2>
-        <p>The sector, food category and quantities entered into the calculator are stored only to produce privacy-protected aggregate statistics. We do not record information that identifies you or your business.</p>
+        <h2 id="what-we-record" data-i18n>What we record</h2>
+        <p data-i18n>The sector, food category, the specific food where you name one, and the quantities entered into the calculator are recorded anonymously. They join the privacy-protected public statistics only if you choose to offer them. We do not record information that identifies you or your business.</p>
       </section>
 
       <section class="review-block methodology-explanation" aria-labelledby="background-reading-heading">
-        <h2 id="background-reading-heading">Background reading</h2>
-        <p>No approved background-reading sources have been provided. Approved background reading has not yet been provided because this page only lists client-approved sources.</p>
+        <h2 id="background-reading-heading" data-i18n>Background reading</h2>
+        <p data-i18n>No approved background-reading sources have been provided. Approved background reading has not yet been provided because this page only lists client-approved sources.</p>
       </section>
 
-      <p><a class="button button-secondary methodology-back-link" href="./index.html">Back to calculator</a></p>
+      <p><a class="button button-secondary methodology-back-link" href="./index.html" data-i18n>Back to calculator</a></p>
     </main>
 
     <footer>
-      <p>Kai Commitment &middot; Food Waste Impact Calculator</p>
-      <p class="transparency-notice">This tool stores the sector, food category and quantities entered for aggregate statistics. It stores nothing that identifies you or your business. <a href="./methodology.html#what-we-record">What we record</a></p>
+      <p data-i18n>Kai Commitment · Food Waste Impact Calculator</p>
+      <p class="transparency-notice"><span data-i18n>This calculator stores the sector, food category, the specific food where you name one, and the quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.</span> <a href="./methodology.html#what-we-record" data-i18n>What we record</a></p>
     </footer>
     <script type="module" src="./js/methodology.js"></script>
   </body>

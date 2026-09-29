@@ -11,35 +11,169 @@
         "co2e": {
           "unit": "kg CO2e",
           "display_precision": 1,
-          "total": "4449.0000000000"
+          "total": "4449.0000000000",
+          "by_destination": [
+            {
+              "destination": "landfill",
+              "qty_kg": "1200.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "3468.0000000000",
+              "upstream_basis": null
+            },
+            {
+              "destination": "animal_feed",
+              "qty_kg": "300.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "525.0000000000",
+              "upstream_basis": null
+            },
+            {
+              "destination": "not_harvested",
+              "qty_kg": "800.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "456.0000000000",
+              "upstream_basis": null
+            }
+          ]
         },
         "ch4": {
           "unit": "kg CH4",
           "display_precision": 1,
-          "total": "32.4000000000"
+          "total": "32.4000000000",
+          "by_destination": [
+            {
+              "destination": "landfill",
+              "qty_kg": "1200.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "32.4000000000",
+              "upstream_basis": null
+            },
+            {
+              "destination": "animal_feed",
+              "qty_kg": "300.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "0.0000000000",
+              "upstream_basis": null
+            },
+            {
+              "destination": "not_harvested",
+              "qty_kg": "800.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "0.0000000000",
+              "upstream_basis": null
+            }
+          ]
         },
         "water": {
           "unit": "L",
           "display_precision": 0,
-          "total": "1787600.0000000000"
+          "total": "1787600.0000000000",
+          "by_destination": [
+            {
+              "destination": "landfill",
+              "qty_kg": "1200.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "1224000.0000000000",
+              "upstream_basis": null
+            },
+            {
+              "destination": "animal_feed",
+              "qty_kg": "300.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "306000.0000000000",
+              "upstream_basis": null
+            },
+            {
+              "destination": "not_harvested",
+              "qty_kg": "800.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "257600.0000000000",
+              "upstream_basis": null
+            }
+          ]
         },
         "cost": {
           "unit": "NZD",
           "display_precision": 0,
-          "total": "72.0000000000"
+          "total": "72.0000000000",
+          "by_destination": [
+            {
+              "destination": "landfill",
+              "qty_kg": "1200.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "72.0000000000",
+              "upstream_basis": null
+            },
+            {
+              "destination": "animal_feed",
+              "qty_kg": "300.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "0.0000000000",
+              "upstream_basis": null
+            },
+            {
+              "destination": "not_harvested",
+              "qty_kg": "800.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "0.0000000000",
+              "upstream_basis": null
+            }
+          ]
         },
         "mass": {
           "unit": "kg",
           "display_precision": 1,
-          "total": "2300.0000000000"
+          "total": "2300.0000000000",
+          "by_destination": [
+            {
+              "destination": "landfill",
+              "qty_kg": "1200.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "1200.0000000000",
+              "upstream_basis": null
+            },
+            {
+              "destination": "animal_feed",
+              "qty_kg": "300.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "300.0000000000",
+              "upstream_basis": null
+            },
+            {
+              "destination": "not_harvested",
+              "qty_kg": "800.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "800.0000000000",
+              "upstream_basis": null
+            }
+          ]
         }
       },
       "equivalences": [
         {
           "code": "km_driven",
+          "name": "Kilometres driven",
           "label": "Equivalent to driving 18,597 km",
           "value": "18596.8200000000",
-          "source_metric": "co2e"
+          "value_per_unit": "4.1800000000",
+          "value_per_unit_display": "4.18",
+          "source_metric": "co2e",
+          "source_note": "PLACEHOLDER. Open item O-3 — the New Zealand basis for this conversion is not settled. Roughly one kilometre of an average light petrol vehicle per 0.24 kg CO2e."
         }
       ]
     },
@@ -48,35 +182,169 @@
         "co2e": {
           "unit": "kg CO2e",
           "display_precision": 1,
-          "total": "2889.0000000000"
+          "total": "2889.0000000000",
+          "by_destination": [
+            {
+              "destination": "anaerobic_digestion",
+              "qty_kg": "1200.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "2364.0000000000",
+              "upstream_basis": null
+            },
+            {
+              "destination": "animal_feed",
+              "qty_kg": "300.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "525.0000000000",
+              "upstream_basis": null
+            },
+            {
+              "destination": "prevention",
+              "qty_kg": "800.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "0.0000000000",
+              "upstream_basis": null
+            }
+          ]
         },
         "ch4": {
           "unit": "kg CH4",
           "display_precision": 1,
-          "total": "1.2000000000"
+          "total": "1.2000000000",
+          "by_destination": [
+            {
+              "destination": "anaerobic_digestion",
+              "qty_kg": "1200.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "1.2000000000",
+              "upstream_basis": null
+            },
+            {
+              "destination": "animal_feed",
+              "qty_kg": "300.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "0.0000000000",
+              "upstream_basis": null
+            },
+            {
+              "destination": "prevention",
+              "qty_kg": "800.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "0.0000000000",
+              "upstream_basis": null
+            }
+          ]
         },
         "water": {
           "unit": "L",
           "display_precision": 0,
-          "total": "1530000.0000000000"
+          "total": "1530000.0000000000",
+          "by_destination": [
+            {
+              "destination": "anaerobic_digestion",
+              "qty_kg": "1200.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "1224000.0000000000",
+              "upstream_basis": null
+            },
+            {
+              "destination": "animal_feed",
+              "qty_kg": "300.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "306000.0000000000",
+              "upstream_basis": null
+            },
+            {
+              "destination": "prevention",
+              "qty_kg": "800.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "0.0000000000",
+              "upstream_basis": null
+            }
+          ]
         },
         "cost": {
           "unit": "NZD",
           "display_precision": 0,
-          "total": "54.0000000000"
+          "total": "54.0000000000",
+          "by_destination": [
+            {
+              "destination": "anaerobic_digestion",
+              "qty_kg": "1200.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "54.0000000000",
+              "upstream_basis": null
+            },
+            {
+              "destination": "animal_feed",
+              "qty_kg": "300.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "0.0000000000",
+              "upstream_basis": null
+            },
+            {
+              "destination": "prevention",
+              "qty_kg": "800.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "0.0000000000",
+              "upstream_basis": null
+            }
+          ]
         },
         "mass": {
           "unit": "kg",
           "display_precision": 1,
-          "total": "2300.0000000000"
+          "total": "2300.0000000000",
+          "by_destination": [
+            {
+              "destination": "anaerobic_digestion",
+              "qty_kg": "1200.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "1200.0000000000",
+              "upstream_basis": null
+            },
+            {
+              "destination": "animal_feed",
+              "qty_kg": "300.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "300.0000000000",
+              "upstream_basis": null
+            },
+            {
+              "destination": "prevention",
+              "qty_kg": "800.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "800.0000000000",
+              "upstream_basis": null
+            }
+          ]
         }
       },
       "equivalences": [
         {
           "code": "km_driven",
+          "name": "Kilometres driven",
           "label": "Equivalent to driving 12,076 km",
           "value": "12076.0200000000",
-          "source_metric": "co2e"
+          "value_per_unit": "4.1800000000",
+          "value_per_unit_display": "4.18",
+          "source_metric": "co2e",
+          "source_note": "PLACEHOLDER. Open item O-3 — the New Zealand basis for this conversion is not settled. Roughly one kilometre of an average light petrol vehicle per 0.24 kg CO2e."
         }
       ]
     },
@@ -86,12 +354,27 @@
       "water": "257600.0000000000",
       "cost": "18.0000000000",
       "mass": "0.0000000000"
+    },
+    "money": {
+      "total_value_nzd": "50000.00",
+      "wasted_value_nzd": "10750.00",
+      "wasted_share_percent": "21.50",
+      "saving_nzd": "4000.00"
+    },
+    "production_share_percent": null,
+    "data_state": {
+      "production_share_percent": "incomplete",
+      "total_value_nzd": "complete",
+      "wasted_value_nzd": "complete",
+      "wasted_share_percent": "complete",
+      "saving_nzd": "complete"
     }
   },
   "entries": [
     {
       "sector": "processing",
       "food_category": "dairy",
+      "food_item": null,
       "current": {
         "total_kg": "1500.000",
         "metrics": {
@@ -105,14 +388,16 @@
                 "qty_kg": "1200.000",
                 "upstream": "1.9000000000",
                 "downstream": "0.9900000000",
-                "value": "3468.0000000000"
+                "value": "3468.0000000000",
+                "upstream_basis": "category_every_destination"
               },
               {
                 "destination": "animal_feed",
                 "qty_kg": "300.000",
                 "upstream": "1.9000000000",
                 "downstream": "-0.1500000000",
-                "value": "525.0000000000"
+                "value": "525.0000000000",
+                "upstream_basis": "category_every_destination"
               }
             ]
           },
@@ -126,14 +411,16 @@
                 "qty_kg": "1200.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0270000000",
-                "value": "32.4000000000"
+                "value": "32.4000000000",
+                "upstream_basis": "absent"
               },
               {
                 "destination": "animal_feed",
                 "qty_kg": "300.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "0.0000000000"
+                "value": "0.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           },
@@ -147,14 +434,16 @@
                 "qty_kg": "1200.000",
                 "upstream": "1020.0000000000",
                 "downstream": "0.0000000000",
-                "value": "1224000.0000000000"
+                "value": "1224000.0000000000",
+                "upstream_basis": "category_every_destination"
               },
               {
                 "destination": "animal_feed",
                 "qty_kg": "300.000",
                 "upstream": "1020.0000000000",
                 "downstream": "0.0000000000",
-                "value": "306000.0000000000"
+                "value": "306000.0000000000",
+                "upstream_basis": "category_every_destination"
               }
             ]
           },
@@ -168,14 +457,16 @@
                 "qty_kg": "1200.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0600000000",
-                "value": "72.0000000000"
+                "value": "72.0000000000",
+                "upstream_basis": "absent"
               },
               {
                 "destination": "animal_feed",
                 "qty_kg": "300.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "0.0000000000"
+                "value": "0.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           },
@@ -189,14 +480,16 @@
                 "qty_kg": "1200.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "1200.0000000000"
+                "value": "1200.0000000000",
+                "upstream_basis": "absent"
               },
               {
                 "destination": "animal_feed",
                 "qty_kg": "300.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "300.0000000000"
+                "value": "300.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           }
@@ -204,9 +497,13 @@
         "equivalences": [
           {
             "code": "km_driven",
+            "name": "Kilometres driven",
             "label": "Equivalent to driving 16,691 km",
             "value": "16690.7400000000",
-            "source_metric": "co2e"
+            "value_per_unit": "4.1800000000",
+            "value_per_unit_display": "4.18",
+            "source_metric": "co2e",
+            "source_note": "PLACEHOLDER. Open item O-3 — the New Zealand basis for this conversion is not settled. Roughly one kilometre of an average light petrol vehicle per 0.24 kg CO2e."
           }
         ]
       },
@@ -223,14 +520,16 @@
                 "qty_kg": "1200.000",
                 "upstream": "1.9000000000",
                 "downstream": "0.0700000000",
-                "value": "2364.0000000000"
+                "value": "2364.0000000000",
+                "upstream_basis": "category_every_destination"
               },
               {
                 "destination": "animal_feed",
                 "qty_kg": "300.000",
                 "upstream": "1.9000000000",
                 "downstream": "-0.1500000000",
-                "value": "525.0000000000"
+                "value": "525.0000000000",
+                "upstream_basis": "category_every_destination"
               }
             ]
           },
@@ -244,14 +543,16 @@
                 "qty_kg": "1200.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0010000000",
-                "value": "1.2000000000"
+                "value": "1.2000000000",
+                "upstream_basis": "absent"
               },
               {
                 "destination": "animal_feed",
                 "qty_kg": "300.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "0.0000000000"
+                "value": "0.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           },
@@ -265,14 +566,16 @@
                 "qty_kg": "1200.000",
                 "upstream": "1020.0000000000",
                 "downstream": "0.0000000000",
-                "value": "1224000.0000000000"
+                "value": "1224000.0000000000",
+                "upstream_basis": "category_every_destination"
               },
               {
                 "destination": "animal_feed",
                 "qty_kg": "300.000",
                 "upstream": "1020.0000000000",
                 "downstream": "0.0000000000",
-                "value": "306000.0000000000"
+                "value": "306000.0000000000",
+                "upstream_basis": "category_every_destination"
               }
             ]
           },
@@ -286,14 +589,16 @@
                 "qty_kg": "1200.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0450000000",
-                "value": "54.0000000000"
+                "value": "54.0000000000",
+                "upstream_basis": "absent"
               },
               {
                 "destination": "animal_feed",
                 "qty_kg": "300.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "0.0000000000"
+                "value": "0.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           },
@@ -307,14 +612,16 @@
                 "qty_kg": "1200.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "1200.0000000000"
+                "value": "1200.0000000000",
+                "upstream_basis": "absent"
               },
               {
                 "destination": "animal_feed",
                 "qty_kg": "300.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "300.0000000000"
+                "value": "300.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           }
@@ -322,9 +629,13 @@
         "equivalences": [
           {
             "code": "km_driven",
+            "name": "Kilometres driven",
             "label": "Equivalent to driving 12,076 km",
             "value": "12076.0200000000",
-            "source_metric": "co2e"
+            "value_per_unit": "4.1800000000",
+            "value_per_unit_display": "4.18",
+            "source_metric": "co2e",
+            "source_note": "PLACEHOLDER. Open item O-3 — the New Zealand basis for this conversion is not settled. Roughly one kilometre of an average light petrol vehicle per 0.24 kg CO2e."
           }
         ]
       },
@@ -334,11 +645,14 @@
         "water": "0.0000000000",
         "cost": "18.0000000000",
         "mass": "0.0000000000"
-      }
+      },
+      "production_share_percent": "15.00",
+      "item_basis": "not_applicable"
     },
     {
       "sector": "primary_production",
       "food_category": "vegetables",
+      "food_item": null,
       "current": {
         "total_kg": "800.000",
         "metrics": {
@@ -352,7 +666,8 @@
                 "qty_kg": "800.000",
                 "upstream": "0.4500000000",
                 "downstream": "0.1200000000",
-                "value": "456.0000000000"
+                "value": "456.0000000000",
+                "upstream_basis": "category_every_destination"
               }
             ]
           },
@@ -366,7 +681,8 @@
                 "qty_kg": "800.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "0.0000000000"
+                "value": "0.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           },
@@ -380,7 +696,8 @@
                 "qty_kg": "800.000",
                 "upstream": "322.0000000000",
                 "downstream": "0.0000000000",
-                "value": "257600.0000000000"
+                "value": "257600.0000000000",
+                "upstream_basis": "category_every_destination"
               }
             ]
           },
@@ -394,7 +711,8 @@
                 "qty_kg": "800.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "0.0000000000"
+                "value": "0.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           },
@@ -408,7 +726,8 @@
                 "qty_kg": "800.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "800.0000000000"
+                "value": "800.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           }
@@ -416,9 +735,13 @@
         "equivalences": [
           {
             "code": "km_driven",
+            "name": "Kilometres driven",
             "label": "Equivalent to driving 1,906 km",
             "value": "1906.0800000000",
-            "source_metric": "co2e"
+            "value_per_unit": "4.1800000000",
+            "value_per_unit_display": "4.18",
+            "source_metric": "co2e",
+            "source_note": "PLACEHOLDER. Open item O-3 — the New Zealand basis for this conversion is not settled. Roughly one kilometre of an average light petrol vehicle per 0.24 kg CO2e."
           }
         ]
       },
@@ -435,7 +758,8 @@
                 "qty_kg": "800.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "0.0000000000"
+                "value": "0.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           },
@@ -449,7 +773,8 @@
                 "qty_kg": "800.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "0.0000000000"
+                "value": "0.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           },
@@ -463,7 +788,8 @@
                 "qty_kg": "800.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "0.0000000000"
+                "value": "0.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           },
@@ -477,7 +803,8 @@
                 "qty_kg": "800.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "0.0000000000"
+                "value": "0.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           },
@@ -491,7 +818,8 @@
                 "qty_kg": "800.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "800.0000000000"
+                "value": "800.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           }
@@ -499,9 +827,13 @@
         "equivalences": [
           {
             "code": "km_driven",
+            "name": "Kilometres driven",
             "label": "Equivalent to driving 0 km",
             "value": "0.0000000000",
-            "source_metric": "co2e"
+            "value_per_unit": "4.1800000000",
+            "value_per_unit_display": "4.18",
+            "source_metric": "co2e",
+            "source_note": "PLACEHOLDER. Open item O-3 — the New Zealand basis for this conversion is not settled. Roughly one kilometre of an average light petrol vehicle per 0.24 kg CO2e."
           }
         ]
       },
@@ -511,7 +843,9 @@
         "water": "257600.0000000000",
         "cost": "0.0000000000",
         "mass": "0.0000000000"
-      }
+      },
+      "production_share_percent": null,
+      "item_basis": "not_applicable"
     }
   ],
   "factor_source": "published",

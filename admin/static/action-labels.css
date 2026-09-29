@@ -1,0 +1,148 @@
+/* An `@action` label that carries its own description.
+
+   See `admin/modelviews.py`'s `described()` for why the description travels
+   inside the label at all: sqladmin renders these controls from its own
+   templates, which `admin/templates/brand/` never sees, and that is how
+   Publish - which changes what every public visitor's next calculation
+   returns - came to be a bare verb in a dropdown with nothing to explain it.
+
+   WHY THIS IS ITS OWN FILE, LINKED FROM `sqladmin/layout.html`.
+
+   sqladmin renders one label in THREE places, not one: the bulk-actions
+   dropdown and the per-row dropdown on the list page, and - for any action
+   declared `add_in_detail=True` - a plain `<a class="btn btn-secondary">` on
+   the DETAIL page. These rules first lived inside
+   `brand/_list_table_css.html`, which reaches the list chain only, so the
+   detail page got the markup and none of the styling: both spans rendered
+   inline inside the button and the taxonomy detail page grew a 1209px bar
+   reading "DeactivateDrops the selected rows out of the calculator's own
+   lists and this panel's forms..." with the page overflowing sideways.
+   `layout.html` is the one template every sqladmin screen passes through,
+   and its own comment already states the rule this file follows: a `<link>`
+   for something on every screen, an inlined `<style>` only for the list.
+
+   Found in production rather than by a test. The browser case written with
+   this feature only ever opened the list-page menu, so it could not have
+   caught it; `tests/admin/test_button_hint_browser.py` now opens a detail
+   page too. */
+
+/* Collapsed by default, and revealed differently in each of the two places a
+   label renders. `display: none` was tried here first and was wrong twice
+   over: it removed the explanation from the detail page altogether, which is
+   the whole feature, and it did so on the screen carrying `Delete
+   permanently` and `Reset the authenticator`.
+
+   Clip-hidden rather than `display: none` so the text stays in the
+   accessible tree. It is inside the `<a>`, so it becomes part of the
+   button's accessible name: a screen reader announces "Delete permanently
+   Removes this account for good and frees its username. This cannot be
+   undone - Deactivate is the reversible version of it." Verbose, but it is
+   the same thing a sighted reader gets on hover, and `aria-describedby` is
+   not reachable from here - sqladmin renders the `<a>` and this file only
+   controls what goes inside it. */
+.action-item__note {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+/* ON A DETAIL PAGE: a card above the button, on hover and on keyboard focus.
+
+   ANCHORED TO THE BUTTON, NOT TO THE ROW - corrected after the first version
+   shipped. Anchoring to the `.row` guaranteed the card could never push the
+   page sideways, and I tested exactly that and nothing else: the button did
+   not move, nothing overflowed, the description appeared. It appeared at the
+   START OF THE ROW every time, so hovering `Show the password waiting to be
+   collected` at the right-hand end of six buttons put its explanation about
+   a thousand pixels away, above `Go Back`. A tooltip that does not say which
+   control it belongs to is not a tooltip. No assertion caught it because
+   none of them compared the card's position with its own button's.
+
+   Tabler makes `.btn` and `.col-auto` positioned, which is now what we want
+   for `.btn` and still not what we want for `.col-auto`.
+
+   `pointer-events: none` IS LOAD-BEARING HERE, unlike on the brand screens.
+   The card is a descendant of the `<a>`, so without it the card is part of
+   the link's hit area: moving onto it to read the sentence would arm a click
+   on `Delete permanently`. It also stops the card taking the hover that is
+   revealing it, which would oscillate. */
+.col-auto:has(.action-item__note) { position: static; }
+.btn:has(.action-item__note) { position: relative; }
+.btn:hover .action-item__note,
+.btn:focus .action-item__note {
+  inset-block-end: calc(100% + 0.5rem);
+  inset-inline-start: 0;
+  inline-size: max-content;
+  /* A MEASURE, AND A VIEWPORT GUARD. The line-length part: the action row is
+     most of a laptop's width, and a shrink-to-fit card would take all of it -
+     one unbroken line of 0.85rem text across the screen, about twice the
+     measure this panel sets for body copy everywhere else. The viewport term
+     is what keeps a card anchored to a button near the right-hand edge from
+     running off it; the rule below handles the rest. */
+  max-inline-size: min(26rem, calc(100vw - 2rem));
+  block-size: auto;
+  overflow: visible;
+  clip: auto;
+  /* Tabler's `.btn` is `white-space: nowrap`, which the card inherits: the
+     box clamped correctly to 288px while the sentence inside it ran out as a
+     single line and pushed the document to 1011px at a 320px viewport. The
+     box was never the thing overflowing. */
+  white-space: normal;
+  z-index: 3;
+  pointer-events: none;
+  padding-block: 0.55rem;
+  padding-inline: 0.75rem;
+  border: 1px solid rgba(0, 50, 35, 0.16);
+  border-radius: 8px;
+  background: #fff;
+  color: #003223;
+  font-size: 0.85rem;
+  font-weight: 400;
+  line-height: 1.4;
+  text-align: start;
+  box-shadow: 0 4px 14px rgba(0, 50, 35, 0.12);
+}
+
+/* WITH THE POSITIONER RUNNING, the card is placed against the viewport and
+   every rule that tried to guess a safe side becomes dead weight. See
+   `admin/static/action-labels.js` for why guessing could not be made to work:
+   once the action row wraps, the button at the visual edge is not the
+   DOM-last child, and `:nth-last-child` flips the wrong one.
+
+   `position: fixed` rather than absolute, so the coordinates the script sets
+   are the viewport's and no ancestor's positioning can move them. */
+.js-action-tips .btn:hover .action-item__note,
+.js-action-tips .btn:focus .action-item__note {
+  position: fixed;
+  inset-block-end: auto;
+  inset-inline-start: auto;
+  inset-inline-end: auto;
+  max-inline-size: min(26rem, calc(100vw - 2rem));
+}
+
+/* WITHOUT IT - no JavaScript - the card is still revealed and still readable;
+   it is anchored to the footer, spanning it, rather than to the button. That
+   is the fallback this file had before the positioner existed, kept because a
+   description that appears in a slightly less precise place is worth far more
+   than one that does not appear. */
+html:not(.js-action-tips) .card-footer:has(.action-item__note) { position: relative; }
+html:not(.js-action-tips) .btn:has(.action-item__note) { position: static; }
+html:not(.js-action-tips) .btn:hover .action-item__note,
+html:not(.js-action-tips) .btn:focus .action-item__note {
+  inset-inline: 0;
+  inline-size: auto;
+  max-inline-size: none;
+}
+
+/* Tabler's `.dropdown-item` is `white-space: nowrap`, which is right for a
+   one-word menu and turns a sentence into one long line that pushes the menu
+   off the screen. Relaxed only for items that actually carry a note, so a
+   menu of plain items is untouched. */
+.dropdown-item:has(.action-item__note) {
+  white-space: normal;
+  /* Wide enough for a sentence to break two or three times, and no wider than
+     a narrow viewport can hold. */
+  max-inline-size: min(26rem, calc(100vw - 3rem));
+}

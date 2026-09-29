@@ -29,8 +29,23 @@ FROM nginx@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a
 # which server block is in force.
 RUN rm -f /etc/nginx/conf.d/default.conf
 
-COPY docker/nginx.conf /etc/nginx/conf.d/kaicalc.conf
+# NOT into conf.d. docker/nginx.conf carries three placeholders - the two
+# `${KAICALC_CSP_*}` source lists and `${KAICALC_TRUST_FORWARDED}` - and is
+# rendered into /etc/nginx/conf.d/kaicalc.conf at container start by the
+# entrypoint script below. Copied straight into conf.d it would be loaded with
+# the placeholders still in it, and nginx would refuse to start.
+COPY docker/nginx.conf /etc/nginx/kaicalc.conf.template
 COPY docker/nginx-proxy-headers.conf /etc/nginx/kaicalc_proxy_headers.conf
+
+# NO DOMAIN IS BAKED INTO THIS IMAGE. The news origin and the API origin are
+# read from the environment at start-up and written into BOTH the rendered
+# Content-Security-Policy and web/js/config.js, from one variable each, so the
+# two cannot disagree. The script says why that mattered enough to add an
+# entrypoint to an image that had none. nginx's own entrypoint runs everything
+# in /docker-entrypoint.d/ in `sort -V` order before it binds; 16 puts this
+# after the stock resolver step and before the stock template step, which finds
+# no templates of its own and does nothing.
+COPY --chmod=755 docker/web-config.sh /docker-entrypoint.d/16-kaicalc-config.sh
 
 # The front end, exactly as it is in the repository. `web/README.md` is a
 # developer note and is not worth a separate COPY to exclude - it is four
@@ -60,7 +75,7 @@ COPY web/ /usr/share/nginx/html/
 RUN sed -i 's|^pid .*|pid /tmp/nginx.pid;|' /etc/nginx/nginx.conf \
  && sed -i '/^user  *nginx;/d' /etc/nginx/nginx.conf \
  && sed -i 's|^http {|http {\n    client_body_temp_path /tmp/client_temp;\n    proxy_temp_path /tmp/proxy_temp;\n    fastcgi_temp_path /tmp/fastcgi_temp;\n    uwsgi_temp_path /tmp/uwsgi_temp;\n    scgi_temp_path /tmp/scgi_temp;|' /etc/nginx/nginx.conf \
- && chown -R nginx:nginx /var/cache/nginx /etc/nginx/conf.d
+ && chown -R nginx:nginx /var/cache/nginx /etc/nginx/conf.d /usr/share/nginx/html/js
 
 USER nginx
 
@@ -78,6 +93,20 @@ EXPOSE 18080
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=5 \
   CMD wget --quiet --tries=1 --spider http://127.0.0.1:18080/ || exit 1
 
-# The stock entrypoint runs /docker-entrypoint.d/*.sh (envsubst templating and
-# ipv6 detection). Those scripts skip their root-only steps with a notice when
-# the container is not root, which is fine - nothing here uses a template.
+# The stock entrypoint runs /docker-entrypoint.d/*.sh in `sort -V` order (ipv6
+# detection, local resolvers, envsubst templating, worker tuning) and then execs
+# nginx. Those scripts skip their root-only steps with a notice when the
+# container is not root, which is fine.
+#
+# 16-kaicalc-config.sh is ours and it is NOT optional: without it
+# /etc/nginx/conf.d/ is empty and nginx serves nothing. It exits non-zero on a
+# malformed origin, and the stock entrypoint runs under `set -e`, so that stops
+# the container rather than starting one with a policy nobody meant. Both are
+# asserted by tests/test_web_runtime_config.py.
+#
+# The stock 20-envsubst-on-templates.sh looks in /etc/nginx/templates/, which is
+# empty here - our template is at /etc/nginx/kaicalc.conf.template and is
+# rendered by our own script with an explicit three-variable list, so that
+# nginx's own `$time_local`, `$uri`, `$scheme`, `$http_host`, `$remote_addr`
+# and `$proxy_add_x_forwarded_for` cannot be substituted away. See
+# docker/web-config.sh.

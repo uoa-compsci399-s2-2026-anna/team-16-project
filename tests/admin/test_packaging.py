@@ -30,7 +30,11 @@ PACKAGE = REPO / "admin"
 
 #: Directories whose contents are read at runtime rather than imported.
 #: `.py` files are covered by `packages = [...]` and need no pattern.
-RUNTIME_DIRS = ("templates", "static")
+#: `locales` joined them when translation landed (contract O-8): admin/i18n.py
+#: reads those JSON files at import, so they are runtime files in exactly the
+#: sense this test means, and a new language is a new file in a directory that
+#: has to stay covered.
+RUNTIME_DIRS = ("templates", "static", "locales")
 
 
 def _patterns() -> list[str]:

@@ -1,5 +1,6 @@
 {% extends "brand/base.html" %}
 {% import "brand/_account_hint.html" as account %}
+{% import "brand/_help_tip.html" as help %}
 {% block title %}Your security{% endblock %}
 
 {# Plain ES module, deferred, no inline script - the panel may grow a CSP and
@@ -46,13 +47,16 @@
     <div class="actions">
       <button type="button" id="add-authenticator" class="button"
               data-dialog="dialog-add" aria-haspopup="dialog"
-              aria-controls="dialog-add">Add authenticator</button>
+              aria-controls="dialog-add"
+              aria-describedby="add-authenticator-hint">Add authenticator</button>{{ help.help_tip(_("What Add authenticator does"), _("Sets up a second device for signing in, so a lost phone becomes an inconvenience rather than something only another administrator can fix. It does not remove any device you already have."), id="add-authenticator-hint") }}
       <button type="button" id="rename-authenticator" class="button"
               data-dialog="dialog-rename" aria-haspopup="dialog"
-              aria-controls="dialog-rename">Rename authenticator</button>
+              aria-controls="dialog-rename"
+              aria-describedby="rename-authenticator-hint">Rename authenticator</button>{{ help.help_tip("What Rename authenticator does", _("Changes the label this list uses for one of your devices. It does not touch the name your authenticator app already shows for it, and it never removes a device."), id="rename-authenticator-hint", glyph=false) }}
       <button type="button" id="remove-authenticator" class="button button--danger"
               data-dialog="dialog-remove" aria-haspopup="dialog"
-              aria-controls="dialog-remove">Remove authenticator</button>
+              aria-controls="dialog-remove"
+              aria-describedby="remove-authenticator-hint">Remove authenticator</button>{{ help.help_tip(_("What Remove authenticator does"), _("Removes a device from this account immediately. Your last confirmed device cannot be removed here, so this can never lock you out — to replace your only authenticator, add the new one first."), id="remove-authenticator-hint") }}
     </div>
 
     {# A wide table scrolls inside its own container rather than making the
@@ -141,7 +145,8 @@
     <div class="actions">
       <button type="button" id="change-password" class="button"
               data-dialog="dialog-password" aria-haspopup="dialog"
-              aria-controls="dialog-password">Change password</button>
+              aria-controls="dialog-password"
+              aria-describedby="change-password-hint">Change password</button>{{ help.help_tip(_("What Change password does"), _("Replaces your password once you confirm your current one, and signs out every other session using this account. Nobody can see or recover the old password afterwards."), id="change-password-hint") }}
     </div>
   </section>
 
@@ -193,7 +198,8 @@
 
         <div class="dialog__actions">
           <button type="button" class="button button--quiet" data-close-dialog>Cancel</button>
-          <button type="submit" class="button">Add authenticator</button>
+          <button type="submit" class="button"
+                  aria-describedby="confirm-add-authenticator-hint">Add authenticator</button>{{ help.help_tip("What Add authenticator does, once confirmed", _("Adds the named device to this account straight away, unconfirmed, and moves you to the QR code screen. It appears in the list at once but cannot sign you in until you scan the code and confirm it, and starting another enrolment discards it."), id="confirm-add-authenticator-hint", glyph=false) }}
         </div>
       </form>
     {% endif %}
@@ -261,7 +267,8 @@
 
         <div class="dialog__actions">
           <button type="button" class="button button--quiet" data-close-dialog>Cancel</button>
-          <button type="submit" class="button">Rename authenticator</button>
+          <button type="submit" class="button"
+                  aria-describedby="confirm-rename-authenticator-hint">Rename authenticator</button>{{ help.help_tip("What Rename authenticator does, once confirmed", _("Saves the new label on the device you selected, once your proof checks out. Nothing about the device itself changes."), id="confirm-rename-authenticator-hint", glyph=false) }}
         </div>
       </form>
     {% else %}
@@ -323,7 +330,8 @@
 
         <div class="dialog__actions">
           <button type="button" class="button button--quiet" data-close-dialog>Cancel</button>
-          <button type="submit" class="button button--danger">Remove authenticator</button>
+          <button type="submit" class="button button--danger"
+                  aria-describedby="confirm-remove-authenticator-hint">Remove authenticator</button>{{ help.help_tip("What Remove authenticator does, once confirmed", _("Removes the device you selected, once your proof checks out. Only devices that can safely be removed are offered here, so your remaining authenticators still sign you in."), id="confirm-remove-authenticator-hint", glyph=false) }}
         </div>
       </form>
     {% else %}
@@ -390,7 +398,8 @@
              autocomplete="new-password" required>
       <div class="dialog__actions">
         <button type="button" class="button button--quiet" data-close-dialog>Cancel</button>
-        <button type="submit" class="button">Change password</button>
+        <button type="submit" class="button"
+                aria-describedby="confirm-change-password-hint">Change password</button>{{ help.help_tip("What Change password does, once confirmed", _("Replaces your password, once your current one checks out, and signs out every other session using this account."), id="confirm-change-password-hint", glyph=false) }}
       </div>
     </form>
   </dialog>
@@ -428,7 +437,8 @@
         <div class="dialog__actions">
           <a class="button button--quiet"
              href="{{ url_for('admin:view-security') }}">Cancel</a>
-          <button type="submit" class="button">Confirm this authenticator</button>
+          <button type="submit" class="button"
+                  aria-describedby="confirm-new-authenticator-hint">Confirm this authenticator</button>{{ help.help_tip("What Confirm this authenticator does", _("Checks the six-digit code against the device you just scanned and, if it matches, finishes adding it to your account."), id="confirm-new-authenticator-hint", glyph=false) }}
         </div>
       </form>
     </dialog>

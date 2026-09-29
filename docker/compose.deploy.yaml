@@ -1,0 +1,219 @@
+# THE WHOLE SYSTEM, FROM THE PUBLISHED IMAGES. No source tree, no build:
+#
+#     echo "$CR_PAT" | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
+#     KAICALC_IMAGE_TAG=0.1.0 docker compose -f docker/compose.deploy.yaml pull
+#     KAICALC_IMAGE_TAG=0.1.0 docker compose -f docker/compose.deploy.yaml up -d
+#
+# and then http://localhost:18080/ is the same working calculator this
+# repository's docker/compose.yaml builds - migrated, seeded, with a published
+# (placeholder) factor set and two administrator accounts whose one-time
+# passwords are printed in `docker compose logs migrate`.
+#
+# The token needs read:packages. `gh auth login` does NOT grant it. See
+# docs/docker-images.md, which is the long form of everything below.
+#
+# WHICH FILE TO USE:
+#
+#   docker/compose.yaml         BUILDS from the checkout in front of you.
+#                               Developers, and anyone who has the source.
+#                               Pulls nothing of ours; no GHCR login needed.
+#   docker/compose.deploy.yaml  THIS FILE. PULLS the images CI published.
+#                               Deployment, and anyone handed the images
+#                               without the source.
+#
+# THIS FILE IS A COPY, AND IT IS TESTED AS ONE. Every line below except the
+# four `image:` values is required to be byte-identical to docker/compose.yaml
+# after parsing, and `tests/test_compose.py` fails if it is not. The reasoning
+# behind each setting - why migrate is a one-shot service, why the database
+# health check speaks TCP, why the admin panel's health check is a socket
+# connect and not a GET, why SESSION_HTTPS_ONLY defaults to false - is written
+# out at length in docker/compose.yaml and is deliberately NOT duplicated here.
+# Read that file. Change that file. This one follows, and the test says so.
+#
+# WHICH TAG. There is no default, on purpose: `up` fails immediately with the
+# message below rather than quietly resolving something.
+#
+#   X.Y.Z         a release. What a deployment should pin. Immutable.
+#   latest        the most recent release. Moves. Do not pin a deployment.
+#   <short-sha>   one CI build of main, e.g. 612064a. Immutable.
+#   alpha         the head of main. Moves, several times a day.
+#
+# `pull` before `up` is not decoration. Compose's default pull policy is
+# `missing`, so with a moving tag (`alpha`, `latest`) already in the local
+# image store, `up` reuses what you have and never asks the registry.
+#
+# THE IMAGES CARRY THE STATIC FRONT END AND THE NGINX CONFIGURATION. Both are
+# baked in (docker/web.Dockerfile COPYs docker/nginx.conf and web/), as are
+# docker/init.sh and the mock factor data (docker/admin.Dockerfile). So the tag
+# pins the routing and the seed data too, and this file mounts no source. The
+# corollary: editing docker/nginx.conf and re-running THIS file changes
+# nothing. That is docker/compose.yaml's job.
+#
+# ONE STACK, NOT TWO. `name:` and every `container_name:` below are identical
+# to docker/compose.yaml's, because it is the same deployment from a different
+# source of images. Run one or the other. Starting this one while that one is
+# up replaces those containers rather than standing a second copy beside them.
+#
+# Ports, teardown, `docker exec kaicalc-admin kaicalc ...`: all exactly as
+# docker/compose.yaml documents them. That includes publishing ONLY 18080 -
+# the api and the panel are reached through nginx, which is what lets
+# PROTECTION_TRUSTED_PROXY default to true here. docker/compose.direct-ports.yaml
+# overlays this file too, and republishes 18000/18001 with that setting put
+# back to false; read its header before using it on anything public.
+
+name: kaicalc
+
+services:
+
+  # -------------------------------------------------------------------------
+  # The database. Not published. Identical to docker/compose.yaml, including
+  # the pinned digest - the database is not one of our images and there is no
+  # published/built distinction to make for it.
+  # -------------------------------------------------------------------------
+  db:
+    image: mysql@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b   # mysql:8.0
+    container_name: kaicalc-stack-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-devroot}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-kaicalc}
+      MYSQL_USER: ${MYSQL_USER:-kaicalc}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-devpass}
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      # Speaks TCP, as a real user, against the real database. See
+      # docker/compose.yaml for the two-second race this closed.
+      test: ["CMD", "mysql",
+             "--protocol=TCP", "-h", "127.0.0.1", "-P", "3306",
+             "-u", "${MYSQL_USER:-kaicalc}", "-p${MYSQL_PASSWORD:-devpass}",
+             "-D", "${MYSQL_DATABASE:-kaicalc}",
+             "-e", "SELECT 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+
+  # -------------------------------------------------------------------------
+  # Migrate and seed, once, before anything else starts. Runs the admin image.
+  # -------------------------------------------------------------------------
+  migrate:
+    image: ${KAICALC_IMAGE_PREFIX:-ghcr.io/uoa-compsci399-s2-2026-anna/team-16-project}/kaicalc-admin:${KAICALC_IMAGE_TAG:?set KAICALC_IMAGE_TAG to a published tag - a release X.Y.Z, latest, a short commit SHA, or alpha}
+    container_name: kaicalc-migrate
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: mysql+pymysql://${MYSQL_USER:-kaicalc}:${MYSQL_PASSWORD:-devpass}@db:3306/${MYSQL_DATABASE:-kaicalc}
+      SECRET_KEY: ${SECRET_KEY:-}
+    volumes:
+      - secret:/var/lib/kaicalc
+    command: ["/app/init.sh"]
+
+  # -------------------------------------------------------------------------
+  # The public JSON API.
+  # -------------------------------------------------------------------------
+  api:
+    image: ${KAICALC_IMAGE_PREFIX:-ghcr.io/uoa-compsci399-s2-2026-anna/team-16-project}/kaicalc-api:${KAICALC_IMAGE_TAG:?set KAICALC_IMAGE_TAG to a published tag - a release X.Y.Z, latest, a short commit SHA, or alpha}
+    container_name: kaicalc-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: mysql+pymysql://${MYSQL_USER:-kaicalc}:${MYSQL_PASSWORD:-devpass}@db:3306/${MYSQL_DATABASE:-kaicalc}
+      SECRET_KEY: ${SECRET_KEY:-}
+      PROTECTION_TRUSTED_PROXY: ${PROTECTION_TRUSTED_PROXY:-true}
+    volumes:
+      - secret:/var/lib/kaicalc
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:18000/openapi.json', timeout=5).status == 200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # -------------------------------------------------------------------------
+  # The staff admin panel.
+  # -------------------------------------------------------------------------
+  admin:
+    image: ${KAICALC_IMAGE_PREFIX:-ghcr.io/uoa-compsci399-s2-2026-anna/team-16-project}/kaicalc-admin:${KAICALC_IMAGE_TAG:?set KAICALC_IMAGE_TAG to a published tag - a release X.Y.Z, latest, a short commit SHA, or alpha}
+    container_name: kaicalc-admin
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: mysql+pymysql://${MYSQL_USER:-kaicalc}:${MYSQL_PASSWORD:-devpass}@db:3306/${MYSQL_DATABASE:-kaicalc}
+      SECRET_KEY: ${SECRET_KEY:-}
+      PROTECTION_TRUSTED_PROXY: ${PROTECTION_TRUSTED_PROXY:-true}
+      API_BASE_URL: ${KAICALC_API_BASE_URL:-http://api:18000}
+      SESSION_HTTPS_ONLY: ${KAICALC_SESSION_HTTPS_ONLY:-false}
+    volumes:
+      - secret:/var/lib/kaicalc
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket,sys; s=socket.create_connection(('127.0.0.1',18001),5); s.close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # -------------------------------------------------------------------------
+  # nginx: the static front end, and the only origin the browser talks to.
+  # -------------------------------------------------------------------------
+  web:
+    image: ${KAICALC_IMAGE_PREFIX:-ghcr.io/uoa-compsci399-s2-2026-anna/team-16-project}/kaicalc-web:${KAICALC_IMAGE_TAG:?set KAICALC_IMAGE_TAG to a published tag - a release X.Y.Z, latest, a short commit SHA, or alpha}
+    container_name: kaicalc-web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+      admin:
+        condition: service_healthy
+    environment:
+      # The news origin, the API origin and any media CDN. One value each, feeding
+      # both the public Content-Security-Policy and web/js/config.js so the two
+      # cannot disagree. `${VAR-default}` without the colon, so an empty value in
+      # the environment means "no news feed" rather than falling back. The full
+      # argument for each is in docker/compose.yaml; this file is a copy.
+      KAICALC_NEWS_ORIGIN: ${KAICALC_NEWS_ORIGIN-https://kaicommitment.org.nz}
+      KAICALC_API_ORIGIN: ${KAICALC_API_ORIGIN-}
+      KAICALC_NEWS_IMAGE_ORIGINS: ${KAICALC_NEWS_IMAGE_ORIGINS-}
+
+      # Whether another proxy - one you operate - is in front of this one. Almost
+      # certainly TRUE for a real deployment of this file, because a published
+      # instance terminates TLS somewhere and it is rarely here. Left false,
+      # nginx tells the applications the request is plain http and reports every
+      # visitor as the edge's one address. Set true only when nothing can reach
+      # :18080 except through that edge. Pair it with PROTECTION_TRUSTED_PROXY;
+      # docker/compose.yaml and docker/nginx.conf carry the full argument.
+      KAICALC_TRUST_FORWARDED_HEADERS: ${KAICALC_TRUST_FORWARDED_HEADERS:-false}
+
+      # This stack's own public origin, `https://your.host`. Empty means nothing
+      # is redirected. Set it and a plaintext request whose Host is that name is
+      # answered 307 to it - which is what closes a router's `public 18080 ->
+      # :18080` bypass of your TLS path, where /admin is served in the clear and
+      # a Secure session cookie is accepted and then never sent back. The health
+      # check, the LAN address and the edge's own forwarded traffic are all
+      # unaffected, because the rule needs the public Host AND a browser scheme
+      # of http, and no internal caller has both. Requires
+      # KAICALC_TRUST_FORWARDED_HEADERS; the container refuses to start without
+      # it. docker/compose.yaml and docker/nginx.conf carry the full argument.
+      KAICALC_PUBLIC_ORIGIN: ${KAICALC_PUBLIC_ORIGIN-}
+      # Not read by nginx - it lets the entrypoint warn when this proxy would
+      # forward an address the applications are configured to ignore.
+      PROTECTION_TRUSTED_PROXY: ${PROTECTION_TRUSTED_PROXY:-true}
+    ports:
+      - "${KAICALC_WEB_PORT:-18080}:18080"
+
+volumes:
+  db-data:
+  secret:

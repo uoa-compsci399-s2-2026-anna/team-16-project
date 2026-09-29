@@ -78,6 +78,16 @@ _ADMIN_ONLY: list[tuple[str, str, str]] = [
     ("GET", "/admin/staff/action/deactivate", "account management, §8.3"),
     ("GET", "/admin/staff/action/reactivate", "account management, §8.3"),
     ("GET", "/admin/staff/action/delete", "account management, §8.3"),
+    # --- the deployment read-back (§8.2, v1.39) ----------------------------
+    # A `@expose` route on a BaseView, so it inherits neither auditing nor
+    # `is_accessible` - the guard that actually refuses it is the
+    # `_require_admin` call at the top of the handler, and this line is what
+    # notices if that call is removed. Administrator-only because the page
+    # describes the deployment's security posture: which addresses are
+    # believed, whether the session cookie is Secure, whether the rate limit
+    # is measuring visitors or a proxy. That sits with the blocklist and the
+    # audit log, not with taxonomy CRUD.
+    ("GET", "/admin/deployment", "the deployment's security posture is administrator-only"),
     # --- the blocklist (§2.3) ----------------------------------------------
     ("GET", "/admin/ip-block/list", "blocking a public service is administrator-only"),
     ("GET", "/admin/ip-block/details/1", "ip_hmac is one click from the list"),
@@ -85,6 +95,28 @@ _ADMIN_ONLY: list[tuple[str, str, str]] = [
     ("GET", "/admin/ip-block/block", "a manual block is an administrator's decision"),
     ("POST", "/admin/ip-block/block", "the GET being refused does not refuse the POST"),
     ("GET", "/admin/ip-block/action/unblock", "removing a block is administrator-only"),
+    # --- importing the published set into a draft (factor-set import) -------
+    # The one action on FactorSetAdmin that discards data with no undo -
+    # every other action on that screen (clone/publish/rollback/archive/the
+    # placeholder flag, all in _BOTH_ROLES below) moves a factor set between
+    # states without destroying anything. Matched against StaffAdmin's own
+    # `delete` action just above ("deletion is irreversible"), not against
+    # this screen's own siblings - see admin/factor_views.py's
+    # `_require_admin_for_import`.
+    ("GET", "/admin/factor-set/action/import-published",
+     "discards a draft's own factors with no undo, unlike this screen's other actions"),
+    ("GET", "/admin/factor-set/import-published",
+     "the confirmation page the action above redirects to; same floor"),
+    # The POST is the one that actually destroys the draft's rows, and
+    # `_concrete_admin_routes` below matches on path rather than method - so
+    # naming only the GET leaves the destructive half invisible to
+    # `test_every_registered_route_is_named_here`. The guard is a
+    # `_require_admin_for_import` call inside the handler, ahead of the CSRF
+    # check, and it covers both methods; this line is what notices if the
+    # `@expose` keeps `methods=["GET", "POST"]` while the guard moves or
+    # narrows.
+    ("POST", "/admin/factor-set/import-published",
+     "the GET being refused does not refuse the POST, and the POST is the destructive half"),
 ]
 
 
@@ -102,11 +134,22 @@ _BOTH_ROLES: list[tuple[str, str, str]] = [
     ("GET", "/admin/getting-started", "the first-run walkthrough"),
     ("GET", "/admin/security", "the signed-in account's own security screen"),
     ("GET", "/admin/try", "dry run, §8.3"),
-    # The six taxonomy screens, and their two bulk actions on one of them.
+    # The seven taxonomy screens, and their two bulk actions on each.
     ("GET", "/admin/destination-group/list", "taxonomy CRUD, §8.3"),
     ("GET", "/admin/destination/list", "taxonomy CRUD, §8.3"),
     ("GET", "/admin/sector/list", "taxonomy CRUD, §8.3"),
     ("GET", "/admin/food-category/list", "taxonomy CRUD, §8.3"),
+    # v1.54's screen, and the decision is made on the same grounds as the six
+    # around it rather than on what the item level is *for*. §8.3 reserves the
+    # administrator floor for account management, the blocklist and the audit
+    # trail — capabilities about who may use the system. `food_item` is a
+    # vocabulary table a staff member types into, `active` rather than delete,
+    # nothing identifying, every write already audited: the same kind of row as
+    # `food_category` directly above. The act with outward consequence is
+    # switching `item_level_enabled` on and publishing that set, which lives on
+    # the factor-set screen — itself both roles by §8.3 decision 4 — so a floor
+    # here would gate the typing and leave the releasing open.
+    ("GET", "/admin/food-item/list", "taxonomy CRUD, §8.3 — see FoodItemAdmin"),
     ("GET", "/admin/metric/list", "taxonomy CRUD, §8.3"),
     ("GET", "/admin/unit-preset/list", "taxonomy CRUD, §8.3"),
     ("GET", "/admin/destination-group/action/activate", "taxonomy bulk action, §8.3"),
@@ -117,6 +160,8 @@ _BOTH_ROLES: list[tuple[str, str, str]] = [
     ("GET", "/admin/sector/action/deactivate", "taxonomy bulk action, §8.3"),
     ("GET", "/admin/food-category/action/activate", "taxonomy bulk action, §8.3"),
     ("GET", "/admin/food-category/action/deactivate", "taxonomy bulk action, §8.3"),
+    ("GET", "/admin/food-item/action/activate", "taxonomy bulk action, §8.3"),
+    ("GET", "/admin/food-item/action/deactivate", "taxonomy bulk action, §8.3"),
     ("GET", "/admin/metric/action/activate", "taxonomy bulk action, §8.3"),
     ("GET", "/admin/metric/action/deactivate", "taxonomy bulk action, §8.3"),
     ("GET", "/admin/unit-preset/action/activate", "taxonomy bulk action, §8.3"),
@@ -134,9 +179,35 @@ _BOTH_ROLES: list[tuple[str, str, str]] = [
     ("GET", "/admin/factor-set/action/rollback", "rollback is both roles, §8.3 decision 4"),
     ("GET", "/admin/factor-set/action/archive", "archiving is both roles, §8.3 decision 4"),
     ("GET", "/admin/factor-set/action/compare", "the pre-publish gate, §8.2"),
+    # The placeholder-data flag, §2.2. Both roles for §8.3 decision 4's own
+    # reason: publishing an entire set of numbers is the larger act and is
+    # open to both, so gating the flag behind an administrator would be the
+    # wrong way round. The clearing direction's gate is a proof, not a role -
+    # see admin/factor_views.py's `clear_placeholder_page`, and
+    # tests/admin/test_factor_set_actions.py, which drives both directions.
+    ("GET", "/admin/factor-set/action/flag-placeholder",
+     "adding the placeholder warning is both roles and unproved, §2.2"),
+    ("GET", "/admin/factor-set/action/clear-placeholder",
+     "clearing it is both roles, behind a proof rather than a role, §2.2"),
+    ("GET", "/admin/factor-set/clear-placeholder",
+     "the proof page the action above redirects to, §2.2"),
     # The two comparison-scenario screens.
     ("GET", "/admin/comparison-scenario/list", "the standard scenarios are staff-editable"),
     ("GET", "/admin/comparison-scenario-line/list", "the standard scenarios are staff-editable"),
+    # Submissions, §8.2. The role matrix gives both roles "dry run, view
+    # submissions" AND "set `excluded_from_public`", so the moderation routes
+    # are both-roles too rather than administrator-only. That is a deliberate
+    # asymmetry with the audit log, which is administrator-only: reading who a
+    # calculation belonged to is not possible here in the first place, because
+    # nothing identifying was ever collected (§2.3), so there is nothing on
+    # these screens for the tighter gate to protect.
+    ("GET", "/admin/submissions/list", "record-level moderation, §8.2"),
+    ("GET", "/admin/submissions/action/exclude",
+     "setting excluded_from_public is both roles, §8.2 role matrix"),
+    ("GET", "/admin/submissions/action/include",
+     "the reverse of the above, and both roles for the same reason"),
+    ("GET", "/admin/submissions/moderate",
+     "the reason form both actions redirect to, §8.2's \"with a reason\""),
 ]
 
 
@@ -289,6 +360,22 @@ _NOT_ROLE_GATED = {
     # anybody has a session at all.
     "/admin/static",
     "/admin/statics",
+    # The language chooser's endpoint (contract §7.7, admin/language_view.py).
+    # **Deliberately outside every role**, and outside sqladmin's mount, for
+    # the same reason as the five pages above: it has to work before anybody
+    # has a session. The login page carries the chooser, and the person most in
+    # need of it is the one who cannot read the page they are being asked to
+    # sign in on.
+    #
+    # What it can do is bounded to that. It writes one closed-value cookie
+    # deciding which words a page is rendered in; it reads no account, touches
+    # no row and moves no privilege, so there is no role for it to be gated by.
+    # Its guards instead are a same-origin check on `Origin` - a CSRF token
+    # would have to mint a session cookie for every anonymous visitor to the
+    # login page, which is a real identifier created to protect a cosmetic
+    # preference - and `safe_next`, which refuses any redirect target outside
+    # `/admin`. Both are driven by tests/admin/test_i18n.py.
+    "/admin/language",
 }
 
 
@@ -298,7 +385,7 @@ def _concrete_admin_routes(app) -> set[str]:
     The parameterised ones are sqladmin's own generic CRUD templates -
     `/admin/{identity}/list`, `/admin/{identity}/details/{pk:path}`,
     `/admin/{identity}/export/{export_type}` and six more - which serve all
-    seventeen model views through one route each and are covered by
+    eighteen model views through one route each and are covered by
     `test_every_registered_model_view_has_a_decided_role` below, per view
     rather than per template. What is left is exactly the set of hand-written
     `@expose` and `@action` routes, which is the set that needs naming one at
@@ -364,7 +451,7 @@ async def test_every_custom_admin_route_has_a_decided_role(admin_app):
 
 
 async def test_every_registered_model_view_has_a_decided_role(admin_app):
-    """The per-view half: seventeen `ModelView`s, one decision each.
+    """The per-view half: nineteen `ModelView`s, one decision each.
 
     `ModelView.is_accessible` defaults to "allow access for everyone", so a
     view registered with no override is open to `staff` silently. Reaching the
@@ -379,8 +466,8 @@ async def test_every_registered_model_view_has_a_decided_role(admin_app):
     identities = {
         view.identity for view in admin._views if hasattr(view, "model")
     }
-    assert len(identities) == 17, (
-        f"expected seventeen model views, found {len(identities)}: "
+    assert len(identities) == 19, (
+        f"expected nineteen model views, found {len(identities)}: "
         f"{sorted(identities)}"
     )
 

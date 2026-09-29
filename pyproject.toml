@@ -23,8 +23,33 @@ name = "kaicalc"
 # or preferred over, a release.
 version = "0.0.0"
 description = "Kai Commitment food waste impact calculator - New Zealand impact calculator API, calculation engine and staff admin panel"
-# No `readme`: README.md is the course template and is git-ignored in this
-# tree, so it is neither ours to describe the package with nor reliably present.
+# The wheel's and the sdist's long description.
+#
+# THE COMMENT THAT STOOD HERE ARGUED FROM A FALSE PREMISE. It said README.md
+# "is the course template and is git-ignored in this tree, so it is neither
+# ours to describe the package with nor reliably present". README.md is
+# tracked, .gitignore carries no rule for it, and it is no longer the template
+# - it now answers what the project is, how to run it and how to develop on it.
+# Every clause of the reason was untrue, so the decision it defended was
+# re-taken rather than re-worded.
+#
+# WHY IT IS IN. The first thing under the title is the placeholder-data
+# warning: the shipped factors are mock, the numbers are meaningless, do not
+# quote them. That is the single most important thing anybody installing this
+# package can be told, and without this line `pip show -v kaicalc` tells them
+# nothing at all. The file is self-contained - no images, no relative links,
+# no external assets - so it survives being read outside the repository, which
+# is the usual reason a README makes a poor long description.
+#
+# WHAT IT COSTS. The README's content is now packaging metadata, so a change to
+# it changes what the wheel says about itself. Nothing in .github/workflows/
+# asserted its absence, so nothing had to move; the release job's metadata check
+# reads `Version` out of the built wheel and is indifferent to this.
+#
+# The wheel does not gain README.md as a *file* - setuptools folds the content
+# into the dist-info METADATA body. The image hygiene check in
+# _build-images.yaml is therefore unaffected.
+readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "UoA COMPSCI 399 Team 16 (502 Bad Gateway)" }]
 keywords = ["food-waste", "impact-calculator", "new-zealand", "kai-commitment"]
@@ -52,6 +77,29 @@ dependencies = [
     "pymysql>=1.1",            # pure Python; avoids the mysqlclient toolchain
     # Admin panel
     "sqladmin>=0.20",
+    # PDF export (api/pdf_render.py)
+    #
+    # NOT an optional extra. `POST /api/v1/export/pdf` is a documented route on
+    # the public API, and an install without these answers it with a 500 - so a
+    # client who ran `pip install kaicalc` and got a calculator whose Download
+    # button never works would be right to call that broken.
+    #
+    # WeasyPrint needs Pango, HarfBuzz and GObject as SYSTEM libraries, which
+    # pip cannot install: `docker/api.Dockerfile` and `docker/admin.Dockerfile`
+    # apt-get them, and `api/pdf_render.py` imports weasyprint lazily so that a
+    # developer machine without them can still run every other API test.
+    # `weasyprint_unavailable_reason()` is how anything asks whether a host can
+    # render.
+    #
+    # 62 is the floor because that is the first release to draw PDFs through
+    # pydyf rather than cairo, which is what removed libcairo from the list of
+    # system packages the images have to carry.
+    "weasyprint>=62",
+    # The export document's template. Already an indirect dependency (sqladmin
+    # renders through it), stated directly because api/pdf_render.py imports it
+    # by name - an indirect dependency that stops being pulled in is a
+    # ModuleNotFoundError in a route nobody ran during the upgrade.
+    "jinja2>=3.1",
     # NOT test-only, despite sitting under "--- Testing ---" in
     # requirements.txt until now. admin/calc_client.py does a module-level
     # `import httpx`, and admin/app.py imports it, so the panel does not start
@@ -74,6 +122,14 @@ dependencies = [
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
+    # Test-only, and load-bearing for the one thing the PDF tests have to do:
+    # EXTRACT THE TEXT AND ASSERT ON IT. A test that checks a PDF is non-empty,
+    # or that it starts with `%PDF-`, proves nothing about what a reader will
+    # see - and the defect this whole export exists to fix is a document that
+    # was a valid PDF and still said `K?mara`. pypdf is how
+    # tests/api/test_pdf_render.py reads the placeholder warning, the figures
+    # and the macron back out of the bytes.
+    "pypdf>=5.1",
     # httpx is deliberately absent here: it is a runtime dependency (see
     # above), and listing it twice would let someone "tidy up" the runtime
     # copy on the strength of this one.
@@ -108,6 +164,58 @@ include-package-data = false
 # pattern that silently matches nothing produces a wheel whose admin panel
 # raises at start-up - the failure this file exists to prevent.
 [tool.setuptools.package-data]
+# The export document. Same failure mode as the admin guidance blocks below,
+# one package over: `api/pdf_render.py` reads all four of these off disk at
+# render time, so a wheel built without these patterns ships an API whose
+# `POST /api/v1/export/pdf` raises TemplateNotFound or FileNotFoundError - and
+# the checkout cannot reproduce it, because the files are simply there.
+#
+# THE TWO .woff2 FILES ARE A THIRD COPY IN THIS TREE AND HAVE TO BE. The same
+# faces sit under `web/assets/fonts/` (served by nginx) and
+# `admin/static/fonts/` (the admin package's own copy, listed below). Neither
+# is reachable: package-data cannot cross a package boundary - the note above
+# [tool.setuptools.data-files] says so already - and `api/` may not import
+# `admin/`. docker/api.Dockerfile copies only admin/ api/ db/ engine/ into the
+# build context, which shuts the same door a second time. A test asserts this
+# copy is byte-identical to web/'s so the public page and the exported document
+# cannot drift into different type.
+#
+# THE SAME REASONING, TWICE MORE, FOR THE SAME REASON.
+#
+# `assets/fonts/noto/*` are the thirteen script fallback faces. The brand
+# faces are 228-glyph Latin subsets and the interface ships in twenty
+# languages across eleven scripts, so without these an Arabic, Tamil or
+# Japanese export is a page of empty boxes. Licences and provenance ship
+# beside them (`*.txt`, `*.md`) because the SIL OFL requires the licence to
+# travel with the font - a wheel carrying the fonts and not the licence would
+# be a redistribution that breaks its own terms.
+#
+# `assets/locales/*.json` are the twenty catalogues, copied from
+# `web/locales/`. Same wall as the fonts: `web/` is not in this package and is
+# not in docker/api.Dockerfile's build context, so a renderer that read it
+# would work on a checkout and raise FileNotFoundError in the image. A test
+# hash-compares the two directories.
+api = [
+    "templates/*.html.j2",
+    "templates/*.css",
+    "assets/fonts/*.woff2",
+    "assets/fonts/noto/*.woff2",
+    "assets/fonts/noto/*.txt",
+    "assets/fonts/noto/*.md",
+    "assets/locales/*.json",
+    # The title block's logo (v1.50 review). Same wall as the fonts above -
+    # `web/assets/` is not in this package and not in docker/api.Dockerfile's
+    # build context - and the same failure mode: a wheel built without this
+    # line ships a renderer whose `<img src="kai-commitment-logo.png">`
+    # resolves to nothing, `_local_url_fetcher` reads a file that is not
+    # there, and WeasyPrint logs a failed image load rather than raising, so
+    # the omission is invisible on a checkout and silent in the built image
+    # too - no test failure, just a masthead with no logo in it, the exact
+    # defect this line exists to close. `test_the_embedded_logo_matches_the_
+    # public_one` hash-compares the two copies the way the fonts' own test
+    # does.
+    "assets/*.png",
+]
 admin = [
     "templates/*.html",
     "templates/brand/*.html",
@@ -122,6 +230,14 @@ admin = [
     # templates/ cannot leave the same way.
     "templates/brand/guidance/*.html",
     "templates/sqladmin/*.html",
+    # One level deeper again, and the same failure shape a third time.
+    # `templates/sqladmin/modals/import.html` shadows sqladmin's own import
+    # modal to add this panel's CSRF token (admin/importing.py). A wheel built
+    # without this line falls back to sqladmin's unshadowed copy, which carries
+    # no token - so all fourteen importable screens render an Import button
+    # whose every upload the server then refuses, and nothing about it is
+    # reproducible from a checkout.
+    "templates/sqladmin/modals/*.html",
     "static/*.css",
     # The security screen's dialogs are a plain ES module, and a wheel built
     # without this line ships a page whose Add, Remove and Change-password
@@ -129,6 +245,16 @@ admin = [
     # one directory over, and just as invisible from the checkout.
     "static/*.js",
     "static/fonts/*.woff2",
+    # The translation catalogues (contract O-8). Same failure mode as the
+    # guidance blocks above, one directory over: admin/i18n.py reads these at
+    # import, so a wheel built without this line ships a panel whose language
+    # switcher offers English and nothing else - and the checkout cannot
+    # reproduce that, because the files are simply on disk there. They live
+    # inside the package rather than in a top-level i18n/ directory precisely
+    # because package-data cannot reach outside its own package (see the
+    # data-files note below) and docker/admin.Dockerfile copies only
+    # admin/ api/ db/ engine/.
+    "locales/*.json",
 ]
 
 # Migrations ship OUTSIDE site-packages, under <sys.prefix>/share/kaicalc/.

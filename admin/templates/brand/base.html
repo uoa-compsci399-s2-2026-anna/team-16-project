@@ -1,13 +1,57 @@
 <!doctype html>
-<html lang="en-NZ">
+{# `lang` is the active language, not a constant. It is what tells a screen
+   reader which voice to use and a browser whether to offer translation, and
+   a page of Chinese labelled en-NZ is announced by a screen reader in
+   English phonetics - unreadable rather than merely wrong. en-NZ is kept for
+   English specifically: the copy is New Zealand English and the region is
+   part of that.
+
+   THE CONDITIONAL USED TO BE SPELLED OUT HERE AND NOW IS NOT. The panel
+   proper needs the same two attributes and cannot use this template to get
+   them - sqladmin's own base template owns its `<html>` element, and
+   admin/i18n.py::_HtmlElement says how that one is reached instead. Both
+   surfaces now call the same two functions, so the gate pages and the panel
+   cannot come to disagree about what language a page is in. #}
+<html lang="{{ kaicalc_html_lang() }}" dir="{{ kaicalc_html_dir() }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Kai Commitment{% endblock %} — Kai Commitment</title>
   <link rel="stylesheet" href="/admin/static/brand.css">
+  {# The chooser's own stylesheet, and it is separate from brand.css on purpose:
+     brand.css reaches these five gate pages only, and the chooser is also on
+     every screen of the Tabler panel, which does not load it. One file, linked
+     from here and from sqladmin/layout.html, is what stops the two skins
+     drifting. See admin/static/language.css for the whole reasoning. #}
+  <link rel="stylesheet" href="/admin/static/language.css">
   {% block head %}{% endblock %}
 </head>
 <body>
+  {# The machine-translation notice, on the five gate pages as well as on the
+     panel proper (admin/templates/sqladmin/layout.html carries the other
+     copy). It used to hang off the language switcher, on the option somebody
+     was about to pick; with the switcher gone there is nothing to hang it on
+     and the page itself is the only place it can be read.
+
+     Not dismissible, and not conditional on anything but the flag in the
+     active catalogue. The panel's only catalogue today is Chinese, which is
+     reviewed and not flagged, so this renders nowhere as the panel ships. #}
+  {% if kaicalc_machine_translated() %}
+  <p class="machine-translation-notice" role="status" id="machine-translation-notice">
+    {{ _("This page was machine translated and has not been reviewed by a speaker of this language. Check anything that decides a number against the English.") }}
+  </p>
+  {% endif %}
+  {# The chooser, on the five gate pages as well as on the panel proper
+     (sqladmin/layout.html carries the other copy). It is BELOW the
+     machine-translation notice and above everything else: the notice is a
+     statement about the whole page, and the chooser is a second natural place
+     for that warning to be met - before somebody picks, not only after.
+
+     On the gate pages specifically, this is the page a person who cannot read
+     English needs most, and the one page a locked-out account can still reach.
+     admin/language_view.py is registered outside sqladmin's `login_required`
+     wrapper so that it works here. #}
+  {% include "brand/_language_chooser.html" %}
   {# The default shell is the login gauntlet's: one centred card on a Kale
      ground. Five pages depend on it exactly as it is - login, verify, enrol,
      change_password, low_codes - so it stays the default and nothing about it

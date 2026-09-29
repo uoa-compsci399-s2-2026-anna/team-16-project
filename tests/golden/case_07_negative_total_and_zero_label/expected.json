@@ -11,7 +11,16 @@
           "unit": "kg CO2e",
           "display_precision": 1,
           "total": "-50.0000000000",
-          "by_destination": []
+          "by_destination": [
+            {
+              "destination_code": "animal_feed",
+              "qty_kg": "1000.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "-50.0000000000",
+              "upstream_basis": null
+            }
+          ]
         }
       },
       "equivalences": [
@@ -19,18 +28,35 @@
           "code": "km_driven",
           "label": "Equivalent to driving -209 km",
           "value": "-209.0000000000",
-          "source_metric_code": "co2e"
+          "source_metric_code": "co2e",
+          "name": "Kilometres driven",
+          "value_per_unit": "4.1800000000",
+          "value_per_unit_display": "4.18",
+          "source_note": null
         },
         {
           "code": "showers",
           "label": "About 0 showers taken",
           "value": "-0.4000000000",
-          "source_metric_code": "co2e"
+          "source_metric_code": "co2e",
+          "name": "Showers",
+          "value_per_unit": "0.0080000000",
+          "value_per_unit_display": "0.008",
+          "source_note": "Scaled so that this equivalence lands at -0.4, which rounds to zero FROM BELOW. Contract 3 rule 5 requires the label to read `0` and not `-0`, while `value` keeps its sign at full precision."
         }
       ]
     },
     "alternative": null,
-    "net_benefit": null
+    "net_benefit": null,
+    "money": null,
+    "production_share_percent": null,
+    "data_state": {
+      "production_share_percent": "not_supplied",
+      "total_value_nzd": "not_supplied",
+      "wasted_value_nzd": "not_supplied",
+      "wasted_share_percent": "not_supplied",
+      "saving_nzd": "not_supplied"
+    }
   },
   "entries": [
     {
@@ -50,7 +76,8 @@
                 "qty_kg": "1000.000",
                 "upstream": "0.1000000000",
                 "downstream": "-0.1500000000",
-                "value": "-50.0000000000"
+                "value": "-50.0000000000",
+                "upstream_basis": "category_every_destination"
               }
             ]
           }
@@ -60,18 +87,29 @@
             "code": "km_driven",
             "label": "Equivalent to driving -209 km",
             "value": "-209.0000000000",
-            "source_metric_code": "co2e"
+            "source_metric_code": "co2e",
+            "name": "Kilometres driven",
+            "value_per_unit": "4.1800000000",
+            "value_per_unit_display": "4.18",
+            "source_note": null
           },
           {
             "code": "showers",
             "label": "About 0 showers taken",
             "value": "-0.4000000000",
-            "source_metric_code": "co2e"
+            "source_metric_code": "co2e",
+            "name": "Showers",
+            "value_per_unit": "0.0080000000",
+            "value_per_unit_display": "0.008",
+            "source_note": "Scaled so that this equivalence lands at -0.4, which rounds to zero FROM BELOW. Contract 3 rule 5 requires the label to read `0` and not `-0`, while `value` keeps its sign at full precision."
           }
         ]
       },
       "alternative": null,
-      "net_benefit": null
+      "net_benefit": null,
+      "production_share_percent": null,
+      "food_item_code": null,
+      "item_basis": "not_applicable"
     }
   ]
 }

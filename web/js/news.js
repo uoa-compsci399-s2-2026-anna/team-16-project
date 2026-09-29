@@ -1,3 +1,13 @@
+/**
+ * The WordPress news feed. Contract §7.5.
+ *
+ * **RETIRED, NOT DELETED, and its only consumer is `web/js/home.js`, which is retired
+ * with it.** `web/home.html` is no longer the landing page and nothing links to it, so
+ * nothing on a reachable page calls `fetchNews`. See the note at the top of `home.js`
+ * for why both files are still here and what deleting them would actually cost.
+ *
+ * @module news
+ */
 import { ApiError, getNewsPosts } from './api.js'
 
 const EMPTY_POST = Object.freeze({
@@ -56,10 +66,23 @@ function normalisePost(post) {
     excerpt: renderedText(post.excerpt?.rendered),
     link: httpUrl(post.link),
     date: isoDate(post.date),
+    // Normalised because §7.5 lists it, and rendered nowhere yet. `img-src` now follows
+    // the configured news origin (docker/web-config.sh), so the origin is no longer a
+    // guess — read the note on `createNewsCard` in home.js before wiring it up.
     imageUrl: httpUrl(Array.isArray(featuredMedia) ? featuredMedia[0]?.source_url : ''),
   }
 }
 
+/**
+ * The latest posts, `[]` when the site could not be read, or **`null` when no news origin
+ * is configured at all**.
+ *
+ * The third case is the one worth keeping distinct. `[]` means WordPress was asked and
+ * the answer was unusable, which is transient and worth telling a reader about. `null`
+ * means this deployment has no WordPress — a supported arrangement, not a fault — and the
+ * home page drops the whole section rather than standing a notice about a service nobody
+ * configured.
+ */
 export async function fetchNews(limit = 6) {
   let posts
   try {
@@ -68,6 +91,7 @@ export async function fetchNews(limit = 6) {
     if (error instanceof ApiError) return []
     throw error
   }
+  if (posts === null) return null
   if (!Array.isArray(posts)) return []
   return posts.map(post => {
     const { title, excerpt, link, date, imageUrl } = normalisePost(post)

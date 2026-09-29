@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import io
 import zipfile
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -16,7 +17,13 @@ from api.errors import (
     ContractJSONResponse,
     engine_problem,
 )
-from api.schemas import CalculatePayload, bundle_row_count, entry_rule_problems
+from api.export import EXPORT_FILENAME, ExportPayload, render_export_pdf
+from api.schemas import (
+    CalculatePayload,
+    ContributePayload,
+    bundle_row_count,
+    entry_rule_problems,
+)
 from api.serialization import wire
 from db.blocklist import ip_fingerprint
 from db.detection import client_ip
@@ -32,7 +39,10 @@ from db.repository import (
     get_public_stats,
     get_published_factor_set_id,
     get_taxonomy,
+    get_taxonomy_for_naming,
     load_factor_bundle,
+    prevention_destination_codes,
+    set_public_contribution,
     upsert_submission,
 )
 
@@ -103,6 +113,15 @@ def taxonomy(request: Request) -> ContractJSONResponse:
     data["factor_set"] = {
         "version_label": data.pop("factor_set_version"),
         "is_mock": data.pop("factor_set_is_mock"),
+        # v1.58. The switch that releases step 2.5, and the one field of
+        # `factor_set` the engine may never see (design §3,
+        # `tests/test_item_level_inertness.py`): it decides what the interface
+        # *asks*, not what any figure *is*, so flipping it in either direction
+        # must leave every stored result reproducible. The front end has no
+        # other way to learn it -- `food_items` being non-empty is not the
+        # same question, since the vocabulary exists long before any set
+        # prices a food individually.
+        "item_level_enabled": data.pop("factor_set_item_level_enabled"),
     }
     return ContractJSONResponse(data)
 
@@ -148,7 +167,21 @@ def calculate(payload: CalculatePayload, request: Request) -> ContractJSONRespon
     if dry_run:
         _authenticate_dry_run(request)
 
-    problems = entry_rule_problems(payload)
+    #: §6.2's "no prevention destination in a current scenario". Read from the
+    #: taxonomy on every request rather than from a constant, because which
+    #: destinations carry the role is data (§2.1) — the literal this replaces
+    #: did not cover §10.3's `refed_prevention`, which could therefore be
+    #: entered as current-scenario waste and reach the public statistics.
+    #:
+    #: `destination` carries no `factor_set_id`, so this is one small read of a
+    #: global table (tens of rows) and is the same answer for a dry run as for a
+    #: public request. A failure here is a taxonomy failure, not a request one.
+    try:
+        prevention_codes = prevention_destination_codes(request.state.db)
+    except Exception as exc:
+        raise _repository_problem(exc) from exc
+
+    problems = entry_rule_problems(payload, prevention_codes=prevention_codes)
     if problems:
         raise ApiProblem(400, "VALIDATION_ERROR", "Request validation failed", problems)
 
@@ -201,6 +234,23 @@ def calculate(payload: CalculatePayload, request: Request) -> ContractJSONRespon
                 factor_set_id,
                 bundle_factory=adapter.bundle_from_json,
             )
+        #: v1.58. The two refusals `FactorBundle.resolve_food_item` makes,
+        #: asked of the bundle that is about to price this request and
+        #: reported as §9 `VALIDATION_ERROR` details naming
+        #: `entries[i].food_item`. The engine refuses the same two pairs on
+        #: its own -- this is not a second rule, it is the same question asked
+        #: one step earlier so that the answer can carry a field. Without it a
+        #: visitor who picked a food gets `UNKNOWN_CODE` with an empty
+        #: `details`, and step 2.5's control cannot be highlighted.
+        #:
+        #: After the bundle is resolved, because the question is about *this*
+        #: factor set's vocabulary: a dry run against an inline bundle is
+        #: checked against that bundle and not against the published one.
+        item_problems = adapter.food_item_problems(payload, bundle)
+        if item_problems:
+            raise ApiProblem(
+                400, "VALIDATION_ERROR", "Request validation failed", item_problems
+            )
         engine_request = adapter.make_request(payload)
         result = adapter.calculate(engine_request, bundle)
     except ApiProblem:
@@ -225,6 +275,13 @@ def calculate(payload: CalculatePayload, request: Request) -> ContractJSONRespon
                 payload.token or None,
                 engine_request,
                 factor_set_id,
+                time_frame=payload.time_frame,
+                # v1.67, and passed beside `time_frame` rather than through
+                # `engine_request` for the same reason it is: the engine is
+                # never handed the period, and a pair of instants is what it
+                # would take to derive a duration the contract forbids.
+                period_start=payload.period_start,
+                period_end=payload.period_end,
             )
         except FactorSetNotFoundError as exc:
             raise _repository_problem(exc) from exc
@@ -236,6 +293,129 @@ def calculate(payload: CalculatePayload, request: Request) -> ContractJSONRespon
     response["factor_source"] = factor_source
     response["token"] = token
     return ContractJSONResponse(wire(response))
+
+
+@router.post("/export/pdf")
+def export_pdf(payload: ExportPayload, request: Request) -> Response:
+    """The document endpoint. See `api/export.py`'s module docstring for why
+    it exists, why its payload cannot carry a figure of its own, and what its
+    renderer does and does not do yet.
+
+    Rate-limited on the same group and limit as `/calculate`: this route runs
+    the engine on every call exactly as `/calculate` does, so a caller cannot
+    dodge §6.5's budget for that cost by asking for a PDF instead of a JSON
+    body.
+
+    **No `X-Dry-Run`, no staff proof, no token.** Those all belong to
+    `/calculate`'s persisted, staff-rehearsable path; this route persists
+    nothing and always prices the published factor set, so none of the three
+    has anything to attach to here. `upsert_submission` is never called - a
+    download is not a calculation (§2.3).
+    """
+    _limit(request, "post-calculate", 120)
+
+    try:
+        prevention_codes = prevention_destination_codes(request.state.db)
+        # The renderer needs a code-to-name map because `result` speaks in
+        # `code`s and a document a person reads has to say "Landfill" rather
+        # than `landfill`; it is a read, it persists nothing.
+        #
+        # **Deliberately not `get_taxonomy`, and not "the same call `GET
+        # /taxonomy` makes" any more.** `get_taxonomy` narrows its snapshot to
+        # what the *published* factor set prices — correct for a selection
+        # form, where an unpriced destination should not be offered as a
+        # choice, and wrong here: `result` already names whatever destination
+        # the submitted entries used, priced or not, and a document naming a
+        # code the published set happens not to price is not the same defect
+        # as a form offering one. Reading the narrowed snapshot here meant a
+        # perfectly valid destination fell through `_Taxonomy`'s "tolerant of
+        # a code the snapshot does not carry" fallback in `api/pdf_render.py`
+        # and printed as itself — `anaerobic_digestion` rather than "Anaerobic
+        # digestion" — the moment the published set stopped pricing it, with
+        # nothing wrong about the request that caused it.
+        # `get_taxonomy_for_naming` is `get_taxonomy`'s unnarrowed sibling,
+        # read through the repository like everything else that touches the
+        # database. Loaded here rather than beside the bundle below so that a
+        # taxonomy fault is reported as the repository problem it is, rather
+        # than being run through `engine_problem` and blamed on the engine.
+        taxonomy = get_taxonomy_for_naming(request.state.db)
+    except Exception as exc:
+        raise _repository_problem(exc) from exc
+
+    problems = entry_rule_problems(payload, prevention_codes=prevention_codes)
+    if problems:
+        raise ApiProblem(400, "VALIDATION_ERROR", "Request validation failed", problems)
+
+    adapter = _engine(request)
+    try:
+        factor_set_id = get_published_factor_set_id(request.state.db)
+        bundle = load_factor_bundle(
+            request.state.db,
+            factor_set_id,
+            bundle_factory=adapter.bundle_from_json,
+        )
+        #: v1.58, and here for the reason `PricingOptions` exists: the whole
+        #: justification for this endpoint is that its figures are the
+        #: server's rather than the client's, so a request accepted on
+        #: `/calculate` and refused here -- or the reverse -- would mean two
+        #: documents of the same submission disagreeing, with nothing to say
+        #: which was right.
+        item_problems = adapter.food_item_problems(payload, bundle)
+        if item_problems:
+            raise ApiProblem(
+                400, "VALIDATION_ERROR", "Request validation failed", item_problems
+            )
+        engine_request = adapter.make_request(payload)
+        result = adapter.calculate(engine_request, bundle)
+    except ApiProblem:
+        raise
+    except (NoPublishedFactorSetError, FactorSetNotFoundError, FactorSetStateError) as exc:
+        raise _repository_problem(exc) from exc
+    except Exception as exc:
+        raise engine_problem(exc, authenticated_dry_run=False) from exc
+
+    # Read once, here, and passed down rather than read inside the renderer -
+    # see `render_results_pdf`'s docstring for why that function still does
+    # not touch the clock itself.
+    pdf_bytes = render_export_pdf(result, payload, taxonomy, datetime.now(timezone.utc))
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{EXPORT_FILENAME}"'},
+    )
+
+
+@router.post("/contribute", status_code=204)
+def contribute(payload: ContributePayload, request: Request) -> Response:
+    """§5.3, v1.48. The visitor's own opt-in, keyed on the same session token
+    `/calculate` mints -- no new identifier, per §2.3.
+
+    Rate-limited on the same group and limit as `/calculate`: a button a
+    caller can click once can be scripted into a loop, and this route writes
+    just as `/calculate` does.
+
+    Always 204, contributed or not: a token that does not resolve to a live
+    submission -- unknown, or already expired and nulled by `expire_tokens`
+    -- is treated as absent everywhere else it appears (§6.2), and a 404 here
+    would turn a stale `sessionStorage` value into an error the visitor has
+    no way to act on. `set_public_contribution` reports whether a row moved
+    only to keep that distinction available to a caller that wants it; the
+    route itself does not branch on it, so it also gives nothing away about
+    whether the token exists.
+
+    A dry run must persist nothing, exactly as `/calculate`'s own dry run
+    must (§6.2). Today that is true by coincidence rather than by guard:
+    `/calculate` never mints a token under `X-Dry-Run: true`, so a dry-run
+    caller here has no live token to flip a flag with. `_dry_run_header`
+    still reads the header and skips the write when it is `true`, so the
+    guard holds even if a future dry-run path ever does hand out a real
+    token -- this route must not become a live consent write just because
+    nothing exercises that case yet.
+    """
+    _limit(request, "post-calculate", 120)
+    if not _dry_run_header(request):
+        set_public_contribution(request.state.db, payload.token)
+    return Response(status_code=204)
 
 
 @router.get("/factors")

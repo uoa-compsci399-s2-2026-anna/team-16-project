@@ -80,7 +80,7 @@ from admin.accounts import (
 from admin.audit import write_audit
 from admin.auth import SESSION_KEY, reauthenticate
 from admin.csrf import check_token, issue_token
-from admin.modelviews import AdministratorOnly, AuditedModelView
+from admin.modelviews import described, AdministratorOnly, AuditedModelView
 from admin.models import Staff, StaffRole
 from admin.runtime import get_runtime
 from admin.security import TotpSecretUndecryptableError
@@ -138,6 +138,28 @@ class StaffAdmin(AdministratorOnly, AuditedModelView, model=Staff):
     # deactivate_staff/set_role and translate LastAdministratorsError) is
     # more code for a field nobody needs to edit here.
     can_edit = False
+
+    # NO IMPORT, EVER, AND THAT IS WHY `AuditedImport` IS NOT IN THE BASES.
+    #
+    # Fourteen tables accept a bulk CSV import (admin/importing.py). This is
+    # one of the four that never will, and this is the one where the cost is
+    # immediate: **a row of this table carries a password hash and, since
+    # v1.15, a reversibly encrypted password; the device table beside it
+    # carries TOTP secrets.** Anyone who could import one row could mint an
+    # administrator — set `role`, set `is_active`, set a `password_hash` they
+    # generated themselves — from a file upload, on a screen whose every other
+    # control routes through admin/accounts.py's floors, proofs and
+    # session_generation bumps. That is privilege escalation with a
+    # spreadsheet, and it would bypass the same service layer `can_create` and
+    # `can_edit` above are already off for.
+    #
+    # It also puts the whole table on the wrong side of §8.3's own sentence:
+    # "this must be enforced in the service layer, not only in the form".
+    # sqladmin's import reaches no service function at all — `Query.
+    # _get_model_object` is `self.model_view.model(**data)`.
+    #
+    # tests/admin/test_import_tables.py fails if this view ever acquires
+    # `can_import`, by any route including inheritance.
 
     # password_hash, mfa_secret_enc and mfa_last_counter are absent by
     # design. They are in write_audit's REDACTED_FIELDS for the trail; the
@@ -497,7 +519,10 @@ class StaffAdmin(AdministratorOnly, AuditedModelView, model=Staff):
 
     @action(
         name="show-unclaimed-password",
-        label="Show the password waiting to be collected",
+        label=described(
+            "Show the password waiting to be collected",
+            "Displays the one-time password of an account nobody has signed into yet. It is shown in plain text on screen, so only do this if you can pass it on safely.",
+        ),
     )
     async def show_unclaimed_password_action(self, request):
         """Carry the selection to the confirmation page below.
@@ -699,7 +724,10 @@ class StaffAdmin(AdministratorOnly, AuditedModelView, model=Staff):
 
     @action(
         name="issue-password",
-        label="Issue a new password",
+        label=described(
+            "Issue a new password",
+            "Replaces this account's password with a fresh one-time password and ends its live sessions. Any password the person already had stops working.",
+        ),
         confirmation_message=(
             "This replaces the account's password and ends its live sessions. "
             "Any password the account is waiting to collect is replaced too, "
@@ -764,7 +792,10 @@ class StaffAdmin(AdministratorOnly, AuditedModelView, model=Staff):
 
     @action(
         name="reset-mfa",
-        label="Reset the authenticator",
+        label=described(
+            "Reset the authenticator",
+            "Clears this account's authenticator binding and every one of its recovery codes, so the person enrols a new device at their next sign-in. This is the fix for a lost phone.",
+        ),
         confirmation_message=(
             "This clears the authenticator binding and every recovery code. "
             "The account enrols again at its next login."
@@ -805,7 +836,10 @@ class StaffAdmin(AdministratorOnly, AuditedModelView, model=Staff):
 
     @action(
         name="reactivate",
-        label="Reactivate",
+        label=described(
+            "Reactivate",
+            "Lets this account sign in again. Its password and its authenticator are unchanged from before it was deactivated.",
+        ),
         confirmation_message=(
             "This lets the account log in again. Its password and "
             "authenticator are unchanged."
@@ -853,7 +887,10 @@ class StaffAdmin(AdministratorOnly, AuditedModelView, model=Staff):
             session.commit()
         return RedirectResponse(self._list_url(request), status_code=302)
 
-    @action(name="delete", label="Delete permanently")
+    @action(name="delete", label=described(
+            "Delete permanently",
+            "Removes this account for good and frees its username. This cannot be undone - Deactivate is the reversible version of it.",
+        ))
     async def delete_action(self, request):
         """Hand the selection to the confirmation page below.
 
@@ -1033,7 +1070,10 @@ class StaffAdmin(AdministratorOnly, AuditedModelView, model=Staff):
 
     @action(
         name="deactivate",
-        label="Deactivate",
+        label=described(
+            "Deactivate",
+            "Ends this account's sessions and refuses its next sign-in, keeping the account itself and its audit trail. This is the reversible alternative to deleting it.",
+        ),
         confirmation_message="This ends the account's sessions and refuses its next login.",
     )
     async def deactivate_action(self, request):

@@ -428,7 +428,13 @@ def _cleanup_e6_rows(admin_app) -> None:
                 "WHERE code LIKE 'e6\\_%' ESCAPE '\\\\')"
             ),
         }
-        for table in ("metric", "destination", "sector", "food_category"):
+        #: `food_item` before `food_category`: a food item carries a NOT NULL
+        #: foreign key to its category, so deleting the category first fails on
+        #: that key and leaves both rows behind for every later run. The order
+        #: of this tuple is the delete order, exactly as `destination_group`
+        #: below is last for the same reason.
+        for table in ("metric", "destination", "sector", "food_item",
+                      "food_category"):
             ids = db.execute(
                 text(f"SELECT id FROM {table} WHERE code LIKE 'e6\\_%' ESCAPE '\\\\'"
                      + _EXTRA_MATCH.get(table, ""))
@@ -550,7 +556,8 @@ def taxonomy_for_factors(_committed_session):
                            category=category, metric=metric)
 
 
-def _make_set(session, label, status, taxonomy, *, populated):
+def _make_set(session, label, status, taxonomy, *, populated,
+              marker="e6 fixture", nudge=Decimal("0")):
     """One factor set, optionally with a row of every child kind.
 
     Every optional column (`source_note`, `data_quality`, `unit`, `note`,
@@ -560,6 +567,16 @@ def _make_set(session, label, status, taxonomy, *, populated):
     one when every optional column already sits at its default - this is
     what lets tests/admin/test_factor_lifecycle.py's full-column comparison
     actually catch that.
+
+    `marker` and `nudge` exist so that two sets built by this helper can be
+    told apart. They default to the original literals, so every caller that
+    does not pass them is unaffected. `two_sets` passes both, because a
+    fixture whose two sets are built from *identical* values cannot tell a
+    correct copy from no copy at all: an import that silently skipped a
+    whole child kind would leave that kind's rows sitting at values
+    indistinguishable from the ones it should have written, and every
+    assertion would still pass. Two real corruption mutations survived this
+    suite for exactly that reason.
     """
     from admin.factor_models import (
         Constant, Equivalence, FactorDownstream, FactorSet, FactorUpstream, Formula,
@@ -575,24 +592,24 @@ def _make_set(session, label, status, taxonomy, *, populated):
         FactorUpstream(factor_set_id=fs.id, sector_id=taxonomy.sector.id,
                        food_category_id=taxonomy.category.id,
                        metric_id=taxonomy.metric.id,
-                       value_per_kg=Decimal("1.9000000000"),
-                       source_note="e6 fixture upstream source note",
+                       value_per_kg=Decimal("1.9000000000") + nudge,
+                       source_note=f"{marker} upstream source note",
                        data_quality="measured"),
         FactorDownstream(factor_set_id=fs.id, destination_id=taxonomy.destination.id,
                          food_category_id=None, metric_id=taxonomy.metric.id,
-                         value_per_kg=Decimal("0.9900000000"),
-                         source_note="e6 fixture downstream source note",
+                         value_per_kg=Decimal("0.9900000000") + nudge,
+                         source_note=f"{marker} downstream source note",
                          data_quality="estimated"),
-        Constant(factor_set_id=fs.id, code="GWP_CH4_100", value=Decimal("29.8"),
-                 unit="kg CO2e / kg CH4", note="e6 fixture constant note"),
+        Constant(factor_set_id=fs.id, code="GWP_CH4_100", value=Decimal("29.8") + nudge,
+                 unit="kg CO2e / kg CH4", note=f"{marker} constant note"),
         Formula(factor_set_id=fs.id, metric_id=taxonomy.metric.id,
                 expression="qty_kg * (upstream + downstream)",
-                notes="e6 fixture formula note"),
+                notes=f"{marker} formula note"),
         Equivalence(factor_set_id=fs.id, code="km_driven", name="Kilometres driven",
                     source_metric_id=taxonomy.metric.id,
-                    value_per_unit=Decimal("0.192"),
+                    value_per_unit=Decimal("0.192") + nudge,
                     label_template="Equivalent to driving {value} km",
-                    source_note="e6 fixture equivalence source note",
+                    source_note=f"{marker} equivalence source note",
                     sort_order=3, active=False),
     ])
     session.flush()
@@ -619,13 +636,40 @@ def one_draft(_committed_session, taxonomy_for_factors):
 
 @pytest.fixture()
 def two_sets(_committed_session, taxonomy_for_factors):
-    """A published set and a draft: the ordinary before-publish state."""
-    from admin.factor_models import FactorSetStatus
+    """A published set and a draft: the ordinary before-publish state.
+
+    **The two sets are deliberately asymmetric** - different values in
+    every optional column, and different row counts in two of the five
+    child kinds. Built from identical literals, as they were originally,
+    this fixture could not distinguish a copy from a no-op: dropping
+    `Equivalence` out of `CHILD_MODELS` entirely left all sixteen import
+    tests green, and so did a confirmation page that counted the rows
+    *arriving* instead of the rows being *destroyed*. Both are real
+    corruption bugs. Keep them apart.
+    """
+    from admin.factor_models import Constant, Equivalence, FactorSetStatus
 
     live = _make_set(_committed_session, "e6-live", FactorSetStatus.published,
                      taxonomy_for_factors, populated=True)
     draft = _make_set(_committed_session, "e6-next", FactorSetStatus.draft,
-                      taxonomy_for_factors, populated=True)
+                      taxonomy_for_factors, populated=True,
+                      marker="e6 draft-own", nudge=Decimal("0.5"))
+    # Two extra rows, so `count_child_rows(draft)` differs from
+    # `count_child_rows(live)` and a page that confuses the two says the
+    # wrong number out loud. Both are new codes rather than duplicates:
+    # `code` is unique per factor set.
+    _committed_session.add_all([
+        Constant(factor_set_id=draft.id, code="LEVY_NZD_PER_T",
+                 value=Decimal("70.0"), unit="NZD / t",
+                 note="e6 draft-own second constant"),
+        Equivalence(factor_set_id=draft.id, code="meals", name="Meals",
+                    source_metric_id=taxonomy_for_factors.metric.id,
+                    value_per_unit=Decimal("2.2222"),
+                    label_template="Equivalent to {value} meals",
+                    source_note="e6 draft-own second equivalence",
+                    sort_order=4, active=True),
+    ])
+    _committed_session.flush()
     return live, draft
 
 

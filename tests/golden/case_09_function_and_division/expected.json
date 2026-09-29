@@ -11,21 +11,48 @@
           "unit": "kg CO2e",
           "display_precision": 1,
           "total": "3567.7050000000",
-          "by_destination": []
+          "by_destination": [
+            {
+              "destination_code": "landfill",
+              "qty_kg": "1234.500",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "3567.7050000000",
+              "upstream_basis": null
+            }
+          ]
         },
         "water": {
           "metric_code": "water",
           "unit": "L",
           "display_precision": 0,
           "total": "500000.0000000000",
-          "by_destination": []
+          "by_destination": [
+            {
+              "destination_code": "landfill",
+              "qty_kg": "1234.500",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "500000.0000000000",
+              "upstream_basis": null
+            }
+          ]
         },
         "cost": {
           "metric_code": "cost",
           "unit": "NZD",
           "display_precision": 0,
           "total": "132.5200000000",
-          "by_destination": []
+          "by_destination": [
+            {
+              "destination_code": "landfill",
+              "qty_kg": "1234.500",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "132.5200000000",
+              "upstream_basis": null
+            }
+          ]
         }
       },
       "equivalences": [
@@ -33,12 +60,25 @@
           "code": "km_driven",
           "label": "Equivalent to driving 14,913 km",
           "value": "14913.0069000000",
-          "source_metric_code": "co2e"
+          "source_metric_code": "co2e",
+          "name": "Kilometres driven",
+          "value_per_unit": "4.1800000000",
+          "value_per_unit_display": "4.18",
+          "source_note": null
         }
       ]
     },
     "alternative": null,
-    "net_benefit": null
+    "net_benefit": null,
+    "money": null,
+    "production_share_percent": null,
+    "data_state": {
+      "production_share_percent": "not_supplied",
+      "total_value_nzd": "not_supplied",
+      "wasted_value_nzd": "not_supplied",
+      "wasted_share_percent": "not_supplied",
+      "saving_nzd": "not_supplied"
+    }
   },
   "entries": [
     {
@@ -58,7 +98,8 @@
                 "qty_kg": "1234.500",
                 "upstream": "1.9000000000",
                 "downstream": "0.9900000000",
-                "value": "3567.7050000000"
+                "value": "3567.7050000000",
+                "upstream_basis": "category_every_destination"
               }
             ]
           },
@@ -73,7 +114,8 @@
                 "qty_kg": "1234.500",
                 "upstream": "1020.0000000000",
                 "downstream": "0.0000000000",
-                "value": "500000.0000000000"
+                "value": "500000.0000000000",
+                "upstream_basis": "category_every_destination"
               }
             ]
           },
@@ -88,7 +130,8 @@
                 "qty_kg": "1234.500",
                 "upstream": "0.0123456789",
                 "downstream": "0.0350000000",
-                "value": "132.5200000000"
+                "value": "132.5200000000",
+                "upstream_basis": "category_every_destination"
               }
             ]
           }
@@ -98,12 +141,19 @@
             "code": "km_driven",
             "label": "Equivalent to driving 14,913 km",
             "value": "14913.0069000000",
-            "source_metric_code": "co2e"
+            "source_metric_code": "co2e",
+            "name": "Kilometres driven",
+            "value_per_unit": "4.1800000000",
+            "value_per_unit_display": "4.18",
+            "source_note": null
           }
         ]
       },
       "alternative": null,
-      "net_benefit": null
+      "net_benefit": null,
+      "production_share_percent": null,
+      "food_item_code": null,
+      "item_basis": "not_applicable"
     }
   ]
 }

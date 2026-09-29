@@ -80,6 +80,7 @@ from admin.taxonomy_models import (  # noqa: E402
     Destination,
     DestinationGroup,
     FoodCategory,
+    FoodItem,
     Metric,
     Sector,
     UnitPreset,
@@ -97,6 +98,7 @@ __all__ = [
     "FactorSetStatus",
     "FactorUpstream",
     "FoodCategory",
+    "FoodItem",
     "Formula",
     "Metric",
     "Scenario",
@@ -141,6 +143,38 @@ class Submission(Base):
         #: behaviourally by tests/db/test_submissions.py and against
         #: information_schema by tests/test_migrations.py.
         CheckConstraint("gwp_horizon IN (20, 100)", name="ck_submission_horizon"),
+        #: v1.67's contradiction rule, in the schema as well as in the
+        #: validator (`api.schemas.PricingOptions.validate_period`). Both
+        #: halves, deliberately: a rule the API holds and the schema does not
+        #: is a rule that lasts until the first write that does not go
+        #: through the API -- the panel, a CLI, a fix-up by hand.
+        #:
+        #: Clause by clause:
+        #:   1. both instants or neither -- half an interval is not a period;
+        #:   2. the interval runs forwards (equal ends allowed: a zero-length
+        #:      period enters no calculation, so refusing it buys nothing);
+        #:   3. not before the epoch;
+        #:   4. `time_frame = 'custom'` requires the interval -- `custom`
+        #:      *means* "the visitor chose these dates";
+        #:   5. the interval requires a `time_frame` -- "Not stated" is the
+        #:      default answer and it cannot carry dates.
+        #:
+        #: A preset **with** an interval is allowed by all five, which is the
+        #: designed normal case from v1.67: pressing *One week* fills the
+        #: picker and `time_frame` records which button it was.
+        #:
+        #: `PERIOD_CEILING_HOURS` is the one bound that is **not** here. It
+        #: moves with the clock, so it is not a thing a CHECK can express,
+        #: and §2.3 says so rather than leaving the gap to be discovered.
+        CheckConstraint(
+            "(period_start IS NULL) = (period_end IS NULL)"
+            " AND (period_start IS NULL OR period_end >= period_start)"
+            " AND (period_start IS NULL OR period_start >= '1970-01-01 00:00:00')"
+            " AND (period_start IS NOT NULL OR time_frame IS NULL"
+            " OR time_frame <> 'custom')"
+            " AND (period_start IS NULL OR time_frame IS NOT NULL)",
+            name="ck_submission_period",
+        ),
     )
 
     id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
@@ -165,10 +199,89 @@ class Submission(Base):
     )
     exclusion_reason: Mapped[str | None] = mapped_column(String(255))
 
+    #: v1.48. The period the visitor says their figures cover - "one_week",
+    #: "one_month", "one_quarter", "one_year". A LABEL, not a computation:
+    #: the client ruled explicitly that it does not enter the engine, and
+    #: nothing annualises or scales anything from it. It travels to the
+    #: results page and into the download so that a figure somebody keeps has
+    #: a period attached to it, which is the whole of what it is for.
+    #:
+    #: v1.67 adds a fifth value, `custom`, and the pair of columns below.
+    #: `time_frame` still records **which shortcut was pressed** rather than
+    #: collapsing to `custom` for every new row: the rows written before
+    #: v1.67 say `one_week` with no interval, and if new rows only ever said
+    #: `custom` the four preset values would become a dialect only historical
+    #: rows speak.
+    time_frame: Mapped[str | None] = mapped_column(String(32))
+
+    #: v1.67. The interval the visitor's figures cover, to the minute -- a
+    #: shift, 08:10 to 16:20. Nullable, so that the rows written before this
+    #: revision need no backfill and **absence means "no period was given"**
+    #: rather than some sentinel instant standing in for it.
+    #:
+    #: **These are the visitor's LOCAL WALL-CLOCK TIME AND THEY CARRY NO
+    #: ZONE.** Read that before writing a query over them. The value is what
+    #: a person read off the clock on their own wall, stored verbatim: it is
+    #: *adequate as a label* -- printed back to the visitor who typed it, on
+    #: the screen and in the download, which is the whole of what it is for
+    #: -- and it is **inadequate for comparison across submissions.** Two
+    #: rows both saying `08:10` may be two hours apart, or twenty-two; this
+    #: column cannot say which, and nothing else on the row can either,
+    #: because §2.3 stores no address, no user agent and nothing else that
+    #: could imply a zone. An analyst who sorts these, buckets them by hour,
+    #: differences them against `created_at`, or treats them as UTC will get
+    #: an answer, and the answer will be wrong with nothing to show for it.
+    #:
+    #: Carrying a UTC offset alongside them was considered in planning and
+    #: rejected: it would make the value a real instant rather than a label,
+    #: which is a larger decision than this field needs (O-4's neighbour).
+    #: If that is ever wanted, it is a new column and a migration, not a
+    #: reinterpretation of these two.
+    #:
+    #: **Nothing computes with them**, exactly as nothing computes with
+    #: `time_frame`: they are not on §3's `CalculationRequest`, the engine is
+    #: never handed them, and `(period_end - period_start)` is arithmetic
+    #: this contract forbids. `tests/test_period_is_not_an_engine_input.py`
+    #: holds that.
+    #:
+    #: **And nothing may bucket a public statistic by them** (§5.4). `custom`
+    #: as one bucket of `time_frame` is fine. Grouping by an exact instant
+    #: puts every row in a bucket of one, at which point the suppression
+    #: threshold merges the lot into `other` -- a statistic that says
+    #: nothing, arrived at honestly.
+    period_start: Mapped[datetime | None] = mapped_column(DateTime)
+    period_end: Mapped[datetime | None] = mapped_column(DateTime)
+
+    #: v1.48, and it reverses §2.3's "there is no consent checkbox".
+    #:
+    #: **This is a second axis, not a replacement for `excluded_from_public`.**
+    #: That one is staff moderation - a member of staff judging a row
+    #: implausible. This one is the visitor's own choice. The public
+    #: aggregate needs BOTH: staff can withdraw a row the visitor offered,
+    #: and a row the visitor kept is not staff's to publish. Neither can
+    #: stand in for the other, and `get_public_stats` predicates on both.
+    #:
+    #: FALSE by default, which is the point. A default of TRUE would opt
+    #: every visitor in and leave the column decorative.
+    is_public_contributed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
+
     entries: Mapped[list["SubmissionEntry"]] = relationship(
         back_populates="submission", cascade="all, delete-orphan",
         order_by="SubmissionEntry.sort_order",
     )
+    #: Added for `/admin/submissions` (§8.2), which shows which numbers a
+    #: calculation was run against — the whole point of stamping `factor_set_id`
+    #: on every submission is that a historical result stays reproducible after
+    #: staff revise the factors, and an integer id does not tell a staff member
+    #: which revision that was.
+    #:
+    #: **No `back_populates`**, for the reason `SubmissionLine.destination`
+    #: gives: the reverse is every submission ever calculated against a factor
+    #: set, which is a collection that grows without bound and that
+    #: `FactorSetAdmin` would try to render on its details page.
+    factor_set: Mapped["FactorSet"] = relationship()
 
     def __str__(self) -> str:
         #: Required of every mapped model by tests/admin/test_model_str.py.
@@ -204,17 +317,54 @@ class SubmissionEntry(Base):
     from `compare_metadata` in tests/test_migrations.py's `_include_object`
     for the reason documented there, and proven instead against
     `information_schema`.
+
+    **v1.54 gives the table a second nullable dimension**, `food_item_id`, and
+    everything above applies to it twice over. The declared UNIQUE becomes four
+    columns and the functional index gains a second `COALESCE` key part; the
+    two live in `alembic/versions/0017_food_item_level.py` on the migration
+    path. They must move together: an index that collapses one of a pair looks
+    right in every summary of it and has stopped enforcing half of what it was
+    written for — the defect v1.31 recorded on `factor_downstream`, and the
+    reason `tests/test_migrations.py` names each collapsed column rather than
+    counting them.
     """
 
     __tablename__ = "submission_entry"
     __table_args__ = (
         UniqueConstraint("submission_id", "sector_id", "food_category_id",
-                         name="uq_submission_entry"),
+                         "food_item_id", name="uq_submission_entry"),
+        #: **Two nullable key parts since v1.54, and both are collapsed.** The
+        #: pair is not interchangeable: drop `COALESCE(food_category_id, 0)`
+        #: and two "no breakdown" entries are legal again (the defect this
+        #: index was created for); drop `COALESCE(food_item_id, 0)` and one
+        #: visitor's Cheese can be stored twice. `factor_downstream` (§2.2)
+        #: records the same lesson in the sector dimension — collapsing one of
+        #: a pair leaves an index that exists, is unique, contains a COALESCE
+        #: and has stopped enforcing half of what it was written for.
         Index(
             "uq_submission_entry_generic",
             "submission_id", "sector_id",
             text("(COALESCE(food_category_id, 0))"),
+            text("(COALESCE(food_item_id, 0))"),
             unique=True,
+        ),
+        #: v1.54. An entry that names a food item must name its category too.
+        #:
+        #: `(food_category_id IS NULL AND food_item_id IS NOT NULL)` is the one
+        #: state that breaks `unspecified`: §5.4 builds `by_food_category` off
+        #: `food_category_id` and gives NULL its own bucket meaning *the user
+        #: did not break their waste down by type*. A row in that state would
+        #: be counted as "not broken down" while carrying the most specific
+        #: answer the calculator can take — the precise opposite of what
+        #: happened, and §5.4 forbids conflating the two outright.
+        #:
+        #: Invisible to `compare_metadata` (see the note on `Submission`
+        #: above), so it is proven behaviourally in
+        #: tests/db/test_food_item_schema.py and against `information_schema`
+        #: in tests/test_migrations.py.
+        CheckConstraint(
+            "food_item_id IS NULL OR food_category_id IS NOT NULL",
+            name="ck_submission_entry_item_has_category",
         ),
     )
 
@@ -235,15 +385,67 @@ class SubmissionEntry(Base):
     food_category_id: Mapped[int | None] = mapped_column(
         ForeignKey("food_category.id"), nullable=True
     )
+    #: v1.54. The specific food, when step 2.5 was released and the visitor
+    #: named one. NULL means they answered at the category level — which is a
+    #: real answer ("I know it was fruit, not which fruit") and not an absence.
+    #:
+    #: **Both columns are stored, never one standing in for the other.** The
+    #: rejected alternative was to reuse `food_category_id` as the placeholder
+    #: and let the item live alone. §5.4 is why it was rejected: NULL there
+    #: already means *the user did not break their waste down by type*, so
+    #: every submission that specified Apples would be filed into the
+    #: statistics page's "not broken down" bucket. Storing both keeps
+    #: `unspecified` with exactly one meaning, keeps `by_food_category` working
+    #: unchanged across both modes by rolling items up into their categories,
+    #: and records what the visitor actually said at both levels.
+    #:
+    #: The placeholder stays where it belongs: in the factor tables, where NULL
+    #: means "this dimension does not carry the numbers here".
+    food_item_id: Mapped[int | None] = mapped_column(
+        ForeignKey("food_item.id"), nullable=True
+    )
     #: The order the user entered them, so `entries[]` in the §6.2 response
     #: can be paired with the rows on screen. Not id order: §5.3 rebuilds the
     #: whole entry set on every upsert, which reassigns ids.
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0,
                                             server_default="0")
 
+    #: v1.48. What this stage of the supply chain put through in the period,
+    #: so that "waste as a share of production" can be stated. Optional: a
+    #: visitor who does not know it still gets every other figure, and
+    #: `MoneyResult` simply omits the share.
+    #:
+    #: DECIMAL(16,3) matches `submission_line.qty_kg` - a production total is
+    #: a mass in the same units and at the same scale as the waste measured
+    #: against it, and two different scales for one comparison is how a
+    #: thousandfold error gets in.
+    total_input_kg: Mapped[Decimal | None] = mapped_column(DECIMAL(16, 3))
+
+    #: v1.48, and both are STATISTICS ONLY. The client's ruling on open item
+    #: O-2 was that the value of the food does not enter the main formula and
+    #: that cost-price versus retail-price "doesn't matter" - it is whatever
+    #: the client's own client means by it.
+    #:
+    #: So these are inputs a visitor typed, not a metric the engine computed.
+    #: They are deliberately NOT a `metric` row: the formula language takes
+    #: `(qty_kg, upstream, downstream, const_*)` per LINE, and an
+    #: entry-level figure a person typed cannot be expressed in it. Making
+    #: one would mean inventing a per-kilogram money factor, which is exactly
+    #: the modelling this ruling avoided.
+    #:
+    #: DECIMAL(14,2): New Zealand dollars and cents. Two places, because
+    #: money has two, and never FLOAT.
+    total_value_nzd: Mapped[Decimal | None] = mapped_column(DECIMAL(14, 2))
+    wasted_value_nzd: Mapped[Decimal | None] = mapped_column(DECIMAL(14, 2))
+
     submission: Mapped[Submission] = relationship(back_populates="entries")
     sector: Mapped[Sector] = relationship()
     food_category: Mapped[FoodCategory | None] = relationship()
+    #: Read direction only, on the same terms as `food_category` above. The
+    #: reverse — every entry ever recorded against one food — is a collection
+    #: that grows without bound and that a taxonomy details page would try to
+    #: render.
+    food_item: Mapped[FoodItem | None] = relationship()
     lines: Mapped[list["SubmissionLine"]] = relationship(
         back_populates="entry", cascade="all, delete-orphan"
     )
@@ -255,7 +457,11 @@ class SubmissionEntry(Base):
         #: nullable and means the user gave no breakdown, so say that rather
         #: than rendering a blank.
         category = self.food_category.code if self.food_category else "no category breakdown"
-        return f"{self.sector.code}/{category}"
+        #: v1.54: the item, when one was named. "processing/dairy" would
+        #: otherwise name both the category-level leaf and every item leaf
+        #: under it, which is exactly the distinction §5.4 turns on.
+        item = f"/{self.food_item.code}" if self.food_item else ""
+        return f"{self.sector.code}/{category}{item}"
 
 
 class SubmissionLine(Base):
@@ -287,11 +493,27 @@ class SubmissionLine(Base):
     qty_kg: Mapped[Decimal] = mapped_column(DECIMAL(16, 3), nullable=False)
 
     entry: Mapped[SubmissionEntry] = relationship(back_populates="lines")
+    #: Added for `/admin/submissions` (§8.2), and the comment it replaces said
+    #: this table is "written in bulk by `upsert_submission` and never read one
+    #: row at a time". That was true until a screen existed to read it: the
+    #: drill-down renders every line of a calculation, and a line whose
+    #: destination is an integer id tells a staff member nothing.
+    #:
+    #: **No `back_populates`, deliberately.** The reverse — every submission
+    #: line ever recorded, hanging off a taxonomy row — is a collection nothing
+    #: wants and that `DestinationAdmin` would try to render on its own details
+    #: page. This direction is a lookup; the other would be a liability that
+    #: grows with every calculation the public runs.
+    destination: Mapped["Destination"] = relationship()
 
     def __str__(self) -> str:
         #: Required of every mapped model by tests/admin/test_model_str.py.
-        #: No `destination` relationship is declared on this table — it is
-        #: written in bulk by `upsert_submission` and never read one row at a
-        #: time — so the scenario and the quantity are what identify the row.
+        #:
+        #: **Still not the destination, now that the relationship exists.**
+        #: `__str__` is called by sqladmin wherever a row is rendered, including
+        #: on objects that have left their session, and touching a lazy
+        #: relationship there raises `DetachedInstanceError` from inside a
+        #: template — a 500 on a page that was only trying to print a label.
+        #: The drill-down loads `destination` eagerly and renders it itself.
         scenario = self.scenario.value if isinstance(self.scenario, Scenario) else self.scenario
         return f"{scenario} {self.qty_kg} kg"

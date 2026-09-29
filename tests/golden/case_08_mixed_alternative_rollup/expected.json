@@ -11,14 +11,32 @@
           "unit": "kg CO2e",
           "display_precision": 1,
           "total": "4615.0000000000",
-          "by_destination": []
+          "by_destination": [
+            {
+              "destination_code": "landfill",
+              "qty_kg": "2500.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "4615.0000000000",
+              "upstream_basis": null
+            }
+          ]
         },
         "mass": {
           "metric_code": "mass",
           "unit": "kg",
           "display_precision": 1,
           "total": "2500.0000000000",
-          "by_destination": []
+          "by_destination": [
+            {
+              "destination_code": "landfill",
+              "qty_kg": "2500.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "2500.0000000000",
+              "upstream_basis": null
+            }
+          ]
         }
       },
       "equivalences": [
@@ -26,7 +44,11 @@
           "code": "km_driven",
           "label": "Equivalent to driving 19,291 km",
           "value": "19290.7000000000",
-          "source_metric_code": "co2e"
+          "source_metric_code": "co2e",
+          "name": "Kilometres driven",
+          "value_per_unit": "4.1800000000",
+          "value_per_unit_display": "4.18",
+          "source_note": null
         }
       ]
     },
@@ -38,14 +60,48 @@
           "unit": "kg CO2e",
           "display_precision": 1,
           "total": "1725.0000000000",
-          "by_destination": []
+          "by_destination": [
+            {
+              "destination_code": "prevention",
+              "qty_kg": "1000.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "0.0000000000",
+              "upstream_basis": null
+            },
+            {
+              "destination_code": "landfill",
+              "qty_kg": "1500.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "1725.0000000000",
+              "upstream_basis": null
+            }
+          ]
         },
         "mass": {
           "metric_code": "mass",
           "unit": "kg",
           "display_precision": 1,
           "total": "2500.0000000000",
-          "by_destination": []
+          "by_destination": [
+            {
+              "destination_code": "prevention",
+              "qty_kg": "1000.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "1000.0000000000",
+              "upstream_basis": null
+            },
+            {
+              "destination_code": "landfill",
+              "qty_kg": "1500.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "1500.0000000000",
+              "upstream_basis": null
+            }
+          ]
         }
       },
       "equivalences": [
@@ -53,13 +109,26 @@
           "code": "km_driven",
           "label": "Equivalent to driving 7,211 km",
           "value": "7210.5000000000",
-          "source_metric_code": "co2e"
+          "source_metric_code": "co2e",
+          "name": "Kilometres driven",
+          "value_per_unit": "4.1800000000",
+          "value_per_unit_display": "4.18",
+          "source_note": null
         }
       ]
     },
     "net_benefit": {
       "co2e": "2890.0000000000",
       "mass": "0.0000000000"
+    },
+    "money": null,
+    "production_share_percent": null,
+    "data_state": {
+      "production_share_percent": "not_supplied",
+      "total_value_nzd": "not_supplied",
+      "wasted_value_nzd": "not_supplied",
+      "wasted_share_percent": "not_supplied",
+      "saving_nzd": "not_supplied"
     }
   },
   "entries": [
@@ -80,7 +149,8 @@
                 "qty_kg": "1000.000",
                 "upstream": "1.9000000000",
                 "downstream": "0.9900000000",
-                "value": "2890.0000000000"
+                "value": "2890.0000000000",
+                "upstream_basis": "category_every_destination"
               }
             ]
           },
@@ -95,7 +165,8 @@
                 "qty_kg": "1000.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "1000.0000000000"
+                "value": "1000.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           }
@@ -105,7 +176,11 @@
             "code": "km_driven",
             "label": "Equivalent to driving 12,080 km",
             "value": "12080.2000000000",
-            "source_metric_code": "co2e"
+            "source_metric_code": "co2e",
+            "name": "Kilometres driven",
+            "value_per_unit": "4.1800000000",
+            "value_per_unit_display": "4.18",
+            "source_note": null
           }
         ]
       },
@@ -123,7 +198,8 @@
                 "qty_kg": "1000.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "0.0000000000"
+                "value": "0.0000000000",
+                "upstream_basis": "category_at_destination"
               }
             ]
           },
@@ -138,7 +214,8 @@
                 "qty_kg": "1000.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "1000.0000000000"
+                "value": "1000.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           }
@@ -148,14 +225,21 @@
             "code": "km_driven",
             "label": "Equivalent to driving 0 km",
             "value": "0.0000000000",
-            "source_metric_code": "co2e"
+            "source_metric_code": "co2e",
+            "name": "Kilometres driven",
+            "value_per_unit": "4.1800000000",
+            "value_per_unit_display": "4.18",
+            "source_note": null
           }
         ]
       },
       "net_benefit": {
         "co2e": "2890.0000000000",
         "mass": "0.0000000000"
-      }
+      },
+      "production_share_percent": null,
+      "food_item_code": null,
+      "item_basis": "not_applicable"
     },
     {
       "sector_code": "primary_production",
@@ -174,7 +258,8 @@
                 "qty_kg": "1500.000",
                 "upstream": "0.4500000000",
                 "downstream": "0.7000000000",
-                "value": "1725.0000000000"
+                "value": "1725.0000000000",
+                "upstream_basis": "category_every_destination"
               }
             ]
           },
@@ -189,7 +274,8 @@
                 "qty_kg": "1500.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "1500.0000000000"
+                "value": "1500.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           }
@@ -199,12 +285,19 @@
             "code": "km_driven",
             "label": "Equivalent to driving 7,211 km",
             "value": "7210.5000000000",
-            "source_metric_code": "co2e"
+            "source_metric_code": "co2e",
+            "name": "Kilometres driven",
+            "value_per_unit": "4.1800000000",
+            "value_per_unit_display": "4.18",
+            "source_note": null
           }
         ]
       },
       "alternative": null,
-      "net_benefit": null
+      "net_benefit": null,
+      "production_share_percent": null,
+      "food_item_code": null,
+      "item_basis": "not_applicable"
     }
   ]
 }

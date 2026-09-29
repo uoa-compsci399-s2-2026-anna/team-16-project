@@ -42,6 +42,12 @@ GUIDANCE_DIR = Path(__file__).resolve().parents[2] / "admin" / "templates" / "br
 #: rather than an incidental one.
 LIFECYCLE = "clone, edit, publish"
 MOCK = "the only thing holding them up"
+#: The half of the mock block that changed with the flag itself, and the half
+#: a reworded paragraph must not quietly drop: the two directions are not the
+#: same size, and clearing no longer means cloning. Two phrases rather than
+#: one because the block would still read plausibly with either missing.
+MOCK_DIRECTIONS = "are not the same size"
+MOCK_NO_CLONE = "do not need to clone a set to clear its flag"
 PREVENTION = "as a refusal rather than as a rule"
 FORMULA = "it found eight disagreements"
 DRY_RUN = "twenty calculations that never happened"
@@ -52,6 +58,10 @@ DRY_RUN = "twenty calculations that never happened"
 #: `guidance_blocks`.
 HAND_INCLUDED = {
     "dry_run_purpose.html": "brand/dry_run.html",
+    #: Split out of `dry_run_purpose.html` so it could be rendered where a
+    #: `<details>` cannot swallow it - see `test_the_public_calculator_warning_
+    #: is_not_behind_a_disclosure` below for what went wrong when it could.
+    "dry_run_warning.html": "brand/dry_run.html",
     # The first-run walkthrough (tests/admin/test_getting_started.py covers
     # what it says and that the index links it; this file's orphan test is
     # what notices if its page stops including it at all).
@@ -115,6 +125,25 @@ async def test_the_factor_set_screen_explains_the_mock_flag(admin_client):
     body = _flat(await admin_client.get("/admin/factor-set/list"))
 
     assert MOCK in body, "the factor-set screen no longer explains the mock flag"
+
+
+@pytest.mark.asyncio
+async def test_the_factor_set_screen_explains_how_the_flag_moves(admin_client):
+    """The half that changed when the flag came off the edit form.
+
+    The block used to end with "untick Is Mock on the draft, then publish",
+    and that sequence is now impossible in the panel and wrong as advice: it
+    forces a clone, and therefore a new version label, for a change in which
+    not one factor value differs. Both phrases are asserted because the block
+    would still read as a plausible explanation with either one missing - one
+    says the two directions carry different friction, the other says the clone
+    is no longer required, and a staff member who is told only the first still
+    clones.
+    """
+    body = _flat(await admin_client.get("/admin/factor-set/list"))
+
+    assert MOCK_DIRECTIONS in body, "the block no longer distinguishes the two directions"
+    assert MOCK_NO_CLONE in body, "the block no longer says a clone is unnecessary"
 
 
 @pytest.mark.asyncio
@@ -248,21 +277,58 @@ def test_every_guidance_template_is_shown_somewhere():
     )
 
 
-def test_the_list_pages_still_extend_sqladmin_s_own():
-    """The override adds to the list page; it must not replace it.
+def _extends_chain(start: str) -> list[str]:
+    """The `{% extends %}` chain from a brand template up to its root.
 
-    `brand/model_list.html` is now every audited view's `list_template`. If
-    it ever stopped extending `sqladmin/list.html`, search, filters,
-    pagination and the bulk-action dropdown would vanish from fourteen
-    screens at once, and every test above would still pass.
+    Followed rather than matched on one literal line, because the chain has
+    more than one link in it since the list-table scrollport landed:
+
+        sqladmin/list.html
+          brand/list_table.html      the scrollport rules
+            brand/model_list.html    + page-level guidance
+              brand/staff_list.html    + its own `model_menu_bar`
+              brand/ip_block_list.html + its own `model_menu_bar`
+
+    Asserting `'{% extends "sqladmin/list.html" %}' in model_list.html` was
+    the original form of the test below and it failed on that restructure
+    while the property it guards - that nothing in the chain REPLACES
+    sqladmin's page - was never broken for a moment. Walking the chain keeps
+    the guard and drops the coincidence: a link inserted anywhere still has
+    to end at sqladmin's own template, and a template that stops extending
+    at any depth still fails.
     """
     brand = GUIDANCE_DIR.parent
-    assert '{% extends "sqladmin/list.html" %}' in (
-        brand / "model_list.html").read_text(encoding="utf-8")
-    # IpBlockAdmin's own override has to reach the mechanism through it.
-    assert '{% extends "brand/model_list.html" %}' in (
-        brand / "ip_block_list.html").read_text(encoding="utf-8")
+    chain, seen, current = [], set(), start
+    while current.startswith("brand/"):
+        assert current not in seen, f"template inheritance loops at {current}"
+        seen.add(current)
+        text = (brand / Path(current).name).read_text(encoding="utf-8")
+        match = re.search(r'{%\s*extends\s*"([^"]+)"\s*%}', text)
+        assert match, f"{current} extends nothing; it replaces the page instead"
+        current = match.group(1)
+        chain.append(current)
+    return chain
 
+
+@pytest.mark.parametrize(
+    "template",
+    ["brand/model_list.html", "brand/list_table.html",
+     "brand/ip_block_list.html", "brand/staff_list.html"],
+)
+def test_the_list_pages_still_extend_sqladmin_s_own(template):
+    """The override adds to the list page; it must not replace it.
+
+    `brand/model_list.html` is every audited view's `list_template`, and
+    `brand/list_table.html` - which it now extends - is AuditLogAdmin's. If
+    either stopped reaching `sqladmin/list.html`, search, filters, pagination
+    and the bulk-action dropdown would vanish from fifteen screens at once,
+    and every test above would still pass.
+    """
+    chain = _extends_chain(template)
+
+    assert chain[-1] == "sqladmin/list.html", (
+        f"{template} no longer reaches sqladmin's own list page: {chain}"
+    )
     assert ModelView.list_template != AuditedModelView.list_template, (
         "the base no longer overrides sqladmin's list template"
     )
@@ -280,3 +346,158 @@ async def test_the_list_page_still_has_its_table_and_filters(admin_client):
     assert "<table" in body, "the list page lost its table"
     assert "Filter" in body, "the list page lost sqladmin's filter panel"
     assert "Actions" in body, "the list page lost the bulk-action dropdown"
+
+
+def test_the_public_calculator_warning_is_not_behind_a_disclosure():
+    """**Present in the markup is not the same as readable, and this file had
+    been asserting the first while meaning the second.**
+
+    `test_the_dry_run_screen_explains_what_it_is_for` checks that the §8.2
+    warning's text appears on the page. A redesign moved the whole guidance
+    block inside a closed `<details>`; the substring was still there, the test
+    stayed green, and the paragraph the page exists for - *"twenty calculations
+    that never happened, sitting inside a figure that may be quoted in public"*
+    - went behind a click.
+
+    So this asserts the structure rather than the text: the warning is included
+    at a point in `brand/dry_run.html` that no `<details>` has opened.
+
+    Read from the template rather than driven over HTTP on purpose. A rendered
+    page would need the disclosure's state inferred from CSS or from a browser,
+    and the question here is about where the include sits, which the source
+    answers exactly.
+    """
+    page = (GUIDANCE_DIR.parent / "dry_run.html").read_text(encoding="utf-8")
+
+    #: Jinja comments stripped FIRST. The comment above the include explains
+    #: what went wrong by naming `<details>`, and counting raw occurrences read
+    #: that as an open disclosure - this assertion failed on a template that was
+    #: correct. Sixth unanchored-match defect in this repository; the previous
+    #: ones are noted beside `_reported_count` in test_submission_views.py and
+    #: `_ADMIN_PATH` in test_operator_guidance.py.
+    markup = re.sub(r"\{#.*?#\}", "", page, flags=re.S)
+
+    include = markup.index("guidance/dry_run_warning.html")
+    before = markup[:include]
+    #: Every `<details>` opened before the include must also have been closed
+    #: before it. Counting tags is enough - these templates never nest one
+    #: disclosure inside another, and a future one that did would make this
+    #: over-strict rather than blind, which is the right way round.
+    assert before.count("<details") == before.count("</details>"), (
+        "the public-calculator warning is inside a <details> - it has to be "
+        "readable without a click, which is the whole of contract 8.2's reason "
+        "for this page"
+    )
+
+    #: And it is still on the page at all. Without this the assertion above
+    #: passes trivially for a page that stopped including it.
+    assert "guidance/dry_run_warning.html" in page
+
+
+# --- Task: admin guidance disclosure ----------------------------------------
+#
+# The four card-level blocks above are reference material a staff member goes
+# looking for (how the lifecycle works, how to write a formula, ...), not a
+# warning aimed at someone who is not looking for it - the opposite case from
+# `dry_run_warning.html` above - so folding them behind a closed `<details>`
+# is the right call for these four and the wrong one for that file. See each
+# block's own header comment for the specific reasoning.
+#
+# **Visibility, not presence.** Every assertion below is on the `<details>`
+# element itself - whether it carries an `open` attribute, which is the one
+# thing that actually decides whether a browser shows the content - and
+# never on whether a phrase merely occurs somewhere in the markup. A test
+# that asserted presence here would pass identically whether the block were
+# open, closed, or had never been wrapped at all.
+
+#: Which of the two already-pinned phrases above (LIFECYCLE, MOCK, PREVENTION,
+#: FORMULA) lives in each folded block, and which page renders it - reused
+#: to drive both a template-source check and a real HTTP round-trip.
+FOLDED_BLOCKS = {
+    "factor_set_lifecycle.html": (LIFECYCLE, "/admin/factor-set/list"),
+    "mock_data.html": (MOCK, "/admin/factor-set/list"),
+    "prevention_zero.html": (PREVENTION, "/admin/factor-upstream/list"),
+    "writing_a_formula.html": (FORMULA, "/admin/formula/list"),
+}
+
+
+def _enclosing_details_tag(markup: str, phrase: str) -> str:
+    """The opening `<details ...>` tag that `phrase` sits inside, verbatim.
+
+    `markup` is whitespace-collapsed first, the same reason `_flat` above
+    exists: these blocks are wrapped prose, so a pinned phrase such as
+    "clone, edit, publish" is split across source lines about as often as
+    not. Walks every `<details`/`</details>` before `phrase` and keeps the
+    last unmatched open, the same depth-blind counting
+    `test_the_public_calculator_warning_is_not_behind_a_disclosure` uses
+    above - correct here for the same reason: none of these blocks nest one
+    disclosure inside another.
+    """
+    markup = re.sub(r"\s+", " ", markup)
+    index = markup.index(phrase)
+    opens = [m.start() for m in re.finditer(r"<details\b[^>]*>", markup[:index])]
+    closes = [m.start() for m in re.finditer(r"</details>", markup[:index])]
+    assert len(opens) > len(closes), (
+        f"{phrase!r} is not inside any <details> at all - it has not been folded"
+    )
+    start = opens[-1]
+    end = markup.index(">", start) + 1
+    return markup[start:end]
+
+
+@pytest.mark.parametrize("template_name,pair", sorted(FOLDED_BLOCKS.items()))
+def test_a_card_guidance_block_is_folded_and_closed_in_its_template(template_name, pair):
+    """The mutation this guards against: someone reopens the block, or wraps
+    it in a `<details open>` "to be safe" and quietly undoes Change 1.
+
+    Read from the template source, not over HTTP, for the same reason the
+    dry-run check above is: the question is where the include sits and what
+    attributes the tag carries, and the source answers that directly.
+    """
+    phrase, _route = pair
+    markup = (GUIDANCE_DIR / template_name).read_text(encoding="utf-8")
+    markup = re.sub(r"\{#.*?#\}", "", markup, flags=re.S)  # strip comments first - see above
+    tag = _enclosing_details_tag(markup, phrase)
+    assert "guidance-disclosure" in tag, f"{template_name}'s <details> lost its class: {tag!r}"
+    assert not re.search(r"\bopen\b", tag), (
+        f"{template_name}'s guidance is inside an OPEN <details> - a visitor "
+        f"sees exactly what they would if it had never been folded: {tag!r}"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("template_name,pair", sorted(FOLDED_BLOCKS.items()))
+async def test_a_card_guidance_block_renders_closed_on_its_real_page(admin_client, template_name, pair):
+    """The template-source check above cannot see template composition bugs -
+    `_guidance.html`'s loop, or a `model_view` that stopped declaring the
+    block - so this drives the same real route `test_guidance.py`'s other
+    HTTP tests use and checks the same thing on the response that actually
+    reaches a browser.
+    """
+    phrase, route = pair
+    body = (await admin_client.get(route)).text
+    tag = _enclosing_details_tag(body, phrase)
+    assert "guidance-disclosure" in tag
+    assert not re.search(r"\bopen\b", tag), (
+        f"{route} renders {template_name}'s guidance already open: {tag!r}"
+    )
+
+
+def test_getting_started_is_not_folded():
+    """The one block this task deliberately leaves alone.
+
+    `getting-started.html` is the *entire* content of its own page
+    (`brand/getting_started.html`) - there are no controls on that page to
+    scroll past, so Change 1's reason for folding the other four does not
+    apply here, and folding it would hide the walkthrough a reader navigated
+    to this page specifically to read. This pins that decision rather than
+    leaving it to be silently undone by a future "fold everything in
+    guidance/" pass.
+    """
+    page = (GUIDANCE_DIR / "getting-started.html").read_text(encoding="utf-8")
+    markup = re.sub(r"\{#.*?#\}", "", page, flags=re.S)
+    assert "<details" not in markup, (
+        "getting-started.html has been folded behind a <details> - it is the "
+        "whole of its own page, and there is nothing left to read if it starts "
+        "closed"
+    )

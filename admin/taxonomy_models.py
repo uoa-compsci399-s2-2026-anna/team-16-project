@@ -1,9 +1,13 @@
 """The taxonomy tables. Contract §2.1.
 
 Separate from admin/models.py, which owns staff accounts and the audit log:
-these six are the vocabulary the calculator is defined in, edited by staff
+these seven are the vocabulary the calculator is defined in, edited by staff
 through the panel, and read by the engine on every calculation. They change
 for entirely different reasons.
+
+Six until v1.54, which added `food_item`; the panel registers seven taxonomy
+views from v1.54 part two, which gave it `FoodItemAdmin`. Nothing seeds it;
+see its own docstring.
 
 Every one of them carries `code` (the cross-layer identifier — the API and
 the front end use it, never the primary key) and `active` (the panel does
@@ -52,10 +56,11 @@ class DestinationGroup(Base):
 class Destination(Base):
     """Contract §2.1. Where the food actually went.
 
-    `prevention` is a special row: all its factors are zero, so it expresses
+    One row carries `is_prevention`: all its factors are zero, so it expresses
     "this waste did not happen" while keeping the two scenarios
-    mass-conserving. admin/taxonomy_rules.py protects it from being renamed
-    or deactivated.
+    mass-conserving. admin/taxonomy_rules.py protects the *role* from being
+    deactivated or removed — the row may be renamed freely, which is the whole
+    point of the column existing.
     """
 
     __tablename__ = "destination"
@@ -67,6 +72,23 @@ class Destination(Base):
     code: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Contract §2.1. The prevention offset: the destination an alternative
+    #: scenario moves mass to in order to say "this waste did not happen".
+    #:
+    #: A flag rather than a reserved code because a taxonomy row's identity is
+    #: data on this project — `DestinationGroup.is_waste` above is a column for
+    #: exactly the same reason — and the client has not settled what this
+    #: destination will be called or whether it survives under that name.
+    #:
+    #: **At least one active row must carry it; more than one is legal.**
+    #: Unlike `FoodCategory.is_standard_mix`, which is "exactly one", two
+    #: vocabularies share these global tables (§10.3) and each brings its own
+    #: prevention row. There is therefore no unique key here: nothing for one
+    #: to say. `admin/taxonomy_rules.check_prevention_destination` enforces the
+    #: lower bound, which no column constraint can express.
+    is_prevention: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0,
                                             server_default="0")
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True,
@@ -118,6 +140,64 @@ class FoodCategory(Base):
                                             server_default="0")
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True,
                                          server_default="1")
+
+    def __str__(self) -> str:
+        return f"{self.code} — {self.name}"
+
+
+class FoodItem(Base):
+    """Contract §2.1 (v1.54). A named food *within* a category — "cheese", not
+    "dairy". The vocabulary step 2.5 of the calculator offers.
+
+    **Global taxonomy, not a child of the factor set**, and the distinction is
+    load-bearing. §6.1 states the rule — *a factor set brings factors, not a
+    vocabulary* — and reproducibility is why. `submission_entry.food_category_id`
+    already points at a global row no lifecycle operation touches, which is what
+    lets a 2026 submission still render "dairy" in 2029. Every `factor_set_id`
+    in the schema carries `ondelete="CASCADE"`, so a set-scoped item row would
+    make `submission_entry.food_item_id` a pointer into one version's private
+    vocabulary and deleting a spoiled draft would take the meaning of a stored
+    submission with it.
+
+    The item's **numbers** are a different matter and live where every other
+    number does: `factor_upstream` gains a nullable `food_item_id` and is
+    already a child of the set. So `admin/factor_lifecycle.CHILD_MODELS` stays
+    at five and `_clone_children`'s reflection carries the new column with no
+    edit at all.
+
+    `food_category_id` is NOT NULL: every item belongs to exactly one category,
+    and that parent is what an item with no factor row of its own falls back to
+    — a defined, meaningful average rather than a silent zero.
+
+    `admin/seed.py` seeds this table: twenty foods from the client's own table
+    1, and twenty-seven more (v1.72) for the five categories the client
+    subdivided no further than their own name. Mapping them onto our categories
+    was a data-authoring task with client-facing consequences -- seven of the
+    client's rows have no New Zealand category at all -- and every row that is
+    not the client's names its source in `admin.seed.FOOD_ITEM_SOURCES`. None of
+    the forty-seven carries a factor row of its own: an unpriced food is priced
+    at its category's average and §7.3c discloses that it was.
+    """
+
+    __tablename__ = "food_item"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    food_category_id: Mapped[int] = mapped_column(
+        ForeignKey("food_category.id"), nullable=False
+    )
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0,
+                                            server_default="0")
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True,
+                                         server_default="1")
+
+    #: Read direction only, like `UnitPreset.food_category` above and for the
+    #: same reason: the panel groups items by category name, and `code` is the
+    #: cross-layer identifier, so a primary key must never be what a human is
+    #: asked to read or choose. No `back_populates` — the reverse collection
+    #: would be rendered on `FoodCategoryAdmin`'s details page.
+    food_category: Mapped["FoodCategory"] = relationship()
 
     def __str__(self) -> str:
         return f"{self.code} — {self.name}"

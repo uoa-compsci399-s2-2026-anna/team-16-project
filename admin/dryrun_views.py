@@ -33,13 +33,19 @@ from starlette.requests import Request
 from starlette.responses import Response
 from starlette.templating import Jinja2Templates
 
+from admin.auth import SESSION_KEY
 from admin.calc_client import CalculateRefused, CalculateUnavailable
 from admin.comparison_models import ComparisonScenario
 from admin.factor_models import FactorSet, FactorSetStatus
 from admin.runtime import get_runtime
-from admin.taxonomy_models import Destination, FoodCategory, Sector
+from admin.taxonomy_models import Destination, FoodCategory, FoodItem, Sector
+from admin import i18n as admin_i18n
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+
+# Contract O-8. This environment is not sqladmin's, so it does not inherit
+# `_()` from it - see admin/i18n.py::install.
+admin_i18n.install(templates.env)
 
 
 def _form_context(db) -> dict:
@@ -67,10 +73,27 @@ def _form_context(db) -> dict:
         select(Destination).where(Destination.active.is_(True))
         .order_by(Destination.sort_order)
     ).scalars().all()
+    #: v1.54. The vocabulary step 2.5 offers, so that the staff releasing that
+    #: step can test it here rather than only on the public calculator. Every
+    #: item carries its parent category's code, because the two travel together
+    #: in the request and an item filed under a different category is refused —
+    #: the form uses it to hide items that do not belong to the chosen
+    #: category. Empty in every deployment today, which is what keeps this form
+    #: sending exactly the request body it sent before.
+    food_items = db.execute(
+        select(FoodItem, FoodCategory.code)
+        .join(FoodCategory, FoodItem.food_category_id == FoodCategory.id)
+        .where(FoodItem.active.is_(True))
+        .order_by(FoodItem.sort_order, FoodItem.code)
+    ).all()
     return {
         "factor_sets": factor_sets,
         "sectors": sectors,
         "food_categories": food_categories,
+        "food_items": [
+            {"code": item.code, "name": item.name, "food_category": food_code}
+            for item, food_code in food_items
+        ],
         "destinations": destinations,
     }
 
@@ -106,13 +129,30 @@ def _request_body(form) -> dict:
         # CalculateRefused/CalculateUnavailable as a third, undesigned
         # failure mode.
         gwp_horizon = 100
+    #: v1.54, and **the key is still omitted rather than sent as null when no
+    #: food was chosen.** It was omitted originally because `api/schemas.py`
+    #: sets `extra="forbid"` on the entry model and that model did not know
+    #: `food_item` yet, so sending the key was a 422 for every dry run on the
+    #: panel. **v1.58 landed the field and a chosen food now reaches the API**,
+    #: so that reason is spent — but the omission is kept, because absent and
+    #: `null` mean the same thing to §6.2 and a form that sends nothing when
+    #: nothing was chosen sends byte-for-byte the request it has always sent.
+    #: The panel is the one caller staff use to tune a formula; a request that
+    #: differs from the pre-v1.58 one in a way nobody chose is a difference
+    #: they would have to rule out first.
+    entry = {
+        "sector": form.get("sector"),
+        "food_category": form.get("food_category") or None,
+    }
+    food_item = form.get("food_item") or None
+    if food_item is not None:
+        entry["food_item"] = food_item
     return {
         "token": None,
         "gwp_horizon": gwp_horizon,
         "entries": [
             {
-                "sector": form.get("sector"),
-                "food_category": form.get("food_category") or None,
+                **entry,
                 "current": [
                     {
                         "destination": form.get("destination"),
@@ -145,7 +185,7 @@ class DryRunView(BaseView):
         try:
             result = runtime.calc_client.dry_run(
                 body,
-                cookies=dict(request.cookies),
+                actor=request.session.get(SESSION_KEY, "unknown"),
                 factor_set_version=factor_set_version,
             )
         except CalculateRefused as exc:
@@ -238,7 +278,7 @@ def _metrics_of(result: dict | None) -> dict:
     return metrics if isinstance(metrics, dict) else {}
 
 
-def _run_call(calc_client, body: dict, cookies: dict, factor_set_version: str) -> tuple:
+def _run_call(calc_client, body: dict, actor: str, factor_set_version: str) -> tuple:
     """Run one dry run; turn a refusal into data for that call's own row.
 
     ``CalculateRefused`` is caught here because it is a per-row condition -
@@ -255,7 +295,7 @@ def _run_call(calc_client, body: dict, cookies: dict, factor_set_version: str) -
     """
     try:
         result = calc_client.dry_run(
-            body, cookies=cookies, factor_set_version=factor_set_version
+            body, actor=actor, factor_set_version=factor_set_version
         )
         return result, None
     except CalculateRefused as exc:
@@ -399,15 +439,15 @@ class CompareView(BaseView):
                 (scenario, _scenario_request_body(scenario)) for scenario in scenarios
             ]
 
-        cookies = dict(request.cookies)
+        actor = request.session.get(SESSION_KEY, "unknown")
         rows = []
         try:
             for scenario, body in bodies:
                 published_result, published_error = _run_call(
-                    runtime.calc_client, body, cookies, published.version_label
+                    runtime.calc_client, body, actor, published.version_label
                 )
                 draft_result, draft_error = _run_call(
-                    runtime.calc_client, body, cookies, target.version_label
+                    runtime.calc_client, body, actor, target.version_label
                 )
                 rows.append({
                     "scenario": scenario,

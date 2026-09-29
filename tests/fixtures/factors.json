@@ -22,7 +22,7 @@
       "code": "FOOD_VALUE_PER_KG",
       "value": "0.0000000000",
       "unit": "NZD / kg",
-      "note": "The value of the wasted food itself. Open item O-2 has not settled whether this is included, and at cost or at retail price, so it defaults to zero and the cost metric reports disposal cost and the waste levy only."
+      "note": "The value of the wasted food itself. Open item O-2 closed at contract v1.48, and not by choosing between cost and retail: the value of the food does not enter this formula at all. The client ruled that it is a figure the business states about its own operation, collected and reported as interfaces.md 4.5's money block, which is statistics and never a metric. This constant therefore stays at zero permanently, and the cost metric reports disposal cost and the waste levy only."
     }
   ],
   "formulas": [
@@ -44,7 +44,7 @@
     {
       "metric": "cost",
       "expression": "qty_kg * (upstream + downstream + const_FOOD_VALUE_PER_KG)",
-      "notes": "Disposal cost and the waste levy, plus the value of the food itself once O-2 is settled and FOOD_VALUE_PER_KG stops being zero."
+      "notes": "Disposal cost and the waste levy. The value of the food itself is deliberately not here: O-2 closed at contract v1.48 in favour of keeping it out of the formula, so FOOD_VALUE_PER_KG stays at zero. Raising it in place would understate the benefit of prevention -- see architecture.md 10, 'O-2 is O-7 again, in the constant dimension'."
     },
     {
       "metric": "mass",
@@ -165,6 +165,7 @@
   "downstream": [
     {
       "destination": "landfill",
+      "sector": null,
       "food_category": "dairy",
       "metric": "co2e",
       "value_per_kg": "0.9900000000",
@@ -173,6 +174,7 @@
     },
     {
       "destination": "landfill",
+      "sector": null,
       "food_category": null,
       "metric": "co2e",
       "value_per_kg": "0.7000000000",
@@ -181,6 +183,7 @@
     },
     {
       "destination": "landfill",
+      "sector": null,
       "food_category": null,
       "metric": "ch4",
       "value_per_kg": "0.0270000000",
@@ -189,6 +192,7 @@
     },
     {
       "destination": "landfill",
+      "sector": null,
       "food_category": null,
       "metric": "cost",
       "value_per_kg": "0.0600000000",
@@ -197,6 +201,7 @@
     },
     {
       "destination": "compost",
+      "sector": null,
       "food_category": null,
       "metric": "co2e",
       "value_per_kg": "0.2100000000",
@@ -205,6 +210,7 @@
     },
     {
       "destination": "compost",
+      "sector": null,
       "food_category": null,
       "metric": "ch4",
       "value_per_kg": "0.0002000000",
@@ -213,6 +219,7 @@
     },
     {
       "destination": "compost",
+      "sector": null,
       "food_category": null,
       "metric": "cost",
       "value_per_kg": "0.0350000000",
@@ -221,6 +228,7 @@
     },
     {
       "destination": "anaerobic_digestion",
+      "sector": null,
       "food_category": null,
       "metric": "co2e",
       "value_per_kg": "0.0700000000",
@@ -229,6 +237,7 @@
     },
     {
       "destination": "anaerobic_digestion",
+      "sector": null,
       "food_category": null,
       "metric": "ch4",
       "value_per_kg": "0.0010000000",
@@ -237,6 +246,7 @@
     },
     {
       "destination": "anaerobic_digestion",
+      "sector": null,
       "food_category": null,
       "metric": "cost",
       "value_per_kg": "0.0450000000",
@@ -245,6 +255,7 @@
     },
     {
       "destination": "animal_feed",
+      "sector": null,
       "food_category": null,
       "metric": "co2e",
       "value_per_kg": "-0.1500000000",
@@ -253,6 +264,7 @@
     },
     {
       "destination": "not_harvested",
+      "sector": null,
       "food_category": null,
       "metric": "co2e",
       "value_per_kg": "0.1200000000",
@@ -261,6 +273,7 @@
     },
     {
       "destination": "prevention",
+      "sector": null,
       "food_category": null,
       "metric": "co2e",
       "value_per_kg": "0.0000000000",
@@ -269,6 +282,7 @@
     },
     {
       "destination": "prevention",
+      "sector": null,
       "food_category": null,
       "metric": "ch4",
       "value_per_kg": "0.0000000000",
@@ -277,6 +291,7 @@
     },
     {
       "destination": "prevention",
+      "sector": null,
       "food_category": null,
       "metric": "cost",
       "value_per_kg": "0.0000000000",
@@ -291,8 +306,25 @@
       "source_metric": "co2e",
       "value_per_unit": "4.1800000000",
       "label_template": "Equivalent to driving {value} km",
+      "label_template_one": "Equivalent to driving {value} km",
+      "family": "driving",
+      "min_value": "1.0000000000",
+      "max_value": null,
       "source_note": "PLACEHOLDER. Open item O-3 — the New Zealand basis for this conversion is not settled. Roughly one kilometre of an average light petrol vehicle per 0.24 kg CO2e.",
       "sort_order": 10
+    },
+    {
+      "code": "metres_driven",
+      "name": "Metres driven",
+      "source_metric": "co2e",
+      "value_per_unit": "4180.0000000000",
+      "label_template": "Equivalent to driving {value} m",
+      "label_template_one": "Equivalent to driving {value} m",
+      "family": "driving",
+      "min_value": null,
+      "max_value": null,
+      "source_note": "PLACEHOLDER, and derived rather than sourced: the row above, in metres. Open item O-3 — the New Zealand basis for the kilometre figure is not settled, so this one is not settled either.",
+      "sort_order": 11
     }
   ]
 }

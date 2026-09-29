@@ -45,31 +45,42 @@ on:
       # `moving_tag` in the `version` job), so `alpha` never points at anything
       # that is not on main.
       - 'build/**'
-  pull_request:
+  # THERE IS DELIBERATELY NO `pull_request:` TRIGGER. Removed 2026-08-12.
+  #
+  # The suite against MySQL 8 takes 18 minutes and is the whole cost of a run:
+  # a pull request publishes nothing, so its image jobs finish in seconds and
+  # `Alpha tag` skips entirely. Eighteen minutes is therefore what every pull
+  # request cost, merged or not. In the second half of the semester five people
+  # open pull requests continuously and not all of them are headed for `main`,
+  # which spends that allowance on branches that never merge.
+  #
+  # WHAT THIS GIVES UP, plainly: a change that breaks the suite is now found on
+  # `main` instead of before it, so `main` goes red rather than the pull
+  # request. `workflow_dispatch` is the mitigation and it works on any branch -
+  # run it by hand before merging anything you want verified first.
   workflow_dispatch:
 
-# One run per ref.
+# One run per ref, and NOTHING IS EVER CANCELLED.
 #
-# CANCELLATION IS LIMITED TO PULL REQUESTS, and that is the whole subtlety
-# here. A PR builds to verify and pushes nothing, so interrupting one costs a
-# rebuild and nothing else - which is where the arm64 minutes were worth saving
-# on a branch somebody is pushing to repeatedly.
+# Cancellation used to be allowed on pull requests, where it was safe for one
+# reason: a PR published nothing, so interrupting one cost a rebuild and no
+# more. With the `pull_request` trigger gone every remaining run - a push to
+# `main` or to `build/**`, or a manual dispatch - can publish, and cancelling
+# one can land inside the same `imagetools create` -> push window that
+# release.yaml protects for the same reason. A run killed mid-publish leaves
+# the moving tag torn, pointing at one architecture or at nothing. The blast
+# radius is only ever a disposable alpha tag that the next run republishes -
+# but "it heals itself shortly" is not a property worth relying on when the
+# alternative is queueing.
 #
-# On a push, cancelling can land in the same `imagetools create` -> push window
-# that release.yaml protects with `cancel-in-progress: false`, and for the same
-# reason: a run killed mid-publish leaves the moving tag torn, pointing at one
-# architecture or at nothing. The blast radius is only ever a disposable alpha
-# tag that the very next run republishes - but "it heals itself shortly" is not
-# a property worth relying on when the alternative is queueing.
-#
-# So pushes QUEUE instead. The group is per-ref, so a second push waits for the
-# first rather than running beside it - which also keeps two pytest processes
-# off one database, the deadlock tests/admin's shared-database fixtures hit
-# when two runs overlap. Each run does get its own MySQL service container, so
-# that was already safe, but queueing makes it safe by construction.
+# So runs QUEUE. The group is per-ref, so a second push waits for the first
+# rather than running beside it - which also keeps two pytest processes off one
+# database, the deadlock tests/admin's shared-database fixtures hit when two
+# runs overlap. Each run does get its own MySQL service container, so that was
+# already safe, but queueing makes it safe by construction.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -162,7 +173,9 @@ jobs:
     with:
       version: ${{ needs.version.outputs.version }}
       arch_tag_prefix: ${{ needs.version.outputs.sha_tag }}
-      # A pull request builds to verify and publishes nothing.
+      # Always true since the `pull_request` trigger was removed. Kept, not
+      # simplified: restoring that trigger must not silently start publishing
+      # images out of pull requests, and this is the guard that stops it.
       push: ${{ github.event_name != 'pull_request' }}
 
   # ===========================================================================
@@ -173,7 +186,8 @@ jobs:
     needs: [version, test, build]
     # `always()` so a failed or never-scheduled arm64 leg does not skip this
     # job - that is the whole point. But NOT unconditional: the tests must have
-    # passed, and a pull request publishes nothing.
+    # passed. The pull-request clause is always true since that trigger was
+    # removed, and is kept for the reason the `push:` input above is kept.
     if: always() && needs.test.result == 'success' && github.event_name != 'pull_request'
     permissions:
       contents: read

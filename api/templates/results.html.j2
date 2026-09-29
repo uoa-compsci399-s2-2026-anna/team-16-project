@@ -1,0 +1,298 @@
+{#-
+  The export document.
+
+  WHAT THIS FILE IS ALLOWED TO DO: print. Every figure below arrives as an
+  already-formatted string on `doc`; there is no arithmetic here, no `sum`, no
+  `|float` and no `round`. Section 7.6.1 leaves the front end no calculation but
+  unit conversion, and a server-side template that summed a column would be the
+  same defect one layer down -- a second calculation site with no golden case
+  behind it. `api/pdf_render.py` builds this context out of the engine's own
+  `CalculationResult` and does no arithmetic either.
+
+  WHAT IT MUST NOT DO: drop the placeholder warning. See the `mock-warning`
+  block below, and `api/pdf_render.py::_assert_mock_warning_present`, which
+  refuses to hand this document to WeasyPrint at all if an edit here removes
+  it while the factor set is mock.
+
+  NAMES ARE NOT TRANSLATED. `sector`, `food_category`, `destination` and
+  `metric` names are staff-typed rows out of the taxonomy (section 2.1). They
+  are printed exactly as they were typed, in whatever language they were typed
+  in, in every locale this document renders in.
+
+  EVERYTHING ELSE IS. Every label, heading and sentence below arrives on `doc`
+  already translated into the document's own language, out of the same
+  `web/locales/*.json` catalogues the calculator page reads
+  (`api/i18n.py`). There is no English fallback: a catalogue missing one of
+  these strings raises rather than printing English into the middle of a
+  translated report.
+
+  AND NOTHING HERE MIRRORS ANYTHING. `<html dir>` two lines down is the whole
+  of the right-to-left support; Pango runs the Unicode bidirectional algorithm
+  from it, and `results.css` uses logical properties throughout so every
+  accent bar, indent and column alignment follows without a rule being
+  written twice.
+-#}
+<!DOCTYPE html>
+<html lang="{{ doc.lang }}" dir="{{ doc.dir }}">
+<head>
+  <meta charset="utf-8">
+  <title>{{ doc.title }}</title>
+</head>
+<body>
+
+{#- THE PLACEHOLDER WARNING.
+
+    A DIRECT CHILD OF <body>, first in the flow, above the title and above
+    every figure. Not inside the header, not inside a section, not inside any
+    element that a later edit could collapse, clip, float or paginate away --
+    there is no ancestor here but <body> itself.
+
+    Its inner flag element is what `results.css` reads with `string-set` to
+    repeat "placeholder data" in the running header of every page, so the
+    banner is both a block at the top and a mark on each sheet.
+
+    This block is not optional and there is no parameter that suppresses it:
+    `doc.is_mock` is `result.is_mock` off the engine's own result, and while
+    open item O-1 stands -- the client has supplied no real emissions factors
+    -- it is true of every calculation this system can perform. A PDF is the
+    artefact most likely to be read months later by someone who was not in the
+    room; it has to say so on its face. -#}
+{% if doc.is_mock %}
+<aside class="mock-warning" role="note">
+  <strong class="mock-warning__flag">{{ doc.mock_flag }}</strong>
+  <p class="mock-warning__body">{{ doc.mock_body }}</p>
+</aside>
+{% endif %}
+
+{#- THE FALLBACK DISCLOSURE (contract v1.59). Beside the placeholder warning
+    and independent of it: a real factor set can still price a food only at
+    its category, and a placeholder one can price a food individually. The
+    list is `doc.category_averages`, already worded and already translated by
+    `_build_context` -- this template chooses where it sits, never whether a
+    figure fell back. -#}
+{% if doc.category_averages %}
+<aside class="mock-warning" role="note">
+  <strong class="mock-warning__flag">{{ doc.category_average_flag }}</strong>
+  {% for sentence in doc.category_averages %}
+  <p class="mock-warning__body">{{ sentence }}</p>
+  {% endfor %}
+</aside>
+{% endif %}
+
+{#- THE TITLE BLOCK (Task 5). What it is (the heading), who produced it, when
+    it was generated, and the factor-set version it used - the client's own
+    words were that the document "lacks brand character", and this is the
+    fix: a masthead rather than a bare heading. `.cover__mark` is the brand's
+    half-circle, used singly at large scale per the guideline's own wording;
+    `results.css` draws it as a flex sibling of the text so no title in any
+    of the twenty-one languages can run under it. Every word here is either
+    already a catalogue key the front end asks for elsewhere (§7.6's own
+    constraint - see `api/pdf_render.py`'s `_LABELS` comment) or a value with
+    no language of its own: the generated stamp is ISO-8601-shaped and the
+    factor-set token is `GWP100`, for the same reason neither needs a
+    dictionary entry. -#}
+<header class="cover">
+  {#- THE LOGO ITSELF, not just the half-circle drawn from it. Review finding
+      on the first title block: the masthead worked but the Kai Commitment
+      logo appeared nowhere, so a green shape and a byline carried the whole
+      identity. `kai-commitment-logo.png` is the exact file `web/home.html`,
+      `web/methodology.html` and `web/stats.html` already print on a light
+      ground (`api/assets/kai-commitment-logo.png` is a byte-identical copy,
+      the same discipline `api/assets/locales/` follows for the catalogues) -
+      placed at its own natural size, never recoloured, cropped or redrawn,
+      because the brand guideline is explicit that the mark may not be
+      altered. `alt=""`: decorative here, since `doc.title`, `doc.produced_by`
+      and the half-circle beside it already say who this document is from in
+      text a screen reader or a text extraction already reads. -#}
+  <img class="cover__logo" src="kai-commitment-logo.png" alt="">
+  <div class="cover__mark" aria-hidden="true"></div>
+  <div class="cover__body">
+    <h1>{{ doc.title }}</h1>
+    <p class="subtitle">{{ doc.subtitle }}</p>
+    <p class="cover__meta">{{ doc.produced_by }} &middot; {{ doc.generated_at }} &middot; {{ doc.factor_set }}</p>
+  </div>
+</header>
+
+{#- THE REPORTING PERIOD (contract v1.68). One line, above every figure and
+    below the masthead, in the same place and the same words
+    `web/js/results.js` puts it on the screen and into the text download - a
+    figure somebody keeps for months has to carry the period it describes, and
+    this document printed none at all until v1.68 although `time_frame` had
+    reached its payload since v1.48.
+
+    A LABEL, NOT A MULTIPLIER. It sits on its own rather than beside any
+    figure, exactly as it does on screen, because nothing below it is scaled by
+    it (§2.3) and a period printed next to a total invites the reader to do the
+    arithmetic the contract forbids.
+
+    `api/pdf_render.py::_period_text` decides what it says and whether there is
+    anything to say; this only chooses where it sits. Absent when the visitor
+    stated no period - never "not stated", which would be a phrase implying
+    that is itself a period. -#}
+{% if doc.period %}
+<p class="period">{{ doc.period }}</p>
+{% endif %}
+
+<div class="summary">
+  <div class="summary__item">
+    <span class="summary__label">{{ doc.labels.total_mass }}</span>
+    <span class="summary__value">{{ doc.total_kg }} kg</span>
+  </div>
+  {#- §4.6's totals-level share of production, in its own four states (the
+      fourth, `undefined`, added at v1.51) -
+      `api/pdf_render.py::_production_share_context` decides which of
+      `complete`, `incomplete`, `undefined` and `not_supplied` applies and
+      this only prints what it returns. The note explains anything but a
+      `complete` percentage, which carries none. -#}
+  <div class="summary__item">
+    <span class="summary__label">{{ doc.labels.production_share }}</span>
+    <span class="summary__value">{{ doc.production_share.value }}</span>
+  </div>
+  {#- The factor set and the methane horizon in one tile. No catalogue key
+      names the horizon, and one English label in a Tamil report is worse than
+      a compact one: `GWP100` is the ISO notation and reads the same in every
+      language. `api/pdf_render.py` joins the two; nothing is computed here. -#}
+  <div class="summary__item">
+    <span class="summary__label">{{ doc.labels.factor_set }}</span>
+    <span class="summary__value">{{ doc.factor_set }}</span>
+  </div>
+</div>
+{% if doc.production_share.note %}
+<p class="summary-note">{{ doc.production_share.note }}</p>
+{% endif %}
+
+<h2>{{ doc.labels.totals }}</h2>
+<table>
+  <thead>
+    <tr>
+      <th>{{ doc.labels.metric }}</th>
+      <th class="figure">{{ doc.labels.current }}</th>
+      <th class="figure">{{ doc.labels.alternative }}</th>
+      <th class="figure">{{ doc.labels.net_benefit }}</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in doc.totals %}
+    <tr>
+      <td>{{ row.name }} <span class="unit">({{ row.unit }})</span></td>
+      <td class="figure">{{ row.current }}</td>
+      <td class="figure">{{ row.alternative }}</td>
+      <td class="figure">{{ row.net_benefit }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% if doc.destinations %}
+<h2>{{ doc.labels.destinations }}</h2>
+<table>
+  <thead>
+    <tr>
+      <th>{{ doc.labels.destination }}</th>
+      <th class="figure">{{ doc.labels.current }} (kg)</th>
+      <th class="figure">{{ doc.labels.alternative }} (kg)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in doc.destinations %}
+    <tr>
+      <td>{{ row.name }}</td>
+      <td class="figure">{{ row.current }}</td>
+      <td class="figure">{{ row.alternative }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if doc.money %}
+<h2>{{ doc.labels.money }}</h2>
+<table>
+  <tbody>
+    {% for row in doc.money %}
+    <tr>
+      <td>{{ row.name }}</td>
+      {#- §4.6: a field can carry a translated sentence rather than a figure
+          (partial coverage - see `api/pdf_render.py::_money_rows`), and that
+          sentence must wrap like ordinary text rather than being held to
+          `.figure`'s `white-space: nowrap`, which exists for numbers. -#}
+      {% if row.is_note %}
+      <td class="money-note">{{ row.value }}</td>
+      {% else %}
+      <td class="figure">{{ row.value }}</td>
+      {% endif %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if doc.equivalences %}
+<h2>{{ doc.labels.equivalences }}</h2>
+{#- `row.label` is the engine's own interpolated sentence (section 3's
+    interpolation rule) and is printed verbatim, once, as the card's own
+    heading. The three lines under it are the same three facts `web/js/
+    results.js::equivalenceBasis` renders behind the page's disclosure and
+    the text export prints under the same heading -- §6.3: the PDF is the
+    copy most likely to be forwarded to someone who will challenge the
+    figure, and paper has no "open" gesture to hide them behind.
+
+    The last row's `<dd>` is `row.figure` -- the equivalence's own value,
+    formatted the same way `web/js/results.js::equivalenceBasis` formats it
+    (`formatNumber(row.value, 0)`) -- and NOT `row.label` a second time. It
+    used to be: `Passenger vehicles for a year = Equivalent to running 2
+    passenger vehicles for a year`, restating the whole heading sentence one
+    line below it where a reader following `Total x Per unit = ?` expects the
+    answer. The final review caught the page's copy of this stutter first;
+    fixing the page and leaving this one turned a shared wart both surfaces
+    had into a fresh disagreement between them, which is worse. -#}
+<ul class="equivalences">
+  {% for row in doc.equivalences %}
+  <li>
+    <p class="equivalence__label">{{ row.label }}</p>
+    <dl class="equivalence-basis">
+      <div><dt>{{ doc.labels.equivalence_total }}</dt><dd>{{ row.total }}</dd></div>
+      <div><dt>{{ doc.labels.equivalence_per_unit }}</dt><dd>&times; {{ row.per_unit }}</dd></div>
+      <div><dt>{{ row.name }}</dt><dd>= {{ row.figure }}</dd></div>
+    </dl>
+    <p class="equivalence-basis__note">{{ doc.labels.equivalence_basis }} {{ row.basis }}</p>
+    {% if row.disclaimer %}<p class="equivalence-basis__note">{{ row.disclaimer }}</p>{% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+{% if doc.entries %}
+<h2>{{ doc.labels.entries }}</h2>
+{% for entry in doc.entries %}
+<section class="entry">
+  <h3 class="entry__heading">{{ entry.sector }} &middot; {{ entry.food_category }}</h3>
+  <p class="entry__meta">{{ doc.labels.total_mass }}: {{ entry.total_kg }} kg</p>
+  <table>
+    <thead>
+      <tr>
+        <th>{{ doc.labels.metric }}</th>
+        <th class="figure">{{ doc.labels.current }}</th>
+        <th class="figure">{{ doc.labels.alternative }}</th>
+        <th class="figure">{{ doc.labels.net_benefit }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in entry.metrics %}
+      <tr>
+        <td>{{ row.name }} <span class="unit">({{ row.unit }})</span></td>
+        <td class="figure">{{ row.current }}</td>
+        <td class="figure">{{ row.alternative }}</td>
+        <td class="figure">{{ row.net_benefit }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endfor %}
+{% endif %}
+
+<p class="colophon">{{ doc.colophon }}</p>
+
+</body>
+</html>

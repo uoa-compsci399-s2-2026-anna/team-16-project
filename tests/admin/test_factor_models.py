@@ -99,6 +99,97 @@ def test_a_specific_and_a_generic_downstream_row_coexist(session):
     assert len(session.scalars(select(FactorDownstream)).all()) == 2
 
 
+def test_two_downstream_rows_generic_in_the_sector_only_are_refused(session):
+    """Contract §2.2 (v1.31). The same trap, one column along.
+
+    Both rows name the same food category and leave `sector_id` NULL, so the
+    declared five-column UNIQUE is silent on them — MySQL compares NULLs as
+    distinct. `uq_factor_downstream_generic` COALESCEs **both** nullable
+    columns, and this is the row pair that proves the sector half of it. Delete
+    `(COALESCE(sector_id, 0))` from the index and this is the first test to
+    notice.
+    """
+    fs, metric = _set(session), _metric(session)
+    dest = _downstream_prereqs(session)
+    cat = FoodCategory(code="dairy", name="Dairy")
+    session.add(cat)
+    session.flush()
+
+    for value in ("1.0", "2.0"):
+        session.add(FactorDownstream(
+            factor_set_id=fs.id, destination_id=dest, sector_id=None,
+            food_category_id=cat.id, metric_id=metric.id,
+            value_per_kg=Decimal(value),
+        ))
+
+    with pytest.raises(IntegrityError):
+        session.flush()
+
+
+def test_two_downstream_rows_naming_the_same_sector_are_refused(session):
+    """The non-NULL half. Nothing here is a generic row, so this is the
+    declared UNIQUE doing its own job — asserted because a five-column UNIQUE
+    that had been left at four would let these two coexist and the lookup
+    would pick one of them at random."""
+    fs, metric = _set(session), _metric(session)
+    dest = _downstream_prereqs(session)
+    sector = Sector(code="processing", name="Processing")
+    cat = FoodCategory(code="dairy", name="Dairy")
+    session.add_all([sector, cat])
+    session.flush()
+
+    for value in ("1.0", "2.0"):
+        session.add(FactorDownstream(
+            factor_set_id=fs.id, destination_id=dest, sector_id=sector.id,
+            food_category_id=cat.id, metric_id=metric.id,
+            value_per_kg=Decimal(value),
+        ))
+
+    with pytest.raises(IntegrityError):
+        session.flush()
+
+
+def test_all_four_downstream_rows_of_one_lookup_coexist(session):
+    """§4.1's four candidates must all be insertable at once.
+
+    A uniqueness rule tight enough to refuse one of these would make the
+    precedence order unreachable — the four-step lookup can only be exercised
+    by a set that holds all four rows. The complement of the two tests above:
+    those assert the duplicates are refused, this asserts the *permitted*
+    combination is permitted, and that each row is the one it was written as.
+    """
+    fs, metric = _set(session), _metric(session)
+    dest = _downstream_prereqs(session)
+    sector = Sector(code="processing", name="Processing")
+    cat = FoodCategory(code="dairy", name="Dairy")
+    session.add_all([sector, cat])
+    session.flush()
+
+    for sector_id, food_id, value in (
+        (sector.id, cat.id, "11.0"),
+        (sector.id, None, "22.0"),
+        (None, cat.id, "33.0"),
+        (None, None, "44.0"),
+    ):
+        session.add(FactorDownstream(
+            factor_set_id=fs.id, destination_id=dest, sector_id=sector_id,
+            food_category_id=food_id, metric_id=metric.id,
+            value_per_kg=Decimal(value),
+        ))
+    session.flush()
+
+    stored = {
+        (row.sector_id, row.food_category_id): row.value_per_kg
+        for row in session.scalars(select(FactorDownstream)).all()
+    }
+    assert stored == {
+        (sector.id, cat.id): Decimal("11.0000000000"),
+        (sector.id, None): Decimal("22.0000000000"),
+        (None, cat.id): Decimal("33.0000000000"),
+        (None, None): Decimal("44.0000000000"),
+    }
+
+
 def test_an_upstream_factor_is_unique_per_combination(session):
     """Both rows leave `destination_id` NULL, which is the generic case — so
     since v1.8 this is the functional index below doing the work, not the

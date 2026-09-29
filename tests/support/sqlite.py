@@ -29,7 +29,7 @@ on SQLite, which is why B isolated it in the first place.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from types import SimpleNamespace
 
 import pytest
@@ -54,14 +54,52 @@ from db.models import (
     UnitPreset,
 )
 from db.repository import invalidate_factor_bundle
+from engine.types import ItemBasis, UpstreamBasis
 
 
 class FakeBundle:
+    """The bundle dict, plus the two item queries the real `FactorBundle`
+    answers (v1.58).
+
+    `DefaultEngineAdapter.food_item_problems` asks a bundle to resolve each
+    named food and turns the refusal into a §9 detail with a field. The fake
+    adapter delegates that method to the real one -- `serialize_result`
+    already does, for the same reason -- so what has to exist here is the
+    bundle's side of the question, not a second copy of the rule.
+
+    `resolve_food_item` is `engine/bundle.py`'s, six lines and no arithmetic:
+    `None` passes through, a food nobody declared is unknown, and a food whose
+    parent is not the category it arrived with is refused rather than priced
+    at the wrong average. `tests/support/test_fake_engine_agreement.py` runs
+    both implementations over one corpus, which is what stops the copy
+    drifting.
+    """
+
     def __init__(self, data):
         self.data = data
+        self.food_item_category_of = {
+            row["code"]: row["food_category"]
+            for row in data.get("food_items", [])
+        }
 
     def validate(self):
         return self.data.get("_problems", [])
+
+    def has_food_item(self, code):
+        return code in self.food_item_category_of
+
+    def resolve_food_item(self, food_item, food_cat):
+        if food_item is None:
+            return None
+        if food_item not in self.food_item_category_of:
+            raise UnknownCodeError(f"unknown food_item: {food_item!r}")
+        parent = self.food_item_category_of[food_item]
+        if parent != food_cat:
+            raise UnknownCodeError(
+                f"food_item {food_item!r} belongs to food_category "
+                f"{parent!r}, not {food_cat!r}"
+            )
+        return food_item
 
 
 class UnknownCodeError(Exception):
@@ -77,34 +115,73 @@ class FormulaError(Exception):
         self.reason = "division by zero"
 
 
-def _scenario_result(lines, *, with_breakdown):
+def _scenario_result(lines, *, with_breakdown, rolled_up=False):
     """A §3 `ScenarioResult`, with a deliberately trivial `co2e`.
 
     The single metric's total is the scenario's mass, so no factor
     arithmetic is faked here — the numbers in these tests are the ones the
     request carried. What the metric exists for is *shape*: without it the
     §6.2 body has an empty `metrics` object and nothing exercises the
-    `by_destination` mapping, the `metric_code`/`destination_code` renames,
-    or their omission at the totals level.
+    `by_destination` mapping or the `metric_code`/`destination_code` renames.
+
+    `rolled_up` mirrors `engine.calculate._roll_up` (v1.48, amending §3 rule
+    2): at the entry level each line keeps its own row, in request order,
+    because two lines to the same destination in one scenario are two
+    separate contributions; at the totals level, `lines` is the flattened,
+    cross-entry list and rows are merged one per destination, summing
+    `qty_kg` (and, since this fake's `co2e` total *is* the mass, `value`
+    along with it) and leaving the two rate fields at zero — they are
+    per-kilogram rates that can differ between the entries sharing a
+    destination, not sums.
     """
     total = sum((line.qty_kg for line in lines), Decimal("0"))
-    metric = SimpleNamespace(
-        metric_code="co2e",
-        unit="kg CO2e",
-        display_precision=1,
-        total=total,
-        by_destination=tuple(
+    if not with_breakdown:
+        rows: tuple = ()
+    elif rolled_up:
+        merged: dict[str, Decimal] = {}
+        order: list[str] = []
+        for line in lines:
+            if line.destination_code not in merged:
+                merged[line.destination_code] = Decimal("0")
+                order.append(line.destination_code)
+            merged[line.destination_code] += line.qty_kg
+        rows = tuple(
+            SimpleNamespace(
+                destination_code=code,
+                qty_kg=merged[code],
+                upstream=Decimal("0.0000000000"),
+                downstream=Decimal("0.0000000000"),
+                value=merged[code],
+                #: v1.59, `None` for the same reason the rates above are
+                #: zero: a totals-level row is a sum across entries and was
+                #: priced by no single candidate row.
+                upstream_basis=None,
+            )
+            for code in order
+        )
+    else:
+        rows = tuple(
             SimpleNamespace(
                 destination_code=line.destination_code,
                 qty_kg=line.qty_kg,
                 upstream=Decimal("0.0000000000"),
                 downstream=Decimal("0.0000000000"),
                 value=line.qty_kg,
+                #: v1.59. `ABSENT` is the truthful member for this fake and
+                #: not a placeholder: it carries no factors at all (its
+                #: `co2e` value *is* the mass), so no candidate row answered,
+                #: which is exactly what §2.2's fifth step means. A member
+                #: naming a row would claim a lookup this adapter never did.
+                upstream_basis=UpstreamBasis.ABSENT,
             )
             for line in lines
         )
-        if with_breakdown
-        else (),
+    metric = SimpleNamespace(
+        metric_code="co2e",
+        unit="kg CO2e",
+        display_precision=1,
+        total=total,
+        by_destination=rows,
     )
     return SimpleNamespace(
         total_kg=total,
@@ -115,6 +192,18 @@ def _scenario_result(lines, *, with_breakdown):
                 label="Equivalent to driving 0 km",
                 value=Decimal("0.0000000000"),
                 source_metric_code="co2e",
+                #: v1.52. `name`/`value_per_unit`/`value_per_unit_display`/
+                #: `source_note` mirror the `km_driven` fixture row -- this
+                #: fake's `co2e` total is trivial (the docstring above), so
+                #: no test asserts these beyond their presence and shape.
+                name="Kilometres driven",
+                value_per_unit=Decimal("4.1800000000"),
+                value_per_unit_display="4.18",
+                source_note=(
+                    "PLACEHOLDER. Open item O-3 — the New Zealand basis for "
+                    "this conversion is not settled. Roughly one kilometre "
+                    "of an average light petrol vehicle per 0.24 kg CO2e."
+                ),
             ),
         ),
     )
@@ -128,7 +217,8 @@ class FakeEngineAdapter:
     own sector, food category and scenario lines — and `calculate` returns
     the §3 `CalculationResult`: `factor_set_version`, `is_mock`,
     `gwp_horizon`, `totals` and `entries`, with `by_destination` populated
-    per entry and empty at the totals level (§3 rule 2).
+    at both levels (v1.48, amending §3 rule 2) — one row per line per
+    entry, merged one row per destination at the totals level.
 
     **`serialize_result` is not faked.** It delegates to the real
     `DefaultEngineAdapter`, so every API test that reads a 200 body is
@@ -154,17 +244,45 @@ class FakeEngineAdapter:
                 SimpleNamespace(
                     sector_code=entry.sector,
                     food_category_code=entry.food_category,
+                    food_item_code=entry.food_item,
                     current=lines(entry.current),
                     alternative=lines(entry.alternative),
+                    total_input_kg=entry.total_input_kg,
+                    total_value_nzd=entry.total_value_nzd,
+                    wasted_value_nzd=entry.wasted_value_nzd,
                 )
                 for entry in payload.entries
             ),
             gwp_horizon=payload.gwp_horizon,
         )
 
+    def food_item_problems(self, payload, bundle):
+        """Not faked, for the same reason `serialize_result` is not: the
+        mapping from a bundle's refusal to a §9 detail is the piece with no
+        other production caller, and a hand-written copy here would let the
+        API tests agree with something the API does not do."""
+        from api.engine_adapter import DefaultEngineAdapter
+
+        return DefaultEngineAdapter().food_item_problems(payload, bundle)
+
     def calculate(self, request, bundle):
         if bundle.data.get("_raise_formula"):
             raise FormulaError()
+        #: v1.58. The engine resolves the food before it prices a line, and
+        #: refusing here is what keeps a route that skipped
+        #: `food_item_problems` from silently pricing an incoherent pair.
+        standard_mix = next(
+            (
+                row["code"]
+                for row in bundle.data.get("food_categories", [])
+                if row.get("is_standard_mix")
+            ),
+            "",
+        )
+        for entry in request.entries:
+            bundle.resolve_food_item(
+                entry.food_item_code, entry.food_category_code or standard_mix
+            )
         destinations = {row["code"] for row in bundle.data.get("destinations", [])}
         for entry in request.entries:
             for scenario in (entry.current, entry.alternative):
@@ -179,6 +297,18 @@ class FakeEngineAdapter:
             SimpleNamespace(
                 sector_code=entry.sector_code,
                 food_category_code=entry.food_category_code,
+                food_item_code=entry.food_item_code,
+                #: v1.59. Rolled up the way `engine.calculate._item_basis`
+                #: rolls it up, over this fake's own rows: none of them is
+                #: item-level (see `ABSENT` above), so an entry that named a
+                #: food is `CATEGORY` -- which is the honest answer for an
+                #: adapter that priced nothing at that food -- and one that
+                #: named none is `NOT_APPLICABLE`.
+                item_basis=(
+                    ItemBasis.NOT_APPLICABLE
+                    if entry.food_item_code is None
+                    else ItemBasis.CATEGORY
+                ),
                 current=_scenario_result(entry.current, with_breakdown=True),
                 alternative=_scenario_result(entry.alternative, with_breakdown=True)
                 if entry.alternative is not None
@@ -186,6 +316,10 @@ class FakeEngineAdapter:
                 net_benefit=_net_benefit(entry.current, entry.alternative)
                 if entry.alternative is not None
                 else None,
+                production_share_percent=_share_percent(
+                    sum((line.qty_kg for line in entry.current), Decimal("0")),
+                    entry.total_input_kg,
+                ),
             )
             for entry in request.entries
         )
@@ -199,11 +333,17 @@ class FakeEngineAdapter:
             for entry in request.entries
             for line in (entry.alternative if entry.alternative is not None else entry.current)
         ]
-        totals_current = _scenario_result(current_lines, with_breakdown=False)
+        totals_current = _scenario_result(
+            current_lines, with_breakdown=True, rolled_up=True
+        )
         totals_alternative = (
-            _scenario_result(alternative_lines, with_breakdown=False)
+            _scenario_result(alternative_lines, with_breakdown=True, rolled_up=True)
             if has_alternative
             else None
+        )
+        money, money_state = _money(request.entries, bundle)
+        production_kg, production_state = _across_entries(
+            entry.total_input_kg for entry in request.entries
         )
         totals = SimpleNamespace(
             current=totals_current,
@@ -214,6 +354,13 @@ class FakeEngineAdapter:
             }
             if has_alternative
             else None,
+            money=money,
+            production_share_percent=_share_percent(
+                totals_current.total_kg, production_kg
+            ),
+            data_state=SimpleNamespace(
+                production_share_percent=production_state, **money_state
+            ),
         )
         return SimpleNamespace(
             factor_set_version=bundle.data["version_label"],
@@ -233,6 +380,149 @@ def _net_benefit(current, alternative):
     mass = sum((line.qty_kg for line in current), Decimal("0"))
     other = sum((line.qty_kg for line in alternative), Decimal("0"))
     return {"co2e": mass - other}
+
+
+def _money(entries, bundle):
+    """A stand-in for engine.calculate._money (§4.5), kept in step with it
+    on purpose: fix round 2 found that a fake computing a plausible but
+    different number is invisible to every shape-only test in this suite,
+    so this mirrors the real per-entry rate, the real exclusion of
+    prevention from both sides of diverted_kg, and the real quantisation of
+    the two passthrough sums, rather than a simplified stand-in.
+
+    Reads prevention from `bundle.data["destinations"][*]["is_prevention"]`
+    -- the real flag `build_bundle_data` now selects (fix round 1) -- rather
+    than a literal `"prevention"` string, since a request POSTed through
+    this fake goes through the same projection a live request does.
+    """
+    prevention_codes = {
+        row["code"]
+        for row in bundle.data.get("destinations", [])
+        if row.get("is_prevention")
+    }
+
+    def is_prevention(code):
+        return code in prevention_codes
+
+    total_value_nzd, total_state = _across_entries(
+        entry.total_value_nzd for entry in entries
+    )
+    wasted_value_nzd, wasted_state = _across_entries(
+        entry.wasted_value_nzd for entry in entries
+    )
+    if total_state == NOT_SUPPLIED and wasted_state == NOT_SUPPLIED:
+        return None, {
+            "total_value_nzd": NOT_SUPPLIED,
+            "wasted_value_nzd": NOT_SUPPLIED,
+            "wasted_share_percent": NOT_SUPPLIED,
+            "saving_nzd": NOT_SUPPLIED,
+        }
+
+    if total_value_nzd is not None:
+        total_value_nzd = total_value_nzd.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    if wasted_value_nzd is not None:
+        wasted_value_nzd = wasted_value_nzd.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    share_state = _combined_state(total_state, wasted_state)
+    wasted_share_percent = (
+        _share_percent(wasted_value_nzd, total_value_nzd)
+        if share_state == COMPLETE
+        else None
+    )
+
+    saving_nzd = None
+    has_alternative = any(entry.alternative is not None for entry in entries)
+    saving_state = (
+        wasted_state
+        if has_alternative and wasted_state != NOT_SUPPLIED
+        else NOT_SUPPLIED
+    )
+    if saving_state == COMPLETE:
+        saving_total = Decimal("0")
+        any_entry_priced = False
+        for entry in entries:
+            if entry.wasted_value_nzd is None:
+                continue
+            entry_current_kg = sum((line.qty_kg for line in entry.current), Decimal("0"))
+            if entry_current_kg == 0:
+                continue
+            value_per_kg = entry.wasted_value_nzd / entry_current_kg
+            alternative_lines = (
+                entry.alternative if entry.alternative is not None else entry.current
+            )
+            current_non_prevention_kg = sum(
+                (
+                    line.qty_kg
+                    for line in entry.current
+                    if not is_prevention(line.destination_code)
+                ),
+                Decimal("0"),
+            )
+            alternative_non_prevention_kg = sum(
+                (
+                    line.qty_kg
+                    for line in alternative_lines
+                    if not is_prevention(line.destination_code)
+                ),
+                Decimal("0"),
+            )
+            diverted_kg = current_non_prevention_kg - alternative_non_prevention_kg
+            saving_total += value_per_kg * diverted_kg
+            any_entry_priced = True
+        if any_entry_priced:
+            saving_nzd = saving_total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    return (
+        SimpleNamespace(
+            total_value_nzd=total_value_nzd,
+            wasted_value_nzd=wasted_value_nzd,
+            wasted_share_percent=wasted_share_percent,
+            saving_nzd=saving_nzd,
+        ),
+        {
+            "total_value_nzd": total_state,
+            "wasted_value_nzd": wasted_state,
+            "wasted_share_percent": share_state,
+            "saving_nzd": saving_state,
+        },
+    )
+
+
+#: The three states of §4.6, re-typed as literals for the same reason
+#: `Decimal("0.01")` and `ROUND_HALF_UP` are: this file is a hand-kept copy
+#: that `tests/support/test_fake_engine_agreement.py` compares against the
+#: real engine, and importing the real constants would let a rename in
+#: `engine/types.py` pass unnoticed.
+COMPLETE = "complete"
+INCOMPLETE = "incomplete"
+NOT_SUPPLIED = "not_supplied"
+
+
+def _across_entries(values):
+    """A stand-in for engine.calculate._across_entries (§4.6): the sum only
+    when every entry supplied the input, and otherwise which of the two kinds
+    of absence it is."""
+    values = list(values)
+    present = [value for value in values if value is not None]
+    if not present:
+        return None, NOT_SUPPLIED
+    if len(present) != len(values):
+        return None, INCOMPLETE
+    return sum(present, Decimal("0")), COMPLETE
+
+
+def _combined_state(*states):
+    if NOT_SUPPLIED in states:
+        return NOT_SUPPLIED
+    if INCOMPLETE in states:
+        return INCOMPLETE
+    return COMPLETE
+
+
+def _share_percent(part, whole):
+    if part is None or whole is None or whole == 0:
+        return None
+    return (part / whole * 100).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 @pytest.fixture
@@ -316,6 +606,10 @@ def seed(db):
         group_id=reuse.id,
         code="prevention",
         name="Prevented — waste avoided",
+        #: §2.1. The role is the flag, not the code — `admin/seed.py` sets it
+        #: on the same row for the same reason. A seed that carried the code
+        #: and not the tick would leave §6.2's guard with nothing to refuse.
+        is_prevention=True,
         sort_order=5,
     )
     destinations = [

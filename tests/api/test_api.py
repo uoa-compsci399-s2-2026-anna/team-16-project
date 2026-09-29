@@ -3,6 +3,7 @@ from httpx import ASGITransport, AsyncClient
 import io
 import json
 import zipfile
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -102,12 +103,73 @@ async def _client(app):
     return AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver")
 
 
+def _add_destination(engine, code, *, is_prevention):
+    """A taxonomy row added to the running app's database mid-test.
+
+    The `app` fixture seeds through the same engine, so a row written here is
+    one `GET /taxonomy` and `POST /calculate` both see.
+    """
+    from sqlalchemy.orm import sessionmaker
+
+    from db.models import Destination, DestinationGroup
+
+    with sessionmaker(bind=engine, expire_on_commit=False)() as db:
+        group = db.scalar(select(DestinationGroup).where(DestinationGroup.code == "reuse"))
+        db.add(Destination(group_id=group.id, code=code, name=code.title(),
+                           is_prevention=is_prevention, sort_order=999))
+        db.commit()
+
+
+def _add_food_item(engine, code, name, category_code):
+    """One `food_item` row, on the same terms as `_add_destination` above.
+
+    The seed in `tests/support/sqlite.py` creates none, and that is right: an
+    empty vocabulary is a real deployment state (Section 6.1), and four tests in
+    `tests/db` are *about* a bundle with no items at all. So the row is added
+    where it is needed rather than seeded for everyone.
+    """
+    from sqlalchemy.orm import sessionmaker
+
+    from db.models import FoodCategory, FoodItem
+
+    with sessionmaker(bind=engine, expire_on_commit=False)() as db:
+        parent = db.scalar(
+            select(FoodCategory).where(FoodCategory.code == category_code)
+        )
+        assert parent is not None, f"the seed has no {category_code!r}"
+        db.add(
+            FoodItem(code=code, name=name, food_category_id=parent.id, sort_order=20)
+        )
+        db.commit()
+
+
+def _set_prevention_flag(engine, code, value):
+    from sqlalchemy.orm import sessionmaker
+
+    from db.models import Destination
+
+    with sessionmaker(bind=engine, expire_on_commit=False)() as db:
+        db.execute(
+            update(Destination).where(Destination.code == code)
+            .values(is_prevention=value)
+        )
+        db.commit()
+
+
 async def test_taxonomy_contract(app):
     async with await _client(app) as client:
         response = await client.get("/api/v1/taxonomy")
     assert response.status_code == 200
     body = response.json()
-    assert body["factor_set"] == {"version_label": "MOCK-v0", "is_mock": True}
+    #: v1.58 added the third key. Asserted as a whole dict rather than by
+    #: membership: `item_level_enabled` is what releases step 2.5 on the front
+    #: end, and a key quietly dropped from this block is a feature switch that
+    #: stops reaching the browser with nothing failing.
+    assert body["factor_set"] == {
+        "version_label": "MOCK-v0",
+        "is_mock": True,
+        "item_level_enabled": False,
+    }
     #: Ordered by sort_order, so `prevention` (5) leads and `landfill` (110)
     #: trails. Asserted as a property rather than as `destinations[0]`, which
     #: only held while the seed carried a single destination.
@@ -123,6 +185,22 @@ async def test_taxonomy_contract(app):
     assert groups[destinations["prevention"]["group"]]["is_waste"] is False
 
 
+async def test_the_endpoint_offers_only_what_the_published_set_prices(app):
+    """§6.1 as HTTP, not as a repository call (v1.21).
+
+    `db/tests/test_taxonomy_coverage.py` is where the rule is argued; this is
+    the assertion that it survives serialisation and reaches the browser. The
+    seed's `MOCK-v0` prices `processing`/`dairy` and two destinations, and
+    every other seeded row is an option that would have returned a silent zero.
+    """
+    async with await _client(app) as client:
+        body = (await client.get("/api/v1/taxonomy")).json()
+    assert {row["code"] for row in body["destinations"]} == {"prevention", "landfill"}
+    assert {row["code"] for row in body["sectors"]} == {"processing"}
+    assert {row["code"] for row in body["food_categories"]} == {"standard_mix", "dairy"}
+    assert {row["code"] for row in body["destination_groups"]} == {"reuse", "disposal"}
+
+
 async def test_public_calculation_persists_and_returns_token(app):
     payload = json.loads((FIXTURES / "calculate_request.json").read_text())
     async with await _client(app) as client:
@@ -133,6 +211,89 @@ async def test_public_calculation_persists_and_returns_token(app):
     assert body["token"]
     with app.state.session_factory() as db:
         assert db.scalar(select(func.count()).select_from(Submission)) == 1
+
+
+async def test_the_language_cookie_reaches_the_api_and_is_ignored(app):
+    """The chooser's cookie rides along here, and must land nowhere.
+
+    `kaicalc_lang` is set at `path=/` because the calculator at `/` and the
+    panel at `/admin` both have to read it, and that path cannot be scoped any
+    narrower - so the browser attaches it to every `POST /api/v1/calculate`.
+    Contract §7.7.3 says the API receives it and ignores it.
+
+    **Asserted rather than assumed.** `docker/nginx.conf`'s access log was
+    found writing four §2.3-forbidden fields on 2026-08-12, which is what
+    "obviously we do not store that" is worth here.
+
+    The comparison against a request with no cookie is what makes this
+    evidence: an endpoint that had stopped persisting anything at all would
+    satisfy a bare "the column is empty" check.
+    """
+    payload = json.loads((FIXTURES / "calculate_request.json").read_text())
+    async with await _client(app) as client:
+        with_cookie = await client.post(
+            "/api/v1/calculate",
+            json=payload,
+            headers={"Cookie": "kaicalc_lang=ta"},
+        )
+        without = await client.post("/api/v1/calculate", json=payload)
+
+    assert with_cookie.status_code == 200, with_cookie.text
+    assert without.status_code == 200, without.text
+
+    # Nothing about the language comes back out, and no cookie is echoed.
+    assert "set-cookie" not in {k.lower() for k in with_cookie.headers}
+    assert "kaicalc_lang" not in with_cookie.text
+    assert "ta" not in {
+        str(v) for v in with_cookie.json().items() if not isinstance(v, (dict, list))
+    }
+
+    # And nothing about it reached the row. Every persisted column is compared
+    # against the cookie-less request's row, so a language leaking into ANY
+    # field fails here rather than only into a field this test thought to name.
+    with app.state.session_factory() as db:
+        rows = db.scalars(select(Submission).order_by(Submission.id)).all()
+        assert len(rows) == 2
+        # Clocks and identity, not content. Listed explicitly rather than
+        # skipped by type so that a future column carrying something real
+        # cannot slip past by happening to be a datetime.
+        volatile = {"id", "token", "created_at", "updated_at", "token_expires_at"}
+        for column in Submission.__table__.columns.keys():
+            if column in volatile:
+                continue
+            assert getattr(rows[0], column) == getattr(rows[1], column), (
+                f"submission.{column} differs when a language cookie is sent; "
+                "the chooser's preference has reached the database"
+            )
+
+    # And a sweep of the whole schema rather than of the one table this test
+    # thought to name. `zh-Hant` is used as the sentinel because it is a real
+    # language the chooser can emit and appears nowhere else in a calculation -
+    # unlike `ta`, whose two letters occur inside ordinary words.
+    async with await _client(app) as client:
+        marked = await client.post(
+            "/api/v1/calculate",
+            json=payload,
+            headers={"Cookie": "kaicalc_lang=zh-Hant"},
+        )
+    assert marked.status_code == 200, marked.text
+
+    from sqlalchemy import text as _text
+
+    with app.state.session_factory() as db:
+        tables = [
+            name
+            for (name,) in db.execute(
+                _text("SELECT name FROM sqlite_master WHERE type='table'")
+            )
+        ]
+        assert tables, "no tables to sweep; this test would pass vacuously"
+        for table in tables:
+            for row in db.execute(_text(f'SELECT * FROM "{table}"')):
+                for value in row:
+                    assert "zh-Hant" not in str(value), (
+                        f"the language cookie reached {table}: {row!r}"
+                    )
 
 
 async def test_dry_run_requires_staff_and_does_not_persist(app):
@@ -167,15 +328,15 @@ async def test_validation_uses_400_envelope(app):
     _assert_shape(response.json(), _fixture("errors/validation_error.json"))
 
 
-async def test_prevention_is_refused_in_a_current_scenario(app):
+async def test_a_prevention_destination_is_refused_in_a_current_scenario(app):
     """§6.2, v1.5. Nothing but C's UI enforced this before.
 
-    A current-scenario `prevention` line persists as an ordinary
+    A current-scenario prevention line persists as an ordinary
     `submission_line` with `scenario = 'current'`, which is exactly what §5.4
     selects — so it becomes a `by_destination` bucket in the public
-    statistics, and `prevention` is by construction the destination for waste
-    that did not happen. §5.4's scenario predicate is the *other* half of this
-    problem and cannot catch it: it excludes the alternative scenario, and
+    statistics, and a prevention destination is by construction where waste
+    that did not happen goes. §5.4's scenario predicate is the *other* half of
+    this problem and cannot catch it: it excludes the alternative scenario, and
     this line is not in the alternative scenario.
 
     The two halves of the tree that looked like coverage were not:
@@ -212,9 +373,71 @@ async def test_prevention_is_refused_in_a_current_scenario(app):
     assert [detail["field"] for detail in body["error"]["details"]] == [
         "entries[0].current"
     ]
+    assert body["error"]["details"][0]["issue"] == "prevention_in_current"
     assert "prevention" in body["error"]["details"][0]["message"]
 
     assert allowed.status_code == 200, allowed.text
+
+
+async def test_a_second_vocabularys_prevention_is_refused_too(app, sqlite_engine):
+    """The defect the flag closes.
+
+    §10.3's ReFED fixture brings `refed_prevention`, whose factors are all
+    zero and which is therefore a prevention destination by every property
+    that matters. While this rule compared against the literal `prevention`,
+    that row could be entered as **current**-scenario waste, persisted, and
+    became a public `by_destination` bucket — waste that by construction did
+    not happen, counted as real waste, on the page whose whole design problem
+    is not overclaiming. Reproducible against the deployed stack, which has
+    the ReFED set published and offers `refed_prevention` on the form.
+    """
+    _add_destination(sqlite_engine, "refed_prevention", is_prevention=True)
+
+    async with await _client(app) as client:
+        refused = await client.post(
+            "/api/v1/calculate",
+            json=_body(
+                [
+                    {"destination": "landfill", "qty_kg": "100.000"},
+                    {"destination": "refed_prevention", "qty_kg": "900.000"},
+                ]
+            ),
+        )
+
+    assert refused.status_code == 400, refused.text
+    body = refused.json()
+    assert [detail["field"] for detail in body["error"]["details"]] == [
+        "entries[0].current"
+    ]
+    assert "refed_prevention" in body["error"]["details"][0]["message"]
+
+
+async def test_a_destination_named_prevention_but_unflagged_is_not_special(
+    app, sqlite_engine
+):
+    """What proves the string is really gone.
+
+    Clear the tick on the row *called* `prevention` and give the role to
+    another row. A current-scenario line to `prevention` must now be an
+    ordinary accepted line: if this answers 400, something is still reading
+    the code.
+    """
+    _add_destination(sqlite_engine, "waste_avoided", is_prevention=True)
+    _set_prevention_flag(sqlite_engine, "prevention", False)
+
+    async with await _client(app) as client:
+        allowed = await client.post(
+            "/api/v1/calculate",
+            json=_body([{"destination": "prevention", "qty_kg": "1000.000"}]),
+        )
+        refused = await client.post(
+            "/api/v1/calculate",
+            json=_body([{"destination": "waste_avoided", "qty_kg": "1000.000"}]),
+        )
+
+    assert allowed.status_code == 200, allowed.text
+    assert refused.status_code == 400, refused.text
+    assert "waste_avoided" in refused.json()["error"]["details"][0]["message"]
 
 
 async def test_details_has_exactly_the_two_shapes_section_9_defines(app):
@@ -302,13 +525,21 @@ async def test_stats_only_expose_persisted_public_calculations(app):
     identifies nobody.
     """
     async with await _client(app) as client:
-        await client.post(
+        calculated = await client.post(
             "/api/v1/calculate",
             json=_body(
                 [{"destination": "landfill", "qty_kg": "3.000"}],
                 alternative=[{"destination": "landfill", "qty_kg": "3.000"}],
             ),
         )
+        # v1.48: a calculation is not itself public any more (§5.3) -- this
+        # test is proving the *threshold*, not consent, so the fixture opts
+        # in on the visitor's behalf, the same way the calculator's own
+        # checkbox would.
+        contributed = await client.post(
+            "/api/v1/contribute", json={"token": calculated.json()["token"]}
+        )
+        assert contributed.status_code == 204
         response = await client.get("/api/v1/stats")
     assert response.status_code == 200
     body = response.json()
@@ -547,7 +778,16 @@ def _request_from(fixture_name):
     return {"gwp_horizon": fixture["gwp_horizon"], "entries": entries}
 
 
-async def test_contract_fixtures_have_the_same_top_level_shapes(app):
+async def test_contract_fixtures_have_the_same_top_level_shapes(app, sqlite_engine):
+    #: v1.72. `taxonomy.json` carries the whole shipped vocabulary now, and
+    #: this is the one test that checks a fixture against a live response, so
+    #: the response needs a `food_items` row for the shape of one to be
+    #: checked at all -- `_assert_shape` refuses a fixture that carries rows
+    #: against a response that carries none, which is the rule that caught
+    #: this. `milk` is `admin/seed.py`'s code, parented to `dairy` because
+    #: that is the category the test seed prices and Section 6.1 offers an
+    #: item only under a covered parent.
+    _add_food_item(sqlite_engine, "milk", "Milk", "dairy")
     cases = (
         ("taxonomy.json", "get", "/api/v1/taxonomy", None),
         (
@@ -613,11 +853,22 @@ async def test_stats_fixture_shape_holds_against_a_populated_database(app):
     dual = _fixture("calculate_request.json")
     single = _request_from("calculate_response_single.json")
     async with await _client(app) as client:
+        # v1.48: none of these six is public until its own visitor says so
+        # (§5.3) -- this test is proving the aggregation and the threshold,
+        # not consent, so every submission here opts in.
         for _ in range(5):
             posted = await client.post("/api/v1/calculate", json=dual)
             assert posted.status_code == 200, posted.text
+            contributed = await client.post(
+                "/api/v1/contribute", json={"token": posted.json()["token"]}
+            )
+            assert contributed.status_code == 204
         posted = await client.post("/api/v1/calculate", json=single)
         assert posted.status_code == 200, posted.text
+        contributed = await client.post(
+            "/api/v1/contribute", json={"token": posted.json()["token"]}
+        )
+        assert contributed.status_code == 204
         response = await client.get("/api/v1/stats")
 
     assert response.status_code == 200, response.text
@@ -648,3 +899,503 @@ async def test_stats_fixture_shape_holds_against_a_populated_database(app):
     # a public statistic, because it is by construction waste that did not
     # happen (§5.4).
     assert "prevention" not in {b["code"] for b in body["by_destination"]}
+
+
+@pytest.mark.asyncio
+async def test_the_new_context_fields_are_accepted_and_stored(app):
+    """v1.48's four fields, end to end: sent, validated, persisted.
+
+    Driven through the real endpoint rather than by constructing a payload,
+    because the question is whether `extra="forbid"` lets them through and
+    whether `upsert_submission` writes them - two places a field can be
+    accepted and then quietly dropped.
+    """
+    body = {
+        "gwp_horizon": 100,
+        "time_frame": "one_month",
+        "entries": [
+            {
+                "sector": "processing",
+                "food_category": "dairy",
+                "total_input_kg": "50000.000",
+                "total_value_nzd": "120000.00",
+                "wasted_value_nzd": "4500.00",
+                "current": [{"destination": "landfill", "qty_kg": "1200.500"}],
+                "alternative": None,
+            }
+        ],
+    }
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as client:
+        response = await client.post("/api/v1/calculate", json=body)
+
+    assert response.status_code == 200, response.text
+
+    with app.state.session_factory() as session:
+        row = session.scalars(
+            select(Submission).order_by(Submission.id.desc())
+        ).first()
+        assert row.time_frame == "one_month"
+        #: The default, not something the request set - v1.48 gives the
+        #: visitor a separate action for this and `POST /calculate` never
+        #: opts anybody in.
+        assert row.is_public_contributed is False
+        entry = row.entries[0]
+        assert entry.total_input_kg == Decimal("50000.000")
+        assert entry.total_value_nzd == Decimal("120000.00")
+        assert entry.wasted_value_nzd == Decimal("4500.00")
+
+
+@pytest.mark.asyncio
+async def test_the_new_fields_are_optional_and_absent_is_not_zero(app):
+    """A visitor who does not know their production total is the common case,
+    and `None` has to survive as `None`.
+
+    Zero would be a different claim - "this stage put nothing through" - and
+    it would make the waste share infinite rather than absent.
+    """
+    body = {
+        "gwp_horizon": 100,
+        "entries": [
+            {
+                "sector": "processing",
+                "food_category": "dairy",
+                "current": [{"destination": "landfill", "qty_kg": "1200.500"}],
+                "alternative": None,
+            }
+        ],
+    }
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as client:
+        response = await client.post("/api/v1/calculate", json=body)
+
+    assert response.status_code == 200, response.text
+    with app.state.session_factory() as session:
+        row = session.scalars(
+            select(Submission).order_by(Submission.id.desc())
+        ).first()
+        assert row.time_frame is None
+        entry = row.entries[0]
+        assert entry.total_input_kg is None
+        assert entry.total_value_nzd is None
+        assert entry.wasted_value_nzd is None
+
+
+#: v1.67. A shift, which is the case the client asked for by name, and it is
+#: in the past so the `PERIOD_CEILING_HOURS` bound can never make this pair
+#: expire the way a hard-coded future date would.
+_SHIFT_START = "2026-09-14T08:10:00"
+_SHIFT_END = "2026-09-14T16:20:00"
+
+
+def _period_body(**extra):
+    return _body([{"destination": "landfill", "qty_kg": "1200.500"}], **extra)
+
+
+async def _post(app, body):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as client:
+        return await client.post("/api/v1/calculate", json=body)
+
+
+@pytest.mark.asyncio
+async def test_a_custom_period_is_accepted_and_stored(app):
+    """§6.2, v1.67, end to end: sent, validated, persisted, verbatim.
+
+    Driven through the real endpoint rather than by constructing a payload,
+    for the reason the v1.48 test above gives: `extra="forbid"` and
+    `upsert_submission` are two separate places a new field can be accepted
+    and then quietly dropped, and only a round trip crosses both.
+
+    **Verbatim is the assertion.** The stored instants are the visitor's
+    local wall clock and carry no zone (§2.3); a response that came back
+    shifted by twelve hours would mean something on the path had decided
+    which zone this was, which is precisely what this field does not know.
+    """
+    response = await _post(app, _period_body(
+        time_frame="custom", period_start=_SHIFT_START, period_end=_SHIFT_END,
+    ))
+    assert response.status_code == 200, response.text
+
+    with app.state.session_factory() as session:
+        row = session.scalars(select(Submission).order_by(Submission.id.desc())).first()
+        assert row.time_frame == "custom"
+        assert row.period_start == datetime(2026, 9, 14, 8, 10)
+        assert row.period_end == datetime(2026, 9, 14, 16, 20)
+
+
+@pytest.mark.asyncio
+async def test_recalculating_on_the_same_token_replaces_the_whole_period(app):
+    """§5.3, v1.67. The upsert's **update** path, which is where a new column
+    is most easily written on insert and forgotten.
+
+    A visitor changing one number and pressing Calculate again is the
+    commonest thing that happens on this screen, and it reuses the token. A
+    period written only on insert would leave the row saying whatever the
+    first calculation said, forever.
+
+    **All three fields move together, and this asserts all three.** Carrying
+    `time_frame` across while leaving the interval behind would leave the row
+    in exactly the state `ck_submission_period` exists to forbid -- here,
+    `one_week` against a shift the visitor has since replaced.
+    """
+    first = await _post(app, _period_body(
+        time_frame="custom", period_start=_SHIFT_START, period_end=_SHIFT_END,
+    ))
+    assert first.status_code == 200, first.text
+    token = first.json()["token"]
+    assert token
+
+    second = await _post(app, _period_body(
+        token=token, time_frame="one_week",
+        period_start="2026-09-07T00:00:00", period_end="2026-09-14T00:00:00",
+    ))
+    assert second.status_code == 200, second.text
+    assert second.json()["token"] == token
+
+    with app.state.session_factory() as session:
+        rows = session.scalars(select(Submission)).all()
+        row = [r for r in rows if r.token == token][0]
+        assert row.time_frame == "one_week"
+        assert row.period_start == datetime(2026, 9, 7)
+        assert row.period_end == datetime(2026, 9, 14)
+
+
+@pytest.mark.asyncio
+async def test_recalculating_can_take_the_period_away_again(app):
+    """The other half of the update path, and the one a `if period_start:`
+    guard would quietly break.
+
+    A visitor who set a period and then moved step 5 back to "Not stated"
+    must end with a row carrying neither instant -- not with the old shift
+    still attached to a `time_frame` that no longer mentions it, which is
+    both wrong and a `ck_submission_period` violation waiting for the next
+    write.
+    """
+    first = await _post(app, _period_body(
+        time_frame="custom", period_start=_SHIFT_START, period_end=_SHIFT_END,
+    ))
+    token = first.json()["token"]
+
+    second = await _post(app, _period_body(token=token))
+    assert second.status_code == 200, second.text
+
+    with app.state.session_factory() as session:
+        rows = session.scalars(select(Submission)).all()
+        row = [r for r in rows if r.token == token][0]
+        assert row.time_frame is None
+        assert row.period_start is None and row.period_end is None
+
+
+@pytest.mark.asyncio
+async def test_a_preset_carries_its_interval_too(app):
+    """v1.67's designed normal case, and the reason `time_frame` was not
+    collapsed to `custom`.
+
+    The four presets are templates that fill the picker; `time_frame` goes on
+    recording which button was pressed. So a row can and should say both, and
+    the question *did they mean a standard week, or did they choose those
+    dates?* stays answerable -- which an interval on its own cannot answer.
+    """
+    response = await _post(app, _period_body(
+        time_frame="one_week", period_start=_SHIFT_START, period_end=_SHIFT_END,
+    ))
+    assert response.status_code == 200, response.text
+
+    with app.state.session_factory() as session:
+        row = session.scalars(select(Submission).order_by(Submission.id.desc())).first()
+        assert row.time_frame == "one_week"
+        assert row.period_start == datetime(2026, 9, 14, 8, 10)
+
+
+@pytest.mark.asyncio
+async def test_a_preset_with_no_interval_is_still_accepted(app):
+    """Every row written before v1.67 has this shape, and the form that
+    produced them is still the form until WP3 lands. A revision that made the
+    old shape a 400 would break the deployed front end on the day it shipped.
+    """
+    response = await _post(app, _period_body(time_frame="one_month"))
+    assert response.status_code == 200, response.text
+
+    with app.state.session_factory() as session:
+        row = session.scalars(select(Submission).order_by(Submission.id.desc())).first()
+        assert row.time_frame == "one_month"
+        assert row.period_start is None and row.period_end is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "extra, issue",
+    [
+        (dict(time_frame="custom", period_start=_SHIFT_START),
+         "period_half_interval"),
+        (dict(time_frame="custom", period_end=_SHIFT_END),
+         "period_half_interval"),
+        (dict(time_frame="custom"),
+         "period_custom_without_interval"),
+        (dict(period_start=_SHIFT_START, period_end=_SHIFT_END),
+         "period_without_time_frame"),
+        (dict(time_frame="custom", period_start=_SHIFT_END, period_end=_SHIFT_START),
+         "period_ends_before_it_starts"),
+        (dict(time_frame="custom", period_start="1969-12-31T08:10:00",
+              period_end="1969-12-31T16:20:00"),
+         "period_before_1970"),
+        (dict(time_frame="custom", period_start="2026-09-14T08:10:00+13:00",
+              period_end="2026-09-14T16:20:00+13:00"),
+         "period_carries_a_zone"),
+    ],
+)
+async def test_the_period_contradictions_and_bounds_are_refused(app, extra, issue):
+    """§6.2's v1.67 rules, on the wire, each with its own `issue`.
+
+    **`issue` and not just the status code**, because §9's `details[].issue`
+    is what the front end binds a message to. The four cross-field rules all
+    report `field: "body"` -- a `model_validator` reports against the
+    location of the model, which is this module's own standing complaint --
+    so `issue` is the only thing distinguishing them, and a validator that
+    refused the right payloads with one indistinguishable code would pass a
+    test that checked the status alone.
+    """
+    response = await _post(app, _period_body(**extra))
+
+    assert response.status_code == 400, response.text
+    body = response.json()
+    assert body["error"]["code"] == "VALIDATION_ERROR"
+    issues = {detail["issue"] for detail in body["error"]["details"]}
+    assert issue in issues, (
+        f"expected issue {issue!r} for {extra!r}; got {body['error']['details']}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_period_far_enough_ahead_is_refused_and_38_hours_is_not(app):
+    """The ceiling, and **why it is 38 hours rather than 24.**
+
+    The stored instants are zoneless local wall-clock time, so this server
+    cannot tell which side of the date line a value was typed on. A visitor
+    in New Zealand is at UTC+12 or +13, and the widest civil offset anywhere
+    is UTC+14; their honest "now + 24 hours" therefore reads up to 24 + 14 =
+    38 hours ahead of this server's UTC clock. The exact 24-hour rule lives
+    in the form, where "now" is the visitor's own now.
+
+    Both halves are asserted deliberately. A test that only proved the
+    refusal would pass just as happily against a bound tightened to 24 --
+    which would refuse a shift somebody in Auckland entered correctly, at the
+    time it actually happened, with nothing in the payload they could change
+    to make it pass.
+    """
+    now = datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0)
+
+    inside = await _post(app, _period_body(
+        time_frame="custom",
+        period_start=now.isoformat(),
+        period_end=(now + timedelta(hours=30)).isoformat(),
+    ))
+    assert inside.status_code == 200, (
+        "30 hours ahead is inside the window a UTC+13 visitor can honestly "
+        f"reach: {inside.text}"
+    )
+
+    outside = await _post(app, _period_body(
+        time_frame="custom",
+        period_start=now.isoformat(),
+        period_end=(now + timedelta(hours=40)).isoformat(),
+    ))
+    assert outside.status_code == 400, outside.text
+    details = outside.json()["error"]["details"]
+    assert {d["issue"] for d in details} == {"period_too_far_ahead"}
+    assert [d["field"] for d in details] == ["period_end"]
+    assert "38" in details[0]["message"], (
+        "the message must say the number out loud, so that a reader meeting "
+        "this text first does not read 38 as a typo for 24: "
+        f"{details[0]['message']!r}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_time_frame_is_refused(app):
+    """§6.2 fixes the vocabulary, for the reason `gwp_horizon` is fixed to
+    20 and 100: a label the results page cannot render is a label that reaches
+    a visitor as a raw string."""
+    body = {
+        "gwp_horizon": 100,
+        "time_frame": "since_the_dawn_of_time",
+        "entries": [
+            {
+                "sector": "processing",
+                "food_category": "dairy",
+                "current": [{"destination": "landfill", "qty_kg": "1200.500"}],
+                "alternative": None,
+            }
+        ],
+    }
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as client:
+        response = await client.post("/api/v1/calculate", json=body)
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_a_negative_money_figure_is_refused(app):
+    """The same guard `qty_kg` has. A negative wasted value would flow into
+    the share in Task 5 and produce a negative percentage on the results
+    page."""
+    body = {
+        "gwp_horizon": 100,
+        "entries": [
+            {
+                "sector": "processing",
+                "food_category": "dairy",
+                "wasted_value_nzd": "-1.00",
+                "current": [{"destination": "landfill", "qty_kg": "1200.500"}],
+                "alternative": None,
+            }
+        ],
+    }
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as client:
+        response = await client.post("/api/v1/calculate", json=body)
+
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_the_money_block_carries_the_right_numbers_over_http(app):
+    """Defect 3: value, not merely shape.
+
+    `test_contract_fixtures_have_the_same_top_level_shapes` (and every other
+    shape check in this file) asserts `type(actual) is type(expected)` for a
+    scalar and stops there - it would pass unchanged if every figure below
+    came back as some other string of the same type. This is the one test in
+    the suite that reads the actual numbers.
+
+    Same two entries as `tests/fixtures/calculate_request.json` /
+    `calculate_response.json`, hand-verified independently here. **This does
+    not call the real engine** - the `app` fixture wires in
+    `tests.support.sqlite.FakeEngineAdapter`, whose own `_money()` is a
+    hand-kept copy of `engine.calculate._money`, not a call to it. What this
+    test certifies is that a correct money figure survives the trip through
+    `api/engine_adapter.py`'s serialisation onto the wire; that the fake's
+    `_money()` agrees with the real one is `tests/support/
+    test_fake_engine_agreement.py`'s job, not this test's:
+
+    entry 1 (processing/dairy) prices its waste at $6750.00 / 1500 kg =
+    $4.50/kg and diverts nothing to `prevention` - its alternative only moves
+    mass between two non-prevention destinations - so it contributes $0.00.
+    entry 2 (primary_production/vegetables) prices its waste at
+    $4000.00 / 800 kg = $5.00/kg and diverts its whole 800 kg to
+    `prevention`, contributing 5.00 x 800 = $4,000.00. A single blended rate
+    over the whole form would instead answer (6750+4000)/(1500+800) x 800 =
+    3739.13, not 4000.00 - the number this test would read back if the two
+    entries' rates were blended instead of kept separate.
+    """
+    body = _fixture("calculate_request.json")
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as client:
+        response = await client.post("/api/v1/calculate", json=body)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["totals"]["money"] == {
+        "total_value_nzd": "50000.00",
+        "wasted_value_nzd": "10750.00",
+        "wasted_share_percent": "21.50",
+        "saving_nzd": "4000.00",
+    }
+
+
+@pytest.mark.asyncio
+async def test_a_calculation_does_not_reach_the_public_statistics_until_asked(app):
+    """**v1.48 reverses §2.3's "there is no consent checkbox".**
+
+    It said so deliberately - one calculation was one submission and nothing
+    asked. The client asked for the opposite, and this is what the reversal
+    has to mean: a submission is recorded, the panel sees it, and the public
+    aggregate does not count it until the visitor says so.
+    """
+    #: `food_category` is `dairy`, not the brief's `bread_bakery`: this app
+    #: fixture's taxonomy (`tests/support/sqlite.py`) seeds the codes
+    #: `calculate_request.json` and the rest of this file already exercise --
+    #: `standard_mix`, `vegetables`, `dairy` -- and `bread_bakery` is not
+    #: among them, so it 400s as UNKNOWN_CODE before a submission ever exists.
+    body = {
+        "gwp_horizon": 100,
+        "entries": [{
+            "sector": "processing", "food_category": "dairy",
+            "current": [{"destination": "landfill", "qty_kg": "1200.500"}],
+            "alternative": None,
+        }],
+    }
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as client:
+        calculated = await client.post("/api/v1/calculate", json=body)
+        assert calculated.status_code == 200, calculated.text
+        token = calculated.json()["token"]
+
+        before = (await client.get("/api/v1/stats")).json()["total_calculations"]
+
+        contributed = await client.post("/api/v1/contribute", json={"token": token})
+        assert contributed.status_code == 204
+
+        after = (await client.get("/api/v1/stats")).json()["total_calculations"]
+
+    assert after == before + 1, (
+        "contributing did not move the public count, so either the flag is "
+        "not written or the aggregate is not reading it"
+    )
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_token_is_not_an_error(app):
+    """§6.2's rule for `token` everywhere else: a value that resolves to
+    nothing is treated as absent. A stale `sessionStorage` value is not a
+    request the visitor can fix, and a 400 here would surface as a broken
+    button on a page whose calculation succeeded."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as client:
+        response = await client.post(
+            "/api/v1/contribute",
+            json={"token": "3f2a91c4-77b5-4d1e-9c08-6b5e2a7d4419"},
+        )
+
+    assert response.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_a_dry_run_contribute_does_not_persist(app):
+    """A dry run must persist nothing (§6.2), and this route writes.
+
+    It is safe today only by coincidence: `/calculate` never mints a token
+    under `X-Dry-Run: true`, so nothing has ever exercised a dry run here
+    with a live token to flip. This test uses a real (non-dry-run) token so
+    that a guard which merely happened to work because dry runs see no token
+    cannot pass it -- the token is genuine, live, and would flip the flag on
+    a non-dry-run call.
+    """
+    body = {
+        "gwp_horizon": 100,
+        "entries": [{
+            "sector": "processing", "food_category": "dairy",
+            "current": [{"destination": "landfill", "qty_kg": "1200.500"}],
+            "alternative": None,
+        }],
+    }
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as client:
+        calculated = await client.post("/api/v1/calculate", json=body)
+        assert calculated.status_code == 200, calculated.text
+        token = calculated.json()["token"]
+
+        response = await client.post(
+            "/api/v1/contribute",
+            json={"token": token},
+            headers={"X-Dry-Run": "true"},
+        )
+        assert response.status_code == 204
+
+    with app.state.session_factory() as db:
+        row = db.scalar(select(Submission).where(Submission.token == token))
+        assert row.is_public_contributed is False, (
+            "a dry run flipped a real consent flag"
+        )

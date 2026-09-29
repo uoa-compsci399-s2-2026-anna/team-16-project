@@ -1,0 +1,32 @@
+{
+  "gwp_horizon": 100,
+  "entries": [
+    {
+      "sector_code": "processing",
+      "food_category_code": "dairy",
+      "current": [
+        { "destination_code": "landfill", "qty_kg": "1200.000" }
+      ],
+      "alternative": null,
+      "total_input_kg": "12000.000"
+    },
+    {
+      "sector_code": "primary_production",
+      "food_category_code": "vegetables",
+      "current": [
+        { "destination_code": "landfill", "qty_kg": "1000.000" }
+      ],
+      "alternative": null,
+      "total_input_kg": "5000.000",
+      "total_value_nzd": "15000.00"
+    },
+    {
+      "sector_code": "processing",
+      "food_category_code": "dairy",
+      "current": [
+        { "destination_code": "landfill", "qty_kg": "500.000" }
+      ],
+      "alternative": null
+    }
+  ]
+}

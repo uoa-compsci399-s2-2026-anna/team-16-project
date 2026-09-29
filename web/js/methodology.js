@@ -1,9 +1,60 @@
+/**
+ * The documentation page: D's rendering, HEAD's translation plumbing.
+ *
+ * **D's version wins on substance.** §6.3 carries `source_note` and `data_quality`
+ * on every factor row, and v1.1's stated reason for those columns is that a
+ * calculator which cannot say which of its numbers are measured and which are
+ * borrowed cannot be defended in public. §6.3 is the only public surface where a
+ * number can say so, and the page this replaces published neither, along with no
+ * constants, no upstream, no downstream and no equivalences. D's mock banner is
+ * also the better one: `role="alert"`, no dismiss path, and gated on
+ * `is_mock === true` rather than on truthiness, which §7.6.2 requires because an
+ * unconditional disclaimer becomes a disclaimer on real data the day real factors
+ * are published.
+ *
+ * **The translation plumbing is kept, and that is not a compromise.** D branched
+ * from the 12 August `main` and built against contract v1.17; interface
+ * translation landed at v1.24-v1.27 underneath. Dropping the plumbing would take
+ * `<html lang>`/`dir` and the language chooser off this page — both of which
+ * `tests/web/test_i18n_browser.py` measures here specifically — and orphan every
+ * catalogue key this page owns across twenty-one languages.
+ *
+ * So: wherever D kept a string, HEAD's exact English and its `t()` call are kept
+ * with it. **Batch two, which is this state of the file, translated the rest** —
+ * every section title, intro, column header and empty state D introduced, plus
+ * the mock-data warning — deliberately after batch one, so it translated the
+ * strings as they ended up rather than as they arrived.
+ *
+ * **What is still deliberately English is not an omission.** Every *value* in
+ * these tables is either a staff-typed field (§7.7.7: published exactly as
+ * written — `source_note`, `data_quality`, notes, and every `code`), a decimal
+ * that crosses the wire as a string and is printed as it arrived, or a metric
+ * unit. The page translates its own furniture and republishes the service's
+ * content untouched, which is what makes a translated documentation page still
+ * a record of what was published.
+ */
+
 import { ApiError, getFactors } from './api.js'
+import { applyDocumentLanguage, applyToDocument, installLanguageChooser, t } from './i18n.js'
+// The site drawer's `Escape` handler and `aria-expanded`. Side-effect import: the
+// drawer is a `<details>` in the markup and works without this; see web/js/drawer.js.
+import './drawer.js'
+
+applyDocumentLanguage()
+applyToDocument()
 
 const content = document.getElementById('factor-content')
 const status = document.getElementById('factor-status')
 let loadGeneration = 0
 let pageActive = true
+
+// The fetched payload and the failure are held so that a language change
+// re-renders from what was already fetched rather than calling the API again.
+// Re-fetching would work and is wrong: the factors do not depend on the
+// language, and a page that hits the API every time somebody reads a label in
+// another language is a page that rate-limits itself.
+let factors = null
+let failure = null
 
 function element(tagName, options = {}, children = []) {
   const node = document.createElement(tagName)
@@ -18,8 +69,9 @@ function element(tagName, options = {}, children = []) {
   return node
 }
 
-function recorded(value, fallback = 'Not recorded') {
-  return value === null || value === undefined || value === '' ? fallback : String(value)
+function recorded(value, fallback = null) {
+  const absent = fallback === null ? t('Not supplied') : fallback
+  return value === null || value === undefined || value === '' ? absent : String(value)
 }
 
 function makeHeading(id, title, introduction) {
@@ -57,7 +109,11 @@ function makeTable({ caption, columns, rows }) {
   table.append(body)
   return element('div', {
     className: 'table-scroll',
-    attributes: { tabindex: '0', role: 'region', 'aria-label': `${caption}, horizontally scrollable` },
+    attributes: {
+      tabindex: '0',
+      role: 'region',
+      'aria-label': t('%(caption)s, horizontally scrollable', { caption }),
+    },
   }, [table])
 }
 
@@ -76,169 +132,210 @@ function makeCollectionSection(id, title, introduction, collection, emptyMessage
 
 function makeMockWarning() {
   const copy = element('div', {}, [
-    element('strong', { text: 'Placeholder data warning' }),
-    element('p', { text: 'This published factor set is marked as mock. Its values are placeholders and must not be treated as verified scientific results.' }),
+    element('strong', { text: t('Placeholder data') }),
+    element('p', { text: t('This published factor set is marked as mock and is not a verified scientific result.') }),
   ])
   return element('aside', {
     className: 'disclaimer methodology-warning',
-    attributes: { role: 'alert', 'aria-label': 'Placeholder data warning' },
+    attributes: { role: 'alert', 'aria-label': t('Placeholder data') },
   }, [element('span', { className: 'info-icon', text: '!', attributes: { 'aria-hidden': 'true' } }), copy])
 }
 
+/**
+ * The factor-set metadata this page publishes, and **nothing else**.
+ *
+ * **`id` was here and is gone.** §1.1 makes `code` the cross-layer identifier and
+ * §7 forbids the front end learning a database primary key; a projection is not a
+ * permission. `Object.hasOwn` filtered it today only because §6.3's `factor_set`
+ * happens to carry four keys, so the page rendered nothing and looked correct —
+ * and it would have started printing a primary key on a public page the day B
+ * added `id` to the projection, with no test anywhere failing.
+ *
+ * The list is now exactly §6.3's four fields for the same reason. `name`,
+ * `version` and `effective_from` were equally dead, and a list that renders
+ * whatever the response happens to carry is a list that publishes whatever the
+ * response happens to carry. Adding a field here is a contract change first.
+ */
 const METADATA_FIELDS = [
-  ['id', 'ID', factor_set => factor_set.id],
-  ['name', 'Name', factor_set => factor_set.name],
-  ['version', 'Version', factor_set => factor_set.version],
-  ['version_label', 'Version label', factor_set => factor_set.version_label],
-  ['effective_from', 'Effective date', factor_set => factor_set.effective_from],
-  ['published_at', 'Published', factor_set => factor_set.published_at],
-  ['notes', 'Notes', factor_set => factor_set.notes],
-  ['is_mock', 'Mock data', factor_set => factor_set.is_mock],
+  ['version_label', () => t('Version'), factor_set => factor_set.version_label],
+  ['published_at', () => t('Published'), factor_set => factor_set.published_at],
+  ['notes', () => t('Notes'), factor_set => factor_set.notes],
+  ['is_mock', () => t('Mock data'), factor_set => factor_set.is_mock],
 ]
 
 function makeMetadata(factor_set) {
   const section = element('section', {
     className: 'review-block methodology-factor-section',
     attributes: { 'aria-labelledby': 'factor-set-heading' },
-  }, makeHeading('factor-set-heading', 'Factor set', 'Metadata identifying the factor set returned by the calculator service.'))
+  }, makeHeading('factor-set-heading', t('Factor set'), t('Metadata identifying the factor set returned by the calculator service.')))
   const descriptionList = element('dl', { className: 'review-destinations methodology-metadata' })
   const fields = METADATA_FIELDS.filter(([key]) => Object.hasOwn(factor_set, key))
 
   if (fields.length === 0) {
-    section.append(element('p', { className: 'empty-state', text: 'No factor-set metadata was returned.' }))
+    section.append(element('p', { className: 'empty-state', text: t('No factor-set metadata was returned.') }))
     return section
   }
   for (const [key, label, read] of fields) {
     const fieldValue = read(factor_set)
     const value = key === 'is_mock'
-      ? (fieldValue === true ? 'Yes' : fieldValue === false ? 'No' : 'Not recorded')
+      ? (fieldValue === true ? t('Yes') : fieldValue === false ? t('No') : t('Not supplied'))
       : recorded(fieldValue)
-    descriptionList.append(element('div', {}, [element('dt', { text: label }), element('dd', { text: value })]))
+    descriptionList.append(element('div', {}, [element('dt', { text: label() }), element('dd', { text: value })]))
   }
   section.append(descriptionList)
   return section
 }
 
-function renderFactors(factors) {
+function renderFactors(payload) {
   const fragment = document.createDocumentFragment()
-  const factor_set = factors?.factor_set && typeof factors.factor_set === 'object' ? factors.factor_set : {}
+  const factor_set = payload?.factor_set && typeof payload.factor_set === 'object' ? payload.factor_set : {}
   if (factor_set.is_mock === true) fragment.append(makeMockWarning())
   fragment.append(makeMetadata(factor_set))
 
   fragment.append(makeCollectionSection(
     'constants-heading',
-    'Published constants',
-    'Constants are named values referenced by published formulas.',
-    factors?.constants,
-    'No published constants were returned.',
+    t('Published constants'),
+    t('Constants are named values referenced by published formulas.'),
+    payload?.constants,
+    t('No published constants were returned.'),
     {
-      caption: 'Published constants',
+      caption: t('Published constants'),
       columns: [
-        { label: 'Code', value: row => recorded(row?.code), code: true },
-        { label: 'Value', value: row => recorded(row?.value) },
-        { label: 'Unit', value: row => recorded(row?.unit) },
-        { label: 'Note', value: row => recorded(row?.note) },
+        { label: t('Code'), value: row => recorded(row?.code), code: true },
+        { label: t('Value'), value: row => recorded(row?.value) },
+        { label: t('Unit'), value: row => recorded(row?.unit) },
+        { label: t('Note'), value: row => recorded(row?.note) },
       ],
     },
   ))
 
   fragment.append(makeCollectionSection(
     'formulas-heading',
-    'Published formulas',
-    'Expressions are shown exactly as supplied by the service.',
-    factors?.formulas,
-    'No published formulas were returned.',
+    t('Published formulas'),
+    t('Expressions are shown exactly as supplied by the service.'),
+    payload?.formulas,
+    t('No published formulas were returned.'),
     {
-      caption: 'Published formulas',
+      caption: t('Published formulas'),
       columns: [
-        { label: 'Metric', value: row => recorded(row?.metric), code: true },
-        { label: 'Expression', value: row => recorded(row?.expression), code: true },
-        { label: 'Notes', value: row => recorded(row?.notes) },
+        { label: t('Metric'), value: row => recorded(row?.metric), code: true },
+        { label: t('Expression'), value: row => recorded(row?.expression), code: true },
+        { label: t('Notes'), value: row => recorded(row?.notes) },
       ],
     },
   ))
 
   fragment.append(makeCollectionSection(
     'upstream-heading',
-    'Upstream factors',
-    'A destination of All destinations means that the row applies unless a destination-specific upstream factor is available.',
-    factors?.upstream,
-    'No upstream factors were returned.',
+    t('Upstream factors'),
+    // Two optional scopes since v1.58, and the order between them is not
+    // something a reader can infer from the rows -- both "All destinations"
+    // and "All foods in this category" appear in the same table and neither
+    // column says which gives way. The sentence has to, exactly as the
+    // downstream table's does.
+    t('A destination of All destinations, or a food of All foods in this category, is a row that applies wherever no more specific row exists. Where a row naming a destination and a row naming only a food could both apply, the one naming a destination is used.'),
+    payload?.upstream,
+    t('No upstream factors were returned.'),
     {
-      caption: 'Published upstream impact factors',
+      caption: t('Published upstream impact factors'),
       columns: [
-        { label: 'Sector', value: row => recorded(row?.sector), code: true },
-        { label: 'Food category', value: row => recorded(row?.food_category, 'All food categories'), code: true },
-        { label: 'Destination', value: row => recorded(row?.destination, 'All destinations'), code: true },
-        { label: 'Metric', value: row => recorded(row?.metric), code: true },
-        { label: 'Value per kg', value: row => recorded(row?.value_per_kg) },
-        { label: 'Source note', value: row => recorded(row?.source_note) },
-        { label: 'Data quality', value: row => recorded(row?.data_quality) },
+        { label: t('Sector'), value: row => recorded(row?.sector), code: true },
+        { label: t('Food category'), value: row => recorded(row?.food_category, t('All food categories')), code: true },
+        { label: t('Food'), value: row => recorded(row?.food_item, t('All foods in this category')), code: true },
+        { label: t('Destination'), value: row => recorded(row?.destination, t('All destinations')), code: true },
+        { label: t('Metric'), value: row => recorded(row?.metric), code: true },
+        { label: t('Value per kg'), value: row => recorded(row?.value_per_kg) },
+        { label: t('Source note'), value: row => recorded(row?.source_note) },
+        { label: t('Data quality'), value: row => recorded(row?.data_quality) },
       ],
     },
   ))
 
   fragment.append(makeCollectionSection(
     'downstream-heading',
-    'Downstream factors',
-    'A food category of All food categories is the generic row used where no category-specific factor is available. Negative values are retained because they represent published offsets.',
-    factors?.downstream,
-    'No downstream factors were returned.',
+    t('Downstream factors'),
+    // §2.2 (v1.31): a downstream row has **two** optional scopes now, and the
+    // order between them is not something a reader can infer from the rows —
+    // both "All sectors" and "All food categories" appear in the same table
+    // and neither column says which one gives way. The sentence has to.
+    t('A sector of All sectors, or a food category of All food categories, is a row that applies wherever no more specific row exists. Where a row naming a sector and a row naming only a food category could both apply, the one naming a sector is used. Negative values are retained because they represent published offsets.'),
+    payload?.downstream,
+    t('No downstream factors were returned.'),
     {
-      caption: 'Published downstream impact factors',
+      caption: t('Published downstream impact factors'),
       columns: [
-        { label: 'Destination', value: row => recorded(row?.destination), code: true },
-        { label: 'Food category', value: row => recorded(row?.food_category, 'All food categories'), code: true },
-        { label: 'Metric', value: row => recorded(row?.metric), code: true },
-        { label: 'Value per kg', value: row => recorded(row?.value_per_kg) },
-        { label: 'Source note', value: row => recorded(row?.source_note) },
-        { label: 'Data quality', value: row => recorded(row?.data_quality) },
+        { label: t('Destination'), value: row => recorded(row?.destination), code: true },
+        { label: t('Sector'), value: row => recorded(row?.sector, t('All sectors')), code: true },
+        { label: t('Food category'), value: row => recorded(row?.food_category, t('All food categories')), code: true },
+        { label: t('Metric'), value: row => recorded(row?.metric), code: true },
+        { label: t('Value per kg'), value: row => recorded(row?.value_per_kg) },
+        { label: t('Source note'), value: row => recorded(row?.source_note) },
+        { label: t('Data quality'), value: row => recorded(row?.data_quality) },
       ],
     },
   ))
 
   fragment.append(makeCollectionSection(
     'equivalences-heading',
-    'Published equivalences',
-    'Equivalences translate a source metric into a more familiar comparison.',
-    factors?.equivalences,
-    'No published equivalences were returned.',
+    t('Published equivalences'),
+    t('Equivalences translate a source metric into a more familiar comparison.'),
+    payload?.equivalences,
+    t('No published equivalences were returned.'),
     {
-      caption: 'Published metric equivalences',
+      caption: t('Published metric equivalences'),
       columns: [
-        { label: 'Code', value: row => recorded(row?.code), code: true },
-        { label: 'Name', value: row => recorded(row?.name) },
-        { label: 'Source metric', value: row => recorded(row?.source_metric), code: true },
-        { label: 'Value per unit', value: row => recorded(row?.value_per_unit) },
-        { label: 'Label template', value: row => recorded(row?.label_template) },
-        { label: 'Source note', value: row => recorded(row?.source_note) },
-        { label: 'Sort order', value: row => recorded(row?.sort_order) },
+        { label: t('Code'), value: row => recorded(row?.code), code: true },
+        { label: t('Name'), value: row => recorded(row?.name) },
+        { label: t('Source metric'), value: row => recorded(row?.source_metric), code: true },
+        { label: t('Value per unit'), value: row => recorded(row?.value_per_unit) },
+        // The template itself is staff-authored and §3 interpolates it in the
+        // engine, so the *value* stays as published; only this header moves.
+        { label: t('Label template'), value: row => recorded(row?.label_template) },
+        { label: t('Source note'), value: row => recorded(row?.source_note) },
+        { label: t('Sort order'), value: row => recorded(row?.sort_order) },
       ],
     },
   ))
   content.replaceChildren(fragment)
 }
 
-function renderApiError(error) {
+function renderApiError(message) {
   status.replaceChildren(element('div', { className: 'error-state' }, [
-    element('h2', { text: 'Methodology unavailable' }),
-    element('p', { text: error.message }),
+    element('h2', { text: t('Methodology unavailable') }),
+    element('p', { text: message }),
   ]))
 }
 
+/** Redraw from what is already held, in whatever language is now active. */
+function render() {
+  if (failure !== null) {
+    content.replaceChildren()
+    renderApiError(failure)
+    return
+  }
+  if (factors === null) return
+  status.replaceChildren()
+  renderFactors(factors)
+}
+
+installLanguageChooser(render)
+
 export async function loadMethodology() {
   const generation = ++loadGeneration
-  status.replaceChildren(element('p', { className: 'loading-state', text: 'Loading the published methodology…' }))
+  status.replaceChildren(element('p', { className: 'loading-state', text: t('Loading the published methodology…') }))
   content.setAttribute('aria-busy', 'true')
   try {
-    const factors = await getFactors()
+    const payload = await getFactors()
     if (!pageActive || generation !== loadGeneration) return
-    renderFactors(factors)
-    status.replaceChildren()
+    factors = payload
+    failure = null
+    render()
   } catch (error) {
     if (!pageActive || generation !== loadGeneration) return
     if (!(error instanceof ApiError)) throw error
-    renderApiError(error)
+    factors = null
+    failure = error.message
+    render()
   } finally {
     if (pageActive && generation === loadGeneration) content.setAttribute('aria-busy', 'false')
   }

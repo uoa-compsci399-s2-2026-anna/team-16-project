@@ -1,0 +1,217 @@
+{
+  "description": "ReFED's own sectors, food types and destinations, added alongside the New Zealand MfE taxonomy so that a ReFED comparison run uses ReFED's dimensions rather than a mapping onto NZ categories. Every code is prefixed refed_ and nothing here replaces or edits an existing row.",
+  "source": "https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+  "source_header": "Calculated by ReFED based on data from various sources. See https://insights.refed.com/methodology for more information. Data last updated April 03 2026",
+  "sectors": [
+    {
+      "code": "refed_farm",
+      "name": "ReFED Farm (United States)",
+      "description": "ReFED supply-chain stage 'Farm'. Benchmark fixture only; not a New Zealand MfE sector.",
+      "sort_order": 900,
+      "active": true
+    },
+    {
+      "code": "refed_manufacturing",
+      "name": "ReFED Manufacturing (United States)",
+      "description": "ReFED supply-chain stage 'Manufacturing'. Benchmark fixture only; not a New Zealand MfE sector.",
+      "sort_order": 901,
+      "active": true
+    },
+    {
+      "code": "refed_retail",
+      "name": "ReFED Retail (United States)",
+      "description": "ReFED supply-chain stage 'Retail'. Benchmark fixture only; not a New Zealand MfE sector.",
+      "sort_order": 902,
+      "active": true
+    },
+    {
+      "code": "refed_foodservice",
+      "name": "ReFED Foodservice (United States)",
+      "description": "ReFED supply-chain stage 'Foodservice'. Benchmark fixture only; not a New Zealand MfE sector.",
+      "sort_order": 903,
+      "active": true
+    },
+    {
+      "code": "refed_residential",
+      "name": "ReFED Residential (United States)",
+      "description": "ReFED supply-chain stage 'Residential'. Benchmark fixture only; not a New Zealand MfE sector.",
+      "sort_order": 904,
+      "active": true
+    }
+  ],
+  "food_categories": [
+    {
+      "code": "refed_breads_bakery",
+      "name": "ReFED Breads & Bakery",
+      "is_standard_mix": false,
+      "sort_order": 910,
+      "active": true
+    },
+    {
+      "code": "refed_dairy_eggs",
+      "name": "ReFED Dairy & Eggs",
+      "is_standard_mix": false,
+      "sort_order": 911,
+      "active": true
+    },
+    {
+      "code": "refed_dry_goods",
+      "name": "ReFED Dry Goods",
+      "is_standard_mix": false,
+      "sort_order": 912,
+      "active": true
+    },
+    {
+      "code": "refed_fresh_meat_seafood",
+      "name": "ReFED Fresh Meat & Seafood",
+      "is_standard_mix": false,
+      "sort_order": 913,
+      "active": true
+    },
+    {
+      "code": "refed_frozen",
+      "name": "ReFED Frozen",
+      "is_standard_mix": false,
+      "sort_order": 914,
+      "active": true
+    },
+    {
+      "code": "refed_prepared_foods",
+      "name": "ReFED Prepared Foods",
+      "is_standard_mix": false,
+      "sort_order": 915,
+      "active": true
+    },
+    {
+      "code": "refed_produce",
+      "name": "ReFED Produce",
+      "is_standard_mix": false,
+      "sort_order": 916,
+      "active": true
+    },
+    {
+      "code": "refed_ready_to_drink_beverages",
+      "name": "ReFED Ready-To-Drink Beverages",
+      "is_standard_mix": false,
+      "sort_order": 917,
+      "active": true
+    },
+    {
+      "code": "refed_standard_mix",
+      "name": "ReFED Standard Mix",
+      "is_standard_mix": false,
+      "sort_order": 918,
+      "active": true
+    }
+  ],
+  "destinations": [
+    {
+      "code": "refed_prevention",
+      "name": "ReFED Prevention",
+      "group_code": "reuse",
+      "description": "ReFED destination 'Prevention' (ReFED slug 'prevention'). Benchmark fixture only; not a New Zealand MfE destination.",
+      "is_prevention": true,
+      "sort_order": 205,
+      "active": true
+    },
+    {
+      "code": "refed_donations",
+      "name": "ReFED Donations",
+      "group_code": "reuse",
+      "description": "ReFED destination 'Donations' (ReFED slug 'donations'). Benchmark fixture only; not a New Zealand MfE destination.",
+      "is_prevention": false,
+      "sort_order": 210,
+      "active": true
+    },
+    {
+      "code": "refed_animal_feed",
+      "name": "ReFED Animal Feed",
+      "group_code": "reuse",
+      "description": "ReFED destination 'Animal Feed' (ReFED slug 'animal-feed'). Benchmark fixture only; not a New Zealand MfE destination.",
+      "is_prevention": false,
+      "sort_order": 230,
+      "active": true
+    },
+    {
+      "code": "refed_industrial_uses",
+      "name": "ReFED Industrial Uses",
+      "group_code": "recycle_recovery",
+      "description": "ReFED destination 'Industrial Uses' (ReFED slug 'biomaterial-processing'). Benchmark fixture only; not a New Zealand MfE destination.",
+      "is_prevention": false,
+      "sort_order": 280,
+      "active": true
+    },
+    {
+      "code": "refed_composting",
+      "name": "ReFED Composting",
+      "group_code": "recycle_recovery",
+      "description": "ReFED destination 'Composting' (ReFED slug 'composting'). Benchmark fixture only; not a New Zealand MfE destination.",
+      "is_prevention": false,
+      "sort_order": 240,
+      "active": true
+    },
+    {
+      "code": "refed_anaerobic_digestion",
+      "name": "ReFED Anaerobic Digestion",
+      "group_code": "recycle_recovery",
+      "description": "ReFED destination 'Anaerobic Digestion' (ReFED slug 'anaerobic-digestion'). Benchmark fixture only; not a New Zealand MfE destination.",
+      "is_prevention": false,
+      "sort_order": 250,
+      "active": true
+    },
+    {
+      "code": "refed_land_application",
+      "name": "ReFED Land Application",
+      "group_code": "recycle_recovery",
+      "description": "ReFED destination 'Land Application' (ReFED slug 'land-application'). Benchmark fixture only; not a New Zealand MfE destination.",
+      "is_prevention": false,
+      "sort_order": 260,
+      "active": true
+    },
+    {
+      "code": "refed_not_harvested",
+      "name": "ReFED Not Harvested",
+      "group_code": "recycle_recovery",
+      "description": "ReFED destination 'Not Harvested' (ReFED slug 'not-harvested'). Benchmark fixture only; not a New Zealand MfE destination.",
+      "is_prevention": false,
+      "sort_order": 270,
+      "active": true
+    },
+    {
+      "code": "refed_incineration",
+      "name": "ReFED Incineration",
+      "group_code": "disposal",
+      "description": "ReFED destination 'Incineration' (ReFED slug 'incineration'). Benchmark fixture only; not a New Zealand MfE destination.",
+      "is_prevention": false,
+      "sort_order": 300,
+      "active": true
+    },
+    {
+      "code": "refed_landfill",
+      "name": "ReFED Landfill",
+      "group_code": "disposal",
+      "description": "ReFED destination 'Landfill' (ReFED slug 'landfill'). Benchmark fixture only; not a New Zealand MfE destination.",
+      "is_prevention": false,
+      "sort_order": 310,
+      "active": true
+    },
+    {
+      "code": "refed_dumping",
+      "name": "ReFED Dumping",
+      "group_code": "disposal",
+      "description": "ReFED destination 'Dumping' (ReFED slug 'refuse-discards'). Benchmark fixture only; not a New Zealand MfE destination.",
+      "is_prevention": false,
+      "sort_order": 320,
+      "active": true
+    },
+    {
+      "code": "refed_sewer",
+      "name": "ReFED Sewer",
+      "group_code": "disposal",
+      "description": "ReFED destination 'Sewer' (ReFED slug 'sewer'). Benchmark fixture only; not a New Zealand MfE destination.",
+      "is_prevention": false,
+      "sort_order": 330,
+      "active": true
+    }
+  ]
+}

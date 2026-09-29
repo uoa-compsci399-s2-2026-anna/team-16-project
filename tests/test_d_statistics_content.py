@@ -619,7 +619,7 @@ def test_charts_module_has_exact_public_exports_and_vendored_chartjs():
     assert path.is_file()
     source = _read(path)
     exported = set(re.findall(r"export\s+function\s+([A-Za-z_$][\w$]*)\s*\(", source))
-    assert exported == {"renderDonut", "renderBar"}
+    assert exported == {"renderDonut", "renderPie", "renderBar", "renderLine"}
     assert re.search(r"\bnew\s+Chart\s*\(", source)
 
     chart_sources = []

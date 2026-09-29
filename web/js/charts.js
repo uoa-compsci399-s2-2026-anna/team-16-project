@@ -1,8 +1,8 @@
 /**
  * Chart.js adapters for the public statistics page. Contract §7.4.
  *
- * Two exports, both returning a Chart the caller is responsible for destroying.
- * Neither computes anything: every value drawn here arrives from the API as a
+ * Four renderers return a Chart the caller is responsible for destroying.
+ * None computes anything: every value drawn here arrives from the API as a
  * decimal string and is converted with `Number()` for display and charting only,
  * which is the one conversion §1.2 permits.
  */
@@ -28,8 +28,9 @@ const WHITE = '#FFFFFF'
  * is not an edge case: the NZ taxonomy carries fourteen destinations, `other` is
  * an ordinary bucket on top of them, and the canonical fixture already produces
  * ten surviving buckets. `test_the_palette_covers_the_taxonomy` pins the length
- * against `tests/fixtures/taxonomy.json`, so the wrap below is unreachable by
- * contract rather than by hope.
+ * against `tests/fixtures/taxonomy.json`, so Donut's index wrap is unreachable
+ * for that taxonomy. Pie keeps every bucket even above sixteen, reusing brand
+ * colours only after its distinct slots are occupied.
  *
  * **Every colour is a brand colour or a mix of two of them.** The seven from the
  * guidelines, then tints mixed 45% toward White and shades mixed 45% toward
@@ -146,8 +147,8 @@ function titlePlugin(title) {
   }
 }
 
-/** The palette entry for a bucket. The modulo is a floor, not a plan — see
- *  PALETTE's note and the test that keeps it unreachable. */
+/** The palette entry for a bucket. Donut retains its index mapping; Pie only
+ *  wraps after all sixteen brand slots have been occupied. */
 function paletteEntry(index) {
   return PALETTE[index % PALETTE.length]
 }
@@ -157,6 +158,42 @@ function paletteEntry(index) {
  *  needs. */
 function formatter(opts) {
   return typeof opts.formatValue === 'function' ? opts.formatValue : value => String(value)
+}
+
+function motionOptions() {
+  return typeof globalThis.matchMedia === 'function' &&
+    globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ? { animation: false } : {}
+}
+
+function paletteKey(row) {
+  const code = row?.code
+  return code != null && String(code) !== ''
+    ? `code:${String(code)}` : `label:${labelFor(row, 'label')}`
+}
+
+function paletteHash(key) {
+  let hash = 2166136261
+  for (let index = 0; index < key.length; index++) {
+    hash = Math.imul(hash ^ key.charCodeAt(index), 16777619)
+  }
+  return hash >>> 0
+}
+
+/** Assign distinct stable keys in sorted order, probing only brand slots. */
+function stablePaletteEntries(rows) {
+  const keys = rows.map(paletteKey)
+  const slots = new Map()
+  const occupied = new Set()
+  for (const key of [...new Set(keys)].sort()) {
+    let slot = paletteHash(key) % PALETTE.length
+    if (occupied.size < PALETTE.length) {
+      while (occupied.has(slot)) slot = (slot + 1) % PALETTE.length
+      occupied.add(slot)
+    }
+    slots.set(key, slot)
+  }
+  return keys.map(key => paletteEntry(slots.get(key)))
 }
 
 /**
@@ -253,6 +290,7 @@ export function renderDonut(el, buckets, opts = {}) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      ...motionOptions(),
       cutout: '58%',
       plugins: {
         legend: { position: 'bottom', labels: { color: KALE, generateLabels: donutLegendLabels } },
@@ -269,6 +307,55 @@ export function renderDonut(el, buckets, opts = {}) {
           displayColors: false,
           callbacks: {
             label: (context) => `${context.label}: ${format(context.parsed)}`,
+          },
+        },
+      },
+    },
+  })
+}
+
+/** Render every API bucket as a pie segment without changing its area sign. */
+export function renderPie(el, buckets, opts = {}) {
+  const rows = Array.isArray(buckets) ? buckets : []
+  const labelKey = optionKey(opts, 'labelKey', 'label', 'label')
+  const valueKey = optionKey(opts, 'valueKey', 'value', 'share')
+  const values = rows.map(row => chartNumber(row?.[valueKey]))
+  if (values.some(value => value !== null && value < 0)) {
+    throw new RangeError('Pie charts require non-negative values')
+  }
+  const entries = stablePaletteEntries(rows)
+  const format = formatter(opts)
+  const entryAt = context => entries[context.tooltip?.dataPoints?.[0]?.dataIndex ?? 0] || paletteEntry(0)
+
+  return new Chart(el, {
+    type: 'pie',
+    plugins: [fitLegend],
+    data: {
+      labels: rows.map(row => labelFor(row, labelKey)),
+      datasets: [{
+        label: opts.title || 'Share',
+        data: values,
+        backgroundColor: entries.map(entry => entry.fill),
+        borderColor: '#ffffff',
+        borderWidth: 2,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      ...motionOptions(),
+      plugins: {
+        legend: { position: 'bottom', labels: { color: KALE, generateLabels: donutLegendLabels } },
+        title: titlePlugin(opts.title),
+        tooltip: {
+          backgroundColor: context => entryAt(context).fill,
+          titleColor: context => entryAt(context).ink,
+          bodyColor: context => entryAt(context).ink,
+          borderColor: KALE,
+          borderWidth: 1,
+          displayColors: false,
+          callbacks: {
+            label: context => `${context.label}: ${format(context.parsed)}`,
           },
         },
       },
@@ -320,6 +407,7 @@ export function renderBar(el, rows, opts = {}) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      ...motionOptions(),
       plugins: {
         legend: { display: false },
         title: titlePlugin(opts.title),
@@ -341,6 +429,63 @@ export function renderBar(el, rows, opts = {}) {
           beginAtZero: true,
           suggestedMin,
           ticks: { color: KALE, callback: (value) => format(value) },
+        },
+      },
+    },
+  })
+}
+
+/** Render count-ranked categories as a signed line, never as a time series. */
+export function renderLine(el, rows, opts = {}) {
+  const dataRows = Array.isArray(rows) ? rows : []
+  const labelKey = optionKey(opts, 'labelKey', 'label', 'label')
+  const valueKey = optionKey(opts, 'valueKey', 'value', 'value')
+  const values = dataRows.map(row => chartNumber(row?.[valueKey]))
+  const finiteValues = values.filter(value => value !== null)
+  const format = formatter(opts)
+
+  return new Chart(el, {
+    type: 'line',
+    plugins: [fitLegend],
+    data: {
+      labels: dataRows.map(row => labelFor(row, labelKey)),
+      datasets: [{
+        label: opts.title || 'Value',
+        data: values,
+        backgroundColor: BAR.fill,
+        borderColor: BAR.fill,
+        pointBackgroundColor: BAR.fill,
+        pointBorderColor: WHITE,
+        fill: false,
+        tension: 0,
+        spanGaps: false,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      ...motionOptions(),
+      plugins: {
+        legend: { display: false },
+        title: titlePlugin(opts.title),
+        tooltip: {
+          backgroundColor: BAR.fill,
+          titleColor: BAR.ink,
+          bodyColor: BAR.ink,
+          borderColor: KALE,
+          borderWidth: 1,
+          displayColors: false,
+          callbacks: {
+            label: context => `${context.label}: ${format(context.parsed.y)}`,
+          },
+        },
+      },
+      scales: {
+        x: { type: 'category', ticks: { color: KALE } },
+        y: {
+          beginAtZero: true,
+          suggestedMin: Math.min(0, ...finiteValues),
+          ticks: { color: KALE, callback: value => format(value) },
         },
       },
     },

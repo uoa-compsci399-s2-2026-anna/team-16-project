@@ -122,6 +122,29 @@
               "upstream_basis": null
             }
           ]
+        },
+        "land": {
+          "unit": "m2",
+          "display_precision": 1,
+          "total": "205.9722222387",
+          "by_destination": [
+            {
+              "destination": "landfill",
+              "qty_kg": "250.500",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "139.1666666778",
+              "upstream_basis": null
+            },
+            {
+              "destination": "compost",
+              "qty_kg": "120.250",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "66.8055555609",
+              "upstream_basis": null
+            }
+          ]
         }
       },
       "equivalences": [
@@ -269,6 +292,29 @@
                 "downstream": "0.0000000000",
                 "value": "120.2500000000",
                 "upstream_basis": "absent"
+              }
+            ]
+          },
+          "land": {
+            "unit": "m2",
+            "display_precision": 1,
+            "total": "205.9722222387",
+            "by_destination": [
+              {
+                "destination": "landfill",
+                "qty_kg": "250.500",
+                "upstream": "0.5555555556",
+                "downstream": "0.0000000000",
+                "value": "139.1666666778",
+                "upstream_basis": "category_every_destination"
+              },
+              {
+                "destination": "compost",
+                "qty_kg": "120.250",
+                "upstream": "0.5555555556",
+                "downstream": "0.0000000000",
+                "value": "66.8055555609",
+                "upstream_basis": "category_every_destination"
               }
             ]
           }

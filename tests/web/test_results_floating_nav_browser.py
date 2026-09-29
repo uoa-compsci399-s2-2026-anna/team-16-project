@@ -169,6 +169,17 @@ id => {
 }
 """
 
+#: The reading band `results.js` decides the mark inside, in this file's viewport.
+#: `SECTION_BAND` is the `rootMargin` `-18% 0px -60% 0px`, and every case in this
+#: file is measured at 900px tall, so the band is 162-360. **Stated as two numbers
+#: for the same reason `DOCKED_FROM` is**: re-deriving the percentages here would
+#: let this file and `results.js` agree with each other while both disagreed with
+#: what the browser observes. They are one pair of names rather than four inline
+#: literals because a band spelled in several places is the kind of duplicate this
+#: file has already been bitten by.
+BAND_TOP = 162
+BAND_BOTTOM = 360
+
 #: Every section's box, so an assertion about which one the spy picked can print the
 #: geometry that made that the right or the wrong answer.
 SECTION_BOXES = """
@@ -666,8 +677,50 @@ def test_the_link_for_the_section_in_view_is_marked_as_the_reader_scrolls(browse
         assert mark["colour"] == "rgb(0, 50, 35)", f"the current item's text is {mark['colour']}, not Kale"
 
 
-@pytest.mark.parametrize("section,height", [("tangible-equivalents", 287), ("impact-summary", 762)])
-def test_a_press_on_a_link_marks_that_link_and_not_the_one_after_it(browser, section, height):
+def _band_cases(page):
+    """Which section *shares* the reading band with its successor, and which *fills* it.
+
+    **Asked of the page, because that is what the answer is a property of.** This
+    replaces two pixel constants - `("tangible-equivalents", 287)` and
+    `("impact-summary", 762)` - that named the heights the two cases happened to
+    have on the day they were written. The second one expired: a sixth metric row
+    (`land`) landed in the published set and *Impact summary* grew to 953px, so a
+    test about which link gets marked failed about geometry. A height is a
+    measurement with a date on it; which of the two tie-break cases a section is
+    is a relationship between two rectangles, and that is what is read here.
+
+    Every section is put at its own *click* rest position, because that is the
+    position the tie is decided at, and classified by what is then in the band:
+
+    * **shares** - the next section's top has crept into the band, so two sections
+      are inside it and the tie-break is what picks between them. This is the
+      defect's own case.
+    * **fills** - the section covers the band's bottom edge on its own, and its
+      successor is clear of it, so no tie-break is involved at all. This is why
+      three of the four links always appeared to work.
+
+    The two are mutually exclusive by construction: a section whose bottom reaches
+    `BAND_BOTTOM` puts its successor at least one inter-section gap past it.
+    Returned in page order, so a caller taking `[0]` gets the same case run after
+    run rather than whichever the dict happened to yield.
+    """
+    order = [entry["id"] for entry in page.evaluate(SECTION_BOXES)]
+    shares, fills = [], []
+    for index, section in enumerate(order):
+        page.evaluate(SCROLL_TO_REST, section)
+        page.wait_for_timeout(250)
+        boxes = {entry["id"]: entry for entry in page.evaluate(SECTION_BOXES)}
+        successor = order[index + 1] if index + 1 < len(order) else None
+        successor_top = boxes[successor]["top"] if successor else None
+        if successor is not None and BAND_TOP <= successor_top <= BAND_BOTTOM:
+            shares.append((section, boxes))
+        elif boxes[section]["bottom"] >= BAND_BOTTOM:
+            fills.append((section, boxes))
+    return {"shares_the_band": shares, "fills_the_band": fills}
+
+
+@pytest.mark.parametrize("case", ["shares_the_band", "fills_the_band"])
+def test_a_press_on_a_link_marks_that_link_and_not_the_one_after_it(browser, case):
     """**The reported defect: press the second item, and the third lights up.**
 
     Measured on the running stack at 1600x900 before the fix, with the old rule in
@@ -678,9 +731,13 @@ def test_a_press_on_a_link_marks_that_link_and_not_the_one_after_it(browser, sec
     by category* at 347, and the reading band ends at 360. Two sections in the band,
     the rule took the last, and the mark landed one link past the press.
 
-    **A short section and a tall one**, because the two are not the same case: at
-    762px *Impact summary* fills the band on its own and no tie-break is involved,
-    which is why three of the four links always appeared to work.
+    **A short section and a tall one**, because the two are not the same case: a
+    section that fills the band on its own leaves no tie to break, which is why
+    three of the four links always appeared to work. **That reasoning is unchanged;
+    only the way the two are chosen is.** The pair used to be named as heights, and
+    the tall one's height expired the moment the published set priced a sixth metric
+    - see `_band_cases`, which selects them by measuring which section shares the
+    band and which covers it.
 
     The rest position is asserted as well as the mark. If a jump stops landing at
     24 - a sticky header added above `<main>`, or a `scroll-margin-top` changed
@@ -692,8 +749,8 @@ def test_a_press_on_a_link_marks_that_link_and_not_the_one_after_it(browser, sec
     than a weak test: the pin answers the press before the observer is consulted at
     all, which is the whole reason the request asked for two separate things. What
     fails this is the two together - the old tie-break *and* `pinSection` made a
-    no-op - and it fails the short case with the mark on `#breakdown-section` while
-    the tall one stays green. `test_the_band_marks_the_section_at_its_top_edge_not_
+    no-op - and it fails the sharing case with the mark on `#breakdown-section` while
+    the filling one stays green. `test_the_band_marks_the_section_at_its_top_edge_not_
     the_one_creeping_in_below` is what holds the tie-break on its own, and
     `test_the_mark_is_on_the_pressed_link_before_the_page_has_finished_moving` the
     pin. This one is the defect as the owner reported it: press the second item, and
@@ -702,6 +759,16 @@ def test_a_press_on_a_link_marks_that_link_and_not_the_one_after_it(browser, sec
     context, page = _open(browser, 1600)
     try:
         _to_results(page)
+        cases = _band_cases(page)
+        assert cases[case], (
+            f"no section on this page {case.replace('_', ' ')} at its rest position, so "
+            f"this case is not on the page any more and a green result would mean nothing. "
+            f"Measured at rest: {{'shares': {[s for s, _ in cases['shares_the_band']]}, "
+            f"'fills': {[s for s, _ in cases['fills_the_band']]}}}"
+        )
+        section, at_rest = cases[case][0]
+        page.evaluate("() => window.scrollTo({top: 0, behavior: 'instant'})")
+        page.wait_for_timeout(200)
         page.click(f'.results-floating-nav__links a[href="#{section}"]')
         page.wait_for_timeout(450)
         mark = page.evaluate(MARK)
@@ -709,19 +776,45 @@ def test_a_press_on_a_link_marks_that_link_and_not_the_one_after_it(browser, sec
     finally:
         context.close()
 
-    box = next(entry for entry in boxes if entry["id"] == section)
+    order = [entry["id"] for entry in boxes]
+    by_id = {entry["id"]: entry for entry in boxes}
+    box = by_id[section]
     assert box["top"] == 24, (
         f"a press on #{section} left it at top {box['top']}, not the 24px "
         f"`scroll-margin-top` every measurement in this test was taken against"
     )
-    assert abs(box["height"] - height) <= 60, (
-        f"#{section} now measures {box['height']}px tall, not the ~{height}px this case "
-        f"was written to cover. The short/tall pair is the point of the parametrisation"
-    )
+    #: The case is restated here, against the page the press was actually measured
+    #: on rather than against the selection pass, and as the relationship it is
+    #: rather than as the height it happens to be. A page that stopped offering
+    #: this case would otherwise be reported as a marking defect.
+    index = order.index(section)
+    successor = order[index + 1] if index + 1 < len(order) else None
+    successor_top = by_id[successor]["top"] if successor else None
+    geometry = [(entry["id"], entry["top"], entry["bottom"]) for entry in boxes]
+    if case == "shares_the_band":
+        assert successor is not None and BAND_TOP <= successor_top <= BAND_BOTTOM, (
+            f"#{section} was selected as the section that SHARES the {BAND_TOP}-{BAND_BOTTOM} "
+            f"band, and after the press its successor {successor} sits at {successor_top}: "
+            f"nothing is in the band with it, so there is no tie for the rule to get wrong "
+            f"and this case has stopped covering the defect. Sections: {geometry}"
+        )
+    else:
+        assert box["bottom"] >= BAND_BOTTOM, (
+            f"#{section} was selected as the section that FILLS the {BAND_TOP}-{BAND_BOTTOM} "
+            f"band and reaches only {box['bottom']}. Sections: {geometry}"
+        )
+        assert successor is None or successor_top > BAND_BOTTOM, (
+            f"#{section} was selected as the section that FILLS the band alone, and "
+            f"{successor} is inside it at {successor_top}. Sections: {geometry}"
+        )
     assert mark["count"] == 1, f"{mark['count']} links claim the reader's position: {mark}"
     assert mark["href"] == f"#{section}", (
-        f"pressed #{section} and the nav marks {mark['href']}. Sections: "
-        f"{[(b['id'], b['top'], b['bottom']) for b in boxes]}"
+        f"pressed #{section} and the nav marks {mark['href']}. Sections: {geometry}"
+    )
+    assert at_rest[section]["height"] == box["height"], (
+        f"#{section} measured {at_rest[section]['height']}px during the selection pass and "
+        f"{box['height']}px after the press: the page is not stable between the two, so the "
+        f"case selected is not the case asserted"
     )
 
 
@@ -822,7 +915,7 @@ def test_the_readers_own_scroll_takes_the_pin_back_off(browser):
         "away from it: the pin never comes off, so the nav now reports the last button "
         "pressed rather than where the reader is"
     )
-    in_band = [b["id"] for b in boxes if b["top"] <= 162 <= b["bottom"]]
+    in_band = [b["id"] for b in boxes if b["top"] <= BAND_TOP <= b["bottom"]]
     assert released["href"] == f"#{in_band[0]}", (
         f"after the scroll the nav marks {released['href']}, and the section across the band's "
         f"top edge is #{in_band[0]}. Sections: {[(b['id'], b['top'], b['bottom']) for b in boxes]}"
@@ -862,19 +955,19 @@ def test_the_band_marks_the_section_at_its_top_edge_not_the_one_creeping_in_belo
         context.close()
 
     for target, (mark, boxes) in seen.items():
-        below = [b for b in boxes if 162 <= b["top"] <= 360]
+        below = [b for b in boxes if BAND_TOP <= b["top"] <= BAND_BOTTOM]
         assert mark["href"] == f"#{target}", (
             f"with #{target} resting at the top of the reading band the nav marks "
             f"{mark['href']}. Sections: {[(b['id'], b['top'], b['bottom']) for b in boxes]}"
-            + (f"; #{below[0]['id']} has crept {360 - below[0]['top']}px into the bottom of "
+            + (f"; #{below[0]['id']} has crept {BAND_BOTTOM - below[0]['top']}px into the bottom of "
                f"the band and taken the mark with it" if below else "")
         )
     #: And the tie is really there to be got wrong. Without this the test could pass
     #: against a page whose sections never share the band at all.
     _, tangible_boxes = seen["tangible-equivalents"]
     successor = next(b for b in tangible_boxes if b["id"] == "breakdown-section")
-    assert 162 <= successor["top"] <= 360, (
-        f"#breakdown-section is at {successor['top']}, outside the 162-360 band, so nothing "
+    assert BAND_TOP <= successor["top"] <= BAND_BOTTOM, (
+        f"#breakdown-section is at {successor['top']}, outside the {BAND_TOP}-{BAND_BOTTOM} band, so nothing "
         f"here is a tie and the assertion above would hold under either rule"
     )
 

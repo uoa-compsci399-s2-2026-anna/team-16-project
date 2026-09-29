@@ -1074,6 +1074,179 @@ def test_the_response_only_names_codes_the_taxonomy_defines(name, taxonomy):
                 assert item["source_metric"] in metric_specs
 
 
+#: Metrics `taxonomy.json` offers that a `calculate_response*.json` fixture is
+#: allowed **not** to carry, per file, with the reason.
+#:
+#: **Empty, and the empty mapping is the claim.** `taxonomy.json` is the whole
+#: active metric vocabulary and `factors.json` is the one factor set these four
+#: files are answers from, so every metric the first offers and the second
+#: prices is a metric the responses report. A real deployment may legitimately
+#: price fewer — that is what `FactorBundle.computed_metrics` exists for (§4.1,
+#: v1.70) — but these four files are §10's executable contract, the thing C and
+#: D build screens against and the body the browser tests that stub `POST
+#: /calculate` render, so one of them missing a metric the deployment computes
+#: is a page nobody is ever served.
+#:
+#: Declared per file and read with its reason attached, on the same terms as
+#: `tests/web/test_i18n_web.py`'s `IDENTICAL_BY_DESIGN`: an exemption has to
+#: name the file and say why, and the test below fails on an exemption for a
+#: metric the file does in fact carry — so the list cannot outlive the reason it
+#: was written for, and it can only grow deliberately.
+METRICS_A_RESPONSE_FIXTURE_NEED_NOT_CARRY: dict[str, dict[str, str]] = {}
+
+
+def _metrics_the_fixture_set_prices(factors):
+    """`FactorBundle.computed_metrics`' rule, re-derived from `factors.json`.
+
+    §4.1, v1.70: a factor set computes a metric when it *says something* about
+    it — a `formula` row, a `factor_upstream` row or a `factor_downstream` row.
+    Spelled out here rather than imported from `engine/`, on the same reasoning
+    as this module's own `evaluate` and its two-dimensional `downstream` lookup:
+    the value of this file is that it re-derives the contract independently of
+    the code under test, and sharing the rule would make the two agree by
+    construction.
+    """
+    priced = {row["metric"] for row in factors["formulas"]}
+    priced |= {row["metric"] for row in factors["upstream"]}
+    priced |= {row["metric"] for row in factors["downstream"]}
+    return priced
+
+
+def test_the_fixture_factor_set_prices_every_metric_the_taxonomy_offers(taxonomy, factors):
+    """**The drift that happened, checked at the point it entered.**
+
+    `land` reached `admin/seed.py` and therefore `taxonomy.json` at contract
+    v1.70, on the stated reasoning that *"no `calculate` response changes,
+    because no published factor set computes `land`"*. That was true on the day.
+    It stopped being true when the owner **published** the set that carries
+    `land` — a data operation, with no commit in it for anybody to review — and
+    for several days after that `taxonomy.json` offered six metrics while
+    `factors.json` priced five and all four response fixtures answered with
+    five. Every test in this file passed throughout, because each of them checks
+    one fixture against the arithmetic of the same fixture. This is the edge
+    between two of them that nothing crossed.
+
+    **Fixture against fixture, and no database and no deployment.** A fixture is
+    the contract's executable form (§10) and has to be checkable from a
+    checkout; a test that asked the running stack what it publishes would be
+    green on a laptop with the stack down, and would not be a fixture test.
+
+    Mutation: drop the `land` rows from `factors.json`'s `formulas` and
+    `upstream` — which is that file as it stood before v1.78 — and this fails
+    naming `land`.
+    """
+    offered = [row["code"] for row in taxonomy["metrics"]]
+    priced = _metrics_the_fixture_set_prices(factors)
+
+    assert offered, "taxonomy.json offers no metrics at all"
+    missing = [code for code in offered if code not in priced]
+    assert not missing, (
+        f"taxonomy.json offers {missing} and factors.json carries no formula and no "
+        f"factor row for any of them, so the one factor set the response fixtures are "
+        f"answers from does not compute the vocabulary the taxonomy publishes. That is "
+        f"the state the repository was in between v1.70 and v1.78: a metric was seeded, "
+        f"the published set began pricing it, and the fixtures went on describing a "
+        f"response no visitor receives. Offered {offered}; priced {sorted(priced)}"
+    )
+    #: And the other direction, which is a different defect and worth its own
+    #: sentence: a factor row for a metric no `metrics[]` row defines can never
+    #: be reported at all, so it is dead data rather than a narrower set.
+    undefined = sorted(priced - set(offered))
+    assert not undefined, (
+        f"factors.json carries rows for {undefined}, which taxonomy.json does not "
+        f"define, so no response can ever report them"
+    )
+
+
+@pytest.mark.parametrize(
+    "name", ["calculate_response.json", "calculate_response_single.json", "calculate_response_partial_coverage.json", "calculate_response_zero_totals.json"]
+)
+def test_every_response_fixture_carries_every_metric_the_fixture_set_prices(
+    name, taxonomy, factors
+):
+    """The other half of the same edge: the answer against the vocabulary.
+
+    `test_the_response_only_names_codes_the_taxonomy_defines` above is the
+    **membership** half — no response may name a code the taxonomy does not
+    define — and it is satisfied by a response that names nothing. This is the
+    **completeness** half, and it is the one the metric dimension needs: a
+    response reports every metric its set computes, so a fixture carrying fewer
+    is a body the engine cannot produce.
+
+    **Why no existing test caught it.** `tests/api/test_api.py:45` declares
+    `_CODE_KEYED = {"metrics", "net_benefit"}`, and `_assert_shape` takes a
+    code-keyed map's **first value as a template**, checks every value of the
+    live response against it, and returns **without comparing key sets**. That
+    is deliberate and it stays: the metric set is data, and a contract test that
+    pinned it would fail the day a factor set priced a different number of
+    metrics. So a six-metric response passes against a five-metric fixture by
+    design. **This test therefore compares fixture against fixture and never a
+    live response against a pinned metric set.**
+
+    **Every place a response names metrics is checked**, not only the first: the
+    totals-level block for each scenario present, every entry's block for each
+    scenario present, and both `net_benefit` maps. A file that gained a metric
+    at the totals level and not per entry would be impossible on the wire and
+    invisible to the roll-up tests above, which iterate whatever keys the file
+    happens to carry.
+
+    Mutation, and it is history rather than a hypothesis: remove `land` from
+    these files and this fails naming `land` and naming the place in the
+    document that lacks it. That is the tree as it stood from 2026-09-24 until
+    contract v1.78.
+    """
+    fixture = load(name)
+    offered = [row["code"] for row in taxonomy["metrics"]]
+    priced = _metrics_the_fixture_set_prices(factors)
+    expected = [code for code in offered if code in priced]
+    exempt = METRICS_A_RESPONSE_FIXTURE_NEED_NOT_CARRY.get(name, {})
+
+    places = {}
+    for scenario in ("current", "alternative"):
+        if fixture["totals"][scenario] is not None:
+            places[f"totals.{scenario}.metrics"] = fixture["totals"][scenario]["metrics"]
+    if fixture["totals"]["net_benefit"] is not None:
+        places["totals.net_benefit"] = fixture["totals"]["net_benefit"]
+    for index, entry in enumerate(fixture["entries"]):
+        for scenario in ("current", "alternative"):
+            if entry[scenario] is not None:
+                places[f"entries[{index}].{scenario}.metrics"] = entry[scenario]["metrics"]
+        if entry["net_benefit"] is not None:
+            places[f"entries[{index}].net_benefit"] = entry["net_benefit"]
+
+    assert expected, "factors.json prices no metric the taxonomy offers"
+    assert places, f"{name} names metrics nowhere, so there is nothing here to check"
+    for where, carried in places.items():
+        missing = [code for code in expected if code not in carried and code not in exempt]
+        assert not missing, (
+            f"{name} {where} carries {list(carried)} and the factor set these fixtures "
+            f"answer from prices {expected}: {missing} is missing. A response reports "
+            f"every metric its set computes, so this is a body the engine cannot produce "
+            f"— and it is the body the browser tests that stub `POST /calculate` render, "
+            f"which is how this last went unnoticed for several days. If it is deliberate, "
+            f"declare it in METRICS_A_RESPONSE_FIXTURE_NEED_NOT_CARRY with a reason"
+        )
+        #: Membership, at the two places `test_the_response_only_names_codes_
+        #: the_taxonomy_defines` does not reach: it walks `entries[].{scenario}.
+        #: metrics` and nothing else, so a metric invented at the totals level
+        #: or in a `net_benefit` map is unchecked by it. One line here, because
+        #: this loop already visits every one of those places.
+        surplus = [code for code in carried if code not in offered]
+        assert not surplus, (
+            f"{name} {where} carries {surplus}, which taxonomy.json does not define, so "
+            f"nothing on the wire could ever report them"
+        )
+
+    for code, reason in exempt.items():
+        assert reason, f"{name} exempts {code} from carrying a metric with no reason given"
+        absent = [where for where, carried in places.items() if code not in carried]
+        assert absent, (
+            f"{name} declares {code} exempt ({reason}) and the file carries it in every "
+            f"place it names metrics. Remove the exemption rather than leave one standing "
+            f"that permits a metric already present"
+        )
+
+
 def test_prevention_is_only_ever_an_alternative_destination(request_fixture):
     """§7.3a. Offering `prevention` in the current scenario would let a user
     claim to be already preventing the waste they are about to describe."""

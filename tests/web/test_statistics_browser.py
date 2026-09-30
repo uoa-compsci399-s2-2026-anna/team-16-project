@@ -51,6 +51,7 @@ if str(ROOT) not in sys.path:  # pragma: no cover - import path guard
     sys.path.insert(0, str(ROOT))
 
 from tests.support import red_line  # noqa: E402
+from tests.web import i18n_keys  # noqa: E402
 
 BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080")
 STATS = json.loads((ROOT / "tests" / "fixtures" / "stats.json").read_text(encoding="utf-8"))
@@ -113,7 +114,7 @@ def stats_page(browser):
     """The statistics page at a viewport, rendered from the canonical fixture."""
     contexts = []
 
-    def open_page(width, height, dpr=1.0):
+    def open_page(width, height, dpr=1.0, *, language="en", payload=None):
         # `bypass_csp` for the mutation hook only - see the note in
         # test_step_navigation.py. `test_csp.py` measures the policy itself
         # with no bypass, which is where a directive that breaks a page fails.
@@ -125,10 +126,17 @@ def stats_page(browser):
         )
         contexts.append(context)
         page = context.new_page()
+        page.add_init_script(_LANGUAGES_SHIM.format(
+            languages=json.dumps([language]), first=json.dumps(language)
+        ))
+        requests = []
+        page.on("request", lambda request: requests.append(request.url)
+                if request.url.endswith("/api/v1/stats") else None)
+        page.stats_requests = requests
         page.route(
             "**/api/v1/stats",
             lambda route: route.fulfill(
-                status=200, content_type="application/json", body=json.dumps(STATS)
+                status=200, content_type="application/json", body=json.dumps(STATS if payload is None else payload)
             ),
         )
         page.goto(f"{BASE}/stats.html", wait_until="networkidle", timeout=20000)
@@ -170,7 +178,7 @@ def test_every_legend_entry_is_drawn_inside_its_canvas(stats_page, width, height
     assert legended, "no chart on this page draws a legend, so this measures nothing"
 
     # One assertion over the whole set, not one per chart: since all three
-    # breakdowns became doughnuts, all three are legended, and the fixture only
+    # breakdowns default to Pies, all three are legended, and the fixture only
     # gives one of them (`by_destination`) ten buckets - `by_sector` and
     # `by_food_category` are five and seven. Requiring *every* legended chart
     # to individually reach ten would fail on a fixture shape that has nothing
@@ -260,21 +268,16 @@ def test_the_axis_and_the_list_state_the_same_number_in_the_same_unit(stats_page
     """Defect 4. The bar chart's y axis read `0`, `0.05` … `0.40` immediately
     above a text list reading `37.9% share`: one number, two units, one card.
 
-    All three breakdowns are doughnuts as of the shares-as-shares change, so no
-    bar chart is rendered on this page any more and a y axis - the surface
-    defect 4 was found on - does not exist here to regress. The bar branch is
-    kept and asserted in case a future breakdown (of impact *values*, which can
-    be negative - see the note above `BREAKDOWNS`) puts one back.
-
-    What still applies to every chart on this page, bar or doughnut, is the
-    half of defect 4 that is not about axes at all: the tooltip and the text
-    list must state the same figure in the same unit. Formatting one and not
-    the other only moves the contradiction into the hover.
+    The page now defaults to three Pies, so this test selects Bar and Line to
+    make both cartesian axes observable. Their tooltips and the remaining Pie
+    tooltip must agree with the text list's percentage unit.
     """
     page = stats_page(1278, 983, 1.25)
+    page.locator(".stats-chart-controls select").nth(0).select_option("bar")
+    page.locator(".stats-chart-controls select").nth(1).select_option("line")
     axes = page.evaluate(
         """() => Object.values(Chart.instances)
-             .filter((chart) => chart.config.type === 'bar')
+             .filter((chart) => ['bar', 'line'].includes(chart.config.type))
              .map((chart) => ({
                ticks: chart.scales.y.ticks.map((tick) => tick.label),
                tooltip: chart.options.plugins.tooltip.callbacks.label({
@@ -282,30 +285,32 @@ def test_the_axis_and_the_list_state_the_same_number_in_the_same_unit(stats_page
                }),
              }))"""
     )
+    assert len(axes) == 2, "both selected cartesian charts must draw an axis"
     for axis in axes:
         assert axis["ticks"], "the y axis drew no ticks"
         assert all("%" in str(label) for label in axis["ticks"]), (
             f"the y axis reads a raw fraction for a share: {axis['ticks']}"
         )
-        assert "%" in axis["tooltip"], (
+        assert "37.9%" in axis["tooltip"], (
             f"the axis is a percentage and the tooltip is not: {axis['tooltip']!r}"
         )
 
-    donuts = page.evaluate(
+    pies = page.evaluate(
         """() => Object.values(Chart.instances)
-             .filter((chart) => chart.config.type === 'doughnut')
+             .filter((chart) => chart.config.type === 'pie')
              .map((chart) => chart.options.plugins.tooltip.callbacks.label({
                label: 'Example', parsed: 0.379,
              }))"""
     )
-    assert donuts, "no doughnut was rendered, so the tooltip cannot be checked"
-    for tooltip in donuts:
-        assert "%" in tooltip, (
+    assert len(pies) == 1, "the remaining Pie must draw a tooltip"
+    for tooltip in pies:
+        assert "37.9%" in tooltip, (
             f"the text list states a percentage share and a doughnut's tooltip is not: {tooltip!r}"
         )
 
     listed = page.inner_text("#stats-breakdown-content")
     assert "% share" in listed, "the text list no longer states a share, so nothing is being compared"
+    assert "37.9% share" in listed
 
 
 def test_a_mass_is_printed_as_the_service_sent_it(stats_page):
@@ -442,7 +447,7 @@ def test_every_statistics_breakdown_is_drawn_as_a_share(browser):
         )
         assert charted, "no charts were drawn"
         kinds = [chart["type"] for chart in charted]
-        assert set(kinds) == {"doughnut"}, (
+        assert kinds == ["pie", "pie", "pie"], (
             f"not every breakdown is a share chart: {kinds}"
         )
 
@@ -471,6 +476,106 @@ def test_every_statistics_breakdown_is_drawn_as_a_share(browser):
             )
     finally:
         context.close()
+
+
+LINE_NOTE = "Categories follow the service's count-ranked order, with any combined Other bucket shown last. This compares categories, not a time trend."
+BREAKDOWN_KEYS = ("by_destination", "by_sector", "by_food_category")
+CHART_DATA = """() => [...document.querySelectorAll('.stats-chart-region canvas')].map(canvas => {
+  const chart = Chart.getChart(canvas);
+  return {id: chart.id, type: chart.config.type, labels: [...chart.data.labels],
+          data: [...chart.data.datasets[0].data]};
+})"""
+
+
+def test_each_breakdown_selects_a_chart_without_refetching_or_replacing_its_list(stats_page):
+    page = stats_page(1278, 983)
+    before = page.evaluate(CHART_DATA)
+    assert [chart["type"] for chart in before] == ["pie"] * 3
+    for chart, key in zip(before, BREAKDOWN_KEYS):
+        assert chart["labels"] == [row["label"] for row in STATS[key]]
+        assert chart["data"] == pytest.approx([float(row["share"]) for row in STATS[key]])
+    handles = page.evaluate_handle("""() => ({
+        canvases: [...document.querySelectorAll('.stats-chart-region canvas')],
+        lists: [...document.querySelectorAll('.stats-breakdown-list')],
+        charts: [...document.querySelectorAll('.stats-chart-region canvas')].map(c => Chart.getChart(c))
+    })""")
+    selects = page.locator(".stats-chart-controls select")
+    assert selects.count() == 3
+    for index, kind in ((0, "bar"), (1, "line")):
+        previous = page.evaluate(CHART_DATA)
+        selects.nth(index).select_option(kind)
+        after = page.evaluate(CHART_DATA)
+        assert [(a["id"] != b["id"]) for a, b in zip(after, previous)] == [i == index for i in range(3)]
+        assert [(c["labels"], c["data"]) for c in after] == [(c["labels"], c["data"]) for c in before]
+        assert page.evaluate("""saved => saved.lists.every((list, i) => list.isConnected &&
+            list === document.querySelectorAll('.stats-breakdown-list')[i]) &&
+            saved.canvases.every((canvas, i) => canvas.isConnected &&
+            canvas === document.querySelectorAll('.stats-chart-region canvas')[i])""", handles)
+    assert page.evaluate("saved => saved.charts[0].canvas === null && saved.charts[1].canvas === null && saved.charts[2].canvas !== null", handles)
+    assert selects.evaluate_all("nodes => nodes.map(n => n.value)") == ["bar", "line", "pie"]
+    assert len(page.stats_requests) == 1
+
+
+def test_line_explains_count_ranked_categories_not_time(stats_page):
+    payload = json.loads(json.dumps(STATS))
+    payload["by_destination"] = [
+        {"code": "a", "label": "A", "count": 20, "share": "0.2", "total_kg": "2.000"},
+        {"code": "b", "label": "B", "count": 10, "share": "0.1", "total_kg": "1.000"},
+        {"code": "other", "label": "Other", "count": 70, "share": "0.7", "total_kg": "7.000"},
+    ]
+    page = stats_page(390, 700, payload=payload)
+    section = page.locator(".stats-breakdown").first
+    section.locator("select").select_option("line")
+    assert LINE_NOTE in section.locator(".stats-breakdown-note").inner_text()
+    assert section.locator(".stats-breakdown-note").is_visible()
+    note_id = section.locator(".stats-breakdown-note").get_attribute("id")
+    assert note_id and section.locator("select").get_attribute("aria-describedby") == note_id
+    assert section.locator("canvas").get_attribute("aria-describedby") == note_id
+    chart = page.evaluate(CHART_DATA)[0]
+    assert chart["labels"] == ["A", "B", "Other"]
+    assert chart["data"] == [0.2, 0.1, 0.7]
+    assert section.locator("canvas").evaluate("canvas => Chart.getChart(canvas).scales.x.type") == "category"
+    section.locator("select").select_option("pie")
+    assert LINE_NOTE not in section.locator(".stats-breakdown-note").inner_text()
+
+
+@pytest.mark.parametrize("width,height,dpr", VIEWPORTS)
+@pytest.mark.parametrize("language", ["en", "zh", "ar"])
+def test_chart_selector_is_labelled_keyboard_usable_and_fits_the_viewport(stats_page, width, height, dpr, language):
+    page = stats_page(width, height, dpr, language=language)
+    assert page.locator("html").get_attribute("dir") == ("rtl" if language == "ar" else "ltr")
+    charts = page.evaluate(LEGENDS)
+    assert len(charts) == 3
+    for chart in charts:
+        assert chart["type"] == "pie" and chart["entries"] == chart["buckets"] > 0
+        assert max(chart["bottoms"]) <= chart["canvasHeight"]
+        assert max(chart["rights"]) <= chart["canvasWidth"] + 1
+    for index in range(3):
+        section = page.locator(".stats-breakdown").nth(index)
+        control = section.locator("select")
+        label = section.locator(".stats-chart-controls label")
+        assert label.is_visible() and label.inner_text().strip()
+        assert label.get_attribute("for") == control.get_attribute("id")
+        assert control.bounding_box()["height"] >= 44
+        control.focus()
+        control.press("ArrowDown")
+        control.press("Enter")
+        assert control.input_value() == "bar"
+        assert control.evaluate("node => document.activeElement === node")
+        control.press("ArrowDown")
+        control.press("Enter")
+        assert control.input_value() == "line"
+        assert control.evaluate("node => document.activeElement === node")
+        note = section.locator(".stats-breakdown-note")
+        assert note.is_visible()
+        assert control.get_attribute("aria-describedby") == note.get_attribute("id")
+        assert section.locator("canvas").get_attribute("aria-describedby") == note.get_attribute("id")
+        expected = LINE_NOTE if language == "en" else i18n_keys.catalogue(language)["strings"][LINE_NOTE]
+        assert expected in note.inner_text()
+    assert page.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
+    long_label = STATS["by_food_category"][1]["label"]
+    assert long_label in page.locator(".stats-breakdown-list").nth(2).inner_text()
+    assert long_label in page.locator("canvas").nth(2).evaluate("""(canvas, label) => Chart.getChart(canvas).options.plugins.tooltip.callbacks.label({label, parsed: {y: 0.1312}})""", long_label)
 
 
 def test_render_bar_draws_a_negative_value_below_the_axis(browser):

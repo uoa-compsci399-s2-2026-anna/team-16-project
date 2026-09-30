@@ -929,7 +929,7 @@ def test_statistics_source_consumes_the_stats_contract_without_nz_generalisation
             f"membership are the service's ({source[opening - 40:opening + len(body)]!r})"
         )
 
-    assert "renderDonut" in source and "renderBar" in source and "./charts.js" in source
+    assert all(name in source for name in ("renderPie", "renderBar", "renderLine", "./charts.js"))
 
 
 def test_the_statistics_page_never_makes_new_zealand_the_subject():

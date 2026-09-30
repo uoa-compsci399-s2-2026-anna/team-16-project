@@ -487,6 +487,153 @@ CHART_DATA = """() => [...document.querySelectorAll('.stats-chart-region canvas'
 })"""
 
 
+def test_empty_error_and_recovery_keep_chart_choices_without_orphans(stats_page):
+    page = stats_page(1278, 983)
+    result = page.evaluate("""async stats => {
+      const module = await import('/js/stats.js');
+      const { ApiError } = await import('/js/api.js');
+      const selections = () => [...document.querySelectorAll('.stats-breakdown')].map(
+        section => section.querySelector('select')?.value ?? null);
+      const ids = () => [...document.querySelectorAll('.stats-chart-region canvas')].map(
+        canvas => Chart.getChart(canvas)?.id);
+      document.querySelectorAll('.stats-chart-controls select')[0].value = 'bar';
+      document.querySelectorAll('.stats-chart-controls select')[0].dispatchEvent(new Event('change'));
+      document.querySelectorAll('.stats-chart-controls select')[1].value = 'line';
+      document.querySelectorAll('.stats-chart-controls select')[1].dispatchEvent(new Event('change'));
+      const empty = structuredClone(stats);
+      empty.by_sector = [];
+      module.renderStats(empty);
+      const duringEmpty = {selections: selections(), active: Object.keys(Chart.instances).length,
+        sectorCanvas: !!document.querySelectorAll('.stats-breakdown')[1].querySelector('canvas')};
+      module.renderStatsError(new ApiError('TEST', 'Temporary failure'));
+      const duringError = {active: Object.keys(Chart.instances).length,
+        controls: document.querySelectorAll('.stats-chart-controls select').length,
+        canvases: document.querySelectorAll('.stats-chart-region canvas').length};
+      await module.loadStats({getStats: async () => stats});
+      const recovered = {selections: selections(), active: Object.keys(Chart.instances).length,
+        ids: ids()};
+      module.renderStats(stats);
+      const repeated = {selections: selections(), active: Object.keys(Chart.instances).length,
+        ids: ids()};
+      const select = document.querySelector('.stats-chart-controls select');
+      select.value = 'pie';
+      select.dispatchEvent(new Event('change'));
+      const afterChange = {active: Object.keys(Chart.instances).length, ids: ids()};
+      return {duringEmpty, duringError, recovered, repeated, afterChange};
+    }""", STATS)
+    assert result["duringEmpty"] == {"selections": ["bar", None, "pie"], "active": 2,
+                                     "sectorCanvas": False}
+    assert result["duringError"] == {"active": 0, "controls": 0, "canvases": 0}
+    assert result["recovered"]["selections"] == ["bar", "line", "pie"]
+    assert result["recovered"]["active"] == result["repeated"]["active"] == 3
+    assert len(set(result["repeated"]["ids"])) == 3
+    assert result["afterChange"]["active"] == 3
+    assert result["afterChange"]["ids"][0] == result["repeated"]["ids"][0] + 3
+    assert result["afterChange"]["ids"][1:] == result["repeated"]["ids"][1:]
+    assert len(page.stats_requests) == 1
+
+
+def test_stale_stats_success_and_failure_do_not_replace_the_latest_view(stats_page):
+    page = stats_page(1278, 983)
+    result = page.evaluate("""async stats => {
+      const module = await import('/js/stats.js');
+      const { ApiError } = await import('/js/api.js');
+      const target = document.querySelector('#stats-breakdown-content');
+      const deferred = () => {let resolve, reject; const promise = new Promise((yes, no) => {
+        resolve = yes; reject = no;
+      }); return {promise, resolve, reject};};
+      let calls = 0;
+      const getDeferred = pending => () => { calls += 1; return pending.promise; };
+      const snapshot = () => ({busy: target.getAttribute('aria-busy'),
+        summary: document.querySelector('#stats-summary').textContent,
+        ids: [...document.querySelectorAll('.stats-chart-region canvas')].map(c => Chart.getChart(c).id)});
+      const older = deferred(), newer = deferred();
+      const oldCall = module.loadStats({getStats: getDeferred(older)});
+      const busyAfterOld = target.getAttribute('aria-busy');
+      const newCall = module.loadStats({getStats: getDeferred(newer)});
+      const busyAfterNew = target.getAttribute('aria-busy');
+      newer.resolve({...stats, total_calculations: 222});
+      await newCall;
+      const latestSuccess = snapshot();
+      older.resolve({...stats, total_calculations: 111});
+      const staleSuccessResult = await oldCall;
+      const afterStaleSuccess = snapshot();
+      const olderFailure = deferred(), newerSuccess = deferred();
+      const oldFailureCall = module.loadStats({getStats: getDeferred(olderFailure)});
+      const busyAfterOldFailure = target.getAttribute('aria-busy');
+      const newSuccessCall = module.loadStats({getStats: getDeferred(newerSuccess)});
+      newerSuccess.resolve({...stats, total_calculations: 333});
+      await newSuccessCall;
+      const latestAfterFailureRace = snapshot();
+      olderFailure.reject(new ApiError('TEST', 'Obsolete failure'));
+      const staleFailureResult = await oldFailureCall;
+      const afterStaleFailure = snapshot();
+      let unexpectedError = null;
+      try {
+        await module.loadStats({getStats: async () => { throw new RangeError('Renderer error'); }});
+      } catch (error) {
+        unexpectedError = {name: error.name, message: error.message};
+      }
+      return {busyAfterOld, busyAfterNew, busyAfterOldFailure, latestSuccess,
+        staleSuccessResult, afterStaleSuccess, latestAfterFailureRace,
+        staleFailureResult, afterStaleFailure, unexpectedError, calls,
+        afterUnexpectedError: snapshot()};
+    }""", STATS)
+    assert result["busyAfterOld"] == result["busyAfterNew"] == result["busyAfterOldFailure"] == "true"
+    assert result["staleSuccessResult"] is None and result["staleFailureResult"] is None
+    assert result["latestSuccess"] == result["afterStaleSuccess"]
+    assert result["latestAfterFailureRace"] == result["afterStaleFailure"]
+    assert result["afterStaleFailure"] == result["afterUnexpectedError"]
+    assert result["unexpectedError"] == {"name": "RangeError", "message": "Renderer error"}
+    assert result["calls"] == 4
+    assert "222" in result["latestSuccess"]["summary"]
+    assert "333" in result["latestAfterFailureRace"]["summary"]
+    assert result["latestSuccess"]["busy"] == result["latestAfterFailureRace"]["busy"] == "false"
+    assert len(page.stats_requests) == 1
+
+
+def test_detached_selector_cannot_recreate_a_destroyed_chart(stats_page):
+    page = stats_page(1278, 983)
+    result = page.evaluate("""async stats => {
+      const module = await import('/js/stats.js');
+      const { ApiError } = await import('/js/api.js');
+      const ids = () => Object.keys(Chart.instances).map(Number).sort((a, b) => a - b);
+      const staleChange = select => {
+        const before = ids();
+        select.value = 'bar';
+        select.dispatchEvent(new Event('change'));
+        return {before, after: ids()};
+      };
+      const oldRerender = document.querySelector('.stats-chart-controls select');
+      module.rerenderInActiveLanguage();
+      const afterRerender = staleChange(oldRerender);
+      const oldError = document.querySelector('.stats-chart-controls select');
+      module.renderStatsError(new ApiError('TEST', 'Temporary failure'));
+      const afterError = staleChange(oldError);
+      module.renderStats(stats);
+      const oldDestroy = document.querySelector('.stats-chart-controls select');
+      module.destroyCharts();
+      const afterDestroy = staleChange(oldDestroy);
+      module.renderStats(stats);
+      const oldPagehide = document.querySelector('.stats-chart-controls select');
+      window.dispatchEvent(new Event('pagehide'));
+      const afterPagehide = staleChange(oldPagehide);
+      module.renderStats(stats);
+      const current = document.querySelector('.stats-chart-controls select');
+      const normalBefore = ids();
+      current.value = 'bar';
+      current.dispatchEvent(new Event('change'));
+      return {afterRerender, afterError, afterDestroy, afterPagehide,
+        normalBefore, normalAfter: ids(), currentValue: current.value};
+    }""", STATS)
+    for name in ("afterRerender", "afterError", "afterDestroy", "afterPagehide"):
+        assert result[name]["after"] == result[name]["before"], name
+    assert result["currentValue"] == "bar"
+    assert len(result["normalBefore"]) == len(result["normalAfter"]) == 3
+    assert len(set(result["normalBefore"]) & set(result["normalAfter"])) == 2
+    assert len(page.stats_requests) == 1
+
+
 def test_each_breakdown_selects_a_chart_without_refetching_or_replacing_its_list(stats_page):
     page = stats_page(1278, 983)
     before = page.evaluate(CHART_DATA)

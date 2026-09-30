@@ -47,6 +47,7 @@ import './drawer.js'
 
 const chartInstances = new Map()
 const chartSelections = new Map()
+let chartRenderGeneration = 0
 const CHART_TYPES = [
   { value: 'pie', label: () => t('Pie chart'), render: renderPie },
   { value: 'bar', label: () => t('Bar chart'), render: renderBar },
@@ -176,6 +177,7 @@ function destroyChart(key) {
 }
 
 export function destroyCharts() {
+  chartRenderGeneration += 1
   for (const key of [...chartInstances.keys()]) destroyChart(key)
 }
 
@@ -346,8 +348,10 @@ function renderBreakdown(stats, definition) {
   })
   chartRegion.append(canvas)
   section.append(chartRegion, renderEquivalentList(rows, definition))
+  const generation = chartRenderGeneration
   select.addEventListener('change', () => {
-    if (!section.isConnected || !CHART_TYPES.some((type) => type.value === select.value)) return
+    if (generation !== chartRenderGeneration || !section.isConnected ||
+        !CHART_TYPES.some((type) => type.value === select.value)) return
     chartSelections.set(definition.key, select.value)
     updateBreakdownNote(note, definition)
     createChart(definition.key, canvas, rows, definition)

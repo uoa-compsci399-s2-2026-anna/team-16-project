@@ -643,6 +643,48 @@ def test_charts_module_has_exact_public_exports_and_vendored_chartjs():
     assert "https://cdn" not in source.lower()
 
 
+def test_documented_statistics_visual_contract_matches_the_public_modules():
+    """Catch a chart contract that omits the shipped selection and rendering rules."""
+
+    contract = _read(ROOT / "docs" / "interfaces.md")
+    section = contract.split("## 7.4 `charts.js` (written by D)", 1)[1].split("## 7.5", 1)[0]
+    changelog = contract.split("## 0.1 Change Log", 1)[1].split("### v1.78", 1)[0]
+    entry = re.search(r"(?ms)^### v(\d+)\.(\d+) [^\n]*statistics chart selection[^\n]*\n.*?(?=^### v|\Z)", changelog)
+    assert entry, "the statistics presentation change needs its own changelog entry"
+
+    versions = [(int(major), int(minor)) for major, minor in re.findall(
+        r"(?m)^### v(\d+)\.(\d+)\b", contract,
+    )]
+    header = re.search(r'(?m)^date: "[^"]+ \(v(\d+)\.(\d+)\)"$', contract)
+    assert header
+    assert len(versions) == len(set(versions))
+    assert (int(entry[1]), int(entry[2])) > (1, 78)
+    assert (int(header[1]), int(header[2])) >= (int(entry[1]), int(entry[2]))
+
+    charts_source = _read(WEB / "js" / "charts.js")
+    actual = set(re.findall(r"(?m)^export (?:function|const)\s+(\w+)", charts_source))
+    documented = set(re.findall(r"(?m)^export (?:function|const)\s+(\w+)", section))
+    assert documented == actual == {"PALETTE", "renderDonut", "renderPie", "renderBar", "renderLine"}
+    assert len(re.findall(r"(?m)^export function\s+\w+", section)) == 4
+
+    for token in (
+        "labelKey", "valueKey", "formatValue", "allowNegative", "String(value)",
+        "RangeError", "finite negative", "count-ranked", "Other", "not a time trend",
+        "pie", "bar", "line", "latestStats", "latestFailure", "rerenderInActiveLanguage",
+        "fitLegend", "reduced-motion", "16", "§6.4", "§7.7.7", "en-NZ",
+    ):
+        assert token in section, f"§7.4 omits {token}"
+    for token in ("REST", "wire", "fixture", "no-op", "team", "PR"):
+        assert token in entry[0], f"statistics changelog omits {token}"
+
+    architecture = _read(ROOT / "docs" / "architecture.md")
+    statistics_row = re.search(r"(?m)^\| Statistics \|.*$", architecture)
+    assert statistics_row and all(chart in statistics_row[0] for chart in ("Pie", "Bar", "Line"))
+    readme = _read(WEB / "README.md")
+    assert "Chart.js adapters for doughnut, pie, bar and line charts" in readme
+    assert "count-ranked" in readme and "Other" in readme
+
+
 #: The provenance note beside the runtime, and the two files it vouches for.
 VENDOR = WEB / "vendor"
 SOURCE_NOTE = VENDOR / "chart.js.SOURCE.md"

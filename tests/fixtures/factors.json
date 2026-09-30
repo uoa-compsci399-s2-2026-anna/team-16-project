@@ -50,6 +50,11 @@
       "metric": "mass",
       "expression": "qty_kg",
       "notes": "The mass metric is the quantity entered. It carries no factors, and it is the one metric a reader can check by hand."
+    },
+    {
+      "metric": "land",
+      "expression": "qty_kg * (upstream + downstream)",
+      "notes": "Land occupation, in square metres per kilogram, and the same expression co2e and water use. **There is no downstream land row in this set, and the absence is the answer rather than a gap** (contract v1.70): the client's table 2 has no land column, and sending a kilogram to landfill or to compost returns no land and occupies none. An absent row resolves to zero through the documented three-step lookup order, so the downstream term is zero on every line."
     }
   ],
   "upstream": [
@@ -72,6 +77,15 @@
       "data_quality": "modelled"
     },
     {
+      "sector": "processing",
+      "food_category": "dairy",
+      "destination": null,
+      "metric": "land",
+      "value_per_kg": "7.3597752080",
+      "source_note": "PLACEHOLDER, and the same figure the published set carries for this pair: the unweighted mean of the client's own table 1 land column for the six dairy rows, inverted from t/ha into m2/kg (10/Y). Not a New Zealand measurement -- O-1 is open. Land is flat across all six sectors in that set, because land occupation is a property of growing the food rather than of how far down the supply chain it is wasted.",
+      "data_quality": "derived-client"
+    },
+    {
       "sector": "primary_production",
       "food_category": "vegetables",
       "destination": null,
@@ -88,6 +102,15 @@
       "value_per_kg": "322.0000000000",
       "source_note": "PLACEHOLDER. Order-of-magnitude only.",
       "data_quality": "modelled"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "vegetables",
+      "destination": null,
+      "metric": "land",
+      "value_per_kg": "0.1683501684",
+      "source_note": "PLACEHOLDER, and the same figure the published set carries for this pair: the client's own table 1 land column for 'Vegetable', 59.40 t/ha, inverted into 10/59.40 m2/kg. Not a New Zealand measurement -- O-1 is open, and the public figure (Poore & Nemecek 2018, unweighted mean 0.49 m2/kg) is 2.9x higher.",
+      "data_quality": "derived-client"
     },
     {
       "sector": "consumer_hospitality",
@@ -108,6 +131,15 @@
       "data_quality": "modelled"
     },
     {
+      "sector": "consumer_hospitality",
+      "food_category": "standard_mix",
+      "destination": null,
+      "metric": "land",
+      "value_per_kg": "0.5555555556",
+      "source_note": "PLACEHOLDER. Applies to the standard mix, which is what a null food_category resolves to. The same figure the published set carries: the client's own table 1 land column for 'General mixed food product', 18 t/ha, inverted into 10/18 m2/kg. Kept unchecked -- no single public product row corresponds to a catch-all mix.",
+      "data_quality": "derived-client"
+    },
+    {
       "sector": "processing",
       "food_category": "dairy",
       "destination": "prevention",
@@ -121,6 +153,15 @@
       "food_category": "dairy",
       "destination": "prevention",
       "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7: prevented waste was never produced, so no upstream burden is attributable to it. Zero is a modelling decision, not missing data - it is what makes `prevention` a 100% offset (architecture.md 4.1) and keeps the two scenarios mass-conserving.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "destination": "prevention",
+      "metric": "land",
       "value_per_kg": "0.0000000000",
       "source_note": "O-7: prevented waste was never produced, so no upstream burden is attributable to it. Zero is a modelling decision, not missing data - it is what makes `prevention` a 100% offset (architecture.md 4.1) and keeps the two scenarios mass-conserving.",
       "data_quality": "definitional"
@@ -144,6 +185,15 @@
       "data_quality": "definitional"
     },
     {
+      "sector": "primary_production",
+      "food_category": "vegetables",
+      "destination": "prevention",
+      "metric": "land",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7: prevented waste was never produced, so no upstream burden is attributable to it. Zero is a modelling decision, not missing data - it is what makes `prevention` a 100% offset (architecture.md 4.1) and keeps the two scenarios mass-conserving.",
+      "data_quality": "definitional"
+    },
+    {
       "sector": "consumer_hospitality",
       "food_category": "standard_mix",
       "destination": "prevention",
@@ -157,6 +207,15 @@
       "food_category": "standard_mix",
       "destination": "prevention",
       "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7: prevented waste was never produced, so no upstream burden is attributable to it. Zero is a modelling decision, not missing data - it is what makes `prevention` a 100% offset (architecture.md 4.1) and keeps the two scenarios mass-conserving.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "standard_mix",
+      "destination": "prevention",
+      "metric": "land",
       "value_per_kg": "0.0000000000",
       "source_note": "O-7: prevented waste was never produced, so no upstream burden is attributable to it. Zero is a modelling decision, not missing data - it is what makes `prevention` a 100% offset (architecture.md 4.1) and keeps the two scenarios mass-conserving.",
       "data_quality": "definitional"

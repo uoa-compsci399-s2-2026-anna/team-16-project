@@ -122,6 +122,29 @@
               "upstream_basis": null
             }
           ]
+        },
+        "land": {
+          "unit": "m2",
+          "display_precision": 1,
+          "total": "8966.4103843200",
+          "by_destination": [
+            {
+              "destination": "landfill",
+              "qty_kg": "1200.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "8831.7302496000",
+              "upstream_basis": null
+            },
+            {
+              "destination": "not_harvested",
+              "qty_kg": "800.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "134.6801347200",
+              "upstream_basis": null
+            }
+          ]
         }
       },
       "equivalences": [
@@ -236,6 +259,21 @@
                 "upstream_basis": "absent"
               }
             ]
+          },
+          "land": {
+            "unit": "m2",
+            "display_precision": 1,
+            "total": "8831.7302496000",
+            "by_destination": [
+              {
+                "destination": "landfill",
+                "qty_kg": "1200.000",
+                "upstream": "7.3597752080",
+                "downstream": "0.0000000000",
+                "value": "8831.7302496000",
+                "upstream_basis": "category_every_destination"
+              }
+            ]
           }
         },
         "equivalences": [
@@ -335,6 +373,21 @@
                 "downstream": "0.0000000000",
                 "value": "800.0000000000",
                 "upstream_basis": "absent"
+              }
+            ]
+          },
+          "land": {
+            "unit": "m2",
+            "display_precision": 1,
+            "total": "134.6801347200",
+            "by_destination": [
+              {
+                "destination": "not_harvested",
+                "qty_kg": "800.000",
+                "upstream": "0.1683501684",
+                "downstream": "0.0000000000",
+                "value": "134.6801347200",
+                "upstream_basis": "category_every_destination"
               }
             ]
           }

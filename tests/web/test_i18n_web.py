@@ -89,11 +89,14 @@ IDENTICAL_BY_DESIGN = {
 def _has_translatable_words(source: str) -> bool:
     return any(character.isalpha() for character in PLACEHOLDER.sub("", source))
 
-#: Sentences that explain a table by naming the labels printed in it, each
-#: with the cell labels it names. `methodology.js` prints both scope columns
+#: Sentences that explain something on a screen by naming the label printed on
+#: it, each with the labels it names. `methodology.js` prints both scope columns
 #: of a factor table and then a sentence saying which scope wins; a reader
 #: looking for `All destinations` in that sentence has to find the same words
-#: the cell shows them.
+#: the cell shows them. Since v1.77 a **control** is named the same way: the
+#: privacy copy tells the visitor which button clears what their browser is
+#: holding, and that only works if the sentence spells the button the way the
+#: button does.
 #:
 #: **This is a real failure, not a hypothetical one.** Seven of the twenty
 #: catalogues coined a second term for `All destinations` when the upstream
@@ -115,6 +118,30 @@ SCOPE_SENTENCES = {
         "apply, the one naming a sector is used. Negative values are retained "
         "because they represent published offsets."
     ): ("All sectors", "All food categories"),
+    # v1.77, and the label is a **control** rather than a table cell. The
+    # transparency notice and the methodology page both tell the visitor which
+    # button removes the copy of their answers their browser is holding, and a
+    # translation that coined a second name for that button would be describing
+    # a control they cannot find. The mechanism is the one above unchanged: name
+    # the sentence, name the label, and every catalogue has to use the label's
+    # own words.
+    (
+        "Your answers, and the result you were shown, also stay in this browser "
+        "tab, so that coming back does not start you over. That copy never "
+        "leaves your browser, it goes when you close the tab, and the "
+        "calculator's Clear all data button removes it at once."
+    ): ("Clear all data",),
+    (
+        "Your browser also keeps a copy of your answers, and of the result you "
+        "were last shown, so that following a link and pressing Back does not "
+        "throw the calculation away. That copy belongs to the tab you are "
+        "using: it is not shared with your other tabs, it is never sent to us "
+        "or to anyone else, and it ends when you close the tab. The "
+        "calculator's Clear all data button removes it straight away, and the "
+        "calculator still works in a browser that refuses to keep anything at "
+        "all. A result brought back this way is the one you already saw, shown "
+        "again with the factors that produced it rather than worked out again."
+    ): ("Clear all data",),
 }
 
 LANGUAGES = i18n_keys.catalogue_languages()

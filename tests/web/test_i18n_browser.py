@@ -2233,6 +2233,21 @@ _TRANSPARENCY = (
     "business is stored."
 )
 
+#: The second sentence of the same notice, added at v1.77 once the visitor's
+#: answers began to sit in their own browser as well as on the server (contract
+#: §7.2a). It is a second `<span>` rather than more words in the first,
+#: because a reworded paragraph would have orphaned twenty translations of a
+#: sentence that had not changed - and because the two say different things: the
+#: first is what we keep, this one is what their own browser keeps and what ends
+#: it. A hand-copy again, held honest the same way: the catalogue lookup below
+#: raises `KeyError` the moment the page's wording moves away from this constant.
+_BROWSER_COPY = (
+    "Your answers, and the result you were shown, also stay in this browser "
+    "tab, so that coming back does not start you over. That copy never leaves "
+    "your browser, it goes when you close the tab, and the calculator's Clear "
+    "all data button removes it at once."
+)
+
 
 @pytest.mark.parametrize("path,heading", sorted(CONTENT_PAGES.items()))
 @pytest.mark.parametrize("language", ["zh", "ar"])
@@ -2258,9 +2273,14 @@ def test_the_content_pages_translate_their_own_prose(browser, path, heading, lan
             assert page.inner_text('.public-nav a[href$="%s"]' % href) == strings[
                 label
             ], "%s: the %s link did not translate" % (path, label)
-        # The footer sentence, which is a `<span>` beside a link precisely so
-        # that translating it cannot delete the link.
-        assert page.inner_text(".transparency-notice span") == strings[_TRANSPARENCY]
+        # The footer's two sentences, each in a `<span>` beside the link
+        # precisely so that translating either cannot delete it. **Selected by
+        # class rather than by tag**: `.transparency-notice span` matched one
+        # element until v1.77 put the browser-storage sentence beside the
+        # server one, and `page.inner_text` is strict, so the old selector
+        # raises on two matches rather than quietly checking the first.
+        assert page.inner_text(".transparency-notice .notice-server") == strings[_TRANSPARENCY]
+        assert page.inner_text(".transparency-notice .notice-browser") == strings[_BROWSER_COPY]
         assert page.inner_text(".transparency-notice a") == strings["What we record"]
         # `<title>`, which is neither text nor attribute.
         assert page.title() == strings[_PAGE_TITLE[path]]

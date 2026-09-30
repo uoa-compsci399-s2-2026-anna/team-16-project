@@ -513,6 +513,11 @@ TOTAL_LINES = [
     ("ch4", "  - Methane: 32.4 kg CH4"),
     ("water", "  - Water: 1,787,600 L"),
     ("cost", "  - Cost: 72 NZD"),
+    #: `land` joined the fixture at contract v1.78, when the response fixtures
+    #: caught up with the set the owner had published -- `m2` from the figure's
+    #: own `unit`, which is the column that reaches this surface, and `11,174.3`
+    #: is 11174.3429467200 at `display_precision` 1.
+    ("land", "  - Land use: 11,174.3 m2"),
 ]
 
 
@@ -541,6 +546,37 @@ def test_the_export_names_no_metric_of_its_own(report):
     """
     lines = report.split("Impact summary\n", 1)[1].split("\n\nTangible equivalents", 1)[0]
     assert len(lines.strip().splitlines()) == len(TOTAL_LINES)
+
+
+def test_total_lines_names_every_metric_the_fixture_carries_but_mass():
+    """`TOTAL_LINES` is a **count** as well as a list of exact lines, so it has to
+    be complete or the test above stops meaning what it says.
+
+    This is the guard the list did not have. `land` reached
+    `calculate_response.json` at contract v1.78 and
+    `test_the_export_names_no_metric_of_its_own` failed on `5 == 4` -- which was
+    the right answer to the wrong question: the export was correct and the list
+    was short. A list of anchored strings cannot be derived from the fixture
+    without becoming a tautology (the point of `4,449.0 kg CO2e` is that somebody
+    read it), so what is derived instead is its **membership**: adding a metric
+    to the fixture now costs one line here, written and checked by a person,
+    rather than a count that silently stops covering it.
+
+    `mass` is excepted for the reason `summaryCards` excepts it, and
+    `test_mass_is_the_headline_and_not_an_impact_line` is what holds that.
+    """
+    carried = [
+        code
+        for code in _fixture("calculate_response.json")["totals"]["current"]["metrics"]
+        if code != "mass"
+    ]
+
+    assert [code for code, _ in TOTAL_LINES] == carried, (
+        f"TOTAL_LINES names {[code for code, _ in TOTAL_LINES]} and "
+        f"calculate_response.json's totals carry {carried} (mass excepted). The count "
+        f"assertion above is only as complete as this list, so a metric missing from it "
+        f"is a metric whose printed line, unit and precision nothing checks"
+    )
 
 
 @node

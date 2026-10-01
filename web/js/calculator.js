@@ -862,6 +862,14 @@ const cardId = (step, key) => `${step}\u0000${key}`
  * #134 asks for: the client's problem is a card below the fold being skipped, so the
  * step has to be short enough to see whole.
  *
+ * **`count <= 1` is not exercised by step 3, and that was measured rather than assumed.**
+ * `leafPanel` returns the plain single-leaf panel before any card is built, so a step-3
+ * card is only ever one of two or more. Replacing this clause with `false` and rebuilding
+ * leaves `test_step_card_collapse_browser.py` and `test_step_three_zones_browser.py` green
+ * — 27 passed. It is here because decision 2 belongs to the chrome rather than to one
+ * consumer, and #138 and #142 both draw a card at a count of one; whichever of them lands
+ * first is what will put a test under it. Do not delete it as dead on that evidence.
+ *
  * @param {number} step The step that owns the card.
  * @param {string} key The card's own key — a `leafKey` on steps 3 and 4.
  * @param {number} count How many cards the step is drawing.

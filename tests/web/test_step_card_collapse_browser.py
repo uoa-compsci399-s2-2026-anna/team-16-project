@@ -379,6 +379,19 @@ def test_the_badge_and_continue_agree_on_a_state_they_could_disagree_about(forke
         "the badge calls the card incomplete and Continue let the visitor past it, "
         "which is the same disagreement from the other side"
     )
+    #: **Re-read after the press, because the badge has TWO writers and the
+    #: assertion above only reaches one of them.** `cardStatus` is printed by
+    #: `collapsibleCard` at render time and rewritten by `updateCardBadges` on every
+    #: keystroke, and the keystroke is the later of the two - so a second list of
+    #: rules in the renderer alone is repaired before anything above can see it.
+    #: Measured: mutating only `collapsibleCard`'s `settled` left this whole file
+    #: green. Continue re-renders, so this read is the renderer's own answer.
+    rendered = page.evaluate(CARDS)
+    assert rendered[0]["badgeState"] == "incomplete", (
+        "the renderer and the keystroke handler disagree about this card: the badge "
+        f"read incomplete while typing and {rendered[0]['badgeState']!r} after a "
+        f"re-render, so one of the two is not reading `leafSettled`"
+    )
     #: And the other direction: fix the contradiction and both answers move.
     page.fill(f"#{_ids(page, 'wastedValue')[0]}", "50")
     page.wait_for_timeout(200)

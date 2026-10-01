@@ -8313,6 +8313,7 @@
       "value_per_unit": "0.0004149378",
       "label_template": "Equivalent to running {value} passenger vehicles for a year",
       "label_template_one": "Equivalent to running {value} passenger vehicle for a year",
+      "description": "The same greenhouse gases an average passenger vehicle puts out in a year of driving, counted as a number of vehicles.",
       "source_note": "Client, Data sources for impact calculator (2026-08-29): \"Passenger vehicles on the road: GHG emissions (t CO2e) / 2.41 (t CO2e/passenger vehicle/year)\". Applied per kilogram, so the divisor here is 2,410.",
       "sort_order": 10
     },
@@ -8324,6 +8325,7 @@
       "value_per_unit": "0.1514522822",
       "label_template": "Equivalent to an average passenger vehicle's emissions over {value} days",
       "label_template_one": "Equivalent to an average passenger vehicle's emissions over {value} day",
+      "description": "The same greenhouse gases one average passenger vehicle puts out over a whole day, parked hours included, counted as a number of days.",
       "source_note": "The row above, divided by 365. No new source: it is the client's own 2.41 t CO2e per passenger vehicle per year (Data sources for impact calculator, 2026-08-29) spread over the days of that year, which comes to 6.60 kg CO2e a day. It is the client's own suggestion -- \"if a year is too much, change it to a day\". \"An average day\" is the whole day and not a journey: the figure includes the hours the vehicle is parked, because the year it is divided from does.",
       "sort_order": 11
     },
@@ -8336,6 +8338,7 @@
       "value_per_unit": "4.000E-7",
       "label_template": "Equivalent to {value} Olympic swimming pools of water",
       "label_template_one": "Equivalent to {value} Olympic swimming pool of water",
+      "description": "The water used to produce this food, measured as Olympic swimming pools of 2,500,000 litres each.",
       "source_note": "Client, Data sources for impact calculator (2026-08-29): \"Olympic swimming pools: = (Water Used (L)) / 2,500,000\".",
       "sort_order": 20
     },
@@ -8348,6 +8351,7 @@
       "value_per_unit": "0.0000208333",
       "label_template": "Equivalent to {value} backyard swimming pools of water",
       "label_template_one": "Equivalent to {value} backyard swimming pool of water",
+      "description": "The water used to produce this food, measured as backyard pools of 48,000 litres (8 m by 4 m, 1.5 m deep), which is our own estimate rather than a published figure.",
       "source_note": "48,000 litres, which is 8 m x 4 m x 1.5 m of water -- an ordinary domestic rectangular pool at an average depth. Derived here from those dimensions and not taken from a published figure: the team's own judgement, which the client asked for (\"be creative\", and these numbers \"need not be especially precise\"). It sits between the client's Olympic pool and a shower, which is the gap it was added to fill, and the dimensions are stated so that a reader who disagrees can see exactly what to change.",
       "sort_order": 21
     },
@@ -8359,6 +8363,7 @@
       "value_per_unit": "0.0111111111",
       "label_template": "Equivalent to {value} ten-minute showers",
       "label_template_one": "Equivalent to {value} ten-minute shower",
+      "description": "The water used to produce this food, measured as ten-minute showers at nine litres a minute, which is our assumption and not yet a New Zealand figure.",
       "source_note": "PLACEHOLDER. Open item O-3 names showers as an intended equivalent and the New Zealand basis for one is not settled. 90 litres is ten minutes at 9 litres a minute, which is an ordinary (not a low-flow) showerhead; the assumption is stated here rather than hidden in the factor so that replacing it is one number in one row. Both halves are assumptions: how long a shower runs and how fast.",
       "sort_order": 22
     },
@@ -8369,6 +8374,7 @@
       "value_per_unit": "2.2222222222",
       "label_template": "Equivalent to {value} meals",
       "label_template_one": "Equivalent to {value} meal",
+      "description": "The food counted here, measured as meals of 450 grams each.",
       "source_note": "Client, Data sources for impact calculator (2026-08-29): \"Meals: 450g per meal\".",
       "sort_order": 30
     }

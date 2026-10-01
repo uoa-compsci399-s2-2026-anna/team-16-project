@@ -68,6 +68,15 @@ KM_DRIVEN_SOURCE_NOTE = (
     "vehicle per 0.24 kg CO2e."
 )
 
+#: v1.80. Verbatim from the same fixture row's `description`. **Deliberately
+#: nothing like the note above**: the two fields say different things, and a
+#: test whose two strings were similar could not tell a fallback from a
+#: correct read.
+KM_DRIVEN_DESCRIPTION = (
+    "The same greenhouse gases as driving an average light petrol car this "
+    "far, at a placeholder 0.24 kg CO2e a kilometre."
+)
+
 
 def _scenario(total_kg, metric, equivalence_value):
     return SimpleNamespace(
@@ -83,6 +92,7 @@ def _scenario(total_kg, metric, equivalence_value):
                 value_per_unit=Decimal("4.1800000000"),
                 value_per_unit_display="4.18",
                 source_note=KM_DRIVEN_SOURCE_NOTE,
+                description=KM_DRIVEN_DESCRIPTION,
             ),
         ),
     )
@@ -101,6 +111,7 @@ def _result_with_equivalence(**kwargs):
         value_per_unit=Decimal("4.1800000000"),
         value_per_unit_display="4.18",
         source_note=KM_DRIVEN_SOURCE_NOTE,
+        description=KM_DRIVEN_DESCRIPTION,
     )
     fields.update(kwargs)
     scenario = SimpleNamespace(
@@ -458,6 +469,13 @@ def test_the_engines_trailing_code_suffixes_are_dropped_on_the_wire():
         "value_per_unit": Decimal("4.1800000000"),
         "value_per_unit_display": "4.18",
         "source_metric": "co2e",
+        #: v1.80. Additive, like v1.52's four before it, and asserted as part
+        #: of the WHOLE object rather than on its own: this equality is what
+        #: says the wire carries exactly these keys and no others, so a field
+        #: added to `EquivalenceResult` and forgotten in `_scenario` fails
+        #: here as well as in `test_the_fake_adapters_equivalence_has_every_
+        #: field_the_engines_does`.
+        "description": KM_DRIVEN_DESCRIPTION,
         "source_note": KM_DRIVEN_SOURCE_NOTE,
     }
 
@@ -570,3 +588,37 @@ def test_a_missing_basis_is_null_on_the_wire_not_absent():
     row = _scenario_body_for(_result_with_equivalence(source_note=None))["equivalences"][0]
     assert "source_note" in row
     assert row["source_note"] is None
+
+
+def test_an_equivalence_reaches_the_wire_with_the_sentence_the_page_prints():
+    """v1.80 (#127). `description` is the only prose a visitor now reads
+    behind a card's `?`, so it has to be on the wire as its own field and not
+    inferred from anything beside it."""
+    row = _scenario_body_for(_result_with_equivalence(
+        description="The water this food used, as ten-minute showers.",
+    ))["equivalences"][0]
+    assert row["description"] == "The water this food used, as ten-minute showers."
+
+
+def test_an_empty_description_is_null_on_the_wire_and_is_not_the_basis():
+    """**The anti-fallback assertion**, at the layer that makes the fallback
+    possible at all.
+
+    `None` means *print nothing* (v1.80, §6.2), and the one wrong answer here
+    is `source_note` -- the one-to-four-sentence provenance prose #127 took
+    off the results page. `serialize_result` is the single place a reader
+    could reintroduce it with `item.description or item.source_note`, and the
+    whole feature would still look correct in the admin panel, in the export
+    and in every fixture; what a visitor saw would be the long version back.
+    So both halves are asserted: the key is there, it is null, and it is not
+    the note sitting on the very same object.
+    """
+    result = _result_with_equivalence(description=None)
+    row = _scenario_body_for(result)["equivalences"][0]
+    assert "description" in row
+    assert row["description"] is None
+    assert row["source_note"] == KM_DRIVEN_SOURCE_NOTE, (
+        "the stand-in must still carry a basis, or this test could pass "
+        "against a fallback that had nothing to fall back to"
+    )
+    assert row["description"] != row["source_note"]

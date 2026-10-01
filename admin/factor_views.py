@@ -732,7 +732,18 @@ class EquivalenceAdmin(AuditedImport, AuditedModelView, model=Equivalence):
     """`label_template` is what the public sees, e.g.
     "Equivalent to driving {value} km" — the `{value}` placeholder is
     substituted by the front end, so a template without it renders a sentence
-    with no number in it."""
+    with no number in it.
+
+    **`description` is the second string a visitor reads, and `source_note` is
+    no longer one of them** (v1.80, #127). The client, testing the tool, found
+    one to four sentences of audit provenance behind every card's `?` and said
+    it meant nothing there; the disclosure now prints `description` — one
+    staff sentence saying what the comparison means — and prints nothing at
+    all when it is empty. `source_note` keeps its column, this form, the
+    factor export and the methodology page. It does not keep the results
+    page, and it is never a fallback for an empty `description`: that
+    fallback is the thing that was removed.
+    """
 
     name = "Equivalence"
     name_plural = "Equivalences"
@@ -752,13 +763,20 @@ class EquivalenceAdmin(AuditedImport, AuditedModelView, model=Equivalence):
     column_details_list = [Equivalence.factor_set, Equivalence.code,
                            Equivalence.name, Equivalence.source_metric,
                            Equivalence.value_per_unit, Equivalence.label_template,
-                           Equivalence.label_template_one, Equivalence.family,
+                           Equivalence.label_template_one,
+                           Equivalence.description, Equivalence.family,
                            Equivalence.min_value, Equivalence.max_value,
                            Equivalence.source_note, Equivalence.sort_order,
                            Equivalence.active]
+    #: `description` sits beside the two label templates and NOT beside
+    #: `source_note` (v1.80). They are the three strings a visitor reads, and
+    #: `source_note` is the one nobody outside this panel and `/factors` does
+    #: any more -- grouping them the other way is how a staff member comes to
+    #: type provenance into the box the results page prints.
     form_columns = [Equivalence.factor_set, Equivalence.code, Equivalence.name,
                     Equivalence.source_metric, Equivalence.value_per_unit,
                     Equivalence.label_template, Equivalence.label_template_one,
+                    Equivalence.description,
                     Equivalence.family, Equivalence.min_value,
                     Equivalence.max_value, Equivalence.source_note,
                     Equivalence.sort_order, Equivalence.active]
@@ -808,6 +826,17 @@ class EquivalenceAdmin(AuditedImport, AuditedModelView, model=Equivalence):
             "picking the right-sized unit drives the number towards 1 on "
             "purpose, so this is the common case rather than the rare one."
         )},
+        "description": {"description": (
+            "One sentence saying what this comparison MEANS, shown to a "
+            "visitor beside the figures and printed on every export. Leave "
+            "it empty and nothing is shown — the basis note below is "
+            "never used in its place, because this box exists to keep that "
+            "note off the results page. A row whose number rests on an "
+            "assumption has to say so here as well: name the assumption in "
+            "the sentence, or a visitor reads a confident comparison built "
+            "on a figure nobody has measured. Published exactly as typed, "
+            "in every language."
+        )},
         "family": {"description": (
             "Name a ladder here and this row becomes one rung of it — "
             "'vehicles', 'water_volume'. Rows sharing a family are the same "
@@ -839,12 +868,16 @@ class EquivalenceAdmin(AuditedImport, AuditedModelView, model=Equivalence):
             "above it."
         )},
         "source_note": {"description": (
-            "What this conversion is based on. Open item O-3: the New "
-            "Zealand sources for kilometres driven, meals and showers are "
-            "not settled, and an equivalence with no stated basis is the "
-            "figure most likely to be challenged in public. A rung you "
-            "worked out yourself needs one as much as a supplied figure "
-            "does — say what it was derived from and from what."
+            "What this conversion is based on, for whoever has to defend "
+            "the figure. This is not shown to a visitor — the sentence "
+            "above is — but it is published by the factor export and the "
+            "methodology page, so write it for a reader who wants to check "
+            "the number. Open item O-3: the New Zealand sources for "
+            "kilometres driven, meals and showers are not settled, and an "
+            "equivalence with no stated basis is the figure most likely to "
+            "be challenged in public. A rung you worked out yourself needs "
+            "one as much as a supplied figure does — say what it was "
+            "derived from and from what."
         )},
         "sort_order": {"description": (
             "Order on the results page, lowest first; equal values fall back "

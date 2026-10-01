@@ -238,6 +238,13 @@ class EquivalenceResult:
     #: Basis for the conversion, verbatim. `None` where none is recorded --
     #: O-3 is open, and an absence the surfaces can name beats a blank.
     source_note: str | None = None
+    #: v1.80. The staff-authored sentence saying what the comparison MEANS,
+    #: verbatim. **`None` means print nothing**, and no surface may fall back
+    #: to `source_note`: that fallback is exactly the long provenance prose
+    #: this field was added to take off the results page (#127). A pure
+    #: passthrough, like `source_note` beside it -- the engine neither reads
+    #: it nor computes with it.
+    description: str | None = None
 
 
 @dataclass(frozen=True)
@@ -479,6 +486,12 @@ class EquivalenceSpec:
     label_template: str
     name: str = ""
     source_note: str | None = None
+    #: v1.80. `equivalence.description`: one staff-typed sentence saying what
+    #: the comparison means. Optional in a bundle on the same terms
+    #: `source_note` is -- carried, never read -- so every bundle written
+    #: before v1.80, including the thirteen golden cases, loads unchanged and
+    #: produces `description=None`, which the surfaces render as nothing.
+    description: str | None = None
     #: v1.71. Which ladder this row is a rung of, or `None` for a row that is
     #: not a rung of anything and is therefore always shown. **Defaulted, and
     #: `None` is the answer rather than a stand-in for one**: every bundle

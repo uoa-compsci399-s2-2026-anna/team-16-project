@@ -2194,6 +2194,29 @@ def _assert_completeness(data: dict) -> None:
                 f"equivalence {code}: source_note is missing -- every "
                 "shipped equivalence must record where its factor came from"
             )
+        #: v1.80 (#127). `description` is the ONLY prose a visitor now reads
+        #: behind a card's `?`, and an absent one is silent: the disclosure
+        #: draws the figures and nothing else, which looks like a styling
+        #: choice rather than a missing sentence. `source_note` is not a
+        #: fallback for it anywhere, by design, so this is the only thing
+        #: standing between a shipped row and a blank panel.
+        description = equivalence.get("description") or ""
+        if not description:
+            missing.append(
+                f"equivalence {code}: description is missing -- every "
+                "shipped equivalence must say in one sentence what the "
+                "comparison means (v1.80, issue #127)"
+            )
+        #: `equivalence.description` is `VARCHAR(255)`. A longer sentence
+        #: writes a valid JSON file the loader then refuses at INSERT time
+        #: with MySQL `Data too long`, which is the trap the
+        #: `data_quality` check below was written for.
+        if len(description) > 255:
+            missing.append(
+                f"equivalence {code}: description is {len(description)} "
+                "characters and the column holds 255. It is meant to be one "
+                "sentence; this is more than one."
+            )
 
     #: `factor_upstream.data_quality` and `factor_downstream.data_quality` are
     #: both `VARCHAR(32)`. A longer tag writes a perfectly valid JSON file that
@@ -2965,6 +2988,24 @@ def build() -> dict:
     # all, so a value too small for everything above it always has somewhere to
     # land. `_assert_ladders_are_well_formed` below checks both.
     #
+    # WHAT `description` IS, AND WHAT IT IS NOT (v1.80, issue #127). One
+    # sentence saying what the comparison MEANS -- the only prose a visitor
+    # reads behind a card's `?` now that `source_note` has come off the
+    # results page. `source_note` below it is unchanged and still carries the
+    # derivation for whoever audits the factor; the two are not alternatives
+    # and nothing falls back from one to the other.
+    #
+    # **Every sentence here is a DRAFT pending the client's confirmation**,
+    # and two of them exist to carry a caveat that would otherwise have been
+    # lost with the prose: `showers` names both halves of its assumption (ten
+    # minutes, nine litres a minute) and says the figure is not yet a New
+    # Zealand one; `backyard_pools` states its dimensions and says they are
+    # our own estimate. Compressing a caveated row into a confident sentence
+    # is the one thing this column must not be used for.
+    #
+    # ASCII only. A character reaching the PDF from the database is in no
+    # catalogue and is therefore covered by no font test.
+    #
     # NOTHING THE CLIENT SUPPLIED IS REPLACED. `vehicles_year` and
     # `olympic_pools` keep their factors, their wording and their place at the
     # top of each ladder; the rungs are added underneath. Every added rung is
@@ -2982,6 +3023,11 @@ def build() -> dict:
             "value_per_unit": one(2410),
             "label_template": "Equivalent to running {value} passenger vehicles for a year",
             "label_template_one": "Equivalent to running {value} passenger vehicle for a year",
+            "description": (
+                "The same greenhouse gases an average passenger vehicle "
+                "puts out in a year of driving, counted as a number of "
+                "vehicles."
+            ),
             "source_note": (
                 "Client, Data sources for impact calculator (2026-08-29): "
                 "\"Passenger vehicles on the road: GHG emissions (t CO2e) / "
@@ -3008,6 +3054,11 @@ def build() -> dict:
                 "Equivalent to an average passenger vehicle's emissions "
                 "over {value} day"
             ),
+            "description": (
+                "The same greenhouse gases one average passenger vehicle "
+                "puts out over a whole day, parked hours included, counted "
+                "as a number of days."
+            ),
             "source_note": (
                 "The row above, divided by 365. No new source: it is the "
                 "client's own 2.41 t CO2e per passenger vehicle per year "
@@ -3030,6 +3081,10 @@ def build() -> dict:
             "value_per_unit": one(2500000),
             "label_template": "Equivalent to {value} Olympic swimming pools of water",
             "label_template_one": "Equivalent to {value} Olympic swimming pool of water",
+            "description": (
+                "The water used to produce this food, measured as Olympic "
+                "swimming pools of 2,500,000 litres each."
+            ),
             "source_note": (
                 "Client, Data sources for impact calculator (2026-08-29): "
                 "\"Olympic swimming pools: = (Water Used (L)) / 2,500,000\"."
@@ -3045,6 +3100,11 @@ def build() -> dict:
             "value_per_unit": one(48000),
             "label_template": "Equivalent to {value} backyard swimming pools of water",
             "label_template_one": "Equivalent to {value} backyard swimming pool of water",
+            "description": (
+                "The water used to produce this food, measured as backyard "
+                "pools of 48,000 litres (8 m by 4 m, 1.5 m deep), which is "
+                "our own estimate rather than a published figure."
+            ),
             "source_note": (
                 "48,000 litres, which is 8 m x 4 m x 1.5 m of water -- an "
                 "ordinary domestic rectangular pool at an average depth. "
@@ -3067,6 +3127,11 @@ def build() -> dict:
             "value_per_unit": one(90),
             "label_template": "Equivalent to {value} ten-minute showers",
             "label_template_one": "Equivalent to {value} ten-minute shower",
+            "description": (
+                "The water used to produce this food, measured as "
+                "ten-minute showers at nine litres a minute, which is our "
+                "assumption and not yet a New Zealand figure."
+            ),
             "source_note": (
                 "PLACEHOLDER. Open item O-3 names showers as an intended "
                 "equivalent and the New Zealand basis for one is not "
@@ -3091,6 +3156,10 @@ def build() -> dict:
             "value_per_unit": str((Decimal(1) / Decimal("0.45")).quantize(Decimal("1E-10"))),
             "label_template": "Equivalent to {value} meals",
             "label_template_one": "Equivalent to {value} meal",
+            "description": (
+                "The food counted here, measured as meals of 450 grams "
+                "each."
+            ),
             "source_note": (
                 "Client, Data sources for impact calculator (2026-08-29): "
                 "\"Meals: 450g per meal\"."

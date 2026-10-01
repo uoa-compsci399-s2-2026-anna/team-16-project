@@ -272,6 +272,12 @@ def main() -> int:
                 ),
                 value_per_unit=_decimal(row, "value_per_unit"),
                 label_template=row["label_template"],
+                #: v1.80. Named rather than splatted, like every other key
+                #: this loader reads: a key the JSON carries and this file
+                #: does not is a key the database never sees, and an
+                #: equivalence with no `description` shows an empty
+                #: disclosure on every card with nothing failing.
+                description=row.get("description"),
                 source_note=row.get("source_note"),
                 sort_order=int(row.get("sort_order", 0)),
             ))

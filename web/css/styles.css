@@ -1909,19 +1909,111 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
    650px two-column split, the block-flow stacking below it - applies unchanged per card. */
 .leaf-panel-list { display: grid; gap: 16px; }
 .leaf-panel { margin: 0; }
-.leaf-panel > legend {
-  padding-inline: 10px;
+/* `.leaf-panel > legend` and its four declarations are gone with #134. The legend is
+   `.sr-only` now - it is what gives the `<fieldset>` its accessible name and nothing
+   else - and the name a sighted reader sees is `.step-card__name` in the header button
+   below, which carries that typography instead. Two visible copies of the food's name
+   on one card is what the alternative would have been. */
+
+/* ---------------------------------------------------------------------------
+   THE COLLAPSIBLE STEP CARD (#134, and the chrome #138 and #142 consume)
+
+   **The client's problem was missed fields, not length for its own sake:** step 3
+   scrolls, and a card below the fold gets skipped. So the cards fold and the shut
+   card answers "did I fill this in?" without being opened.
+
+   **Everything here is plain on purpose.** `.step-card` is the one element that
+   owns the card's ground - background, border, radius - and it carries no
+   `backdrop-filter`, no `transform`, no `filter` and no positioned descendant of
+   its own, so WP2 (#143) can lift the frosted-glass treatment onto this one
+   selector without re-laying out anything inside the card. Note what that then
+   makes true: `backdrop-filter` creates a containing block (see the note near
+   `.results-floating-nav__panel`), and step 3's term tooltips ARE
+   `position: absolute` inside the card body - so WP2 has to measure `.tip`
+   against a glass `.step-card` before it lands.
+
+   **The badge is never colour-only.** `[data-state]` picks the colour; the mark
+   and the word are in the markup and in the button's accessible name. The two
+   colours are the brand's own and both are measured against the card's white
+   ground: `--green-rule` at 5.14:1 and `--error` (Beetroot) at 9.6:1, so each
+   passes the 4.5:1 a piece of text needs rather than only the 3:1 an indicator
+   does.
+   --------------------------------------------------------------------------- */
+/* `.form-panel.step-card`, two classes, and the second one is not decoration: the
+   480px rule near the foot of this file restates `.form-panel { padding: 19px }`, and
+   a single-class rule here - however far down the file it sat - would lose to it at
+   exactly the widths `test_horizontal_overflow.py` measures. The padding belongs to the
+   header and the body, which are separately present. */
+.form-panel.step-card { padding: 0; }
+/* The header strip. A `<button>` so the keyboard gets it free and `aria-expanded`
+   has somewhere legitimate to live; stripped back to text because it is a card
+   header rather than a control the eye should look for.
+
+   `flex-wrap` and `overflow-wrap: anywhere` on the name are the 320px guard:
+   `unit_preset`-style staff text has no length ceiling and neither does a food
+   name, and a fieldset sizes to its own min-content width, so an unbreakable
+   name would push the document past the viewport - which
+   `tests/web/test_horizontal_overflow.py` measures at 320 and 390 and is a hard
+   gate. */
+.step-card__toggle {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 18px 20px;
+  border: 0;
+  border-radius: 18px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.step-card__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-family: var(--font-heading, inherit);
   font-weight: 700;
-  color: var(--kale, #003223);
+  font-size: 1.05rem;
 }
-/* **Nothing on a leaf card is behind a disclosure.** `.leaf-extras` and its five rules
-   are gone: the three optional scalars sat behind a `<details>` on the stated ground that
-   §7.6.3 requires advancing never to need scrolling and three full panels could not hold
-   that at 390x700. That was written when the step bar was not sticky. It is
-   `position: sticky` now, so the bar - and Continue with it - is on screen whatever the
-   panel's height, measured at all three viewports; page length is the only thing content
-   height still decides. The card uses `.zones` above, same as the single-leaf panel. */
+/* Rotated rather than swapped for a second glyph: one character in the markup, so
+   the chevron cannot disagree with `aria-expanded` about which way it points. */
+.step-card__chevron {
+  flex: 0 0 auto;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+.step-card__chevron.expanded { transform: rotate(180deg); }
+.step-card__status {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.86rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.step-card__mark { font-size: 1rem; line-height: 1; }
+.step-card__status[data-state='complete'] { color: var(--green-rule); }
+.step-card__status[data-state='incomplete'] { color: var(--error); }
+/* The body's own padding is the panel's, moved off `.form-panel` and onto the one
+   element that is sometimes absent. `padding-block-start: 0` because the header
+   above it has already paid for the gap. */
+.step-card__body { padding: 0 20px 20px; }
+
+/* **Nothing INSIDE a leaf card is behind a disclosure.** `.leaf-extras` and its five
+   rules are gone: the three optional scalars sat behind a `<details>` on the stated
+   ground that §7.6.3 requires advancing never to need scrolling and three full panels
+   could not hold that at 390x700. That was written when the step bar was not sticky. It
+   is `position: sticky` now, so the bar - and Continue with it - is on screen whatever
+   the panel's height, measured at all three viewports; page length is the only thing
+   content height still decides. The card uses `.zones` above, same as the single-leaf
+   panel. #134 folds the WHOLE card, which is a different claim and a different fix: it
+   is about a card being missed, not about a field inside one being reached. */
 
 .combined-total {
   margin: 16px 0 0;
@@ -2096,6 +2188,11 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
   .hero-food-pattern { height: 116px; }
   .hero-support-grid { padding: 38px 18px 54px; }
   .needs-panel, .form-panel, .review-block { padding: 19px; }
+  /* The collapsible card's padding is its header's and its body's, so the rule above
+     cannot reach it (see `.form-panel.step-card`); the same 19px is restated on the
+     two elements that actually carry it. */
+  .step-card__toggle { padding: 15px 19px; }
+  .step-card__body { padding: 0 19px 19px; }
   .card-actions { align-self: flex-start; }
   .stage-card { grid-template-columns: 1fr; }
   /* `min-height: 0` cancels the base rule's 92px floor, which is the height of

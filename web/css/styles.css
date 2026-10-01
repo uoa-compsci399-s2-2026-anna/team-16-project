@@ -1715,10 +1715,9 @@ tbody th { font-weight: 700; }
    them (20px) and the row's own padding (18px each side, 36px total - `box-sizing:
    border-box` counts it inside the row's width) and the row needs at least 436px to lay
    out without its own tracks being compressed below their stated minimums. The list
-   column's old minimum (380px) was less than that by 56px, so at any viewport narrow
-   enough to hold this editor to its bare minimums - 700px measured, but really the whole
-   band from the 480px mobile stack up to where the two-column split stops being
-   squeezed - the row was compressed well past what its own CSS says it is entitled to,
+   column's old minimum (380px) was less than that by 56px, so at the first viewport
+   wide enough for the editor's two-column layout - 700px measured - the row was
+   compressed well past what its own CSS says it is entitled to,
    and the select (the row's last, narrowest track) was what ran out of room first:
    `.improvement-allocation-list`'s `overflow: hidden` then clipped it rather than
    showing an overflow nobody could scroll to. Not RTL-only - the clip is symmetric, off
@@ -1735,8 +1734,13 @@ tbody th { font-weight: 700; }
    Above roughly 900px there is room for both columns past their minimums and the split
    returns to its usual proportions. */
 .improvement-editor { margin-top: 24px; display: grid; grid-template-columns: minmax(144px, 0.72fr) minmax(440px, 1.28fr); gap: 24px; align-items: start; }
-.improvement-pie-wrap { padding: 12px; border-radius: 14px; background: #fff; }
-.improvement-pie-chart { display: block; width: 100%; height: auto; overflow: visible; }
+/* The chart, its legend and its expand control are one visual unit.  Keep the whole
+   unit in view while the much longer allocation list scrolls past it; sticking only
+   the SVG would detach the caption and control that explain and operate on it.  The
+   sticky rule is gated below to viewports that can actually hold both columns. */
+.improvement-pie-wrap { min-width: 0; max-width: 100%; padding: 12px; border-radius: 14px; background: #fff; }
+.improvement-pie-content { min-width: 0; max-width: 100%; }
+.improvement-pie-chart { display: block; width: 100%; max-width: 100%; height: auto; overflow: visible; }
 .improvement-pie-chart path { stroke: #fff; stroke-width: 2; }
 .improvement-pie-centre, .improvement-pie-total { pointer-events: none; }
 .improvement-pie-label polyline { fill: none; stroke-width: 1.5; }
@@ -1801,9 +1805,9 @@ tbody th { font-weight: 700; }
 
    **The three minimums must sum to no more than the row's own `:has()` floor above (260px),
    gaps included, or the row silently overflows its own `.improvement-allocation-list`
-   (`overflow: hidden`) the moment that floor is the width actually on offer - which is every
-   viewport from the mobile stack (480px) up to where `.improvement-editor`'s two-column split
-   stops squeezing it (roughly 900px), not merely one measured breakpoint.** A first pass here
+   (`overflow: hidden`) the moment that floor is the width actually on offer - most notably
+   at the 700px seam where `.improvement-editor` first becomes two columns, not merely at a
+   comfortably wide desktop breakpoint.** A first pass here
    used `140/55/80` - 291px including gaps, 31px over the 260px floor - which fit in English
    only by coincidence of where the row happened to sit; in `dir="rtl"` the overflow was real
    and clipped the select half off the left edge, invisibly, because clipped content raises no
@@ -1835,6 +1839,35 @@ tbody th { font-weight: 700; }
 .improvement-submission-mass { margin-block-start: 18px; color: var(--muted); font-size: 0.9rem; text-align: end; }
 .improvement-total.invalid { color: var(--error); background: rgba(135, 0, 90, 0.06); }
 .improvement-actions { margin-top: 22px; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 12px; }
+
+/* 144px chart + 440px controls + 24px gap needs 608px inside the panel.  A 700px
+   viewport is the first width that supplies exactly that after the page and panel
+   padding, so below it the visual and its controls return to document flow instead of
+   forcing a horizontal scrollbar.  At desktop widths the chart card follows either
+   scroll direction until the end of its own editor, which keeps it paired with the row
+   currently being adjusted without letting it escape into the following content. */
+@media (min-width: 700px) {
+  .improvement-pie-wrap {
+    position: sticky;
+    inset-block-start: clamp(16px, 3vh, 28px);
+    align-self: start;
+  }
+}
+
+@media (max-width: 699px) {
+  .improvement-editor { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Once the panel is this narrow, the allocation row's own 400px minimum no longer
+   fits after its padding.  Stack the label, range, value and unit rather than clipping
+   the inline-end controls inside `.improvement-allocation-list`. */
+@media (max-width: 559px) {
+  .improvement-allocation-row,
+  .improvement-allocation-row:has(.improvement-control-unit) { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .improvement-control,
+  .improvement-control-unit { grid-template-columns: minmax(0, 1fr); }
+}
+
 .comparison-results { background: #fff; }
 .comparison-estimate-note { padding: 14px 16px; border-radius: 10px; color: var(--kai-kale); background: rgba(255, 215, 110, 0.28); font-weight: 700; }
 .comparison-summary { margin: 24px 0; padding: 22px; border-radius: 14px; background: rgba(40, 200, 130, 0.12); }
@@ -2120,15 +2153,6 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
   .result-actions { flex-direction: column; }
   .download-actions { flex-direction: column; margin-inline-start: 0; }
   .explore-improvements, .improvement-scenario, .comparison-results { padding: 19px; }
-  .improvement-editor { grid-template-columns: 1fr; }
-  .improvement-allocation-row { grid-template-columns: 1fr; gap: 10px; }
-  /* `:has()` gives the unit-mode row a higher specificity than the plain selector
-     above, so it needs restating here rather than inheriting the stack this rule
-     already sets - a later, lower-specificity rule cannot override an earlier,
-     more specific one just by coming second in the file. */
-  .improvement-allocation-row:has(.improvement-control-unit) { grid-template-columns: 1fr; }
-  .improvement-control { grid-template-columns: 1fr; }
-  .improvement-control-unit { grid-template-columns: 1fr; }
   .improvement-actions { flex-direction: column; }
   .comparison-values { grid-template-columns: 1fr; }
   .comparison-arrow { transform: rotate(90deg); justify-self: start; }

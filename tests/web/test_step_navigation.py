@@ -1065,6 +1065,104 @@ def test_the_improvement_donut_draws_the_share_the_slider_holds(page_at):
     assert page.locator(".improvement-chart-modal").count() == 0
 
 
+def test_the_improvement_chart_follows_both_scroll_directions_on_desktop(page_at):
+    """The chart card stays beside the long allocation list while it is being edited.
+
+    This measures the rendered card rather than merely checking ``position: sticky``:
+    a sticky element whose containing block is too short, whose ancestor clips it, or
+    whose inset is missing computes as sticky but still scrolls away.  Moving down and
+    then back up also covers the client's explicit requirement that the visual follow
+    the viewport in both directions.
+    """
+    page = advance_to(page_at(1278, 700, 1), 5)
+    page.click('[data-action="explore-improvements"]')
+    page.wait_for_selector(".improvement-pie-wrap")
+
+    positions = page.evaluate(
+        """async () => {
+          const editor = document.querySelector('.improvement-editor');
+          const card = editor.querySelector('.improvement-pie-wrap');
+          const editorTop = editor.getBoundingClientRect().top + window.scrollY;
+          window.scrollTo(0, editorTop + 20);
+          await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+          const down = card.getBoundingClientRect().top;
+          window.scrollBy(0, 20);
+          await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+          const fartherDown = card.getBoundingClientRect().top;
+          window.scrollBy(0, -10);
+          await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+          const backUp = card.getBoundingClientRect().top;
+          return {
+            position: getComputedStyle(card).position,
+            inset: parseFloat(getComputedStyle(card).insetBlockStart),
+            down,
+            fartherDown,
+            backUp,
+            editorBottom: editor.getBoundingClientRect().bottom,
+            cardBottom: card.getBoundingClientRect().bottom,
+          };
+        }"""
+    )
+
+    assert positions["position"] == "sticky", positions
+    for name in ("down", "fartherDown", "backUp"):
+        assert abs(positions[name] - positions["inset"]) <= 1, positions
+    assert positions["cardBottom"] <= positions["editorBottom"] + 1, (
+        f"the sticky chart escaped the editor that owns it: {positions}"
+    )
+
+
+@pytest.mark.parametrize("width", [699, 560, 559, 390])
+def test_the_improvement_visual_and_controls_reflow_without_horizontal_overflow(page_at, width):
+    """Resize boundaries keep the chart, caption/control and editor in one viewport.
+
+    699px is one pixel below the two-column budget; 560/559 straddle the allocation
+    row's own minimum; and 390px is the client's phone viewport.  These are the seams
+    where a broad phone-only rule would otherwise leave an untested overflow band.
+    """
+    page = advance_to(page_at(1278, 800, 1), 5)
+    page.click('[data-action="explore-improvements"]')
+    page.set_viewport_size({"width": width, "height": 800})
+    page.wait_for_timeout(100)
+
+    layout = page.evaluate(
+        """() => {
+          const root = document.documentElement;
+          const editor = document.querySelector('.improvement-editor');
+          const card = editor.querySelector('.improvement-pie-wrap');
+          const chart = card.querySelector('.improvement-pie-chart');
+          const button = card.querySelector('.improvement-expand-chart');
+          const list = editor.querySelector('.improvement-allocation-list');
+          const row = list.querySelector('.improvement-allocation-row');
+          const box = element => {
+            const rect = element.getBoundingClientRect();
+            return {left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom};
+          };
+          return {
+            viewport: window.innerWidth,
+            scrollWidth: root.scrollWidth,
+            columns: getComputedStyle(editor).gridTemplateColumns.split(' ').length,
+            cardPosition: getComputedStyle(card).position,
+            card: box(card),
+            chart: box(chart),
+            button: box(button),
+            list: box(list),
+            rowColumns: getComputedStyle(row).gridTemplateColumns.split(' ').length,
+          };
+        }"""
+    )
+
+    assert layout["scrollWidth"] <= layout["viewport"], layout
+    assert layout["columns"] == 1, layout
+    assert layout["cardPosition"] == "static", layout
+    assert layout["list"]["top"] >= layout["card"]["bottom"] - 1, layout
+    for visual in ("card", "chart", "button", "list"):
+        assert layout[visual]["left"] >= -1, (visual, layout)
+        assert layout[visual]["right"] <= layout["viewport"] + 1, (visual, layout)
+    if width <= 559:
+        assert layout["rowColumns"] == 1, layout
+
+
 def test_step_three_asks_what_the_stage_put_through(page_at):
     """Item ④. Without it the results page can never state waste as a share
     of production, which is the figure the client asked for - and the reason
@@ -2668,9 +2766,9 @@ _FIVE_WIDTHS = [
     pytest.param(1278, 983, 1.25, id="1278"),
 ]
 
-#: Not stacked below ~480px, per this test's own docstring - the width at
+#: The row and its controls stack below 560px - the width at
 #: and above which the range/select/box comparison is meaningful at all.
-_STACKING_BREAKPOINT = 480
+_STACKING_BREAKPOINT = 560
 
 
 @pytest.mark.parametrize("lang", ["de", "ar"])

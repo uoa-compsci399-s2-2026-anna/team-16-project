@@ -497,11 +497,15 @@ def test_values_survive_collapsing_expanding_and_a_re_render(forked):
     open-ness assertion rather than at the value.
     """
     page = forked(leaves=2)
-    expand_step_cards(page)
+    #: The FIRST card only, so the second one's shut state is also under test: a
+    #: re-render has to leave both answers where the visitor put them, not just the
+    #: open one.
+    toggle = page.evaluate(CARDS)[0]["toggleId"]
+    page.click(f"#{toggle}")
+    page.wait_for_timeout(150)
     amounts = _ids(page, "amount")
     page.fill(f"#{amounts[0]}", "123.45")
     page.wait_for_timeout(120)
-    toggle = page.evaluate(CARDS)[0]["toggleId"]
     page.click(f"#{toggle}")
     page.wait_for_timeout(150)
     assert page.evaluate(CARDS)[0]["bodyHidden"]
@@ -511,14 +515,17 @@ def test_values_survive_collapsing_expanding_and_a_re_render(forked):
         "the amount did not survive the card being shut and opened again"
     )
 
-    units = _ids(page, "unit")
-    page.select_option(f"#{units[1]}", "tonnes")
+    #: This card's own unit, because the other card's select is inside a `hidden`
+    #: body and is not operable - which is itself the first assertion of this file.
+    page.select_option(f"#{_ids(page, 'unit')[0]}", "tonnes")
     page.wait_for_timeout(250)
     cards = page.evaluate(CARDS)
     assert not cards[0]["bodyHidden"], (
         f"a full re-render closed a card the visitor had opened: {cards}"
     )
-    assert cards[1]["bodyHidden"], cards
+    assert cards[1]["bodyHidden"], (
+        f"a full re-render opened a card the visitor never touched: {cards}"
+    )
     assert page.input_value(f"#{amounts[0]}") == "123.45"
 
 

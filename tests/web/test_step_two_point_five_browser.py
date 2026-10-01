@@ -27,6 +27,8 @@ import os
 
 import pytest
 
+from tests.web.steps import expand_step_cards
+
 pytestmark = pytest.mark.browser
 
 pytest.importorskip(
@@ -276,7 +278,10 @@ def test_the_named_food_reaches_the_request_and_changes_the_figure(page, release
         page.wait_for_timeout(60)
     _continue(page)
 
-    page.wait_for_selector('[data-leaf-field="amount"]')
+    #: `state="attached"`, then the cards: two foods is two leaves, so since #134
+    #: step 3 draws two collapsed cards and a collapsed body carries `hidden`.
+    page.wait_for_selector('[data-leaf-field="amount"]', state="attached")
+    expand_step_cards(page)
     fields = page.evaluate(
         "() => [...document.querySelectorAll('[data-leaf-field=amount]')].map(e => e.id)")
     assert len(fields) == 2, fields

@@ -847,7 +847,7 @@ function term(text, tipId, paragraphs) {
  * reasons to be open. NUL-joined for `leafKey`'s own reason: a step number followed by a
  * key that begins with a digit cannot otherwise be told from another pair.
  */
-const cardId = (step, key) => `${step} ${key}`
+const cardId = (step, key) => `${step}\u0000${key}`
 
 /**
  * Whether one collapsible card is open right now.

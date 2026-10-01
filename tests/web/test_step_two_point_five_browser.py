@@ -221,7 +221,12 @@ def test_ticking_two_foods_forks_the_chain_into_two_named_leaves(page, released)
         page.wait_for_timeout(60)
     _continue(page)
 
-    page.wait_for_selector("[data-leaf-field=amount]", timeout=5000)
+    #: `state="attached"`: two foods is two leaves, so since #134 step 3 draws two
+    #: collapsed cards and their bodies carry `hidden`. The legends are read off the
+    #: cards themselves and are `.sr-only` either way, so nothing here needs them
+    #: open - which is also the point, since this measures the naming and not the
+    #: fields.
+    page.wait_for_selector("[data-leaf-field=amount]", state="attached", timeout=5000)
     legends = page.evaluate(
         "() => [...document.querySelectorAll('.leaf-panel legend')].map(e => e.innerText.trim())"
     )

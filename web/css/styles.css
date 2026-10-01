@@ -1392,7 +1392,13 @@ tbody th { font-weight: 700; }
 
 .explore-improvements, .improvement-scenario, .comparison-results { margin-top: 32px; padding: 26px; border-radius: 18px; background: rgba(223, 248, 237, 0.34); box-shadow: 0 5px 18px rgba(0, 50, 35, 0.045); }
 .explore-improvements { text-align: center; }
-.explore-improvements p, .improvement-scenario > p { max-width: 720px; margin-inline: auto; color: var(--muted); }
+.explore-improvements p { max-width: 720px; margin-inline: auto; color: var(--muted); }
+/* The improvement copy belongs to the section heading rather than to the centred mode
+   control below it, so it shares the heading's inline-start edge.  The validation line
+   is inset by the total panel's own 18px padding, aligning its first word with the
+   "Total allocation" label instead of with the panel's outer edge. */
+.improvement-scenario > p { max-width: none; margin-inline: 0; color: var(--muted); }
+.improvement-scenario > #improvement-inline-error { margin-inline-start: 18px; }
 .improvement-scenario { background: rgba(230, 190, 255, 0.12); }
 .results-page > :where(#impact-summary, #improvement-section, #tangible-equivalents, #breakdown-section, #results-methodology) { scroll-margin-top: 24px; }
 /* THE SECTION NAV LIVES IN THE PAGE'S GUTTER, AND ONLY WHERE THERE IS ONE.

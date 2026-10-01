@@ -1112,6 +1112,43 @@ def test_the_improvement_chart_follows_both_scroll_directions_on_desktop(page_at
     )
 
 
+def test_the_improvement_copy_uses_the_visuals_left_edges(page_at):
+    """The intro aligns with the section title and the error with the total label.
+
+    Both lines used to inherit the same centred 720px text column, even though the
+    elements they describe start at two different edges.  Measure the rendered text
+    boxes so a future shorthand margin cannot silently centre them again.
+    """
+    page = advance_to(page_at(1278, 800, 1), 5)
+    page.click('[data-action="explore-improvements"]')
+    page.wait_for_selector("#improvement-inline-error")
+
+    edges = page.evaluate(
+        """() => {
+          const metrics = selector => {
+            const element = document.querySelector(selector);
+            const box = element.getBoundingClientRect();
+            return {
+              left: box.left,
+              lines: Math.round(box.height / parseFloat(getComputedStyle(element).lineHeight)),
+              fontSize: parseFloat(getComputedStyle(element).fontSize),
+            };
+          };
+          return {
+            title: metrics('#improvement-title'),
+            intro: metrics('.improvement-scenario > p:first-of-type'),
+            totalLabel: metrics('.improvement-total > span:first-child'),
+            error: metrics('#improvement-inline-error'),
+          };
+        }"""
+    )
+
+    assert abs(edges["intro"]["left"] - edges["title"]["left"]) <= 1, edges
+    assert abs(edges["error"]["left"] - edges["totalLabel"]["left"]) <= 1, edges
+    assert edges["intro"]["lines"] == 1, edges
+    assert edges["error"]["fontSize"] == edges["intro"]["fontSize"], edges
+
+
 @pytest.mark.parametrize("width", [699, 560, 559, 390])
 def test_the_improvement_visual_and_controls_reflow_without_horizontal_overflow(page_at, width):
     """Resize boundaries keep the chart, caption/control and editor in one viewport.

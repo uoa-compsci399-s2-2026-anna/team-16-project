@@ -408,22 +408,26 @@ _LABELS = {
     #: checks the catalogues against what the front end actually calls `t()`
     #: with).
     "production_share": "Percentage waste",
-    #: The three facts behind each equivalence (Task 7) - the same words
+    #: The two figures behind each equivalence (Task 7) - the same words
     #: `web/js/results.js::equivalenceBasis` renders behind the page's
     #: disclosure and `buildResultsReport` prints in the text export, so the
     #: reader sees the identical labels regardless of which of the three
     #: surfaces they are holding.
+    #:
+    #: **`equivalence_basis` ("Basis:") is gone at v1.80**, with the
+    #: `source_note` paragraph it labelled and with the mock caveat that
+    #: followed it (#127). The client, using the tool as a tester, read one to
+    #: four sentences of audit provenance behind a card's `?` and said it was
+    #: meaningless there; `description` - one staff sentence saying what the
+    #: comparison means - takes its place on all three surfaces. The key was
+    #: deleted from all twenty catalogues in the same change, because
+    #: `Catalogue.gettext` RAISES on a key it does not carry and a label left
+    #: here with no catalogue entry would answer 500 to every non-English
+    #: download.
     "equivalence_total": "Total",
     "equivalence_per_unit": "Per unit",
-    "equivalence_basis": "Basis:",
 }
 
-#: The fallback when `EquivalenceResult.source_note` is `None` - O-3 is open,
-#: and this says so rather than leaving the basis line blank. Worded
-#: identically to `web/js/results.js`'s own fallback (Task 6 reworded it from
-#: "has not been recorded yet" to "is not recorded yet" so a test's
-#: contiguous `not recorded` substring match holds; this copies that wording,
-#: not the plan's).
 #: v1.59's fallback disclosure, word for word the two keys `web/js/results.js`
 #: renders on screen and in the text export. Copied rather than shared because
 #: the two surfaces have no code in common -- and pinned by
@@ -435,8 +439,6 @@ _CATEGORY_AVERAGE_BODY = (
     "carries no factors for this food, so the figures here are its category's "
     "rather than its own."
 )
-
-_EQUIVALENCE_BASIS_MISSING = "The basis for this conversion is not recorded yet."
 
 #: v1.68. The reporting period the figures cover, printed on the document
 #: because a figure somebody keeps for months has to carry the period it
@@ -458,17 +460,18 @@ _TIME_FRAME_LABELS = {
     "one_year": "One year",
 }
 
-#: The standing caveat `web/js/results.js::equivalenceBasis` prints beside
-#: every basis note on the page (Task 6). It was missing from both exports
-#: until a review of this task found it - a fourth fact the three surfaces
-#: disagreed on, inside the task written to end exactly that disagreement -
-#: so it is printed, the same words, beside every equivalence in both the text
-#: export and here -- gated on `is_mock`, the same words either way, never on
-#: a real, published factor set (see `_equivalence_rows`'s own docstring).
-_EQUIVALENCE_DISCLAIMER = (
-    "The conversion factor comes from the client. The total it is applied "
-    "to comes from placeholder factors."
-)
+#: **The standing per-equivalence caveat is gone at v1.80** - "The conversion
+#: factor comes from the client. The total it is applied to comes from
+#: placeholder factors." The client asked for it to go (#127) and what makes
+#: that safe is that it was never the obligation: §7.6 rule 2's obligation is
+#: the **page-level** placeholder banner, which is mandatory and
+#: non-dismissible while `is_mock` and is drawn by the `{% if doc.is_mock %}`
+#: block `test_deleting_the_warning_from_the_template_refuses_to_render`
+#: guards. Nothing about that block moved, and
+#: `test_a_real_factor_set_carries_no_warning` - which exists because an
+#: UNCONDITIONAL version of the removed sentence once made a real published
+#: set describe itself as placeholder data - is now proved by a document that
+#: has one fewer place to say the word at all.
 
 #: §4.6's four states for a totals-level figure, worded to match
 #: `web/js/results.js::productionShareText` and `::moneyFieldText` exactly -
@@ -566,8 +569,6 @@ DOCUMENT_STRINGS: tuple[str, ...] = (
     _PRODUCTION_SHARE_UNDEFINED_NOTE,
     _MONEY_INCOMPLETE_NOTE,
     _MONEY_UNDEFINED_NOTE,
-    _EQUIVALENCE_BASIS_MISSING,
-    _EQUIVALENCE_DISCLAIMER,
     *_LABELS.values(),
     *(key for _attribute, key, _kind in _MONEY_LABELS),
 )
@@ -768,24 +769,31 @@ def _money_rows(money: Any, data_state: Any, translate: Any) -> list[dict[str, A
     return rows
 
 
-def _equivalence_rows(scenario: Any, is_mock: bool, translate: Any) -> list[dict[str, Any]]:
+def _equivalence_rows(scenario: Any, translate: Any) -> list[dict[str, Any]]:
     """§6.3: a calculator that cannot say which numbers are measured and which
     are borrowed cannot be defended in public, and the PDF is the copy that
-    travels. `source_note` is the client's wording and is not translated
-    (§7.6 rule 9); the labels around it are.
+    travels. **Which is why `description` has to reach this document and not
+    only the screen** (v1.80, #127): paper has no "open" gesture, so whatever
+    the page's disclosure holds is printed outright here.
+
+    `description` is the client's own wording and is not translated (§7.7.7),
+    exactly as `label` and `preset.label` are not; the two labels around it
+    are. **It is printed only when it is there, and `source_note` is not a
+    fallback for it** - that fallback is the long provenance prose this
+    revision took off both surfaces.
+
+    `is_mock` is no longer a parameter. It was here for the per-equivalence
+    caveat alone, and that sentence is gone; the placeholder obligation is the
+    page-level banner, which reads `is_mock` off the result in
+    `build_context` and is unaffected by anything in this function. A
+    parameter kept "just in case" is a parameter the next reader will find a
+    use for.
 
     `item.source_metric_code` is the engine's own attribute name - this
     function reads the engine's result object directly (`api/export.py`
     re-runs the calculation and hands this module the object, not the wire
     response), so it is `source_metric_code` here and never the wire's
     `source_metric`.
-
-    `disclaimer` is empty outside `is_mock`. The sentence is two facts: the
-    conversion factor comes from the client (true regardless), and the total
-    it multiplies comes from PLACEHOLDER factors (true only while mock).
-    Printing it unconditionally is exactly what `test_a_real_factor_set_
-    carries_no_warning` exists to catch - a real, published factor set
-    saying "placeholder factors" about itself.
 
     `figure` is the equivalence's own value, at whole-number precision -
     `_figure(item.value, 0)`, the same operation `web/js/results.js::
@@ -803,8 +811,10 @@ def _equivalence_rows(scenario: Any, is_mock: bool, translate: Any) -> list[dict
             "total": f"{_figure(source.total, source.display_precision)} {source.unit}" if source else "",
             "per_unit": item.value_per_unit_display,
             "figure": _figure(item.value, 0),
-            "basis": item.source_note or translate(_EQUIVALENCE_BASIS_MISSING),
-            "disclaimer": translate(_EQUIVALENCE_DISCLAIMER) if is_mock else "",
+            #: `or ""` rather than `or item.source_note`. An absent sentence
+            #: prints nothing: the template's `{% if row.description %}`
+            #: draws no paragraph, and the card is the figures alone.
+            "description": item.description or "",
         })
     return rows
 
@@ -1003,7 +1013,7 @@ def build_context(
         ),
         "destinations": _destination_rows(totals, names),
         "money": _money_rows(getattr(totals, "money", None), getattr(totals, "data_state", None), translate),
-        "equivalences": _equivalence_rows(totals.current, bool(result.is_mock), translate),
+        "equivalences": _equivalence_rows(totals.current, translate),
         "entries": entries,
         "colophon": translate(_COLOPHON),
     }

@@ -1622,6 +1622,108 @@ function massContradictionValidation(figures) {
 }
 
 /**
+ * **What is wrong with ONE leaf on one step, or `''` — and the only copy of these
+ * rules.**
+ *
+ * Two readers ask it. `stepProblemAt` below walks the leaves and hands back the first
+ * problem, which is what Continue is gated on; `leafSettled` beside it asks about one
+ * leaf, which is what a collapsible card's completion badge prints (#134). The badge and
+ * the button therefore ask the same question, in the same words, of the same figures.
+ *
+ * **It is one function rather than two lists because this file has already paid for
+ * two.** `destinationStep` carries the note: *"One list of rules for one button: any
+ * rule added to one of two lists left the other enabling Continue on a state the other
+ * had just refused."* A badge computed from a second list is that same defect with a
+ * tick instead of a button, and it is the worse half of it — a button that refuses says
+ * so at the moment of pressing, whereas a tick is read as a promise before anybody
+ * presses anything, and the client's stated use for it is deciding whether to open a
+ * card at all.
+ *
+ * **What a tick therefore means: every required field on this card is filled, and
+ * nothing on it is at fault.** The two optional money figures cannot make a card
+ * incomplete by being empty — `moneyContradictionValidation` returns `''` the moment
+ * either is blank — so the badge never demands them. What it does report is a
+ * *contradiction* between two figures the visitor did fill in, which is a fault rather
+ * than an absence and which Continue refuses; a tick over that state would be a tick
+ * over a card the next press rejects.
+ *
+ * Returns the field the fault belongs to, never the prose: two leaves produce the
+ * byte-identical sentence, so `amountStep` highlights by place (`state.errorAt`) and
+ * `focusLeafField` moves focus by place.
+ *
+ * @param {number} step 2 for the amount step, 3 for the destination step. Any other
+ *   step has no per-leaf rules and answers `''`.
+ * @param {object} leaf
+ * @param {string|null} food The leaf's own name where there is more than one leaf, and
+ *   `null` where there is one — which is what decides whether a message names a food.
+ * @returns {{message: string, field?: string}}
+ */
+function leafProblem(step, leaf, food) {
+  const figures = draftLeafFigures(leaf)
+  if (step === 2) {
+    // **Today's three rules.** The first problem wins, and it carries the field it
+    // belongs to so that `amountStep` can highlight the right box without comparing
+    // prose.
+    const amountError = amountOnlyValidation(figures, food)
+    if (amountError) return { message: amountError, field: 'amount' }
+    const moneyError = moneyContradictionValidation(figures)
+    if (moneyError) return { message: moneyError, field: 'wastedValue' }
+    const massError = massContradictionValidation(figures)
+    if (massError) return { message: massError, field: 'amount' }
+  }
+  if (step === 3) {
+    // **Per leaf: this leaf's allocation sums to no more than this leaf's OWN amount.**
+    // Validating against the chain's combined total instead would let one leaf take
+    // another's mass and still pass, and the API would then refuse the submission for a
+    // mass-conservation failure the form had already been shown.
+    const unit = figures.totalUnit
+    const lines = figures.current || []
+    const fail = message => ({ message, field: 'allocation' })
+    if (!lines.some(line => Number(line.qtyInput) > 0)) {
+      return fail(food
+        ? t('Enter an amount for at least one waste destination for %(food)s.', { food })
+        : t('Enter an amount for at least one waste destination.'))
+    }
+    if (lines.some(line => line.qtyInput !== '' && Number(line.qtyInput) < 0)) return fail(t('Destination amounts must be zero or greater.'))
+    if (lines.some(line => line.qtyInput && !isPlainDecimal(line.qtyInput))) return fail(t('Write the number out in full, using digits only.'))
+    if (lines.some(line => line.qtyInput && !decimalPattern.test(line.qtyInput))) return fail(t('Enter destination amounts to no more than two decimal places.'))
+    // §6.2's per-line bound, restated. Since v1.46 it is the same number as the step-3
+    // ceiling, so a visitor who puts all of a legal total into one destination is
+    // refused by neither. The finiteness check is asked through the same `null`, where
+    // the true answer is that the row is over the limit and the message says which.
+    const overLine = lines.some(line => {
+      if (line.qtyInput === '') return false
+      const kilograms = lineKilograms(line.qtyInput, line.unit || unit)
+      return kilograms === null || kilograms > MAX_LINE_KG
+    })
+    if (overLine) return fail(t('Enter destination amounts of no more than %(limit)s %(unit)s.', { limit: formatNumber(limitIn(MAX_LINE_KG, unit), 0), unit: unitLabel(unit) }))
+    const total = totalNumber(figures)
+    const sum = allocatedAmount(lines, unit)
+    if (exceedsTotal(sum, total)) {
+      const excess = (sum - total).toFixed(2)
+      const unitName = unit === 'kilograms' ? 'kg' : t('tonnes')
+      return fail(food
+        ? t('Allocated waste for %(food)s exceeds its amount by %(excess)s %(unit)s.', { food, excess, unit: unitName })
+        : t('Allocated waste exceeds total waste by %(excess)s %(unit)s.', { excess, unit: unitName }))
+    }
+  }
+  return { message: '' }
+}
+
+/**
+ * **The badge's reader of `leafProblem`, and the predicate #133's notice must share.**
+ *
+ * `true` when nothing on this leaf's card is at fault — see `leafProblem` for exactly
+ * what that promises and why the optional money figures cannot withhold it.
+ *
+ * It takes the step so that steps 3 and 4 get the same chrome from the same rules, and
+ * it takes `food` for one reason only: `leafProblem`'s messages name the food when there
+ * is more than one leaf, and a predicate that passed a different `food` than Continue
+ * does would be reading a different function with the same name.
+ */
+const leafSettled = (step, leaf, food) => !leafProblem(step, leaf, food).message
+
+/**
  * What is wrong with the draft as far as one step's own rules are concerned, or `''`.
  *
  * **Parameterised on the step rather than reading `state.step`, so that one other
@@ -1632,70 +1734,23 @@ function massContradictionValidation(figures) {
  * this list, and the note over `EMPTY_DRAFT` records what a second copy of a key list
  * costs: the one that drifts is the one nobody notices has drifted.
  *
- * None of the four checks it delegates to reads `state.step` — `amountOnlyValidation`
- * reads the measure mode and the amount fields, the two contradiction checks read their
- * own pairs, and the step-3 block reads `state.current` — so asking about a step from
- * another step answers about the draft, which is the question.
+ * None of the four checks `leafProblem` delegates to reads `state.step` —
+ * `amountOnlyValidation` reads the measure mode and the amount fields, the two
+ * contradiction checks read their own pairs, and the step-3 block reads the leaf's own
+ * `current` — so asking about a step from another step answers about the draft, which is
+ * the question.
+ *
+ * **The leaf key is attached here rather than inside `leafProblem`** because it is the
+ * answer to "which card", and a per-card reader already knows which card it asked
+ * about. `leafErrorAt` is what turns it into `state.errorAt`.
  */
 function stepProblemAt(step) {
   if (step === 0 && !state.sector) return { message: t('Select where in the food supply chain the waste occurred.') }
   const leaves = draftLeaves()
   const named = leaves.length > 1
-  if (step === 2) {
-    // **Today's three rules, N times.** The first problem wins, and it carries the leaf
-    // and the field it belongs to so that `amountStep` can highlight the right box
-    // without comparing prose - two leaves produce the byte-identical sentence.
-    for (const leaf of leaves) {
-      const figures = draftLeafFigures(leaf)
-      const key = leafKey(leaf)
-      const amountError = amountOnlyValidation(figures, named ? leafName(leaf) : null)
-      if (amountError) return { message: amountError, leaf: key, field: 'amount' }
-      const moneyError = moneyContradictionValidation(figures)
-      if (moneyError) return { message: moneyError, leaf: key, field: 'wastedValue' }
-      const massError = massContradictionValidation(figures)
-      if (massError) return { message: massError, leaf: key, field: 'amount' }
-    }
-  }
-  if (step === 3) {
-    // **Per leaf: each leaf's allocation sums to no more than that leaf's OWN amount.**
-    // Today's rule, N times. Validating against the chain's combined total instead would
-    // let one leaf take another's mass and still pass, and the API would then refuse the
-    // submission for a mass-conservation failure the form had already been shown.
-    for (const leaf of leaves) {
-      const figures = draftLeafFigures(leaf)
-      const key = leafKey(leaf)
-      const unit = figures.totalUnit
-      const lines = figures.current || []
-      const food = named ? leafName(leaf) : null
-      const fail = message => ({ message, leaf: key, field: 'allocation' })
-      if (!lines.some(line => Number(line.qtyInput) > 0)) {
-        return fail(food
-          ? t('Enter an amount for at least one waste destination for %(food)s.', { food })
-          : t('Enter an amount for at least one waste destination.'))
-      }
-      if (lines.some(line => line.qtyInput !== '' && Number(line.qtyInput) < 0)) return fail(t('Destination amounts must be zero or greater.'))
-      if (lines.some(line => line.qtyInput && !isPlainDecimal(line.qtyInput))) return fail(t('Write the number out in full, using digits only.'))
-      if (lines.some(line => line.qtyInput && !decimalPattern.test(line.qtyInput))) return fail(t('Enter destination amounts to no more than two decimal places.'))
-      // §6.2's per-line bound, restated. Since v1.46 it is the same number as the step-3
-      // ceiling, so a visitor who puts all of a legal total into one destination is
-      // refused by neither. The finiteness check is asked through the same `null`, where
-      // the true answer is that the row is over the limit and the message says which.
-      const overLine = lines.some(line => {
-        if (line.qtyInput === '') return false
-        const kilograms = lineKilograms(line.qtyInput, line.unit || unit)
-        return kilograms === null || kilograms > MAX_LINE_KG
-      })
-      if (overLine) return fail(t('Enter destination amounts of no more than %(limit)s %(unit)s.', { limit: formatNumber(limitIn(MAX_LINE_KG, unit), 0), unit: unitLabel(unit) }))
-      const total = totalNumber(figures)
-      const sum = allocatedAmount(lines, unit)
-      if (exceedsTotal(sum, total)) {
-        const excess = (sum - total).toFixed(2)
-        const unitName = unit === 'kilograms' ? 'kg' : t('tonnes')
-        return fail(food
-          ? t('Allocated waste for %(food)s exceeds its amount by %(excess)s %(unit)s.', { food, excess, unit: unitName })
-          : t('Allocated waste exceeds total waste by %(excess)s %(unit)s.', { excess, unit: unitName }))
-      }
-    }
+  for (const leaf of leaves) {
+    const problem = leafProblem(step, leaf, named ? leafName(leaf) : null)
+    if (problem.message) return { ...problem, leaf: leafKey(leaf) }
   }
   return { message: '' }
 }

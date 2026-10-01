@@ -280,6 +280,58 @@ def build_state_zero_totals() -> dict:
     }
 
 
+#: The same harness shape, for `renderResults` instead of
+#: `buildResultsReport`. **Added because a mutation survived**: making
+#: `equivalenceBasis` fall back to `source_note` left every runnable test in
+#: the tree green, and the only thing that would have caught it was a
+#: `@pytest.mark.browser` case against the running container -- which cannot
+#: see a change to `web/js/` until the image is rebuilt (`docker/web.Dockerfile`
+#: COPYs `web/`), and rebuilding is not something a test may do to a deployment
+#: somebody is using.
+#:
+#: `renderResults` is a pure string builder: it reads `state`, calls `t()` and
+#: returns markup. So the markup can be asserted here, off the file, the same
+#: way the text export already is. This is not a replacement for the browser
+#: cases -- they measure layout, visibility and the accessible name, which a
+#: string cannot -- it is the half that can be run on a checkout.
+MARKUP_HARNESS = """
+// The three globals `improvement.js` -> {api.js, state.js} read at module load.
+globalThis.window = { location: { search: '' } }
+globalThis.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {} }
+
+import { readFileSync, writeFileSync } from 'node:fs'
+const { renderResults } = await import(process.argv[2])
+const state = JSON.parse(readFileSync(process.argv[3], 'utf8'))
+writeFileSync(process.argv[4], renderResults(state), 'utf8')
+"""
+
+
+def markup_for(tmp_path: Path, state: dict) -> str:
+    harness = tmp_path / "markup.mjs"
+    harness.write_text(MARKUP_HARNESS, encoding="utf-8")
+    state_file = tmp_path / "markup-state.json"
+    state_file.write_text(json.dumps(state), encoding="utf-8")
+    out = tmp_path / "markup.html"
+    completed = subprocess.run(
+        [
+            shutil.which("node"),
+            str(harness),
+            RESULTS_JS.as_uri(),
+            str(state_file),
+            str(out),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+    )
+    assert completed.returncode == 0, (
+        f"node could not render the results page:\n{completed.stdout}\n"
+        f"{completed.stderr}"
+    )
+    return out.read_text(encoding="utf-8")
+
+
 def report_for(tmp_path: Path, state: dict) -> str:
     harness = tmp_path / "harness.mjs"
     harness.write_text(HARNESS, encoding="utf-8")
@@ -847,6 +899,126 @@ def test_an_equivalence_with_no_sentence_prints_nothing_and_never_the_note(tmp_p
     ), "the fixture row carries no source_note, so nothing could have fallen back"
     #: And the card is still drawn - the label and the figures survive.
     assert "Equivalent to driving 18,597 km" in report
+
+
+# --------------------------------- the disclosure's markup, without a browser
+
+
+@node
+def test_the_disclosure_holds_the_sentence_and_not_the_provenance(tmp_path):
+    """v1.80 (#127), asserted on the markup `renderResults` produces.
+
+    The browser cases below measure what a person can SEE -- that the panel
+    starts closed, opens, and does not overflow. This measures what is in it,
+    which is the part that can be checked on a checkout rather than against an
+    image somebody would have to rebuild.
+    """
+    markup = markup_for(tmp_path, build_state())
+
+    assert "equivalent-basis__body" in markup, (
+        "the disclosure was not rendered at all, so this test is measuring "
+        "nothing"
+    )
+    assert (
+        "The same greenhouse gases as driving an average light petrol car "
+        "this far, at a placeholder 0.24 kg CO2e a kilometre." in markup
+    )
+    assert "Open item O-3" not in markup, (
+        "the provenance paragraph is back in the equivalence disclosure"
+    )
+    assert "Basis:" not in markup
+
+
+@node
+@pytest.mark.parametrize("is_mock", (True, False))
+def test_the_disclosure_carries_no_per_equivalence_caveat_either_way(tmp_path, is_mock):
+    """The caveat is gone from the panel on every factor set (v1.80, #127).
+
+    Parametrised over both states rather than asserted on the real one,
+    because a sentence that reappeared only under `is_mock` would be precisely
+    the defect `test_a_real_factor_set_carries_no_warning` was written for.
+    The page-level banner is a different thing and is asserted below.
+    """
+    markup = markup_for(tmp_path, build_state(is_mock=is_mock))
+    assert "The conversion factor comes from the client" not in markup
+    assert "comes from placeholder factors" not in markup
+
+
+@node
+@pytest.mark.parametrize("is_mock, expected", ((True, True), (False, False)))
+def test_the_page_level_placeholder_banner_is_exactly_as_it_was(
+    tmp_path, is_mock, expected
+):
+    """**The one thing in #127 that could not be traded for brevity**, pinned
+    on the markup so that removing a per-card sentence cannot quietly weaken
+    it.
+
+    §7.6 rule 2: mandatory and non-dismissible while `is_mock`, and
+    conditional rather than unconditional -- an export that always disclaims
+    becomes an export that disclaims real data the day real factors are
+    published. Both directions, and three properties of the banner itself:
+    it is an `aside.disclaimer`, it carries `role="status"`, and it has no
+    dismiss control of any kind.
+    """
+    markup = markup_for(tmp_path, build_state(is_mock=is_mock))
+    banner = 'class="disclaimer" role="status"'
+    assert (banner in markup) is expected, (
+        f"is_mock={is_mock} and the placeholder banner "
+        f"{'is missing' if expected else 'is drawn anyway'}"
+    )
+    if expected:
+        assert "Placeholder data" in markup
+        assert NOTICE in markup
+        #: Non-dismissible: nothing in the banner closes it. Asserted on the
+        #: whole document because a dismiss control added anywhere would be
+        #: the same defect.
+        for control in ('data-action="dismiss"', "aria-label=\"Close\"",
+                        'class="disclaimer-dismiss"'):
+            assert control not in markup, (
+                f"the placeholder banner gained a dismiss control: {control}"
+            )
+
+
+@node
+def test_a_disclosure_with_no_sentence_falls_back_to_nothing(tmp_path):
+    """**The anti-fallback assertion on the page's own markup.**
+
+    The row keeps its `source_note` and loses its `description`, which is the
+    only state where a fallback is observable. **This test exists because its
+    mutation survived**: rewriting `equivalenceBasis` to
+    `row.description || row.source_note` left every runnable test in the tree
+    green, because the only case that would have caught it drives a browser
+    against an image this work may not rebuild.
+
+    The disclosure still opens onto something -- the three figures -- so an
+    empty sentence is not an empty panel.
+    """
+    state = build_state()
+    for row in state["result"]["totals"]["current"]["equivalences"]:
+        row["description"] = None
+    for pair in state["result"]["entry_results"]:
+        for key in ("current", "alternative"):
+            scenario = (pair.get("response") or {}).get(key)
+            for row in (scenario or {}).get("equivalences", []):
+                row["description"] = None
+
+    markup = markup_for(tmp_path, state)
+
+    assert "equivalent-basis__body" in markup
+    assert "equivalent-basis__note" not in markup, (
+        "an equivalence with no description still drew a note paragraph"
+    )
+    assert "Open item O-3" not in markup, (
+        "the disclosure fell back to source_note, which is the long version "
+        "#127 removed"
+    )
+    assert "not recorded" not in markup.lower()
+    #: The premise, so the assertions above are about a fallback that was
+    #: available and not taken.
+    assert any(
+        row.get("source_note")
+        for row in state["result"]["totals"]["current"]["equivalences"]
+    ), "the fixture row carries no source_note, so nothing could have fallen back"
 
 
 # ------------------------------------------------- the unit each row was measured in

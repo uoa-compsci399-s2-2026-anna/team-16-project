@@ -488,6 +488,128 @@ def test_the_chain_gives_the_submission_its_period_columns(migrated_engine):
 
 
 @pytest.mark.db
+def test_0020_seeds_an_existing_row_and_never_corrects_one(database_url_root):
+    """Contract v1.80, issue #127. **The half of `0020` that is data.**
+
+    `compare_metadata` sees the column; nothing in this module sees the
+    UPDATE beside it, and nothing else in the suite could -- every other
+    migration test runs the chain against an EMPTY database, where an UPDATE
+    over `equivalence` matches no rows and a dropped one is indistinguishable
+    from a working one. So this runs the chain in two halves with rows in
+    between, which is the only arrangement in which the seed is observable at
+    all.
+
+    Three properties, and the third is why the UPDATE is conditional:
+
+    * a row that existed before `0020` comes out carrying a sentence, rather
+      than showing an empty disclosure on every card of a deployed site;
+    * the sentence is **not** the row's `source_note` -- the two are different
+      claims, and the long one is what #127 took off the results page;
+    * a row whose sentence somebody had already written is **left alone**. The
+      UPDATE tests `description IS NULL`, so it seeds and never corrects, which
+      is 0015's rule for `unit_preset` applied again: an operator who re-runs
+      the chain must not lose work.
+
+    Its own scratch database, like `test_the_head_revision_round_trips`, so a
+    chain left part-way by a failure here cannot reach another test.
+    """
+    root = create_engine(database_url_root, future=True)
+    with root.connect() as conn:
+        conn.execute(text("DROP DATABASE IF EXISTS kaicalc_seedtest"))
+        conn.execute(text("CREATE DATABASE kaicalc_seedtest"))
+        conn.commit()
+
+    url = database_url_root.rsplit("/", 1)[0] + "/kaicalc_seedtest"
+    cfg = Config("alembic.ini")
+    cfg.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
+    engine = create_engine(url, future=True)
+    note = "PLACEHOLDER. Open item O-3; the basis for a shower is not settled."
+    mine = "Our own sentence, which nothing may overwrite."
+    try:
+        #: Stop one revision short, so the rows below are written by a schema
+        #: that has never heard of the column -- which is every deployed
+        #: database on the day this lands.
+        command.upgrade(cfg, "0019")
+        with engine.begin() as conn:
+            conn.execute(text(
+                "INSERT INTO factor_set (version_label, status, is_mock, "
+                "item_level_enabled) VALUES ('SEEDTEST', 'draft', 1, 0)"
+            ))
+            conn.execute(text(
+                "INSERT INTO destination_group (code, name, is_waste, "
+                "sort_order, active) VALUES ('seedtest', 'Seed test', 1, 1, 1)"
+            ))
+            conn.execute(text(
+                "INSERT INTO metric (code, name, unit, display_precision, "
+                "sort_order, active) VALUES ('water', 'Water', 'L', 1, 1, 1)"
+            ))
+            set_id = conn.execute(
+                text("SELECT id FROM factor_set WHERE version_label = 'SEEDTEST'")
+            ).scalar_one()
+            metric_id = conn.execute(
+                text("SELECT id FROM metric WHERE code = 'water'")
+            ).scalar_one()
+            for code, label in (("showers", "Equivalent to {value} showers"),
+                                ("meals", "Equivalent to {value} meals")):
+                conn.execute(
+                    text(
+                        "INSERT INTO equivalence (factor_set_id, code, name, "
+                        "source_metric_id, value_per_unit, label_template, "
+                        "source_note, sort_order, active) VALUES "
+                        "(:s, :c, :c, :m, 1.0, :l, :n, 1, 1)"
+                    ),
+                    {"s": set_id, "c": code, "m": metric_id, "l": label, "n": note},
+                )
+
+        command.upgrade(cfg, "head")
+
+        #: A sentence written by hand AFTER the column exists, then the chain
+        #: re-run: `alembic upgrade head` is idempotent and an operator may do
+        #: it twice.
+        with engine.begin() as conn:
+            conn.execute(
+                text("UPDATE equivalence SET description = :d WHERE code = 'meals'"),
+                {"d": mine},
+            )
+        command.upgrade(cfg, "head")
+
+        with engine.connect() as conn:
+            rows = {
+                row[0]: (row[1], row[2])
+                for row in conn.execute(text(
+                    "SELECT code, description, source_note FROM equivalence"
+                )).all()
+            }
+    finally:
+        engine.dispose()
+        with root.connect() as conn:
+            conn.execute(text("DROP DATABASE IF EXISTS kaicalc_seedtest"))
+            conn.commit()
+        root.dispose()
+
+    seeded, seeded_note = rows["showers"]
+    assert seeded, (
+        "0020 added the column and seeded nothing, so every tangible-"
+        "equivalence card on a deployed site opens onto its figures and no "
+        "sentence"
+    )
+    assert seeded != seeded_note, (
+        "0020 seeded the row's own source_note as its description. They are "
+        f"different claims and the long one is the one #127 removed: {seeded!r}"
+    )
+    assert "ten-minute" in seeded and "nine litres" in seeded, (
+        "the `showers` sentence has lost the assumption its source_note "
+        f"carries. That caveat is the whole reason this row needed one: {seeded!r}"
+    )
+
+    kept, _ = rows["meals"]
+    assert kept == mine, (
+        "re-running the chain overwrote a sentence somebody had written. The "
+        f"UPDATE must be conditional on `description IS NULL`: {kept!r}"
+    )
+
+
+@pytest.mark.db
 def test_the_chain_gives_the_factor_tables_bigint_primary_keys(migrated_engine):
     """Contract §2.2 specifies BIGINT for `factor_upstream.id` and
     `factor_downstream.id`, not INT.

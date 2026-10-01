@@ -397,9 +397,19 @@ async def test_an_equivalence_file_this_panel_exported_re_imports_unchanged(
 
     export = await admin_client.get(f"/admin/equivalence/export/{export_type}")
     assert export.status_code == 200, export.text
-    assert "description" in export.text.splitlines()[0] or export_type == "json", (
-        f"the exported CSV header carries no `description` column: "
-        f"{export.text.splitlines()[0]}"
+    #: Asserted in BOTH formats and not only in CSV. A round trip that never
+    #: carries a column still round-trips -- the table is unchanged because
+    #: nothing touched it -- so "nothing changed" is insufficient on its own
+    #: and this is the half that says the column was in the file. Measured:
+    #: dropping `Equivalence.description` from `form_columns` leaves the
+    #: assertion below green and fails here.
+    if export_type == "csv":
+        columns = export.text.splitlines()[0].split(",")
+    else:
+        columns = sorted({key for row in json.loads(export.text) for key in row})
+    assert "description" in columns, (
+        f"the exported {export_type.upper()} carries no `description` column, "
+        f"so this round trip would not exercise it: {columns}"
     )
 
     token = await _token(admin_client, "equivalence")

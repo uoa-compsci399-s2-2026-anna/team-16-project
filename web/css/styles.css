@@ -1714,7 +1714,10 @@ tbody th { font-weight: 700; }
   border-inline-start-color: var(--green-rule);
   box-shadow: 0 5px 16px rgba(40, 200, 130, 0.45), 0 1px 3px rgba(0, 50, 35, 0.16);
 }
-.improvement-mode-field { max-width: 220px; margin: 20px auto 0; }
+.improvement-mode-layout { margin-top: 20px; display: grid; grid-template-columns: minmax(144px, 0.72fr) minmax(440px, 1.28fr); gap: 24px; align-items: center; }
+.improvement-mode-field { min-width: 0; max-width: none; margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: center; }
+.improvement-mode-field label { margin: 0; }
+.improvement-mode-field select { min-width: 0; }
 /* **The list column's own minimum has to cover what the row inside it actually needs,
    not merely look plausible on its own.** The row's `:has()` floor below reserves 260px
    for its control column alone; add the row's label column (120px min), the gap between
@@ -1861,6 +1864,7 @@ tbody th { font-weight: 700; }
 }
 
 @media (max-width: 699px) {
+  .improvement-mode-layout,
   .improvement-editor { grid-template-columns: minmax(0, 1fr); }
 }
 

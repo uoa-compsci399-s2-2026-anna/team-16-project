@@ -1149,6 +1149,43 @@ def test_the_improvement_copy_uses_the_visuals_left_edges(page_at):
     assert edges["error"]["fontSize"] == edges["intro"]["fontSize"], edges
 
 
+def test_the_unit_mode_control_sits_in_one_row_above_the_chart(page_at):
+    """The global mode selector belongs to the visual it changes.
+
+    It uses the editor's chart column rather than a separately centred width, and its
+    label and select share one row.  Measuring all four edges protects both parts of the
+    request: horizontal label/control layout and placement directly above the chart.
+    """
+    page = advance_to(page_at(1278, 800, 1), 5)
+    page.click('[data-action="explore-improvements"]')
+
+    layout = page.evaluate(
+        """() => {
+          const box = selector => {
+            const rect = document.querySelector(selector).getBoundingClientRect();
+            return {
+              left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom,
+              middle: rect.top + rect.height / 2,
+            };
+          };
+          return {
+            intro: box('.improvement-scenario > p:first-of-type'),
+            field: box('.improvement-mode-field'),
+            label: box('.improvement-mode-field label'),
+            select: box('#improvement-mode'),
+            chart: box('.improvement-pie-wrap'),
+          };
+        }"""
+    )
+
+    assert layout["field"]["left"] == pytest.approx(layout["chart"]["left"], abs=1)
+    assert layout["field"]["right"] == pytest.approx(layout["chart"]["right"], abs=1)
+    assert layout["field"]["top"] >= layout["intro"]["bottom"], layout
+    assert layout["field"]["bottom"] <= layout["chart"]["top"], layout
+    assert layout["label"]["right"] < layout["select"]["left"], layout
+    assert layout["label"]["middle"] == pytest.approx(layout["select"]["middle"], abs=1)
+
+
 @pytest.mark.parametrize("width", [699, 560, 559, 390])
 def test_the_improvement_visual_and_controls_reflow_without_horizontal_overflow(page_at, width):
     """Resize boundaries keep the chart, caption/control and editor in one viewport.
@@ -1167,6 +1204,7 @@ def test_the_improvement_visual_and_controls_reflow_without_horizontal_overflow(
           const root = document.documentElement;
           const editor = document.querySelector('.improvement-editor');
           const card = editor.querySelector('.improvement-pie-wrap');
+          const mode = document.querySelector('.improvement-mode-field');
           const chart = card.querySelector('.improvement-pie-chart');
           const button = card.querySelector('.improvement-expand-chart');
           const list = editor.querySelector('.improvement-allocation-list');
@@ -1180,6 +1218,7 @@ def test_the_improvement_visual_and_controls_reflow_without_horizontal_overflow(
             scrollWidth: root.scrollWidth,
             columns: getComputedStyle(editor).gridTemplateColumns.split(' ').length,
             cardPosition: getComputedStyle(card).position,
+            mode: box(mode),
             card: box(card),
             chart: box(chart),
             button: box(button),
@@ -1193,7 +1232,7 @@ def test_the_improvement_visual_and_controls_reflow_without_horizontal_overflow(
     assert layout["columns"] == 1, layout
     assert layout["cardPosition"] == "static", layout
     assert layout["list"]["top"] >= layout["card"]["bottom"] - 1, layout
-    for visual in ("card", "chart", "button", "list"):
+    for visual in ("mode", "card", "chart", "button", "list"):
         assert layout[visual]["left"] >= -1, (visual, layout)
         assert layout[visual]["right"] <= layout["viewport"] + 1, (visual, layout)
     if width <= 559:

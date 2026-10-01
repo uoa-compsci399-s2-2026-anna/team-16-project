@@ -762,7 +762,7 @@ export function ImprovementScenario(state) {
   const mode = state.improvementMode || 'percentage'
   const presets = state.taxonomy?.unit_presets || []
   const totalKg = totalAllocatableKg(state, presets)
-  const modeField = `<div class="form-field improvement-mode-field"><label for="improvement-mode">${escapeHtml(t('Unit'))}</label><select id="improvement-mode"><option value="percentage" ${mode === 'percentage' ? 'selected' : ''}>${escapeHtml(t('Percentage'))}</option><option value="unit" ${mode === 'unit' ? 'selected' : ''}>${escapeHtml(t('Unit'))}</option></select></div>`
+  const modeField = `<div class="improvement-mode-layout"><div class="form-field improvement-mode-field"><label for="improvement-mode">${escapeHtml(t('Unit'))}</label><select id="improvement-mode"><option value="percentage" ${mode === 'percentage' ? 'selected' : ''}>${escapeHtml(t('Percentage'))}</option><option value="unit" ${mode === 'unit' ? 'selected' : ''}>${escapeHtml(t('Unit'))}</option></select></div></div>`
   const single = leaves.length === 1
   const editors = leaves.map((leaf, index) => LeafAllocationEditor({
     state, leaf, index, single, current: current[index] || {}, allocation: allocations[index] || {}, mode, presets,

@@ -1714,10 +1714,31 @@ tbody th { font-weight: 700; }
   border-inline-start-color: var(--green-rule);
   box-shadow: 0 5px 16px rgba(40, 200, 130, 0.45), 0 1px 3px rgba(0, 50, 35, 0.16);
 }
-.improvement-mode-layout { margin-top: 20px; display: grid; grid-template-columns: minmax(144px, 0.72fr) minmax(440px, 1.28fr); gap: 24px; align-items: center; }
-.improvement-mode-field { min-width: 0; max-width: none; margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: center; }
+/* **The edge the client asked to line up is the inline-start one, and a block in this
+   panel's own flow already has it** - `.improvement-editor`'s first column starts at
+   the panel's content edge too, so the label, the control and the chart card below
+   them share one start edge without this row being a grid column of its own.
+   **It deliberately is not one.** Pinning the end edge to the chart as well took the
+   control's width from the chart column - `minmax(144px, 0.72fr)`, so 144px at the
+   700px seam where the editor first becomes two columns - instead of from its own
+   longest option, which needs 131px in English, 134px in German and 190px in Russian
+   ("Единица измерения") once Chromium's 20px of dropdown arrow is counted. A closed
+   `<select>` cuts its own label with no overflow to report (`scrollWidth ==
+   clientWidth` at every width measured), so the clipping was invisible to every
+   assertion in the suite until one compared the text against the box.
+
+   **`flex-wrap` rather than a breakpoint, because what has to fit is a translated
+   string and no viewport width predicts it.** The client asked for the label and the
+   control on one line; this keeps them there wherever one line holds them, which is
+   every language at 390px and above, and lets the control drop to its own line where
+   one does not - Russian at 320px, where the label alone is 144px of the 242px the
+   panel leaves. A flex line wraps on the items' own widths before it shrinks them, so
+   the select reaches its second line still `max-content` wide rather than clipped;
+   `max-width: 100%` is the floor for a catalogue longer than any shipped today, where
+   the only remaining choice is to clip. */
+.improvement-mode-field { margin: 20px 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .improvement-mode-field label { margin: 0; }
-.improvement-mode-field select { min-width: 0; }
+.improvement-mode-field select { width: max-content; max-width: 100%; }
 /* **The list column's own minimum has to cover what the row inside it actually needs,
    not merely look plausible on its own.** The row's `:has()` floor below reserves 260px
    for its control column alone; add the row's label column (120px min), the gap between
@@ -1864,7 +1885,6 @@ tbody th { font-weight: 700; }
 }
 
 @media (max-width: 699px) {
-  .improvement-mode-layout,
   .improvement-editor { grid-template-columns: minmax(0, 1fr); }
 }
 

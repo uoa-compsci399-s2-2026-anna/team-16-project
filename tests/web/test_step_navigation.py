@@ -1081,6 +1081,28 @@ def test_the_improvement_donut_draws_the_share_the_slider_holds(page_at):
     assert page.locator(".improvement-chart-modal").count() == 0
 
 
+def test_the_improvement_donut_draws_a_full_circle_for_a_single_hundred_percent_share(page_at):
+    """A full SVG arc needs two half-arcs, because a zero-length arc is empty.
+
+    The single-destination case is the ordinary way to reach 100%: its slice
+    starts and ends at the same point, so the path must still occupy the full
+    donut rather than leaving only the centre label and callout behind.
+    """
+    page = _improvement_panel(page_at)
+    boxes = page.locator('.percentage-input input[type="number"]')
+    boxes.first.fill("100")
+
+    bounds = page.locator(".improvement-pie-chart path").first.evaluate(
+        """path => {
+          const box = path.getBBox();
+          return {width: box.width, height: box.height};
+        }"""
+    )
+    assert bounds["width"] > 200 and bounds["height"] > 200, (
+        f"the 100% allocation rendered an empty/degenerate SVG path: {bounds}"
+    )
+
+
 def test_the_improvement_chart_follows_both_scroll_directions_on_desktop(page_at):
     """The chart card stays beside the long allocation list while it is being edited.
 

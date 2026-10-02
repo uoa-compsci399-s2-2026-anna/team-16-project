@@ -234,6 +234,12 @@ const polar = (cx, cy, radius, degrees) => {
 }
 
 function slicePath(start, end) {
+  // SVG's arc command cannot represent a full circle when its start and end
+  // points are identical: the browser treats that as an empty arc. A single
+  // destination at 100% therefore used to leave the chart's centre text and
+  // callout visible while the slice itself disappeared. Draw the circle as
+  // two half-arcs so the complete allocation remains visible.
+  if (end - start >= 360) return 'M 260 98 A 112 112 0 1 0 260 322 A 112 112 0 1 0 260 98 Z'
   const from = polar(260, 210, 112, end)
   const to = polar(260, 210, 112, start)
   return `M 260 210 L ${from.x} ${from.y} A 112 112 0 ${end - start > 180 ? 1 : 0} 0 ${to.x} ${to.y} Z`

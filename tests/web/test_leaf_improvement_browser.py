@@ -31,7 +31,7 @@ from decimal import Decimal
 
 import pytest
 
-from tests.web.steps import press_continue
+from tests.web.steps import expand_step_cards, press_continue
 
 
 pytestmark = pytest.mark.browser
@@ -77,7 +77,8 @@ def _forked_chain(page):
     boxes.nth(1).click()
     page.wait_for_timeout(60)
     press_continue(page)
-    page.wait_for_selector('[data-leaf-field="amount"]')
+    page.wait_for_selector('[data-leaf-field="amount"]', state="attached")
+    expand_step_cards(page)
     fields = page.evaluate(
         "() => [...document.querySelectorAll('[data-leaf-field=amount]')].map(e => e.id)"
     )

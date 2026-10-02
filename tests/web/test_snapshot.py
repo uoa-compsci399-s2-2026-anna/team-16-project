@@ -395,6 +395,11 @@ def _state(**overrides) -> dict:
         "pdfError": "The document could not be produced.",
         "periodPicker": {"field": "startDate", "cursor": "2026-09-01", "openerId": "x"},
         "periodClock": {"field": "startTime", "stage": "hours", "mode": "dial"},
+        # Which collapsible step cards are open (#134). Transient UI of exactly the
+        # same class as the open dialog above it, and carrying a leaf key besides -
+        # so a restore would also be restoring the open state of a card for a food
+        # the prune may have just dropped.
+        "openCards": [f"2{chr(0)}{_key('fruit', 'apples')}"],
         # The result document's own keys (v1.75). They must not reach the ANSWERS
         # document -- a 32 KB result rewritten at every Continue is what the second
         # key exists to avoid -- so every test below that looks at the answers
@@ -507,6 +512,10 @@ def test_exactly_the_answer_keys_are_written_and_nothing_transient(tmp_path):
         "pdfError",
         "periodPicker",
         "periodClock",
+        # #134's open-card set. Contract v1.74 item 2 keeps transient UI out of the
+        # snapshot by construction, and an open-or-closed card is in the same class
+        # as a restored open dialog: it is not an answer, it describes the screen.
+        "openCards",
         # The result document's own keys, which live under `kaiCalculatorResult` and
         # must not also be here: `writeSnapshot` runs at every `continue`, and a
         # 32 KB result carried through each of those is exactly what the second key

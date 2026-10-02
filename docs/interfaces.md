@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-09-29 (v1.78)"
+date: "2026-10-02 (v1.81)"
 ---
 
 # 0. How to Use This Document
@@ -25,6 +25,30 @@ This document defines **what every person's code receives and what it returns.**
 
 ## 0.1 Change Log
 
+### v1.81 — 2026-10-02 (step 3's cards fold, and the badge reads Continue's own rules; affects C and D)
+
+The client's report on step 3 was not that the page is long. It is that **a card below the fold gets skipped**: the step scrolls, a food type goes unanswered, and nothing on screen says so. So each food type's panel becomes a collapsible card, shut by default, and the shut card carries a badge saying whether that card is finished — which is the question *"did I fill this in?"* answered without opening anything. Issue #134, with three decisions taken by the owner at the 1 October meeting and not re-derived here.
+
+**Nothing on the wire moves.** No field, no key, no endpoint, no scale, no fixture. This is a front-end change, and it is recorded here for the two reasons v1.61 was: it moves the **catalogue** contract (the English source string is the key, §7.7.1, so a new string is a new key in all twenty catalogues) and it adds a `state` key and a `data-action` that §7's own lists name.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`leafProblem(step, leaf, food)` is the only copy of the per-leaf rules.** `stepProblemAt` encoded the amount step's three rules and the destination step's six inside its own loop over the leaves and returned the first problem — the right answer for Continue and the wrong shape for a per-card badge. The rules move out; `stepProblemAt` becomes the walk that stops at the first problem and stamps it with the leaf, and `leafSettled` is the per-leaf reader. **Nothing about what is refused changes**: the same checks, in the same order, of the same figures. There is still exactly one list of them, which is the point — `destinationStep`'s own comment records that two lists for one button left each list enabling Continue on a state the other had just refused, and a tick computed from a second list is that defect with a tick instead of a button | §7.3a |
+| 2 | **What a tick promises.** Decision 1: *complete means every required field is filled*, and the optional money figures do not affect it. Implemented as `!leafProblem(...)`, which is that plus "and nothing on this card is at fault" — strictly stronger, never weaker. An empty NZ$ pair cannot withhold a tick; two NZ$ figures that contradict each other can, because Continue refuses that state and a tick over it would be a tick over a card the next press rejects. **#133's countdown notice must read the same predicate** | §7.3a |
+| 3 | **`state.openCards`**, a list of `cardId(step, key)` strings, rendered out of `state` and written back on toggle. A native `<details open>` inside `<main>` cannot survive `render()` replacing `main.innerHTML`. It is **not** in `ANSWER_KEYS` and must not be added — transient UI of the same class as the restored open dialog v1.74 item 2 keeps out by construction — and `tests/web/test_snapshot.py`'s forbidden list now names it, so adding it fails a test rather than shipping | §7.2, §7.2a |
+| 4 | **`data-action="toggle-card"`**, with `data-card-step` and `data-card`. Deliberately absent from the click delegate's scroll-to-top list: a disclosure is not a navigation. The toggle carries a stable `id` so `main.js`'s subscriber returns focus to it across the re-render, which is what makes the state change announced rather than only applied | §7.3a |
+| 5 | **Two new catalogue source strings, `Complete` and `Incomplete`**, in all twenty catalogues and in both trees byte-identically (`web/locales/` and `api/assets/locales/`, compared by SHA-256). **Neither introduces a character the CJK subsets do not already cut** — every code point in the four CJK translations already appears in that catalogue — so `recut_cjk_subsets.py` did not run and `test_no_character_in_any_catalogue_would_print_as_a_box` is unmoved. The badge is not colour-only: the mark and the chevron are `aria-hidden` and the word is not, so the button's accessible name reads *"Fruit Incomplete"*, measured through the browser's own accessible-name computation rather than through `innerText` | §7.7, §7.7.1 |
+| 6 | **Decision 2: one card is never shut.** On step 3 one leaf draws no card at all and renders the panel it always has; `cardIsOpen` carries the rule for the consumers that do draw a card at a count of one, so #138 and #142 inherit it rather than restating it | §7.3a |
+| 7 | **Decision 3: a refused Continue expands the offending card and focuses the field at fault**, by the place `leafProblem` returns and never by comparing prose. The scroll-to-top stands aside when it does. A card holding any message is forced open at render time as well, which covers the route Continue does not own — a server `VALIDATION_ERROR` naming a scalar field on a step the visitor was routed back to | §7.3a, §9 |
+| 8 | **The `data-action` vocabulary in §7.3a was two entries short before this revision** and is corrected with the new one: `clear-items` and `back-to-categories` have been handled by the click delegate since v1.60 and were never listed. Recorded rather than quietly fixed, because the list is read as complete | §7.3a |
+
+> **`tests/web/steps.py` gains `expand_step_cards(page)`**, and that is where the collapsing meets every suite that drives a forked step 3. A shut card's body is `hidden`, so its inputs are not visible, not focusable and not fillable — `page.fill` refuses them and a default `wait_for_selector` waits out its timeout against a screen that is working correctly. Twelve tests across two files failed that way and now open the cards through the control a visitor would press, rather than by writing `state.openCards` from a test, which would measure the renderer against a state no press can produce. `test_step_three_zones_browser.py`'s panel probe also moved: a leaf card's padding now belongs to its header and its body, so a content box derived from the panel sits 20px outside the fields.
+
+> **Nothing is published and nothing is republished by this revision.** `is_mock` stays `true`, **O-1 remains the hard blocker**, and the placeholder banner stays mandatory on every results view and export. All thirteen golden cases are byte-identical: nothing here touches the engine, and nothing here touches the wire.
+
+> **The adjacent numbers were held by branches in flight, and one of them has since landed.** v1.79 is claimed by PR #110 (`feat/d-statistics-content`), still open, and **v1.80 merged with PR #145** on 2026-10-02 — its entry is immediately below this one, and this branch resolved that change-log conflict as the second to land. The effective contract is the highest version wherever it lives, merged or not, which is why this took the next free number above both rather than waiting. The same situation v1.78 recorded against `feat/session-restore`. The owner notifies the team.
+
+> **The front matter is raised with the entry, and on 2026-10-02 it was not.** v1.80 landed on `main` with `### v1.80` in this change log and `date: "2026-09-29 (v1.78)"` still in the front matter, so the document disagreed with itself about which contract it was. Resolving this merge corrects it, because this revision's own header is higher than both. Nothing in the suite reports that disagreement today: PR #110 adds a floor (`entry > (1, 78)`) and a duplicate-number guard, which would not have caught it. An assertion that the header equals the highest entry would.
 ### v1.80 — 2026-10-02 (a tangible equivalent says in one sentence what it means, and stops reciting its provenance; affects A, B, C, D and E)
 
 Issue #127, raised by the client at the 1 October meeting. Measured off the published set (19, `CLIENT-DRAFT-2026-09-21`, `is_mock = 1`), this is what the `?` beside a tangible-equivalence card actually printed:
@@ -4241,6 +4265,12 @@ Mapping: `/taxonomy` → `taxonomy.json`, `/factors*` → `factors.json`, `/stat
 
 > **`foodStage` (v1.60) is which panel of step 2 is showing** -- `'categories'` or `'items'` -- and it is a panel rather than a step number because §3.3 of `spec.md` makes step 2.5 a refinement of step 2 and because the panel is absent wherever `item_level_enabled` is off. Anything that lands on a step resets it to `'categories'`. `foodItems` (category code to item codes) was added by the fork with nothing writing it; step 2.5 is its writer, and `entryLeaves` has read it since the day it existed.
 
+> **`openCards` (v1.81) is which collapsible step cards are open** -- a list of `cardId(step, key)` strings, the owning step NUL-joined to the card's own key, which on step 3 is a `leafKey`. Absent from the list is closed, and an empty list is the default because the default is all collapsed. **The step is in the id and not only the key**: steps 3 and 4 both draw one card per leaf, and "dairy open on step 3" and "dairy open on step 4" are two facts about two screens answered minutes apart.
+>
+> It is here and not on the element for `resultsNavOpen`'s reason, restated because this is the key most likely to be moved back: `render()` does `main.innerHTML = ...` on every `setState`, so a native `<details open>` is rebuilt from whatever the renderer believes, and a renderer that believed the DOM would shut every card on the step the moment a unit `<select>` changed. It is **not** in `snapshot.js`'s `ANSWER_KEYS` and must not be added: it is transient UI of the same class as a restored open dialog, which v1.74 item 2 keeps out of the snapshot by construction, and a restored card list would also carry the open state of a card for a food the revalidation may have just dropped. `clearDraft` and `resetCalculator` both clear it, because it describes a draft.
+>
+> **One card is never shut**, which is #134's own decision 2 and lives in `cardIsOpen` rather than at the call sites, so steps 2.5 and 4 inherit it: a lone card collapsed would open its step on an empty screen, and there is nothing below it to be missed.
+
 ```js
 /** Single mutable state object with a subscriber set. */
 export const state;
@@ -5015,6 +5045,56 @@ export function stepNav({step, back, backLabel = 'Back', label = 'Continue',
 > not always one more leaf: a category with no food is already one leaf, so the *first*
 > food under it replaces that leaf and the second adds. Counting ticks gets that wrong.
 
+> **The collapsible step card, and the one invariant it must never lose (v1.81).**
+> `collapsibleCard` is the chrome #134 asked for on step 3 and #138 and #142 will consume
+> on step 2.5 and step 4: a `<fieldset>` whose `<legend>` is `.sr-only` and carries the
+> group's accessible name and nothing else, a header `<button>` with `aria-expanded` and
+> `aria-controls`, a completion badge, and a body that carries `hidden` when the card is
+> shut. `hidden` rather than a class, because the body's controls must be unreachable by
+> Tab and not merely invisible.
+>
+> **The badge and Continue read one rule set, and that is the whole of why `leafProblem`
+> exists.** `destinationStep` already carries the note that two lists of rules for one
+> button left each list enabling Continue on a state the other had just refused; a badge
+> computed from a second list is that defect with a tick instead of a button, and worse,
+> because a tick is read as a promise *before* anybody presses anything and the client's
+> stated use for it is deciding whether to open a card at all. So `stepProblemAt` walks
+> the leaves and stops at the first problem, `leafSettled` asks about one leaf, and both
+> are `leafProblem`.
+>
+> **What a tick therefore means** is #134's decision 1 — every required field on the card
+> is filled — *plus* "and nothing on it is at fault", which is strictly stronger and never
+> weaker. The two optional NZ$ figures cannot withhold a tick by being empty
+> (`moneyContradictionValidation` answers `''` the moment either is blank); two of them
+> *contradicting each other* can, because Continue refuses that state, and a tick over it
+> would be a tick over a card the next press rejects. **#133's countdown notice must
+> share this predicate**, or the page will say one thing and the toast another.
+>
+> **A refused Continue expands the card it is about and focuses the field at fault**
+> (decision 3), by the `field` `leafProblem` returns rather than by comparing the
+> message's prose — two leaves produce the byte-identical sentence, which is what
+> `state.errorAt` exists for. The click delegate's scroll-to-top stands aside when it
+> does, or the page would animate away from the box the visitor was just sent to. A card
+> holding any message is also forced open at render time regardless of `openCards`, which
+> covers the one route Continue does not own: a server `VALIDATION_ERROR` naming a scalar
+> field on a step the visitor was routed back to.
+>
+> **One leaf draws no card on step 3 at all.** Decision 2 says a single card is not
+> collapsed, and the single-leaf panel is also what `test_leaf_figure_migration_browser.py`
+> calls "today's screen byte for byte"; `cardIsOpen` carries the same decision for the
+> consumers that do draw a card at a count of one.
+>
+> **The badge is live on keystroke** (`updateCardBadges`), taking §7.2's documented
+> re-render exception for `updateCombinedTotal`'s exact reason. It is not optional here:
+> step 3's Continue is never disabled, so the badge is the only thing on the screen that
+> says, before the press, whether a card would be refused.
+>
+> **`.step-card` is the one element holding the card's ground** and carries no
+> `backdrop-filter`, no `transform` and no positioned descendant of its own, so #143's
+> frosted-glass token attaches there without re-laying out the card. Note what that makes
+> true in the other direction: `backdrop-filter` creates a containing block, and step 3's
+> term tooltips **are** `position: absolute` inside the card body.
+
 
 ```js
 /** Writes the current screen into `main`. Handles the loading and
@@ -5088,9 +5168,11 @@ const hasData = ();
 const loadingGivesBackTheDraft = entry;
 ```
 
-`data-action` vocabulary handled by the click delegate: `start`, `go-step`, `toggle-sector`, `clear-food`, `continue`, `add-entry`, `edit-entry`, `remove-entry`, `calculate`, `start-over`, `download-results`, `download-pdf`, `breakdown-tab`, `explore-improvements`, `reset-improvement`, `cancel-improvement`, `compare-improvement`, `expand-improvement-chart`, `close-improvement-chart`, `retry`, `view-methodology`.
+`data-action` vocabulary handled by the click delegate: `start`, `go-step`, `toggle-sector`, `toggle-card`, `clear-food`, `clear-items`, `back-to-categories`, `continue`, `add-entry`, `edit-entry`, `remove-entry`, `calculate`, `start-over`, `download-results`, `download-pdf`, `breakdown-tab`, `explore-improvements`, `reset-improvement`, `cancel-improvement`, `compare-improvement`, `expand-improvement-chart`, `close-improvement-chart`, `retry`, `view-methodology`.
 
-Module-private and worth knowing: `stepProblem(step)` returns a display string or `''` for one step's own rules, parameterised on the step so a caller may ask about a step the visitor is not standing on, and `validateCurrentStep()` is `stepProblem(state.step)`; `buildLines(entry)` produces `[{destination, qty_kg}]` filtered to `qty_kg > 0`; `draftLinePaths()` produces the §9 `field` path for each destination row of the draft, **keyed by the row's own line `id`** and rooted at that row's leaf's position in the submission, and `draftFieldPaths()` is its values; `publicError(error)` maps a §9 code to user copy; `validationMessage(error)` and `describeDetail(detail)` build the 400 banner from the details that no row on screen can display; `fieldErrorMap(error)` turns `details[]` into `{fieldPath: message}`; `blocked()` and `clearedError()` implement §9.2's rule that `BLOCKED` is terminal; `submitCalculation()` issues the request.
+> **`toggle-card` (v1.81) is the only action that is deliberately NOT in the scroll-to-top list** at the foot of the click delegate. Opening a card is a disclosure and not a navigation; throwing the page to the top would take the card the visitor just pressed out from under their eyes. It carries `data-card-step` and `data-card` (the key, `encodeURIComponent`-ed, because a `leafKey`'s NUL survives a round trip through an attribute only encoded), so the card pressed and the id written are the same pair by construction rather than by the handler knowing which step it is on. The toggle carries a stable `id`, which is load-bearing rather than decoration: `main.js`'s subscriber restores focus by id across the re-render, and that is what makes the `aria-expanded` change *announced* rather than merely applied.
+
+Module-private and worth knowing: `leafProblem(step, leaf, food)` is **the only copy of the per-leaf rules** and returns `{message, field?}`; `stepProblem(step)` returns a display string or `''` for one step's own rules, parameterised on the step so a caller may ask about a step the visitor is not standing on, and `validateCurrentStep()` is `stepProblem(state.step)`; `leafSettled(step, leaf, food)` is the per-leaf reader the collapsible cards' badge prints and `collapsibleCard`, `cardId`, `cardIsOpen`, `cardStatus`, `updateCardBadges` and `focusLeafField` are that chrome (v1.81); `buildLines(entry)` produces `[{destination, qty_kg}]` filtered to `qty_kg > 0`; `draftLinePaths()` produces the §9 `field` path for each destination row of the draft, **keyed by the row's own line `id`** and rooted at that row's leaf's position in the submission, and `draftFieldPaths()` is its values; `publicError(error)` maps a §9 code to user copy; `validationMessage(error)` and `describeDetail(detail)` build the 400 banner from the details that no row on screen can display; `fieldErrorMap(error)` turns `details[]` into `{fieldPath: message}`; `blocked()` and `clearedError()` implement §9.2's rule that `BLOCKED` is terminal; `submitCalculation()` issues the request.
 
 > **The Back confirmation (v1.53), and the one test that decides whether it appears.** Backing out of a jump restores §7.2's snapshot, and the marker survives a forward walk — so a visitor may press *Add another supply-chain entry*, build a whole second chain across four screens, walk Back to step 1 and press Back there, at which point the restore would throw all four screens away. `goToStep` therefore calls `window.confirm` first, following `start-over`'s precedent, and declining returns without a `setState` at all: same step, same draft, same entries, marker still live.
 >

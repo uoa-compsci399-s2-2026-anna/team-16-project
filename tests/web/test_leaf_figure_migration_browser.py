@@ -30,7 +30,7 @@ import os
 
 import pytest
 
-from tests.web.steps import press_continue
+from tests.web.steps import expand_step_cards, press_continue
 
 
 pytestmark = pytest.mark.browser
@@ -290,7 +290,8 @@ def test_a_leaf_whose_identity_is_unchanged_keeps_every_figure(page):
     fruit = _code_of(page, FRUIT)
     _tick(page, FRUIT)  # a second food, alongside the first
     press_continue(page)
-    page.wait_for_selector('[data-leaf-field="amount"]')
+    page.wait_for_selector('[data-leaf-field="amount"]', state="attached")
+    expand_step_cards(page)
 
     found = _leaf_amounts(page)
     assert len(found) == 2, found

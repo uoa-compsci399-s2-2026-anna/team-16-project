@@ -31,7 +31,7 @@ import os
 
 import pytest
 
-from tests.web.steps import press_continue
+from tests.web.steps import expand_step_cards, press_continue
 
 
 pytestmark = pytest.mark.browser
@@ -89,7 +89,13 @@ def _to_step_four(page, leaves):
         boxes.nth(index).click()
         page.wait_for_timeout(50)
     press_continue(page)
-    page.wait_for_selector('[data-leaf-field="amount"]')
+    #: `state="attached"`, then the cards. Since #134 a forked chain draws its step-3
+    #: cards collapsed and a collapsed card's body carries `hidden`, so the amount
+    #: fields are in the document and not visible - which the default
+    #: `state="visible"` waits out against a screen that is working correctly, and
+    #: which `page.fill` refuses. Opened through the control a visitor would press.
+    page.wait_for_selector('[data-leaf-field="amount"]', state="attached")
+    expand_step_cards(page)
     ids = page.evaluate("() => [...document.querySelectorAll('[data-leaf-field=amount]')].map(e => e.id)")
     assert len(ids) == leaves, f"step 3 rendered {len(ids)} amount fields for {leaves} leaves: {ids}"
     for index, field in enumerate(ids):
@@ -127,12 +133,18 @@ def test_step_four_does_not_scroll_sideways_at_a_phone_width(browser, width, lea
 @pytest.mark.parametrize("width", (320, 390))
 def test_step_three_does_not_scroll_sideways_at_a_phone_width(browser, width, leaves):
     """The card stack is today's panel N times, so it should cost nothing
-    horizontally - which is a prediction until it is measured."""
+    horizontally - which is a prediction until it is measured.
+
+    **Measured with every card OPEN**, which is the wider of the two layouts and
+    the one this has always measured; the shut state is measured in
+    `test_step_card_collapse_browser.py`, where the card header - a staff-typed
+    food name, a chevron and a badge on one line - is the content that is new."""
     context, page = _open(browser, width)
     try:
         _to_step_four(page, leaves)
         page.click('.step-nav [data-action="go-step"]')
-        page.wait_for_selector('[data-leaf-field="amount"]')
+        page.wait_for_selector('[data-leaf-field="amount"]', state="attached")
+        expand_step_cards(page)
         measured = page.evaluate(_OVERFLOW)
     finally:
         context.close()

@@ -38,7 +38,7 @@ import re
 
 import pytest
 
-from tests.web.steps import press_continue
+from tests.web.steps import expand_step_cards, press_continue
 
 
 pytestmark = pytest.mark.browser
@@ -88,7 +88,8 @@ def _build_chain(page, categories, amounts):
         boxes.nth(index).click()
         page.wait_for_timeout(60)
     press_continue(page)
-    page.wait_for_selector('[data-leaf-field="amount"]')
+    page.wait_for_selector('[data-leaf-field="amount"]', state="attached")
+    expand_step_cards(page)
     ids = page.evaluate(
         "() => [...document.querySelectorAll('[data-leaf-field=amount]')].map(e => e.id)"
     )

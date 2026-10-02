@@ -87,7 +87,12 @@ def _forked_chain(page):
         page.fill(f"#{field}", amount)
         page.wait_for_timeout(50)
     press_continue(page)
-    page.wait_for_selector('[data-line-field="amount"]')
+    #: Step 4 draws one collapsible card per food type since #142, and a shut
+    #: card's body carries `hidden` - so its rows are in the document, not
+    #: visible, and not fillable. Same two lines as step 3 above, same helper,
+    #: and the same reason it exists (`tests/web/steps.py`).
+    page.wait_for_selector('[data-line-field="amount"]', state="attached")
+    expand_step_cards(page)
     # Leaf one's FIRST destination and leaf two's SECOND: the split differs by leaf,
     # which is the whole thing a per-leaf allocation can say and a shared one cannot.
     rows = page.evaluate(

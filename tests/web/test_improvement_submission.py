@@ -381,7 +381,7 @@ def test_matching_the_current_allocation_also_satisfies_the_mass_rule_in_unit_mo
     calculate(page)
     page.click('[data-action="explore-improvements"]')
     page.wait_for_selector("#improvement-mode")
-    page.select_option("#improvement-mode", "unit")
+    page.select_option("#improvement-mode", "kilograms")
     page.wait_for_timeout(120)
 
     page.click('[data-action="reset-improvement"]')

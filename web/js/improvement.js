@@ -49,35 +49,54 @@ const PIE_COLOURS = ['#003223', '#28c882', '#87005a', '#ffd76e', '#005ae6', '#e6
 // rejects the whole submission rather than the entry.
 const MASS_TOLERANCE_KG = 0.01
 
-// Item ⑧'s destination-level unit, one row at a time. `state.improvementRowUnits` maps a
-// destination `code` to `'kilograms'`, `'tonnes'`, or `preset:<unit_preset.code>` — the same
-// value space `calculator.js`'s own row unit selector uses (§7.3) — and a row with no entry
-// yet falls back to kilograms, the unit every row was shown in before this selector existed.
-const rowUnitFor = (state, code) => state.improvementRowUnits?.[code] || 'kilograms'
+// **The panel's one display unit** (#74). `state.improvementMode` holds `'percentage'`,
+// `'kilograms'`, `'tonnes'`, or `preset:<unit_preset.code>` — the same value space
+// `calculator.js`'s own step-3 unit selector uses (§7.3), with `'percentage'` added for the
+// one option that is a share rather than a unit — and it governs **every** row on every
+// leaf's card. See the note in `ImprovementScenario` for the two client asks behind that.
+//
+// **The preset guard is the `|| 'kilograms'` fallback that used to live in `rowUnitFor`.**
+// §6.1 says a consumer must not assume the taxonomy survives a publish, and a held unit
+// naming a container the taxonomy no longer carries would price every row at `NaN`
+// (`kgToUnitAmount`) and read as zero on screen. Kilograms is the unit every row was shown
+// in before any of this existed, so it is what an unusable value degrades to.
+const panelUnit = (state, presets) => {
+  const held = state.improvementMode || 'percentage'
+  if (!isPresetUnit(held)) return held
+  return (presets || []).some(item => item.code === presetUnitCode(held)) ? held : 'kilograms'
+}
 
-// A row's own display unit, named for a screen reader and for the aria-labels beside it.
-// `preset.label` is staff-typed and shown exactly as written (§7.7.7), the same rule
+// The panel's display unit, named for a screen reader and for the aria-labels beside each
+// control. `preset.label` is staff-typed and shown exactly as written (§7.7.7), the same rule
 // `calculator.js`'s `rowUnitLabel` follows for the identical value — escaped, never passed
 // through `t()`, because it is not a sentence in the visitor's language, it is whatever staff
 // named the container.
-const rowUnitName = (unit, presets) => {
+const unitDisplayName = (unit, presets) => {
+  if (unit === 'percentage') return t('Percentage')
   if (unit === 'tonnes') return t('tonnes')
-  if (isPresetUnit(unit)) return presets.find(item => item.code === presetUnitCode(unit))?.label || unit
+  if (isPresetUnit(unit)) return (presets || []).find(item => item.code === presetUnitCode(unit))?.label || unit
   return t('kilograms')
 }
 
-// The options a row's own unit `<select>` offers: the two weights, then every container the
-// taxonomy carries — unfiltered by food category. Unlike step 4's own row selector, this one
-// has no single entry's food category to filter against: an allocation redistributes the
-// mass of every entry in the submission (`submissionEntries`), which may not share one.
-function rowUnitOptionsHtml(presets, selectedValue) {
-  const weights = [['kilograms', t('kilograms')], ['tonnes', t('tonnes')]]
-    .map(([value, label]) => `<option value="${value}" ${selectedValue === value ? 'selected' : ''}>${escapeHtml(label)}</option>`)
+// The options the panel's one unit `<select>` offers: percentage, the two weights, then every
+// container the taxonomy carries — unfiltered by food category. Unlike step 3's own row
+// selector, this one has no single entry's food category to filter against: an allocation
+// redistributes the mass of every entry in the submission (`submissionEntries`), which may not
+// share one.
+//
+// **Flat, with no `<optgroup>`, unlike step 3's.** Chromium indents an option inside a group
+// and reserves width for the group's own label, neither of which appears in `select.options` —
+// so `MODE_SELECT_FIT` in `tests/web/test_step_navigation.py`, which measures the widest
+// option against the control's own box, would be measuring the wrong box and could neither
+// see a clipped group label nor explain the extra width. A flat list keeps that assertion
+// exactly true, and `Weight` / `Containers` are a step-3 affordance for a select that filters
+// by food category; this one does not filter.
+function unitOptionsHtml(presets, selected) {
+  const option = (value, label) => `<option value="${escapeHtml(value)}" ${selected === value ? 'selected' : ''}>${escapeHtml(label)}</option>`
+  const weights = [['percentage', t('Percentage')], ['kilograms', t('kilograms')], ['tonnes', t('tonnes')]]
+    .map(([value, label]) => option(value, label))
     .join('')
-  const containers = presets.map(preset => {
-    const value = PRESET_UNIT + preset.code
-    return `<option value="${escapeHtml(value)}" ${selectedValue === value ? 'selected' : ''}>${escapeHtml(preset.label)}</option>`
-  }).join('')
+  const containers = (presets || []).map(preset => option(PRESET_UNIT + preset.code, preset.label)).join('')
   return weights + containers
 }
 
@@ -305,20 +324,20 @@ export function resetImprovement(state) {
 // changes THIS row's `max` ever again, so `value / max` — and therefore the thumb — depends
 // on nothing but this row's own value.
 //
-// `100` in percentage mode; the whole mass being redistributed, in this row's own display
-// unit, in unit mode (`kgToUnitAmount(totalKg, rowUnit, presets)`, computed once at the call
-// site below, where `totalKg` and `rowUnit` already are). The 100%-total rule has not gone
-// away — it is now enforced only on the control being dragged, in `updateImprovementInput`'s
-// per-input ceiling clamp, which never touches a sibling row's DOM at all.
-function fixedRowMax(mode, totalKg, rowUnit, presets) {
-  if (mode !== 'unit') return '100'
-  const wholeAmount = kgToUnitAmount(totalKg, rowUnit, presets)
-  const precision = unitDisplayPrecision(rowUnit, presets)
+// `100` when the panel is showing percentages; the whole mass being redistributed, in the
+// panel's own display unit, otherwise (`kgToUnitAmount(totalKg, unit, presets)`). The
+// 100%-total rule has not gone away — it is now enforced only on the control being dragged,
+// in `updateImprovementInput`'s per-input ceiling clamp, which never touches a sibling row's
+// DOM at all.
+function fixedRowMax(unit, totalKg, presets) {
+  if (unit === 'percentage') return '100'
+  const wholeAmount = kgToUnitAmount(totalKg, unit, presets)
+  const precision = unitDisplayPrecision(unit, presets)
   return Number.isFinite(wholeAmount) && wholeAmount > 0 ? wholeAmount.toFixed(precision) : '0'
 }
 
 // The pointer-drag granularity: half a percentage point of the mass being redistributed,
-// restated in a row's own display unit when the panel is in unit mode. `step="0.01"` gave
+// restated in the panel's own display unit when that is not a percentage. `step="0.01"` gave
 // the earlier percentage slider ten thousand stops and was "too sensitive" to land on with
 // a pointer, so a drag is still rounded to this coarseness — but the rounding happens here,
 // in `updateImprovementInput`, rather than through the range's own `step` attribute (see the
@@ -333,10 +352,10 @@ function fixedRowMax(mode, totalKg, rowUnit, presets) {
 // happens to be shown in; only the number printed beside the thumb changes; converting
 // *that* number's granularity would make a tonnes row and a kilograms row land on visibly
 // different fractions of the same mass for no reason connected to either unit.
-function rangeStep(mode, totalKg, rowUnit, presets) {
-  if (mode !== 'unit') return 0.5
+function rangeStep(unit, totalKg, presets) {
+  if (unit === 'percentage') return 0.5
   const kgStep = Math.max(0.01, Number((totalKg * 0.005).toFixed(2)) || 0.5)
-  const displayStep = kgToUnitAmount(kgStep, rowUnit, presets)
+  const displayStep = kgToUnitAmount(kgStep, unit, presets)
   return Number.isFinite(displayStep) && displayStep > 0 ? displayStep : 0.5
 }
 
@@ -345,16 +364,16 @@ function rangeStep(mode, totalKg, rowUnit, presets) {
  * `setState` the module docstring above explains — a full re-render on every keystroke
  * loses the caret.
  *
- * **`state.improvedAllocations` is a percentage in every mode.** Item ⑧ added a
- * unit *display*, not a second place the allocation can live: storing a mass or a
+ * **`state.improvedAllocations` is a percentage whatever unit the panel is showing.** Item
+ * ⑧ added a unit *display*, not a second place the allocation can live: storing a mass or a
  * container count instead would make the exactly-100 rule in `improvementValidation` a
  * floating-point comparison against a mass, and a mass that rounds differently at every
  * tonnage — or at every container size — would start refusing allocations that are
  * correct. So a keystroke here is converted to a percentage immediately —
- * `kgToPercentage(unitAmountToKg(control.value, rowUnit, presets), totalKg)` in unit mode,
- * `control.value` itself in percentage mode — and everything downstream of that line
- * (the total, the validation, the mirrored inputs' *raw displayed value*) is unchanged
- * by which mode, or which row's own unit, produced it.
+ * `kgToPercentage(unitAmountToKg(control.value, unit, presets), totalKg)` when a unit is
+ * showing, `control.value` itself when a percentage is — and everything downstream of that
+ * line (the total, the validation, the mirrored inputs' *raw displayed value*) is unchanged
+ * by which unit produced it.
  *
  * **A cleared box stays cleared, in both modes.** `kgToPercentage(NaN, totalKg)` and
  * `kgToPercentage('', totalKg)` both read as `0`, which is finite — so a unit box the
@@ -396,26 +415,28 @@ export function updateImprovementInput(control, state) {
   const leaves = submissionEntries(state)
   const allocations = leafAllocations(state)
   const mine = allocations[leafIndex] || {}
-  const mode = state.improvementMode || 'percentage'
   const presets = state.taxonomy?.unit_presets || []
+  // **The panel's one unit, not this row's** (#74). There is no `code` lookup here any
+  // more: every control on every leaf's card reads the same key.
+  const unit = panelUnit(state, presets)
+  const unitMode = unit !== 'percentage'
   const totalKg = leaves[leafIndex] ? leafAllocatableKg(leaves[leafIndex], presets) : 0
-  const rowUnit = mode === 'unit' ? rowUnitFor(state, code) : null
-  // Item ⑧: how many decimal places THIS row's own unit is worth printing (see
+  // Item ⑧: how many decimal places the panel's unit is worth printing (see
   // `unitDisplayPrecision`) — two for kilograms, more for tonnes and for a container
   // whose count would otherwise round away the same 0.01 kg kilograms is already
-  // shown to. Percentage mode is unaffected; it never reads this.
-  const precision = mode === 'unit' ? unitDisplayPrecision(rowUnit, presets) : 2
+  // shown to. Percentage is unaffected; it never reads this.
+  const precision = unitMode ? unitDisplayPrecision(unit, presets) : 2
   let raw = control.value
   if (control.type === 'range' && raw !== '') {
-    const step = rangeStep(mode, totalKg, rowUnit, presets)
+    const step = rangeStep(unit, totalKg, presets)
     const numeric = Number(raw)
     if (Number.isFinite(numeric)) {
       const snapped = Math.round(numeric / step) * step
-      raw = mode === 'unit' ? snapped.toFixed(precision) : String(Math.round(snapped * 100) / 100)
+      raw = unitMode ? snapped.toFixed(precision) : String(Math.round(snapped * 100) / 100)
       control.value = raw
     }
   }
-  let percentage = raw === '' ? '' : (mode === 'unit' ? kgToPercentage(unitAmountToKg(raw, rowUnit, presets), totalKg) : raw)
+  let percentage = raw === '' ? '' : (unitMode ? kgToPercentage(unitAmountToKg(raw, unit, presets), totalKg) : raw)
   // The ceiling below is a RANGE-only guard — see the docstring's note on why a number
   // box's out-of-range figure is refused by `improvementValidation`, never rewritten here.
   if (control.type === 'range' && percentage !== '') {
@@ -431,7 +452,7 @@ export function updateImprovementInput(control, state) {
         // on the control the visitor is looking at would read as a new, unexplained
         // bug the moment anyone dragged past their own headroom.
         percentage = Math.round(clamped * 100) / 100
-        raw = mode === 'unit' ? displayAmount(percentage, totalKg, rowUnit, presets).toFixed(precision) : String(percentage)
+        raw = unitMode ? displayAmount(percentage, totalKg, unit, presets).toFixed(precision) : String(percentage)
         control.value = raw
       }
     }
@@ -441,8 +462,8 @@ export function updateImprovementInput(control, state) {
   state.improvementResult = null
   state.improvementError = null
   // **No sibling row's `max` is touched here, ever.** Every slider's `max` is fixed at
-  // render time (`fixedRowMax`) from `totalKg` and its OWN row unit alone, neither of which
-  // this function changes — so there is nothing left to recompute after a keystroke, and
+  // render time (`fixedRowMax`) from `totalKg` and the panel's own unit alone, neither of
+  // which this function changes — so there is nothing left to recompute after a keystroke, and
   // no loop-ordering question between "raise the ceiling" and "mirror the value" the way a
   // headroom-derived `max` used to raise. Mirroring `raw` below can never be clamped by a
   // stale ceiling on THIS row either, because this row's own ceiling never moves: typing
@@ -450,7 +471,7 @@ export function updateImprovementInput(control, state) {
   // exactly as before, with no ordering to get wrong.
   const total = allocationTotal(allocations[leafIndex])
   // Mirrors the *raw* value, not the percentage just computed: every control sharing this
-  // code **and this leaf** is rendered in the same mode and the same row unit
+  // code **and this leaf** is rendered in the panel's one unit
   // (§ `ImprovementScenario`), so the slider and the number box always agree on which unit
   // `.value` is in and a straight copy is correct. `raw` rather than `control.value` so a
   // range's own drag mirrors its *rounded* (and, if it applied, *clamped*) figure, not the
@@ -497,22 +518,22 @@ export function allocationTotal(allocations) {
  *
  * **The blank/range message names the unit on screen, not the one stored.** The state
  * this checks is always a percentage (see `updateImprovementInput`), but a visitor working
- * in unit mode never typed a percentage and telling them to "enter a percentage" names a
+ * in a unit never typed a percentage and telling them to "enter a percentage" names a
  * unit their own screen does not show them. `state.improvementMode` decides which of the
  * two catalogue strings is returned; nothing about what is being checked changes.
  *
- * **Unit mode has no one unit to name.** Item ⑧'s single kilogram figure became a
- * per-row choice, so a message worded for kilograms alone would be wrong the moment any
- * row was switched to tonnes or a container — and different rows can be showing different
- * units at once. The unit-mode message therefore points at "the unit shown" rather than
- * naming one, which stays true regardless of what any individual row is set to.
+ * **"the unit shown" is kept, and is now literally true.** It was coined because item ⑧'s
+ * per-row selector meant different rows could be showing different units at once, so no one
+ * unit could be named; since #74 there is exactly one, named once by the control above the
+ * cards. Naming it here would mean a new interpolated string in all twenty catalogues to
+ * say what the panel already says on screen — and "the unit shown" now points at a single
+ * unambiguous control rather than at whichever row the visitor is looking at.
  */
 export function improvementValidation(state) {
-  const mode = state.improvementMode || 'percentage'
-  const rangeMessage = mode === 'unit'
+  const presets = state.taxonomy?.unit_presets || []
+  const rangeMessage = panelUnit(state, presets) !== 'percentage'
     ? t('Enter an amount from 0 up to the total, in the unit shown, for every destination.')
     : t('Enter a percentage from 0 to 100 for every destination.')
-  const presets = state.taxonomy?.unit_presets || []
   const leaves = submissionEntries(state)
   const allocations = leafAllocations(state)
   // **Every rule is per leaf, since the fork.** Each leaf's own sliders must total 100% of
@@ -607,12 +628,15 @@ export async function compareImprovement(state, toPublicMessage = error => error
   }
 }
 
-// An options object rather than a sixth positional parameter: `mode` and `totalKg` travel
+// An options object rather than a sixth positional parameter: `unit` and `totalKg` travel
 // together (one is meaningless without the other) and `DestinationAllocationRow(d, c, i,
-// m, mode, totalKg)` was already unreadable at the call site without counting commas
-// against the signature above it. `presets` and `rowUnit` joined them for the same reason
-// item ⑧'s per-row unit selector needs both.
-function DestinationAllocationRow({ destination, current, improved, mode, totalKg, presets, rowUnit, leafIndex }) {
+// m, unit, totalKg)` was already unreadable at the call site without counting commas
+// against the signature above it. `presets` joined them because a container unit needs the
+// taxonomy row to convert against.
+//
+// **`rowUnit` is gone and `unit` is the panel's** (#74): the row no longer carries a unit of
+// its own, so there is no longer a pair here that could disagree.
+function DestinationAllocationRow({ destination, current, improved, unit, totalKg, presets, leafIndex }) {
   // The one interpolation on the branch that reached an attribute through neither
   // `escapeHtml` nor `slug`. `destination.code` is `VARCHAR(64)` with no pattern constraint
   // in `db/`, `api/` or `admin/`, and staff edit it through sqladmin's generic CRUD, so a
@@ -631,7 +655,7 @@ function DestinationAllocationRow({ destination, current, improved, mode, totalK
   // `data-improvement-leaf` is what `updateImprovementInput` reads to know whose
   // allocation a keystroke edits; absent on a single-leaf panel, where it defaults to 0.
   const leafAttr = leafIndex === null ? '' : ` data-improvement-leaf="${leafIndex}"`
-  const unitMode = mode === 'unit'
+  const unitMode = unit !== 'percentage'
   // Item ⑧: the control's raw `.value` is in the displayed unit, never the stored
   // percentage — `updateImprovementInput` is what converts back on the way in.
   //
@@ -644,18 +668,18 @@ function DestinationAllocationRow({ destination, current, improved, mode, totalK
   // reopen) in both units — `displayAmount('', totalKg, unit, presets)` reads `Number('')`
   // as `0`, which is finite, so the unit branch alone would turn "not answered yet" into
   // "0.00" the moment the panel redrew, even though nothing was typed.
-  // **The number of decimal places is the row's own unit's, not a flat two.** Item ⑧'s
+  // **The number of decimal places is the panel's unit's, not a flat two.** Item ⑧'s
   // whole defect (§ `unitDisplayPrecision`) was a tonnes row rounded to kilogram precision
   // — 5.90 kg read back as "0.01" t, indistinguishable from anywhere between 5 and 15 kg.
-  const precision = unitMode ? unitDisplayPrecision(rowUnit, presets) : 2
-  const value = improved === '' ? '' : (unitMode ? displayAmount(improved, totalKg, rowUnit, presets).toFixed(precision) : improved)
+  const precision = unitMode ? unitDisplayPrecision(unit, presets) : 2
+  const value = improved === '' ? '' : (unitMode ? displayAmount(improved, totalKg, unit, presets).toFixed(precision) : improved)
   // **Both controls' `max` are the same FIXED figure, and neither is ever touched again
-  // after this render.** `100` in percentage mode; the whole mass being redistributed, in
-  // THIS row's own unit, in unit mode — never this row's value plus headroom, and never
-  // recomputed from any other row's edit (see `fixedRowMax`). The 100%-total rule is
-  // enforced elsewhere, on the value being entered (`updateImprovementInput`'s own ceiling
-  // clamp), not by shrinking what a slider is even capable of reaching.
-  const ceiling = fixedRowMax(mode, totalKg, rowUnit, presets)
+  // after this render.** `100` when a percentage is showing; the whole mass being
+  // redistributed, in the panel's unit, when one is — never this row's value plus headroom,
+  // and never recomputed from any other row's edit (see `fixedRowMax`). The 100%-total rule
+  // is enforced elsewhere, on the value being entered (`updateImprovementInput`'s own
+  // ceiling clamp), not by shrinking what a slider is even capable of reaching.
+  const ceiling = fixedRowMax(unit, totalKg, presets)
   const numberMax = unitMode ? (ceiling === '0' ? '' : ceiling) : 100
   // The number box stays the exact-entry control and the slider the coarse one in both
   // modes: `step` here is the row's own display precision (two decimal places for
@@ -676,40 +700,42 @@ function DestinationAllocationRow({ destination, current, improved, mode, totalK
   // for the same allocation.
   //
   // **The two `aria-label`s are the accessible name a screen reader gets for these
-  // controls, and they name the unit the same way the visible label beside the box
-  // does.** An `aria-label` fixed to "percentage" in unit mode told a screen-reader
-  // visitor the field wanted a percentage when it did not - the same defect as the
-  // validation message above, on a surface a sighted visitor never sees at all. Naming the
-  // unit itself, rather than saying "unit" generically, is the same reason a sighted
-  // visitor is shown the row's own chosen unit rather than a placeholder word.
-  const unitName = unitMode ? rowUnitName(rowUnit, presets) : ''
+  // controls, and they name the unit.** An `aria-label` fixed to "percentage" in unit mode
+  // told a screen-reader visitor the field wanted a percentage when it did not - the same
+  // defect as the validation message above, on a surface a sighted visitor never sees at
+  // all. Naming the unit itself, rather than saying "unit" generically, is why these read
+  // "Improved Landfill 23 L kerbside food scraps bin (full)" and not "Improved Landfill
+  // unit".
+  //
+  // **Since #74 this is the only per-control statement of the unit there is**, and it is
+  // why it is not merely a nicety: the row has no visible suffix in unit mode any more
+  // (see `unitSuffix` below), so a screen reader reading one row in isolation would
+  // otherwise be told nothing at all about what the number means.
+  const unitName = unitMode ? unitDisplayName(unit, presets) : ''
   const rangeLabel = unitMode
     ? t('Improved %(destination)s %(unit)s', { destination: destination.name, unit: unitName })
     : t('Improved %(destination)s percentage', { destination: destination.name })
   const boxLabel = unitMode
     ? t('Improved %(destination)s %(unit)s value', { destination: destination.name, unit: unitName })
     : t('Improved %(destination)s percentage value', { destination: destination.name })
-  // The static `%` suffix becomes a real `<select>` in unit mode — kilograms, tonnes, and
-  // every container the taxonomy offers (`rowUnitOptionsHtml`) — so **changing it changes
-  // the presentation, not the value**: `data-improvement-unit-code` is read by the `change`
-  // handler in `calculator.js`, which patches `state.improvementRowUnits` alone, and
-  // `state.improvedAllocations[destination.code]` — the percentage this row actually means
-  // — is untouched by it. Percentage mode keeps the plain `%` span: there is no second unit
-  // to choose when the figure already is the unit.
+  // **The `%` span stays and nothing replaces it in unit mode** — #74, 17 September 2026.
   //
-  // `aria-label="${t('Unit')}"`, bare, is `calculator.js`'s own row unit `<select>` (step 4)
-  // repeated rather than a new key: neither names the destination, and the row's own visible
-  // label already does that for a screen reader reading the row as a whole.
-  // `title` carries the row's own unit name in full, unshortened — a container preset's
-  // label (§7.7.7's staff text, never `t()`) can run well past what the select's own
-  // bounded width shows (item ⑨), and `text-overflow: ellipsis` is not reliable on a closed
-  // `<select>` across browsers, so a hover/focus tooltip is what still makes the full name
-  // reachable rather than only ever guessable from what fits. The preset names themselves
-  // are never shortened — every option keeps `preset.label` verbatim (see `rowUnitOptionsHtml`).
-  const unitControl = unitMode
-    ? `<select class="improvement-row-unit" data-improvement-unit-code="${escapeHtml(destination.code)}" aria-label="${escapeHtml(t('Unit'))}" title="${escapeHtml(unitName)}">${rowUnitOptionsHtml(presets, rowUnit)}</select>`
-    : `<span>%</span>`
-  return `<div class="improvement-allocation-row"><div><label for="${id}">${escapeHtml(destination.name)}</label><span>${escapeHtml(t('Current'))}: ${formatNumber(current, 2)}%</span></div><div class="improvement-control${unitMode ? ' improvement-control-unit' : ''}"><input id="${id}" type="range" min="0" max="${ceiling}" step="any" value="${escapeHtml(value)}" data-improvement-code="${escapeHtml(destination.code)}"${leafAttr} aria-label="${escapeHtml(rangeLabel)}"><div class="percentage-input"><input type="number" min="0" max="${numberMax}" step="${boxStep}" inputmode="decimal" value="${escapeHtml(value)}" data-improvement-code="${escapeHtml(destination.code)}"${leafAttr} aria-label="${escapeHtml(boxLabel)}">${unitControl}</div></div></div>`
+  // It held a per-row `<select>` between 2026-09-05 and #74. Both the select and a static
+  // span naming the unit are now wrong here, and for the same measured reason: a container
+  // label is staff text printed verbatim (§7.7.7), "23 L kerbside food scraps bin (full)"
+  // is 254px of it in the row's own font, and the row's suffix track is at most 100px. That
+  // is exactly the screenshot the client sent against the per-row select — a truncated
+  // container name beside a slider squeezed to a stub — so putting the same string back as
+  // a `<span>`, ellipsised or wrapped onto three lines thirteen times per card, would be
+  // the identical defect with the choice removed.
+  //
+  // So the unit is stated **once**, by the control above the cards, which is what #74 asked
+  // for; the row's own two `aria-label`s (above) keep naming it for assistive technology,
+  // where there is no control above to glance at. `%` is kept because it is one character,
+  // it has always been there, and there is no second unit to choose when the figure already
+  // is the unit.
+  const unitSuffix = unitMode ? '' : `<span>%</span>`
+  return `<div class="improvement-allocation-row"><div><label for="${id}">${escapeHtml(destination.name)}</label><span>${escapeHtml(t('Current'))}: ${formatNumber(current, 2)}%</span></div><div class="improvement-control"><input id="${id}" type="range" min="0" max="${ceiling}" step="any" value="${escapeHtml(value)}" data-improvement-code="${escapeHtml(destination.code)}"${leafAttr} aria-label="${escapeHtml(rangeLabel)}"><div class="percentage-input"><input type="number" min="0" max="${numberMax}" step="${boxStep}" inputmode="decimal" value="${escapeHtml(value)}" data-improvement-code="${escapeHtml(destination.code)}"${leafAttr} aria-label="${escapeHtml(boxLabel)}">${unitSuffix}</div></div></div>`
 }
 
 /**
@@ -720,18 +746,20 @@ function DestinationAllocationRow({ destination, current, improved, mode, totalK
  * by far and nothing about it changed. The leaf index still reaches the controls, so the
  * keystroke path has one code path rather than two.
  */
-function LeafAllocationEditor({ state, leaf, index, single, current, allocation, mode, presets }) {
+function LeafAllocationEditor({ state, leaf, index, single, current, allocation, unit, presets }) {
   const totalKg = leafAllocatableKg(leaf, presets)
   const total = allocationTotal(allocation)
   const leafIndex = single ? null : index
+  // **One `unit`, passed down from `ImprovementScenario` and not looked up per row** (#74).
+  // Every row of every leaf's card is drawn in it, which is what makes the panel's figures
+  // comparable across cards as well as down one.
   const rows = sorted(state.taxonomy.destinations).map(destination => DestinationAllocationRow({
     destination,
     current: current[destination.code] || 0,
     improved: allocation[destination.code] ?? 0,
-    mode,
+    unit,
     totalKg,
     presets,
-    rowUnit: rowUnitFor(state, destination.code),
     leafIndex,
   })).join('')
   const editor = `<div class="improvement-editor"><div class="improvement-pie-wrap"><div class="improvement-pie-content" data-improvement-pie="${index}">${PieChart(state, sorted(state.taxonomy.destinations), allocation, totalKg)}</div><button class="button button-secondary improvement-expand-chart" type="button" data-action="expand-improvement-chart" data-leaf="${index}"><span aria-hidden="true">&#9974;</span> ${escapeHtml(t('Total allocation'))}</button></div><div class="improvement-allocation-list">${rows}</div></div>`
@@ -755,17 +783,42 @@ export function ImprovementScenario(state) {
   // Item ⑧: a site manager thinks in tonnes or bins diverted, not in percentage points.
   // This decides only what the sliders and boxes below *display* — see the note on
   // `updateImprovementInput` for why the stored allocation is unaffected either way.
-  // **Renamed from "kilograms" to "unit"**: the client asked for a per-row choice of
-  // kilograms, tonnes, or a container, so the mode is no longer kilograms specifically —
-  // it is "displayed in a unit", and which one is now a property of each row
-  // (`state.improvementRowUnits`, read by `rowUnitFor`), not of the panel as a whole.
-  const mode = state.improvementMode || 'percentage'
+  //
+  // **Two client asks, and the later one is in force.**
+  //
+  //   * **2026-09-05** (commit `fc00739`, contract v1.56): *"Renamed from "kilograms" to
+  //     "unit": the client asked for a per-row choice of kilograms, tonnes, or a container,
+  //     so the mode is no longer kilograms specifically — it is "displayed in a unit", and
+  //     which one is now a property of each row (`state.improvementRowUnits`, read by
+  //     `rowUnitFor`), not of the panel as a whole."* That is kept here verbatim because it
+  //     is the record of a real request, not a mistake somebody made.
+  //   * **2026-09-17** (the client meeting, issue #74): *"Improvement的unit改成统一的，选择一个
+  //     统一的单位"* — use **one** consistent unit throughout the Improvement section.
+  //     **This supersedes the ask above.** The per-row `<select>` and
+  //     `state.improvementRowUnits` are gone; `state.improvementMode` is the one key and
+  //     holds the unit itself (`'percentage' | 'kilograms' | 'tonnes' | 'preset:<code>'`,
+  //     see `panelUnit`), so there is one control for the whole panel.
+  //
+  // The two asks are not a contradiction so much as a correction: what the September
+  // screenshot complained about was a container's name truncated in a row-sized select
+  // beside a squeezed slider, and a *choice* per row could not fix that — only taking the
+  // choice out of the row could. §7.2's own state table had said "(a display choice,
+  // panel-wide)" since the per-row key landed, so the contract already described what #74
+  // asks for and it is the implementation that had diverged.
   const presets = state.taxonomy?.unit_presets || []
+  const unit = panelUnit(state, presets)
   const totalKg = totalAllocatableKg(state, presets)
-  const modeField = `<div class="form-field improvement-mode-field"><label for="improvement-mode">${escapeHtml(t('Unit'))}</label><select id="improvement-mode"><option value="percentage" ${mode === 'percentage' ? 'selected' : ''}>${escapeHtml(t('Percentage'))}</option><option value="unit" ${mode === 'unit' ? 'selected' : ''}>${escapeHtml(t('Unit'))}</option></select></div>`
+  // `title` carries the selected unit's name in full, unshortened — a container preset's
+  // label (§7.7.7's staff text, never `t()`) can run past what the control's own box shows
+  // at a phone width, and `text-overflow: ellipsis` is not reliable on a closed `<select>`
+  // across browsers, so a hover/focus tooltip is what still makes the full name reachable
+  // rather than only ever guessable from what fits. The option names themselves are never
+  // shortened — every option keeps `preset.label` verbatim (see `unitOptionsHtml`) and the
+  // native dropdown draws them at their own width, not the closed control's.
+  const unitField = `<div class="form-field improvement-mode-field"><label for="improvement-mode">${escapeHtml(t('Unit'))}</label><select id="improvement-mode" title="${escapeHtml(unitDisplayName(unit, presets))}">${unitOptionsHtml(presets, unit)}</select></div>`
   const single = leaves.length === 1
   const editors = leaves.map((leaf, index) => LeafAllocationEditor({
-    state, leaf, index, single, current: current[index] || {}, allocation: allocations[index] || {}, mode, presets,
+    state, leaf, index, single, current: current[index] || {}, allocation: allocations[index] || {}, unit, presets,
   })).join('')
   // The intro says what is being redistributed. On a forked chain the answer is "each
   // food's own waste", and saying "the current waste amount" there would read as one pool
@@ -779,7 +832,7 @@ export function ImprovementScenario(state) {
     ? `<div class="improvement-chart-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(t('Total allocation'))}"><div class="improvement-chart-expanded"><button class="improvement-chart-close" type="button" data-action="close-improvement-chart" aria-label="${escapeHtml(t('Cancel'))}">×</button>${single ? '' : `<h3 class="improvement-leaf__heading">${escapeHtml(leafDisplayName(expandedLeaf, state.taxonomy))}</h3>`}${PieChart(state, sorted(state.taxonomy.destinations), allocations[expanded] || {}, leafAllocatableKg(expandedLeaf, presets))}</div></div>`
     : ''
   const submissionMass = single ? '' : `<p class="improvement-submission-mass">${escapeHtml(t('Total mass'))}: <strong id="improvement-total-kg">${formatNumber(totalKg, 2)}</strong> kg</p>`
-  return `<section class="improvement-scenario" id="improvement-section" aria-labelledby="improvement-title"><h2 id="improvement-title">${escapeHtml(t('Create an Improvement Scenario'))}</h2><p>${escapeHtml(intro)}</p>${modeField}${editors}${submissionMass}<p class="field-error" id="improvement-inline-error" role="alert" ${error ? '' : 'hidden'}>${escapeHtml(error)}</p>${state.improvementError ? `<p class="field-error" role="alert">${escapeHtml(state.improvementError)}</p>` : ''}<div class="improvement-actions"><button class="button button-secondary" type="button" data-action="reset-improvement">${escapeHtml(t('Match the current allocation'))}</button><button class="button button-secondary" type="button" data-action="cancel-improvement">${escapeHtml(t('Cancel'))}</button><button class="button button-primary" type="button" data-action="compare-improvement" ${error || state.improvementLoading ? 'disabled' : ''}>${escapeHtml(state.improvementLoading ? t('Comparing…') : t('Compare Impact'))}</button></div>${modal}</section>`
+  return `<section class="improvement-scenario" id="improvement-section" aria-labelledby="improvement-title"><h2 id="improvement-title">${escapeHtml(t('Create an Improvement Scenario'))}</h2><p>${escapeHtml(intro)}</p>${unitField}${editors}${submissionMass}<p class="field-error" id="improvement-inline-error" role="alert" ${error ? '' : 'hidden'}>${escapeHtml(error)}</p>${state.improvementError ? `<p class="field-error" role="alert">${escapeHtml(state.improvementError)}</p>` : ''}<div class="improvement-actions"><button class="button button-secondary" type="button" data-action="reset-improvement">${escapeHtml(t('Match the current allocation'))}</button><button class="button button-secondary" type="button" data-action="cancel-improvement">${escapeHtml(t('Cancel'))}</button><button class="button button-primary" type="button" data-action="compare-improvement" ${error || state.improvementLoading ? 'disabled' : ''}>${escapeHtml(state.improvementLoading ? t('Comparing…') : t('Compare Impact'))}</button></div>${modal}</section>`
 }
 
 /**

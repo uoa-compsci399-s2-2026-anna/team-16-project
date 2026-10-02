@@ -276,3 +276,86 @@ def test_the_comparison_renders_for_a_forked_chain(page):
         f"the comparison reported an error: "
         f"{page.locator('.improvement-error').first.inner_text()!r}"
     )
+
+
+def test_one_unit_control_governs_every_row_of_every_leaf(page):
+    """**#74 on a forked chain: one control, N donuts, one unit everywhere.**
+
+    The client asked on 17 September for one consistent unit throughout the
+    Improvement section. On a single-leaf panel that is a statement about thirteen
+    rows; on a forked one it is a statement about thirteen rows times however many
+    foods, and this is the shape that decided the design.
+
+    **It is the case the rejected alternative could not have satisfied.** "Let each
+    leaf inherit the unit it was measured in at step 3" reads like the same request
+    and is not: ``entry.totalUnit`` is per leaf, so a chain whose foods were entered
+    in different units produces a panel that is consistent down each card and
+    inconsistent across them - which is #74's own complaint arriving by another door.
+    One control for the panel is the only reading of the client's sentence that holds
+    for a forked chain.
+
+    Three assertions, in the order they would break:
+
+    1. there is exactly **one** unit control on the whole panel, not one per card;
+    2. no destination row anywhere carries a ``<select>`` of its own, on either card;
+    3. every allocation control on every card reports the panel's unit. The row's
+       visible unit suffix is gone since #74 (a container's staff-typed label does
+       not fit a row-sized track), so the per-row surface that still names the unit
+       is each control's own ``aria-label``, and that is what is read.
+
+    The donuts are counted too, because a per-leaf editor is what makes this
+    non-trivial: two cards, two charts, one control above both.
+
+    A container rather than kilograms, because a container label is the one option
+    that is neither translated nor a constant - it is staff text multiplied by
+    ``kg_per_unit`` out of the taxonomy - so it is the value a stale per-row lookup
+    would fail to follow.
+    """
+    _forked_chain(page)
+    page.click('[data-action="explore-improvements"]')
+    page.wait_for_selector("#improvement-mode")
+
+    assert page.locator("#improvement-mode").count() == 1, (
+        "a forked panel drew more than one unit control; #74 asks for one for the "
+        "whole section"
+    )
+    assert page.locator(".improvement-leaf").count() == 2, (
+        "the chain did not fork, so this measures a single-leaf panel and proves "
+        "nothing about the across-card half of #74"
+    )
+
+    container = page.locator("#improvement-mode option").evaluate_all(
+        "els => els.map(el => el.value).filter(value => value.startsWith('preset:'))"
+    )
+    assert container, "the one unit control offers no container at all"
+    label = page.locator(
+        '#improvement-mode option[value="%s"]' % container[0]
+    ).inner_text()
+
+    page.select_option("#improvement-mode", container[0])
+    page.wait_for_timeout(250)
+
+    assert page.locator(".improvement-allocation-row select").count() == 0, (
+        "a destination row still carries a unit `<select>` of its own on a forked panel"
+    )
+    donuts = page.locator(".improvement-pie-chart").count()
+    assert donuts >= 2, f"two leaves drew {donuts} donut(s)"
+
+    #: Read per card, so a failure says which card disagreed rather than only that
+    #: one did.
+    per_leaf = page.evaluate(
+        """() => [...document.querySelectorAll('[data-improvement-leaf-panel]')].map(panel => ({
+             leaf: panel.dataset.improvementLeafPanel,
+             units: [...new Set([...panel.querySelectorAll('input[type=range][data-improvement-code]')]
+               .map(el => el.getAttribute('aria-label')))],
+           }))"""
+    )
+    assert len(per_leaf) == 2, per_leaf
+    for card in per_leaf:
+        assert card["units"], f"card {card['leaf']} drew no allocation control"
+        for name in card["units"]:
+            assert name.endswith(label), (
+                f"card {card['leaf']} has a control named {name!r} while the one unit "
+                f"control says {label!r} - a per-row or per-leaf unit survived, which "
+                "is #74 arriving by another door"
+            )

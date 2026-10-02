@@ -1396,8 +1396,25 @@ tbody th { font-weight: 700; }
 /* The improvement copy belongs to the section heading rather than to the centred mode
    control below it, so it shares the heading's inline-start edge.  The validation line
    is inset by the total panel's own 18px padding, aligning its first word with the
-   "Total allocation" label instead of with the panel's outer edge. */
-.improvement-scenario > p { max-width: none; margin-inline: 0; color: var(--muted); }
+   "Total allocation" label instead of with the panel's outer edge.
+
+   **This rule holds that start edge by NOT setting a measure, which is why
+   `margin-inline: 0` is gone from it.** A block in the panel's flow already starts at
+   the panel's content edge; auto inline margins centre an element only when it is
+   narrower than its container, and nothing here makes it narrower. Enumerated in the
+   browser rather than argued: of every author rule in this stylesheet that sets
+   `max-width`, `margin`, `margin-inline-*` or `width`, exactly one matches this
+   paragraph - this one. The centred `max-width: 720px; margin-inline: auto` directly
+   above belongs to `.explore-improvements p`, and the two sections are alternatives
+   that never nest, so there was never an inherited centring to cancel. Deleting
+   `margin-inline: 0` and rebuilding moved nothing: every box and every computed margin
+   on the intro and on the error line was identical at 1278, 700 and 390.
+
+   `max-width: none` stays, and it is **not** a measure being overridden either - the
+   same enumeration says nothing else sets one. It stays because it is what tells a
+   reader comparing these two adjacent rules which one centres its copy and which one
+   does not, and that contrast is the whole point of the split. */
+.improvement-scenario > p { max-width: none; color: var(--muted); }
 .improvement-scenario > #improvement-inline-error { margin-inline-start: 18px; }
 .improvement-scenario { background: rgba(230, 190, 255, 0.12); }
 .results-page > :where(#impact-summary, #improvement-section, #tangible-equivalents, #breakdown-section, #results-methodology) { scroll-margin-top: 24px; }
@@ -1773,7 +1790,14 @@ tbody th { font-weight: 700; }
    sticky rule is gated below to viewports that can actually hold both columns. */
 .improvement-pie-wrap { min-width: 0; max-width: 100%; padding: 12px; border-radius: 14px; background: #fff; }
 .improvement-pie-content { min-width: 0; max-width: 100%; }
-.improvement-pie-chart { display: block; width: 100%; max-width: 100%; height: auto; overflow: visible; }
+/* `width: 100%` and deliberately no `max-width`. The two would resolve against the
+   same containing block, so a `max-width: 100%` beside a `width: 100%` can never clamp
+   anything; it was deleted and the rebuild moved no box - 308.63px at 1278, 120px at
+   700, 288px at 390, unchanged. The modal is the one place this chart is not
+   full-width, and the cap there is `.improvement-chart-expanded`'s own
+   `width: min(720px, 100%)` below: measured 720px inside an 860px dialog, which is
+   already under 100% and so was never reached by a `max-width` of 100% either. */
+.improvement-pie-chart { display: block; width: 100%; height: auto; overflow: visible; }
 .improvement-pie-chart path { stroke: #fff; stroke-width: 2; }
 .improvement-pie-centre, .improvement-pie-total { pointer-events: none; }
 .improvement-pie-label polyline { fill: none; stroke-width: 1.5; }
@@ -1883,6 +1907,20 @@ tbody th { font-weight: 700; }
   .improvement-pie-wrap {
     position: sticky;
     inset-block-start: clamp(16px, 3vh, 28px);
+    /* **Belt and braces, and measured as such.** `.improvement-editor`'s own
+       `align-items: start` already resolves this item's `auto` to `start`, so deleting
+       this line changes the computed value from `start` to `auto` and moves nothing -
+       rebuilt without it, the card was still 337.27px tall at 1278 and 199.92px at
+       700, still flush with the editor's top, still sticking at its 24px inset.
+
+       **What makes it bind is one change in one other rule, three lines up.** A grid
+       item whose `align-self` resolves to `normal` stretches, and sticky needs a box
+       shorter than its own area to have anywhere to travel. With `.improvement-editor`
+       put back to the initial `align-items: normal`: with this line deleted the card
+       grew from 337.27px to the row's full 1454px and stopped sticking altogether (its
+       top ran 24px -> -20.19px -> -40.19px as the page scrolled, i.e. it scrolled away
+       with the content); with this line kept, the same change to the parent moved
+       nothing at all. That is the pair, both measured, and it is why this stays. */
     align-self: start;
   }
 }

@@ -1293,10 +1293,19 @@ def assert_the_mode_select_is_sized_to_its_own_longest_option(page, where):
     #: measurement. The two agreed to 0.0px in English, German, Russian and Arabic
     #: at 320/390/700/768/803/1278, so this is rounding slack and nothing else -
     #: it is three hundred-odd pixels short of admitting a full-width control.
+    too_wide = (
+        "it is taking its width from its container rather than from its own content"
+        if needs <= fit["room"]
+        else (
+            "it is wider than the room the panel leaves it, so it is pushing the page "
+            "sideways rather than clipping - `max-width: 100%` is what chooses between "
+            "those two and only one of them is a layout"
+        )
+    )
     assert fit["clientWidth"] <= target + 2, (
         f"[{where}] the unit-mode select is {fit['clientWidth']}px wide inside its padding "
-        f"where {target:.1f}px draws its longest option {fit['longest']!r}{capped} - it is "
-        "taking its width from its container rather than from its own content"
+        f"where {target:.1f}px draws its longest option {fit['longest']!r}{capped} - "
+        f"{too_wide}"
     )
     return fit
 

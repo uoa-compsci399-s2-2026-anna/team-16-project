@@ -58,7 +58,7 @@ assert.equal(module.PALETTE.length, 16);
 
 
 def test_stats_module_imports_from_its_real_file_url_with_chart_renderers_available():
-    """A missing named chart import must fail at ESM link time, before page setup."""
+    """A missing named chart import must fail during module evaluation, before page setup."""
     if not shutil.which("node"):
         pytest.skip("Node is required for the statistics module import contract")
     script = f"""

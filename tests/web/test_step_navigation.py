@@ -1817,6 +1817,11 @@ def test_step_three_asks_for_the_two_money_figures(page_at):
             f"{field_id} does not say which currency: {label!r}"
         )
 
+    production_hint = page.locator('label[for="total-value"] + .field-hint').inner_text()
+    waste_hint = page.locator('label[for="wasted-value"] + .field-hint').inner_text()
+    assert "total value" in production_hint.lower(), production_hint
+    assert "total value" in waste_hint.lower(), waste_hint
+
 
 @pytest.mark.parametrize("field_id", ["total-input", "total-value", "wasted-value"])
 def test_a_negative_money_figure_is_refused_as_it_is_typed(page_at, field_id):

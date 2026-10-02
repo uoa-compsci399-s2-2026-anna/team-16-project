@@ -229,9 +229,17 @@ def page_at_locale(browser):
         ctx.close()
 
 
-def walk(page):
+def walk(page, mass="1000"):
     """Drive the wizard as a visitor would, yielding the step index *on arrival*
     at each screen — intro, 0..4, then results (5), plus `1.5` for step 2.5.
+
+    `mass` is the kilogram figure typed at step 3 and at the one destination row
+    on step 4, and it defaults to the `"1000"` every caller here was calibrated
+    on. It is a parameter because one test below needs a *different* mass rather
+    than a different screen: `fixedRowMax`'s `toFixed` rounding is what puts a
+    unit-mode row's own maximum inside the donut's dead band, and whether it
+    does depends only on the leaf's mass (1,000 kg converts to tonnes exactly
+    and so cannot show it). Nothing else passes it.
 
     **`1.5` is a screen, not a `state.step` value.** Step 2.5 is step 2's second
     panel and the step number does not move for it (`docs/interfaces.md` §7.3a), so
@@ -324,11 +332,11 @@ def walk(page):
     page.wait_for_timeout(150)
     page.wait_for_selector("#total-waste")
     yield 2
-    page.fill("#total-waste", "1000")
+    page.fill("#total-waste", mass)
     press_continue(page)
     page.wait_for_selector('[data-line-field="amount"]')
     yield 3
-    page.fill('[data-line-field="amount"] >> nth=0', "1000")
+    page.fill('[data-line-field="amount"] >> nth=0', mass)
     page.wait_for_timeout(60)
     press_continue(page)
     page.wait_for_selector('[data-action="calculate"]')
@@ -339,9 +347,9 @@ def walk(page):
     yield 5
 
 
-def advance_to(page, step):
+def advance_to(page, step, mass="1000"):
     """The single-screen form of `walk`, for the tests that measure one step."""
-    for arrived in walk(page):
+    for arrived in walk(page, mass):
         if arrived == step:
             return page
     raise AssertionError(f"step {step} was never reached")
@@ -921,14 +929,17 @@ def test_the_step_position_moved_into_the_bar_and_left_no_band_behind(page_at):
     assert measured["bands"] == 0, f"a progress band is still costing height at the top: {measured}"
 
 
-def _improvement_panel(page_at):
+def _improvement_panel(page_at, mass="1000"):
     """A page at step 5 (results) with the improvement panel open.
 
     Shared by every test in this module that needs the destination-allocation
     sliders — factored out rather than repeated so the wizard walk that reaches
     them is written once.
+
+    `mass` is passed through to `walk`; see its docstring for the one test that
+    needs anything other than the default 1,000 kg.
     """
-    page = advance_to(page_at(1278, 983, 1.25), 5)
+    page = advance_to(page_at(1278, 983, 1.25), 5, mass)
     page.click('[data-action="explore-improvements"]')
     return page
 
@@ -1208,6 +1219,85 @@ def test_the_improvement_donut_draws_a_full_circle_for_a_single_hundred_percent_
     #: One slice, not two: the remedy must not leave the old degenerate wedge
     #: behind beside the circle it replaced.
     assert page.locator(".improvement-pie-chart path").count() == 1
+
+
+def test_the_improvement_donut_still_draws_a_share_a_hair_under_a_hundred(page_at):
+    """**The residual the two-arc remedy does not reach on its own**, and the
+    reason `slicePath`'s gate is a tolerance rather than `>= 360`.
+
+    Chrome holds SVG path geometry in single precision, so the arc collapses for
+    a *range* of sweeps below a full turn, not only at it: bisected in this
+    Chromium, a share of 99.99999783009287 still paints a 224x224 box and
+    99.99999783009288 paints nothing at all. An exact gate therefore leaves the
+    original defect reachable with the fix applied.
+
+    `99.999999` is inside that band and the panel accepts it on every other
+    count. The number box is `step="0.01"` but a typed figure is never snapped or
+    clamped — the sibling test above proves it by typing `205` and watching the
+    value survive — and `improvementValidation` passes it too, so the visitor is
+    offered Compare Impact on an allocation whose chart is blank while its own
+    callout reads 100.0%. That pairing is the assertion: a drawn donut *and* an
+    enabled button.
+    """
+    page = _improvement_panel(page_at)
+    page.locator('.percentage-input input[type="number"]').first.fill("99.999999")
+    page.wait_for_timeout(80)
+
+    _assert_is_the_full_donut(_measure_first_slice(page), "a typed 99.999999%")
+    assert page.locator('[data-action="compare-improvement"]').is_enabled(), (
+        "the premise is gone: this share is no longer offered as a valid "
+        "allocation, so an invisible chart beside it would be a different bug"
+    )
+
+
+def test_the_improvement_donut_draws_a_unit_mode_row_typed_to_its_own_maximum(page_at):
+    """**Unit mode is where the residual above is reached without typing
+    anything unusual at all** — the maximum the control itself advertises is
+    enough.
+
+    `fixedRowMax` gives a row a `max` of `kgToUnitAmount(totalKg, rowUnit)`
+    rounded to that unit's own display precision, five places for tonnes, and
+    `updateImprovementInput` converts a keystroke straight back through
+    `kgToPercentage(unitAmountToKg(raw, rowUnit), totalKg)`. The round trip does
+    not have to land on 100: for 37,461 of the 299,901 masses from 1.00 to
+    3000.00 kg at a 0.01 kg step — 12.49% — typing a tonnes row to its own
+    declared maximum lands inside the dead band instead. Nothing cleans it,
+    because the only clamp on this path is the range's ceiling and it rewrites a
+    figure that *overshoots* (`Math.round(clamped * 100) / 100` is exactly 100)
+    while leaving one that *undershoots* alone.
+
+    **1.04 kg is why this test walks a different mass.** The 1,000 kg every other
+    test here uses converts to `"1.00000"` tonnes exactly and lands on 100, so it
+    cannot show this at all; 1.04 kg gives a max of `"0.00104"`, which converts
+    back to 99.99999999999997% — a sweep of 359.9999999999999 degrees, inside the
+    band, and measured `0 x 112` before the tolerance went in.
+
+    The row's `max` is read off the control rather than written in, because the
+    claim is about the figure the panel offers the visitor, not about a number
+    this file believes it offers.
+    """
+    page = _improvement_panel(page_at, mass="1.04")
+    page.select_option("#improvement-mode", "unit")
+    page.wait_for_timeout(80)
+    page.select_option("select.improvement-row-unit >> nth=0", "tonnes")
+    page.wait_for_timeout(80)
+
+    box = page.locator('.percentage-input input[type="number"]').first
+    ceiling = box.get_attribute("max")
+    assert ceiling == "0.00104", (
+        f"the premise moved: a 1.04 kg leaf's tonnes row now offers a maximum of "
+        f"{ceiling!r}, so it may no longer be the figure that misses 100%"
+    )
+    box.fill(ceiling)
+    page.wait_for_timeout(80)
+
+    _assert_is_the_full_donut(
+        _measure_first_slice(page), f"a tonnes row typed to its own max of {ceiling}"
+    )
+    assert page.locator('[data-action="compare-improvement"]').is_enabled(), (
+        "a row at its own advertised maximum is no longer a valid allocation"
+    )
+
 
 def test_the_improvement_chart_follows_both_scroll_directions_on_desktop(page_at):
     """The chart card stays beside the long allocation list while it is being edited.

@@ -1741,19 +1741,23 @@ tbody th { font-weight: 700; }
 
 @media (min-width: 1100px) {
   .main-content:has(.item-step .item-floating-nav) { max-width: 1180px; }
-  .main-content:has(.amount-step .amount-floating-nav) { max-width: 1240px; }
-  .amount-step.wide { max-width: none; margin-inline: 0; }
+  .main-content:has(.amount-step .amount-floating-nav),
+  .main-content:has(.destination-step .destination-floating-nav) { max-width: 1240px; }
+  .amount-step.wide, .destination-step.wide { max-width: none; margin-inline: 0; }
   .item-step:has(.item-floating-nav),
-  .amount-step:has(.amount-floating-nav) {
+  .amount-step:has(.amount-floating-nav),
+  .destination-step:has(.destination-floating-nav) {
     display: grid;
     column-gap: 24px;
     align-items: start;
   }
   .item-step:has(.item-floating-nav) { grid-template-columns: minmax(0, 1fr) 252px; }
-  .amount-step:has(.amount-floating-nav) { grid-template-columns: minmax(0, 1fr) 216px; column-gap: 32px; }
-  .item-step__content, .amount-step__content { min-inline-size: 0; }
+  .amount-step:has(.amount-floating-nav),
+  .destination-step:has(.destination-floating-nav) { grid-template-columns: minmax(0, 1fr) 216px; column-gap: 32px; }
+  .item-step__content, .amount-step__content, .destination-step__content { min-inline-size: 0; }
   .item-step:has(.item-floating-nav) .item-step__content,
-  .amount-step:has(.amount-floating-nav) .amount-step__content { grid-column: 1; }
+  .amount-step:has(.amount-floating-nav) .amount-step__content,
+  .destination-step:has(.destination-floating-nav) .destination-step__content { grid-column: 1; }
   .step-floating-nav {
     display: block;
     grid-column: 2;
@@ -1779,11 +1783,13 @@ tbody th { font-weight: 700; }
     translate: none;
   }
   .item-step:has(.item-floating-nav) > .step-nav,
-  .amount-step:has(.amount-floating-nav) > .step-nav { grid-column: 1; }
+  .amount-step:has(.amount-floating-nav) > .step-nav,
+  .destination-step:has(.destination-floating-nav) > .step-nav { grid-column: 1; }
 }
 
 .item-group { scroll-margin-top: 24px; }
 .amount-step .leaf-panel { scroll-margin-top: 24px; }
+.destination-step .destination-row[id] { scroll-margin-top: 130px; }
 /* **The edge the client asked to line up is the inline-start one, and a block in this
    panel's own flow already has it** - `.improvement-editor`'s first column starts at
    the panel's content edge too, so the label, the control and the chart card below
@@ -3354,6 +3360,32 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 @media (max-width: 1019.98px) {
   /* Five leaves or more, before `.wide` widens the container. */
   .allocation-matrix:not([data-leaf-count="1"], [data-leaf-count="2"], [data-leaf-count="3"], [data-leaf-count="4"]) {
+    --matrix-display: block;
+    --leaf-group-display: block;
+    --leaf-heading-display: block;
+    --matrix-label-display: none;
+    --matrix-head-display: none;
+    --cell-label-display: grid;
+    --summary-position: static;
+    --summary-margin-block: 0;
+    --summary-padding: 16px;
+    --summary-columns: repeat(3, minmax(0, 1fr));
+    --summary-radius: 0;
+    --summary-border: 0;
+    --summary-border-block-end: 1px solid rgba(40, 200, 130, 0.5);
+    --row-columns: minmax(220px, 1fr) minmax(260px, 0.8fr);
+    --row-gap: 24px;
+    --row-padding: 17px 20px;
+    --amount-unit-columns: minmax(0, 1fr) minmax(120px, 45%);
+    --amount-unit-gap: 10px;
+  }
+}
+/* Step 4's 216px navigation leaves 812px for the matrix at a 1100px viewport.
+   Seven leaf columns require at least 910px (84px labels + seven 104px cells +
+   seven 14px gaps). Until 1198px, use its existing per-leaf list layout so the
+   last input cannot sit beneath the right navigation. */
+@media (min-width: 1100px) and (max-width: 1197.98px) {
+  .destination-step .allocation-matrix[data-leaf-count="7"] {
     --matrix-display: block;
     --leaf-group-display: block;
     --leaf-heading-display: block;

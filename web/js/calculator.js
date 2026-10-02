@@ -1261,7 +1261,7 @@ function itemFloatingNavigation() {
   return stepFloatingNavigation(entries, 'item-floating-nav')
 }
 
-/** Shared expanded navigation for the category and per-food amount panels. */
+/** Shared expanded navigation for the category, amount and destination panels. */
 function stepFloatingNavigation(entries, extraClass) {
   const links = entries.map(({ name, id }) => `<li><a href="#${id}">${escapeHtml(name)}</a></li>`).join('')
   return `<nav class="step-floating-nav ${extraClass}" aria-label="${escapeHtml(t('Sections on this page'))}"><div class="results-floating-nav__panel"><ul class="results-floating-nav__links step-floating-nav__links ${extraClass}__links">${links}</ul></div></nav>`
@@ -1415,7 +1415,10 @@ function destinationCell(leaf, line, row, column, paths, allocationExcess) {
   const invalid = Boolean(serverError) || (line.qtyInput !== '' && Number(line.qtyInput) < 0) || (allocationExcess && state.lastChangedDestination === line.destination)
   const rowUnit = line.unit || figures.totalUnit
   const name = destination?.name || line.destination
-  return `<div class="destination-row ${invalid ? 'invalid' : ''}" style="--row:${row};--col:${column}"><label for="destination-${line.id}">${escapeHtml(name)}${destination?.description ? `<small>${escapeHtml(destination.description)}</small>` : ''}</label><div class="amount-with-unit"><input id="destination-${line.id}" data-line-field="amount" data-line-id="${line.id}" data-leaf="${leafAttr(leaf)}" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(line.qtyInput)}" ${invalid ? 'aria-invalid="true"' : ''} aria-label="${escapeHtml(t('%(destination)s amount in %(unit)s', { destination: name, unit: rowUnitLabel(rowUnit) }))}"><select data-line-field="unit" data-line-id="${line.id}" data-leaf="${leafAttr(leaf)}" aria-label="${escapeHtml(t('Unit'))}">${unitOptionsHtml(rowUnit, containerPresets())}</select></div>${serverError ? `<p class="field-error" role="alert">${escapeHtml(serverError)}</p>` : ''}</div>`
+  // The first leaf has one visible cell per destination in either the matrix
+  // or the stacked layout, so every navigation target remains reachable.
+  const anchor = column === 2 ? ` id="destination-section-${slug(line.destination)}"` : ''
+  return `<div class="destination-row ${invalid ? 'invalid' : ''}"${anchor} style="--row:${row};--col:${column}"><label for="destination-${line.id}">${escapeHtml(name)}${destination?.description ? `<small>${escapeHtml(destination.description)}</small>` : ''}</label><div class="amount-with-unit"><input id="destination-${line.id}" data-line-field="amount" data-line-id="${line.id}" data-leaf="${leafAttr(leaf)}" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(line.qtyInput)}" ${invalid ? 'aria-invalid="true"' : ''} aria-label="${escapeHtml(t('%(destination)s amount in %(unit)s', { destination: name, unit: rowUnitLabel(rowUnit) }))}"><select data-line-field="unit" data-line-id="${line.id}" data-leaf="${leafAttr(leaf)}" aria-label="${escapeHtml(t('Unit'))}">${unitOptionsHtml(rowUnit, containerPresets())}</select></div>${serverError ? `<p class="field-error" role="alert">${escapeHtml(serverError)}</p>` : ''}</div>`
 }
 
 /** One leaf's Total / Allocated / Remaining, in that leaf's own unit. */
@@ -1493,10 +1496,15 @@ function destinationStep() {
   const intro = single
     ? t('Enter an amount for every applicable destination. The combined amount cannot exceed your total waste.')
     : t('Enter an amount for every applicable destination, for each food type. No food type may have more allocated than it has.')
-  return `<section class="content-section wide" aria-labelledby="destination-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 4 }))}</p><h1 id="destination-title">${escapeHtml(t('Where did the food waste go?'))}</h1><p class="section-intro">${escapeHtml(intro)}</p>
+  const content = `<div class="destination-step__content"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 4 }))}</p><h1 id="destination-title">${escapeHtml(t('Where did the food waste go?'))}</h1><p class="section-intro">${escapeHtml(intro)}</p>
     ${single ? leafSummary(leaves[0], 2, 2, true) : ''}
     ${body}
-    <p class="field-error" id="allocation-error" role="alert">${escapeHtml(state.error || '')}</p>${stepNav({ step: 3, back: backTarget(3), disabled: !canContinue })}</section>`
+    <p class="field-error" id="allocation-error" role="alert">${escapeHtml(state.error || '')}</p></div>`
+  const navigation = stepFloatingNavigation(destinations.map(line => {
+    const destination = selected(state.taxonomy.destinations, line.destination)
+    return { name: destination?.name || line.destination, id: `destination-section-${slug(line.destination)}` }
+  }), 'destination-floating-nav')
+  return `<section class="content-section wide destination-step" aria-labelledby="destination-title">${content}${navigation}${stepNav({ step: 3, back: backTarget(3), disabled: !canContinue })}</section>`
 }
 
 /** One leaf's destination rows, as the visitor typed them and as they reach the wire. */

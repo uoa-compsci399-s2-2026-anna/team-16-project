@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-10-02 (v1.84)"
+date: "2026-10-02 (v1.85)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,12 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.85 — 2026-10-02 (Step 4 gains destination navigation; affects C and D)
+
+Issue #135 now covers Step 4. Its right-hand navigation lists the thirteen non-prevention destinations in the published taxonomy's order, from Food redistribution through Sewer or wastewater. Each link targets the first food's visible input row for that destination, whether Step 4 is a one-food list, a multi-food matrix or stacked per-food lists. The navigation uses Step 3's always-open card, 216px width, 32px gap, viewport-centred sticky position and `aria-current="location"` scroll tracking; below 1100px, the form keeps the full width without the card. At 1100–1197px, a seven-food matrix uses the existing stacked layout because its minimum 910px width would otherwise run beneath the navigation.
+
+The destination names and links come from the current destination rows, so the navigation follows the factor set rather than carrying a second fixed list. Prevention is excluded by the existing `entryDestinations()` rule. No API field, translation or fixture changes.
 
 ### v1.84 — 2026-10-02 (Step 3 gains per-food navigation; affects C and D)
 

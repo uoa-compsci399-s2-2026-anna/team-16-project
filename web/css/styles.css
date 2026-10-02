@@ -2121,6 +2121,27 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
    650px two-column split, the block-flow stacking below it - applies unchanged per card. */
 .leaf-panel-list { display: grid; gap: 16px; }
 .leaf-panel { margin: 0; }
+
+/* #133: the error index sits beside Step 3's title on a wide screen and above the form
+   on a narrow one. Its ground is exactly the Banana tint used by the tangible-equivalent
+   cards in figure 2: the same brand colour, alpha and hairline rather than a near-yellow
+   introduced only for validation. The Beetroot field borders and inline messages still
+   carry the error state; this panel is a wayfinder, so it keeps Kale text and links. */
+.amount-heading-row { margin-bottom: 18px; display: grid; gap: 18px 28px; align-items: end; }
+.amount-heading-row h1 { margin-bottom: 0; }
+.amount-validation-summary {
+  min-width: 0;
+  padding: 18px 20px;
+  border: 1px solid rgba(255, 215, 110, 0.72);
+  border-radius: 13px;
+  color: var(--ink);
+  background: rgba(255, 215, 110, 0.2);
+}
+.amount-validation-summary p { margin: 0 0 8px; font-family: var(--font-heading); font-weight: 700; line-height: 1.35; }
+.amount-validation-summary ul { margin: 0; padding-inline-start: 20px; }
+.amount-validation-summary li + li { margin-top: 4px; }
+.amount-validation-summary a { color: var(--ink); overflow-wrap: anywhere; text-underline-offset: 3px; }
+.amount-validation-summary a:hover { text-decoration-thickness: 2px; }
 /* `.leaf-panel > legend` and its four declarations are gone with #134. The legend is
    `.sr-only` now - it is what gives the `<fieldset>` its accessible name and nothing
    else - and the name a sighted reader sees is `.step-card__name` in the header button
@@ -2327,6 +2348,10 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
      text - see `leafPanel()`). Applies inside a leaf card too: one leaf and
      five are the same layout, so the unit is the same width in both. */
   .unit-field select { inline-size: 50%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+}
+
+@media (min-width: 850px) {
+  .amount-heading-row { grid-template-columns: minmax(0, 1fr) minmax(250px, 320px); }
 }
 
 /* No per-zone margin override here, and there should not be one. The money pair

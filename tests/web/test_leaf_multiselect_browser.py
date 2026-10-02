@@ -385,6 +385,55 @@ def test_the_amount_error_lands_on_the_leaf_it_is_about(page):
         f"the message does not name the food it is about: {said!r} against "
         f"{marked[1]['legend']!r}"
     )
+    summary = page.locator(".amount-validation-summary")
+    assert summary.get_attribute("role") == "alert"
+    link = summary.locator("a")
+    assert link.count() == 1, summary.inner_text()
+    assert marked[1]["legend"] in link.inner_text(), link.inner_text()
+    assert "Waste amount" in link.inner_text(), link.inner_text()
+    assert link.get_attribute("href") == f"#{fields[1]}"
+    assert page.input_value(f"#{fields[0]}") == "500", (
+        "showing the field-specific error discarded the valid amount in the other card"
+    )
+    presentation = page.evaluate(
+        """() => {
+          const title = document.querySelector('#amount-title').getBoundingClientRect();
+          const summary = document.querySelector('.amount-validation-summary');
+          const box = summary.getBoundingClientRect();
+          return {
+            besideTitle: box.left > title.left && box.top < title.bottom && box.bottom > title.top,
+            background: getComputedStyle(summary).backgroundColor,
+          };
+        }"""
+    )
+    assert presentation["besideTitle"], presentation
+    assert presentation["background"] == "rgba(255, 215, 110, 0.2)", presentation
+
+
+@pytest.mark.parametrize("width", [320, 390])
+def test_the_amount_error_summary_stacks_without_sideways_scroll(page, width):
+    """The title and its summary share a row only when that row has room for both."""
+    page.set_viewport_size({"width": width, "height": 700})
+    _to_food_step(page)
+    _tick(page, 0, 1)
+    press_continue(page)
+    _amount_step(page)
+    press_continue(page)
+    page.wait_for_selector(".amount-validation-summary")
+    layout = page.evaluate(
+        """() => {
+          const title = document.querySelector('#amount-title').getBoundingClientRect();
+          const summary = document.querySelector('.amount-validation-summary').getBoundingClientRect();
+          return {
+            titleBottom: title.bottom,
+            summaryTop: summary.top,
+            scrollWidth: document.documentElement.scrollWidth,
+            clientWidth: document.documentElement.clientWidth,
+          };
+        }"""
+    )
+    assert layout["summaryTop"] >= layout["titleBottom"], layout
+    assert layout["scrollWidth"] <= layout["clientWidth"], layout
 
 
 def test_two_leaves_producing_the_identical_sentence_mark_only_the_one_at_fault(page):

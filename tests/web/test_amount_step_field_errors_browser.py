@@ -173,3 +173,11 @@ def test_a_pasted_over_precise_money_value_lands_back_on_the_amount_step(page):
     banner = page.query_selector(".field-error.api-error")
     if banner is not None:
         assert "highlighted" in banner.inner_text().lower(), banner.inner_text()
+
+    summary = page.locator(".amount-validation-summary")
+    assert summary.count() == 1, "the field error has no summary beside the Step 3 title"
+    assert summary.get_attribute("role") == "alert"
+    link = summary.locator("a")
+    assert link.count() == 1, summary.inner_text()
+    assert link.get_attribute("href") == "#total-value"
+    assert "Value of production" in link.inner_text(), link.inner_text()

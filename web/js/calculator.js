@@ -1341,6 +1341,67 @@ function itemStep() {
   return `<section class="content-section item-step" aria-labelledby="item-title">${content}${itemFloatingNavigation()}${stepNav({ step: 1, back: 1, backAction: 'back-to-categories' })}</section>`
 }
 
+/**
+ * The Step 3 fields named by the current validation failure.
+ *
+ * The detailed message still belongs beside its input. This is the short index beside
+ * the page title: it names the food and field so a visitor can tell which folded card
+ * needs attention before scrolling through a long, multi-food step. Links point to the
+ * real controls rather than duplicating the error prose in a second place.
+ */
+function amountErrorItems(leaves) {
+  const items = new Map()
+  const single = leaves.length === 1
+  const add = (leaf, field, id) => {
+    if (!leaf || !id) return
+    const figures = draftLeafFigures(leaf)
+    const fieldName = field === 'amount'
+      ? (figures.measureMode === 'container' ? t('How many containers?') : t('Waste amount'))
+      : field === 'totalInput'
+        ? t('Total amount produced')
+        : field === 'totalValue'
+          ? t('Value of production')
+          : t('Value of the waste')
+    items.set(id, { id, food: single ? '' : leafName(leaf), fieldName })
+  }
+
+  if (state.errorAt?.leaf) {
+    const leaf = leaves.find(candidate => leafKey(candidate) === state.errorAt.leaf)
+    const figures = leaf ? draftLeafFigures(leaf) : null
+    const field = state.errorAt.field
+    const id = leaf && field === 'amount'
+      ? fieldId(figures.measureMode === 'container' ? 'unit-count' : 'total-waste', leaf, leaves)
+      : leaf && field === 'wastedValue'
+        ? fieldId('wasted-value', leaf, leaves)
+        : null
+    add(leaf, field, id)
+  }
+
+  if (state.errorCode === 'VALIDATION_ERROR') {
+    const base = savedLeafCount()
+    const scalarFields = {
+      total_input_kg: ['totalInput', 'total-input'],
+      total_value_nzd: ['totalValue', 'total-value'],
+      wasted_value_nzd: ['wastedValue', 'wasted-value'],
+    }
+    leaves.forEach((leaf, index) => {
+      Object.entries(scalarFields).forEach(([pathField, [field, idBase]]) => {
+        if (state.fieldErrors[`entries[${base + index}].${pathField}`]) {
+          add(leaf, field, fieldId(idBase, leaf, leaves))
+        }
+      })
+    })
+  }
+  return [...items.values()]
+}
+
+function amountErrorSummary(leaves) {
+  const items = amountErrorItems(leaves)
+  if (!items.length) return ''
+  const links = items.map(item => `<li><a href="#${escapeHtml(item.id)}">${item.food ? `<span>${escapeHtml(item.food)}</span><span aria-hidden="true"> &mdash; </span>` : ''}<span>${escapeHtml(item.fieldName)}</span></a></li>`).join('')
+  return `<aside class="amount-validation-summary" role="alert" aria-labelledby="amount-validation-summary-title"><p id="amount-validation-summary-title">${escapeHtml(t('Check the highlighted fields and try again.'))}</p><ul>${links}</ul></aside>`
+}
+
 function amountStep() {
   const leaves = draftLeaves()
   const single = leaves.length === 1
@@ -1349,14 +1410,16 @@ function amountStep() {
   // **The classification's own `else`.** A `state.error` that belongs to no leaf field on
   // this screen - `BLOCKED` (§9.2), which `clearedError` deliberately keeps across a step
   // change - matched nothing before this line and rendered nothing at all.
-  const bannerError = isApiError ? state.error : (isClientError && !state.errorAt ? state.error : null)
+  const errorSummary = amountErrorSummary(leaves)
+  const bannerError = errorSummary ? null : isApiError ? state.error : (isClientError && !state.errorAt ? state.error : null)
   const combined = leaves.reduce((sum, leaf) => sum + (totalKilograms(draftLeafFigures(leaf)) || 0), 0)
   const combinedText = state.totalUnit === 'tonnes' ? kgToTonnes(combined) : combined
   const heading = single ? t('How much food waste are you measuring?') : t('How much of each did you waste?')
   const intro = single
     ? t('Enter the total amount. You will allocate this total across destinations in the next step.')
     : t('Enter an amount for every food type you chose. You will allocate the combined total across destinations in the next step.')
-  const content = `<div class="amount-step__content"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 3 }))}</p><h1 id="amount-title">${escapeHtml(heading)}</h1><p class="section-intro">${escapeHtml(intro)}</p>${bannerError ? `<p class="field-error api-error ${state.errorCode ? `error-${slug(state.errorCode)}` : ''}" role="alert">${escapeHtml(bannerError)}</p>` : ''}<div class="leaf-panel-list">${leaves.map((leaf, index) => leafPanel(leaf, leaves, index)).join('')}</div>${single ? '' : `<p class="combined-total" aria-live="polite"><span>${escapeHtml(t('Combined waste amount'))}</span> <strong data-combined-total>${formatNumber(combinedText, 2)} ${escapeHtml(unitLabel(state.totalUnit))}</strong></p>`}</div>`
+  const headingMarkup = `<div class="amount-heading-copy"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 3 }))}</p><h1 id="amount-title">${escapeHtml(heading)}</h1></div>`
+  const content = `<div class="amount-step__content">${errorSummary ? `<div class="amount-heading-row">${headingMarkup}${errorSummary}</div>` : headingMarkup}<p class="section-intro">${escapeHtml(intro)}</p>${bannerError ? `<p class="field-error api-error ${state.errorCode ? `error-${slug(state.errorCode)}` : ''}" role="alert">${escapeHtml(bannerError)}</p>` : ''}<div class="leaf-panel-list">${leaves.map((leaf, index) => leafPanel(leaf, leaves, index)).join('')}</div>${single ? '' : `<p class="combined-total" aria-live="polite"><span>${escapeHtml(t('Combined waste amount'))}</span> <strong data-combined-total>${formatNumber(combinedText, 2)} ${escapeHtml(unitLabel(state.totalUnit))}</strong></p>`}</div>`
   const navigation = single ? '' : stepFloatingNavigation(leaves.map(leaf => ({ name: leafName(leaf), id: `amount-leaf-${leafSlug(leaf)}` })), 'amount-floating-nav')
   return `<section class="content-section ${single ? '' : 'wide'} amount-step" aria-labelledby="amount-title">${content}${navigation}${stepNav({ step: 2, back: backTarget(2) })}</section>`
 }

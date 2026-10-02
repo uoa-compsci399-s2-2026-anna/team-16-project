@@ -587,6 +587,13 @@ class FactorBundle:
                         # bundle that forgot it should still calculate.
                         name=str(row.get("name") or code),
                         source_note=row.get("source_note"),
+                        # v1.80. Carried, never read -- `source_note`'s own
+                        # terms. Absent from every bundle written before
+                        # v1.80, including the thirteen golden cases, and
+                        # `None` is the answer rather than a stand-in for
+                        # one: the surfaces print nothing for it and must
+                        # never fall back to `source_note`.
+                        description=row.get("description"),
                         # §10.2, v1.71. All four optional and all four absent
                         # from every bundle written before v1.71 -- the
                         # thirteen golden cases, every `GET /factors` response

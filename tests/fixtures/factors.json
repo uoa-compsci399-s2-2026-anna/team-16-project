@@ -369,6 +369,7 @@
       "family": "driving",
       "min_value": "1.0000000000",
       "max_value": null,
+      "description": "The same greenhouse gases as driving an average light petrol car this far, at a placeholder 0.24 kg CO2e a kilometre.",
       "source_note": "PLACEHOLDER. Open item O-3 — the New Zealand basis for this conversion is not settled. Roughly one kilometre of an average light petrol vehicle per 0.24 kg CO2e.",
       "sort_order": 10
     },
@@ -382,6 +383,7 @@
       "family": "driving",
       "min_value": null,
       "max_value": null,
+      "description": "The kilometre comparison above expressed in metres, on the same placeholder figure, so a small result still reads as a number.",
       "source_note": "PLACEHOLDER, and derived rather than sourced: the row above, in metres. Open item O-3 — the New Zealand basis for the kilometre figure is not settled, so this one is not settled either.",
       "sort_order": 11
     }

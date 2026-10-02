@@ -466,6 +466,26 @@ class Equivalence(Base):
     #: water` is what this repository printed before the column existed, and
     #: a ladder drives the displayed number toward 1 by design.
     label_template_one: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    #: v1.80. **One staff-authored sentence saying what the comparison
+    #: MEANS**, printed verbatim beside the figures on the results page and in
+    #: both exports. Nullable, and `None` means *print nothing*: the results
+    #: page must never fall back to `source_note`, which is the long
+    #: provenance prose this column exists to take off that page.
+    #:
+    #: `VARCHAR(255)` rather than `Text`, matching `label_template` beside it
+    #: rather than `source_note` below it, because the length limit **is** the
+    #: feature. The client, testing the tool, asked for "one sentence" after
+    #: reading one to four sentences of audit provenance in a visitor-facing
+    #: panel (#127); a column that can hold four sentences invites four.
+    #:
+    #: **A row whose honesty lives in `source_note` has to carry it here
+    #: too.** `showers` opens `PLACEHOLDER`, names O-3 and states both of its
+    #: assumptions; `backyard_pools` records that its dimensions are the
+    #: team's own judgement. Compressing either one into a confident sentence
+    #: makes the page more certain than the data warrants, which is the one
+    #: thing this column must not be used for. Staff-typed, so never
+    #: translated (section 7.7.7), exactly as `label_template` is.
+    description: Mapped[str | None] = mapped_column(String(255), nullable=True)
     #: Open item O-3: the New Zealand basis for km driven, meals and showers
     #: is unsettled, and an equivalence with no stated source is the figure
     #: most likely to be challenged in public.

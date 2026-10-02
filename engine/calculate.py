@@ -1137,6 +1137,12 @@ def _equivalences(
                 value_per_unit=spec.value_per_unit,
                 value_per_unit_display=significant_figures(spec.value_per_unit),
                 source_note=spec.source_note,
+                #: v1.80. The staff sentence saying what this comparison
+                #: means, copied across untouched. `None` stays `None`:
+                #: `spec.source_note` is NOT a fallback here, and making it
+                #: one would put the long provenance prose back on the
+                #: results page, which is the whole of what #127 removed.
+                description=spec.description,
             )
         )
     return tuple(results)

@@ -132,7 +132,32 @@ def _row(destination: str, qty: str, value: str) -> BreakdownRow:
     )
 
 
-def _scenario(total_kg: str, metrics: dict[str, MetricResult], labels=()) -> ScenarioResult:
+#: v1.80 (#127). The two strings the disclosure used to hold and the one it
+#: holds now, as the stand-in's defaults. **They share no words**, so a test
+#: that finds one of them in a document has distinguished them rather than
+#: merely found prose - which is what makes the empty-`description` case below
+#: evidence of anything.
+EQUIVALENCE_DESCRIPTION = "This much water would run that many ten-minute showers."
+EQUIVALENCE_SOURCE_NOTE = (
+    "PLACEHOLDER. Open item O-3 names showers as an intended equivalent and "
+    "the New Zealand basis for one is not settled. 90 litres is ten minutes "
+    "at 9 litres a minute."
+)
+
+
+def _scenario(
+    total_kg: str,
+    metrics: dict[str, MetricResult],
+    labels=(),
+    description: str | None = EQUIVALENCE_DESCRIPTION,
+) -> ScenarioResult:
+    """`description` is a parameter and `source_note` is not.
+
+    `source_note` is fixed at a real value on every stand-in, deliberately: it
+    is the string no surface may print any more (v1.80, #127), and a document
+    rendered from a row that carried none could not tell "the renderer does
+    not print it" from "there was nothing to print".
+    """
     return ScenarioResult(
         total_kg=Decimal(total_kg),
         metrics=metrics,
@@ -142,6 +167,8 @@ def _scenario(total_kg: str, metrics: dict[str, MetricResult], labels=()) -> Sce
                 label=label,
                 value=Decimal("1"),
                 source_metric_code="co2e",
+                description=description,
+                source_note=EQUIVALENCE_SOURCE_NOTE,
             )
             for index, label in enumerate(labels)
         ),
@@ -170,12 +197,16 @@ def _result(
     is_mock: bool = True,
     entry_count: int = 1,
     destination_code: str = "landfill",
+    #: v1.80. `None` is the empty-field state -- `equivalence.description` is
+    #: nullable and `null` means print nothing (section 6.2).
+    description: str | None = EQUIVALENCE_DESCRIPTION,
 ) -> CalculationResult:
     rows = (_row(destination_code, "1200.500", "3600.0"), _row("compost", "300.000", "849.0"))
     current = _scenario(
         "1500.500",
         {"co2e": _metric("co2e", co2e, rows=rows)},
         labels=["Equivalent to 18,024 km driven in an average car"],
+        description=description,
     )
     alternative = _scenario(
         "1500.500", {"co2e": _metric("co2e", "1200.0", rows=(_row("prevention", "1500.500", "0.0"),))}
@@ -387,6 +418,55 @@ def test_the_equivalence_figure_row_does_not_repeat_the_whole_sentence():
     text = extract_text(render_results_pdf(_result(), _taxonomy(), "en"))
     assert text.count(label) == 1, f"the label sentence appears {text.count(label)} times, not once"
     assert re.search(r"=\s*1\b", text), f"no `= 1` figure row in: {text!r}"
+
+
+@requires_weasyprint
+def test_the_equivalence_prints_its_sentence_and_not_its_provenance():
+    """v1.80, issue #127. The client, using the tool as a tester, read one to
+    four sentences of `source_note` behind a card's `?` and said it meant
+    nothing there. The document prints `description` instead -- and paper has
+    no "open" gesture, so what the page hides behind a disclosure this file
+    prints outright, which is exactly why the swap has to be asserted here and
+    not only on screen.
+
+    The stand-in carries BOTH fields and they share no words, so this
+    distinguishes them: finding the sentence is not evidence on its own, and
+    the two negative assertions are what make it so.
+    """
+    text = extract_text(render_results_pdf(_result(), _taxonomy(), "en"))
+    assert EQUIVALENCE_DESCRIPTION in text
+    assert "Open item O-3" not in text, (
+        "the document prints the provenance paragraph #127 took off every "
+        "visitor-facing surface"
+    )
+    assert "Basis:" not in text
+
+
+@requires_weasyprint
+def test_an_equivalence_with_no_sentence_prints_nothing_and_never_its_note():
+    """**The anti-fallback assertion, on the document.**
+
+    `description` is nullable and `null` means print nothing (§6.2, v1.80).
+    The one wrong answer is `source_note`, and this is the only state in which
+    a fallback is observable: the row has a note and no sentence, so a
+    renderer written `item.description or item.source_note` prints the long
+    version here and nowhere else. Both halves are asserted -- the note is
+    absent, and the card is still drawn, because an equivalence whose figures
+    vanished with its sentence would be a different defect passing the same
+    test.
+    """
+    text = extract_text(
+        render_results_pdf(_result(description=None), _taxonomy(), "en")
+    )
+    assert "Open item O-3" not in text, (
+        "the document fell back to source_note for an equivalence with no "
+        "description"
+    )
+    assert "90 litres is ten minutes" not in text
+    assert EQUIVALENCE_DESCRIPTION not in text
+    #: The card itself survives: its label, and the `= 1` figure row.
+    assert "Equivalent to 18,024 km driven in an average car" in text
+    assert re.search(r"=\s*1\b", text)
 
 
 @requires_weasyprint

@@ -205,6 +205,12 @@ def load_factor_set(session: Session, data: dict) -> tuple[int, dict[str, int]]:
                 metrics, row["source_metric"], "metric", where),
             value_per_unit=Decimal(str(row["value_per_unit"])),
             label_template=row["label_template"],
+            #: v1.80. The one sentence the results page prints beside the
+            #: figures. Named individually for the reason the four below are:
+            #: a key this loader does not read is a key the JSON carries and
+            #: the database never sees -- and the failure here is quiet, an
+            #: empty disclosure on every card rather than an error.
+            description=row.get("description"),
             #: v1.71's ladder columns. Named individually rather than
             #: splatted, for the reason the section check below exists: a key
             #: this loader does not read is a key the JSON carries and the

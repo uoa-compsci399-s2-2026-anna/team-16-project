@@ -280,8 +280,28 @@ def test_factor_rows_reference_the_taxonomy(taxonomy, factors):
         #: of anything" from "this endpoint does not report ladders". `in row`
         #: separately from the value, because `row.get("family")` would pass
         #: on a row that omits the key entirely.
-        for key in ("family", "min_value", "max_value", "label_template_one"):
+        #: `description` joins them at v1.80 (#127) and is the one of the
+        #: five that a visitor actually reads -- it is the single sentence
+        #: the results page prints where `source_note` used to be. Required
+        #: here present-and-null for §6.3's reason, and required NON-null on
+        #: the two fixture rows below, because this fixture stands in for a
+        #: published set and a published row with no sentence shows a card
+        #: whose disclosure holds figures and nothing else.
+        for key in ("family", "min_value", "max_value", "label_template_one",
+                    "description"):
             assert key in row, f"equivalence {row['code']} omits {key}"
+        assert row["description"], (
+            f"equivalence {row['code']} has no description. §6.3, v1.80: it "
+            "is the only prose the results page prints behind a tangible-"
+            "equivalence card, and an empty one prints nothing -- "
+            "`source_note` is never substituted for it."
+        )
+        assert row["description"] != row["source_note"], (
+            f"equivalence {row['code']}'s description is its source_note. "
+            "They are different claims: one says what the comparison means, "
+            "the other says where the factor came from, and the second is "
+            "the one #127 took off the results page."
+        )
         #: Mirrors `ck_equivalence_band_needs_family` (alembic 0019). A band on
         #: a row with no family is a rule that can never fire.
         if row["family"] is None:
@@ -787,6 +807,25 @@ def test_every_equivalence_is_derived_from_the_metric_total_it_names(name, facto
             spec = specs[item["code"]]
             source = item["source_metric"]
             assert source == spec["source_metric"], f"{where}.{item['code']}"
+            #: v1.80 (#127). The sentence a visitor reads is the published
+            #: row's own, copied and not composed -- so a response fixture
+            #: carrying a different one from `factors.json` is the same class
+            #: of divergence v1.78 item 5 was written for, and it is checked
+            #: the same way: fixture against fixture, no database.
+            assert item["description"] == spec["description"], (
+                f"{where}.{item['code']}: the response says "
+                f"{item['description']!r} and the published set says "
+                f"{spec['description']!r}"
+            )
+            #: The anti-fallback edge, on the executable contract. If any
+            #: surface ever answered an empty `description` with
+            #: `source_note`, a visitor-facing response is where the long
+            #: prose would reappear, and this is the assertion that sees it.
+            assert item["description"] != item["source_note"], (
+                f"{where}.{item['code']}: the description is the source "
+                "note. #127 took the source note off the results page; a "
+                "response carrying it in both fields puts it back."
+            )
             total = Decimal(scenario["metrics"][source]["total"])
             expected = total * Decimal(spec["value_per_unit"])
             assert Decimal(item["value"]) == expected, (

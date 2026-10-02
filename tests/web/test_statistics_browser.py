@@ -422,9 +422,10 @@ def test_every_statistics_breakdown_is_drawn_as_a_share(browser):
     """**Item ⑫, and it is two words in a config - but the reason it is safe
     is worth writing down.**
 
-    A doughnut can only express a part of a whole. This project's charts must
-    render negative values, because `factor_downstream` may be negative (an
-    offset) - which is why `renderBar` carries `allowNegative`. A negative
+    The current Statistics default, `renderPie`, can only express a part of a
+    whole. This project's charts must render negative values, because
+    `factor_downstream` may be negative (an offset) - which is why `renderBar`
+    carries `allowNegative`. A negative
     slice does not exist.
 
     These three buckets are safe because they are COUNTS of what visitors
@@ -703,7 +704,9 @@ def test_chart_selector_is_labelled_keyboard_usable_and_fits_the_viewport(stats_
         label = section.locator(".stats-chart-controls label")
         assert label.is_visible() and label.inner_text().strip()
         assert label.get_attribute("for") == control.get_attribute("id")
-        assert control.bounding_box()["height"] >= 44
+        assert control.bounding_box()["height"] >= 54
+        assert control.evaluate("node => getComputedStyle(node).boxSizing") == "border-box"
+        assert control.bounding_box()["width"] == section.locator(".stats-chart-controls").bounding_box()["width"]
         control.focus()
         control.press("ArrowDown")
         control.press("Enter")
@@ -726,10 +729,12 @@ def test_chart_selector_is_labelled_keyboard_usable_and_fits_the_viewport(stats_
 
 
 def test_render_bar_draws_a_negative_value_below_the_axis(browser):
-    """`renderBar`'s `allowNegative` has no caller on this page today - item ⑫
-    put every statistics breakdown on `renderDonut` instead, and a donut cannot
-    express a negative slice - so nothing in `stats.js` reaches the branch this
-    exercises. It is retained capability rather than dead code: §7.3a's "charts
+    """Statistics defaults to `renderPie`, whose slices cannot express negative
+    values. The page's Bar option calls `renderBar` with `allowNegative: false`
+    because these breakdowns are non-negative counts, so the negative-axis
+    branch this test exercises is not reached from `stats.js`. `renderDonut`
+    remains a compatible adapter with no Statistics caller. Negative Bar support
+    is retained capability rather than dead code: §7.3a's "charts
     must render negative values" still stands, because `factor_downstream` may
     be negative (an offset) - `animal_feed` is `-0.15` in
     `tests/fixtures/factors.json` - and this is D's own library for whatever

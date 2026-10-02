@@ -2763,7 +2763,6 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 .stats-page .stats-breakdown { min-width: 0; margin-top: 28px; padding: 28px; border: 1px solid var(--border); border-radius: 18px; background: #fff; box-shadow: var(--shadow); }
 .stats-page .stats-chart-controls { display: grid; gap: 8px; max-width: 22rem; margin-top: 18px; }
 .stats-page .stats-chart-controls label { font-weight: 600; }
-.stats-page .stats-chart-controls select { box-sizing: border-box; width: 100%; min-height: 44px; }
 .stats-page .stats-chart-region { position: relative; min-width: 0; min-height: 320px; margin: 22px 0; }
 .stats-page .stats-chart-region canvas { max-width: 100%; }
 .stats-page .stats-breakdown-list { margin: 0; padding: 0; display: grid; gap: 8px; list-style: none; }

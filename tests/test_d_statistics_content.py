@@ -878,8 +878,10 @@ def test_the_palette_is_built_only_from_brand_colours():
 def test_every_palette_ink_follows_the_brand_rule():
     """Dark grounds take white text, light grounds take Kale.
 
-    `ink` is load-bearing rather than recorded: `renderDonut` paints the tooltip
-    on the hovered segment's own fill and takes that segment's ink, so an `ink`
+    `ink` is load-bearing rather than recorded: the current Statistics default,
+    `renderPie`, paints the tooltip on the hovered segment's own fill and takes
+    that segment's ink. `renderDonut` remains a compatible adapter with no
+    Statistics caller. An `ink`
     edited out of step with its `fill` draws white text on Banana. The contrast
     ratio is recomputed here from the hex, independently of the table, so this
     fails on the entry that drifted rather than on the rule being restated.

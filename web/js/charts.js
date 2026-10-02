@@ -54,8 +54,10 @@ const WHITE = '#FFFFFF'
  * as the single stated exception instead of quietly lowering the bar for
  * everything.
  *
- * `ink` is load-bearing, not recorded: `renderDonut` paints the tooltip on the
- * hovered segment's own fill and takes that segment's ink, and
+ * `ink` is load-bearing, not recorded: the current Statistics default,
+ * `renderPie`, paints the tooltip on the hovered segment's own fill and takes
+ * that segment's ink. `renderDonut` retains compatible behavior for other
+ * callers, but Statistics does not call it.
  * `test_every_palette_ink_follows_the_brand_rule` recomputes the contrast from
  * the hex, so an `ink` edited out of step with its `fill` fails rather than
  * drawing white text on Banana.

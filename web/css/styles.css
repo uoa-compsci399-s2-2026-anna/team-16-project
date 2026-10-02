@@ -1884,14 +1884,45 @@ tbody th { font-weight: 700; }
   }
 }
 
-@media (max-width: 699px) {
+/* **`699.98`, and the `.98` is the whole point: a used viewport width is not an
+   integer.** `max-width: 699px` against the `min-width: 700px` above it leaves every
+   width in the open interval `(699, 700)` matched by NEITHER rule, and fractional
+   device scaling produces exactly those widths. Measured on a 699px window at forced
+   device scale factors of 1.1, 1.25 and 1.5, the used width is 699.107 / 699.216 /
+   699.349 and `matchMedia` answers false to `(max-width: 699px)` and false to
+   `(min-width: 700px)` alike. In that band `.improvement-editor` took the base
+   two-column template (`143.991px 440px`) while `.improvement-pie-wrap` stayed
+   `static` - the desktop grid with the sticky half missing, a pairing no width is
+   meant to produce.
+
+   **It is not a horizontal scrollbar, and that is why nothing reported it.** The
+   440px list overhangs the editor's own grid area by 0.67-0.88px (16.3px with a
+   classic scrollbar drawn), and the panel's 26px padding absorbs all of it:
+   `documentElement.scrollWidth - clientWidth` measured 0 in the band and 0 at both
+   699 and 700, with and without `--hide-scrollbars`. An overflow assertion cannot see
+   this; the breakpoints themselves have to be read, which
+   `tests/web/test_step_navigation.py` now does.
+
+   `699.98` is the form this file already uses at its `1019.98` / `1020` pair. It
+   narrows the unclaimed band from 1px to 0.02px rather than closing it outright,
+   which is the trade that pair already made. */
+@media (max-width: 699.98px) {
   .improvement-editor { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* Once the panel is this narrow, the allocation row's own 400px minimum no longer
    fits after its padding.  Stack the label, range, value and unit rather than clipping
-   the inline-end controls inside `.improvement-allocation-list`. */
-@media (max-width: 559px) {
+   the inline-end controls inside `.improvement-allocation-list`.
+
+   **`559.98`, because the boundary is 560 and this file already has it.** 560 is the
+   narrow-layout breakpoint `.public-header-inner` and the home page use further down,
+   and `.98` is how the rule above and the `1019.98` / `1020` pair at the foot of this
+   file both say "up to but not including" - so there is one
+   boundary number in the file rather than two a pixel apart, and `559`, which was a
+   number with no arithmetic behind it, is gone. 560 itself stays on the UNSTACKED
+   side, which is what `_STACKING_BREAKPOINT` and the 699/560/559/390 parametrisation
+   in `tests/web/test_step_navigation.py` both assert. */
+@media (max-width: 559.98px) {
   .improvement-allocation-row,
   .improvement-allocation-row:has(.improvement-control-unit) { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .improvement-control,

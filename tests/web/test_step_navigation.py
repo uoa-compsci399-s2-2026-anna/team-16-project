@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -1428,6 +1429,160 @@ def test_the_improvement_visual_and_controls_reflow_without_horizontal_overflow(
         assert layout[visual]["right"] <= layout["viewport"] + 1, (visual, layout)
     if width <= 559:
         assert layout["rowColumns"] == 1, layout
+
+
+#: The largest fraction this stylesheet's `max-width` convention leaves unclaimed
+#: below the `min-width` it complements. `@media (max-width: 1019.98px)` against
+#: `@media (min-width: 1020px)` is the pair that established it in this file, and
+#: the improvement panel's `699.98` / `700` follows it. It is a convention rather
+#: than a closure: 0.02px stays unclaimed, which is 1/50 of what an integer
+#: `max-width` leaves and below the granularity any device scaling produces.
+_BREAKPOINT_TOLERANCE = 0.02
+
+
+def _improvement_media_blocks():
+    """`(min_widths, max_widths, declarations)` per `@media` block that governs the
+    improvement panel.
+
+    Reads `web/css/styles.css` from the working tree, not the served stylesheet:
+    these are assertions about what the file says, so they need neither the stack
+    on :18080 nor the `web` image rebuilt.
+
+    Comments are stripped first, and that is belt-and-braces rather than a fix for
+    anything the file does today: measured both ways, the bounds that come back are
+    identical, because every breakpoint number this stylesheet quotes in prose sits
+    *before* its `@media` token rather than between it and the `{`. It is kept
+    because both of those are legal CSS - a comment inside a prelude would be read as
+    part of the query, and a comment naming the panel inside an unrelated block would
+    pull that block into this list.
+    """
+    source = (ROOT / "web" / "css" / "styles.css").read_text(encoding="utf-8")
+    body = re.sub(r"/\*.*?\*/", "", source, flags=re.S)
+    blocks = []
+    for match in re.finditer(r"@media([^{]*)\{", body):
+        prelude = match.group(1)
+        depth, index = 1, match.end()
+        while depth and index < len(body):
+            depth += {"{": 1, "}": -1}.get(body[index], 0)
+            index += 1
+        declarations = body[match.end():index - 1]
+        if "improvement" not in declarations:
+            continue
+        blocks.append((
+            [float(value) for value in re.findall(r"min-width:\s*([\d.]+)px", prelude)],
+            [float(value) for value in re.findall(r"max-width:\s*([\d.]+)px", prelude)],
+            declarations,
+        ))
+    return blocks
+
+
+def test_the_improvement_panels_breakpoints_tile_without_a_gap():
+    """A `max-width` and the `min-width` it complements leave no width between them.
+
+    **This reads the two rules instead of measuring at a width, because the defect is
+    a relationship and not a pixel.** `@media (max-width: 699px)` against `@media
+    (min-width: 700px)` leaves every used viewport width in the open interval `(699,
+    700)` matched by neither, and those widths exist. Measured on a 699px window at
+    forced device scale factors of 1.1, 1.25 and 1.5, the used width was 699.107,
+    699.216 and 699.349, `matchMedia` answered **false** to `(max-width: 699px)` and
+    **false** to `(min-width: 700px)` at all three, and `.improvement-editor` took its
+    base two-column template there (`143.991px 440px`) while `.improvement-pie-wrap`
+    stayed `static` - the desktop grid with the sticky half missing, which is a
+    pairing no width is meant to produce.
+
+    **Nothing in this file could have caught that in a browser, for two separate
+    reasons.** Playwright's `viewport` is `Emulation.setDeviceMetricsOverride`, whose
+    `width` is an integer and which rejects a fractional one outright ("Invalid
+    parameters"), so the shared `browser` fixture cannot reach the band at all;
+    reaching it needs a Chromium launched with `--force-device-scale-factor=s` and a
+    context with `no_viewport=True`, where the fraction comes from the physical-pixel
+    rounding `round(W * s) / s`. And the symptom is not an overflow: the 440px
+    allocation list overhangs the editor's grid area by 0.67-0.88px and the panel's
+    own 26px padding absorbs every bit of it, so `documentElement.scrollWidth -
+    clientWidth` measured 0 in the band and 0 at both 699 and 700, with and without
+    `--hide-scrollbars`. The reflow test just above is this panel's overflow check,
+    and it reads 0 against this defect at every width it runs.
+
+    **What it assumes, stated rather than hidden:** that every `min-width` governing
+    this panel is the complement of a `max-width`, so the nearest `max-width` below it
+    is the rule it hands over from. That is true of the panel today - one `min-width`
+    (the sticky card) against three `max-width` rules - and it is the convention this
+    file holds itself to. A future `min-width` enhancement with no else-branch would
+    fail here, and the right answer then is to say so in this test, not to widen the
+    tolerance.
+
+    Scoped to the `@media` blocks whose declarations name the improvement panel. This
+    stylesheet has two other `max-width` / `min-width` pairs an off-by-one apart -
+    `649` / `650` and `999` / `1000`, on the public header and the home page - which
+    are older than this panel and are not this change's subject.
+    """
+    blocks = _improvement_media_blocks()
+    lower_bounds = sorted({value for mins, _, _ in blocks for value in mins})
+    upper_bounds = sorted({value for _, maxes, _ in blocks for value in maxes})
+    assert lower_bounds and upper_bounds, (
+        "no width-bounded `@media` rule governs the improvement panel any more - this "
+        f"test has stopped reading the file it thinks it is reading (blocks: {len(blocks)})"
+    )
+
+    gaps = []
+    for lower in lower_bounds:
+        below = [value for value in upper_bounds if value < lower]
+        if not below:
+            continue
+        nearest = max(below)
+        if lower - nearest > _BREAKPOINT_TOLERANCE:
+            gaps.append((nearest, lower))
+    assert not gaps, (
+        "the improvement panel's breakpoints do not tile: "
+        + "; ".join(
+            f"every used viewport width in ({nearest:g}, {lower:g}) is matched by neither "
+            f"`max-width: {nearest:g}px` nor `min-width: {lower:g}px`, and fractional device "
+            f"scaling produces such widths - write the max-width as "
+            f"{lower - _BREAKPOINT_TOLERANCE:g}px, as the 1019.98/1020 pair in this file does"
+            for nearest, lower in gaps
+        )
+    )
+
+
+def test_the_allocation_rows_stacking_breakpoint_is_the_width_these_tests_name():
+    """`_STACKING_BREAKPOINT` is the stylesheet's own boundary, not a comment about it.
+
+    Two tests in this file branch on 560: the reflow test above, through its `[699,
+    560, 559, 390]` parametrisation, where 560 is deliberately the *unstacked* side of
+    the boundary and 559 the stacked one, and
+    `test_the_range_gets_more_room_than_the_select_in_unit_mode` below, through `width
+    >= _STACKING_BREAKPOINT`. Neither of them reads the stylesheet, so both would go
+    on passing against a breakpoint that had moved: the reflow test's `if width <=
+    559` guard only ever asserts the stacked behaviour, so a stylesheet that stacked
+    at 560 as well would satisfy it while the 560 case silently stopped being the
+    control it was chosen to be.
+
+    So the constant is pinned to the rule. 560 is also the narrow-layout breakpoint
+    `.public-header-inner` and the home page already use, which is why the panel's own
+    rule is written as `559.98` - the same boundary, in the `.98` form that keeps 560
+    itself on the unstacked side - rather than as the `559` it first carried, a number
+    with no arithmetic behind it.
+    """
+    stacking = [
+        (maxes, declarations)
+        for _, maxes, declarations in _improvement_media_blocks()
+        if ".improvement-allocation-row" in declarations
+    ]
+    assert len(stacking) == 1, (
+        f"expected exactly one `@media` block to stack `.improvement-allocation-row`, "
+        f"found {len(stacking)}"
+    )
+    maxes, _ = stacking[0]
+    #: `pytest.approx` because `560 - 0.02` is not the same double as `float("559.98")`
+    #: for every pair of values this arithmetic could be given, and the assertion is
+    #: about the boundary rather than about IEEE 754.
+    assert maxes == pytest.approx([_STACKING_BREAKPOINT - _BREAKPOINT_TOLERANCE]), (
+        f"the allocation row stacks at `max-width: {'/'.join(f'{m:g}' for m in maxes)}px` "
+        f"but every width-dependent "
+        f"assertion in this file is written against _STACKING_BREAKPOINT = "
+        f"{_STACKING_BREAKPOINT}, so the boundary has to be "
+        f"{_STACKING_BREAKPOINT - _BREAKPOINT_TOLERANCE:g}px - 560 itself stays unstacked"
+    )
 
 
 def test_step_three_asks_what_the_stage_put_through(page_at):

@@ -1158,7 +1158,7 @@ function leafPanel(leaf, leaves, index) {
     settled: leafSettled(2, leaf, leafName(leaf)),
     body: `<div class="zones">${zones}</div>`,
     extraClass: 'leaf-panel',
-    dataAttr: `data-leaf-panel="${keyAttr(key)}"`,
+    dataAttr: `id="amount-leaf-${leafSlug(leaf)}" data-leaf-panel="${keyAttr(key)}"`,
   })
 }
 
@@ -1254,23 +1254,27 @@ function toggleFoodItem(target) {
  */
 function itemFloatingNavigation() {
   if (state.foodCategories.length < 2) return ''
-  const label = t('Sections on this page')
-  const links = state.foodCategories.map((category, index) => {
+  const entries = state.foodCategories.map((category, index) => {
     const definition = selected(state.taxonomy.food_categories, category)
-    const heading = definition?.name || category
-    return `<li><a href="#item-group-${index + 1}-${slug(category)}">${escapeHtml(heading)}</a></li>`
-  }).join('')
-  return `<nav class="item-floating-nav" aria-label="${escapeHtml(label)}"><div class="results-floating-nav__panel"><ul class="results-floating-nav__links item-floating-nav__links">${links}</ul></div></nav>`
+    return { name: definition?.name || category, id: `item-group-${index + 1}-${slug(category)}` }
+  })
+  return stepFloatingNavigation(entries, 'item-floating-nav')
+}
+
+/** Shared expanded navigation for the category and per-food amount panels. */
+function stepFloatingNavigation(entries, extraClass) {
+  const links = entries.map(({ name, id }) => `<li><a href="#${id}">${escapeHtml(name)}</a></li>`).join('')
+  return `<nav class="step-floating-nav ${extraClass}" aria-label="${escapeHtml(t('Sections on this page'))}"><div class="results-floating-nav__panel"><ul class="results-floating-nav__links step-floating-nav__links ${extraClass}__links">${links}</ul></div></nav>`
 }
 
 let itemNavScrollBound = false
 let itemNavFrame = null
 
-/** Mark the last category heading that has reached the viewport's reading line. */
-function markCurrentItemGroup(preferredId = null) {
-  const nav = document.querySelector('.item-floating-nav')
+/** Mark the last section that has reached the viewport's reading line. */
+function markCurrentStepSection(preferredId = null) {
+  const nav = document.querySelector('.step-floating-nav')
   if (!nav) return
-  const links = [...nav.querySelectorAll('.item-floating-nav__links a[href^="#"]')]
+  const links = [...nav.querySelectorAll('.step-floating-nav__links a[href^="#"]')]
   if (!links.length) return
   // Item groups can be much taller than result sections. Halfway down the
   // viewport changes the marker when the next group's heading is actually in
@@ -1285,7 +1289,8 @@ function markCurrentItemGroup(preferredId = null) {
   // The last group can be too close to the document end to ever reach the
   // reading line. At the bottom of the page it is nevertheless the group in
   // view, so let the document boundary settle the final item.
-  const atBottom = Math.ceil(window.scrollY + window.innerHeight) >= document.documentElement.scrollHeight - 1
+  const scrollable = document.documentElement.scrollHeight > window.innerHeight + 1
+  const atBottom = scrollable && Math.ceil(window.scrollY + window.innerHeight) >= document.documentElement.scrollHeight - 1
   if (atBottom) current = links[links.length - 1]
   if (preferredId) current = links.find(link => link.getAttribute('href') === `#${preferredId}`) || current
   for (const link of links) {
@@ -1294,22 +1299,22 @@ function markCurrentItemGroup(preferredId = null) {
   }
 }
 
-/** Rebind the Step 2.5 scroll marker after `render()` replaces `<main>`. */
-function bindItemSectionNavigation(root) {
-  if (!root?.querySelector?.('.item-floating-nav')) return
+/** Rebind the section marker after `render()` replaces `<main>`. */
+function bindStepSectionNavigation(root) {
+  if (!root?.querySelector?.('.step-floating-nav')) return
   if (!itemNavScrollBound) {
     itemNavScrollBound = true
     const schedule = () => {
       if (itemNavFrame !== null) return
       itemNavFrame = requestAnimationFrame(() => {
         itemNavFrame = null
-        markCurrentItemGroup()
+        markCurrentStepSection()
       })
     }
     document.addEventListener('scroll', schedule, { passive: true })
     window.addEventListener('resize', schedule, { passive: true })
   }
-  markCurrentItemGroup()
+  markCurrentStepSection()
 }
 
 function itemStep() {
@@ -1351,7 +1356,9 @@ function amountStep() {
   const intro = single
     ? t('Enter the total amount. You will allocate this total across destinations in the next step.')
     : t('Enter an amount for every food type you chose. You will allocate the combined total across destinations in the next step.')
-  return `<section class="content-section ${single ? '' : 'wide'}" aria-labelledby="amount-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 3 }))}</p><h1 id="amount-title">${escapeHtml(heading)}</h1><p class="section-intro">${escapeHtml(intro)}</p>${bannerError ? `<p class="field-error api-error ${state.errorCode ? `error-${slug(state.errorCode)}` : ''}" role="alert">${escapeHtml(bannerError)}</p>` : ''}<div class="leaf-panel-list">${leaves.map((leaf, index) => leafPanel(leaf, leaves, index)).join('')}</div>${single ? '' : `<p class="combined-total" aria-live="polite"><span>${escapeHtml(t('Combined waste amount'))}</span> <strong data-combined-total>${formatNumber(combinedText, 2)} ${escapeHtml(unitLabel(state.totalUnit))}</strong></p>`}${stepNav({ step: 2, back: backTarget(2) })}</section>`
+  const content = `<div class="amount-step__content"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 3 }))}</p><h1 id="amount-title">${escapeHtml(heading)}</h1><p class="section-intro">${escapeHtml(intro)}</p>${bannerError ? `<p class="field-error api-error ${state.errorCode ? `error-${slug(state.errorCode)}` : ''}" role="alert">${escapeHtml(bannerError)}</p>` : ''}<div class="leaf-panel-list">${leaves.map((leaf, index) => leafPanel(leaf, leaves, index)).join('')}</div>${single ? '' : `<p class="combined-total" aria-live="polite"><span>${escapeHtml(t('Combined waste amount'))}</span> <strong data-combined-total>${formatNumber(combinedText, 2)} ${escapeHtml(unitLabel(state.totalUnit))}</strong></p>`}</div>`
+  const navigation = single ? '' : stepFloatingNavigation(leaves.map(leaf => ({ name: leafName(leaf), id: `amount-leaf-${leafSlug(leaf)}` })), 'amount-floating-nav')
+  return `<section class="content-section ${single ? '' : 'wide'} amount-step" aria-labelledby="amount-title">${content}${navigation}${stepNav({ step: 2, back: backTarget(2) })}</section>`
 }
 
 /**
@@ -2799,7 +2806,7 @@ export function render(main) {
   // is no nav, and the call disconnects instead. One observer object either way --
   // see `bindResultsSectionSpy` in `results.js` for why that has to be true.
   bindResultsSectionSpy(main)
-  bindItemSectionNavigation(main)
+  bindStepSectionNavigation(main)
 }
 
 /**
@@ -2995,8 +3002,21 @@ export function bindCalculator(main, retryTaxonomy) {
     // It runs before the `[data-action]` guard below, which returns early for exactly the
     // clicks this needs to see - a label is not an action.
     if (event.target.closest('.term')) event.preventDefault()
-    const itemNavLink = event.target.closest('.item-floating-nav__links a[href^="#"]')
-    if (itemNavLink) markCurrentItemGroup(itemNavLink.getAttribute('href').slice(1))
+    const stepNavLink = event.target.closest('.step-floating-nav__links a[href^="#"]')
+    if (stepNavLink) {
+      const id = stepNavLink.getAttribute('href').slice(1)
+      if (stepNavLink.closest('.amount-floating-nav')) {
+        // Step 3's cards start folded. A navigation link should expose the
+        // selected food's fields as well as bring its card into view.
+        event.preventDefault()
+        const toggle = document.getElementById(id)?.querySelector('.step-card__toggle')
+        if (toggle?.getAttribute('aria-expanded') === 'false') {
+          setState({ openCards: openedCard(2, decodeURIComponent(toggle.dataset.card || '')) })
+        }
+        document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+      markCurrentStepSection(id)
+    }
     const control = event.target.closest('[data-action]')
     if (!control) return
     const action = control.dataset.action

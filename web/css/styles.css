@@ -1737,18 +1737,24 @@ tbody th { font-weight: 700; }
    this screen's main container creates that column rather than floating the panel over
    form controls. Below 1100px there is no safe 252px side column, so the navigation is
    withheld and the form keeps the whole row, matching the results page's narrow rule. */
-.item-floating-nav { display: none; }
+.step-floating-nav { display: none; }
 
 @media (min-width: 1100px) {
   .main-content:has(.item-step .item-floating-nav) { max-width: 1180px; }
-  .item-step:has(.item-floating-nav) {
+  .main-content:has(.amount-step .amount-floating-nav) { max-width: 1240px; }
+  .amount-step.wide { max-width: none; margin-inline: 0; }
+  .item-step:has(.item-floating-nav),
+  .amount-step:has(.amount-floating-nav) {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 252px;
     column-gap: 24px;
     align-items: start;
   }
-  .item-step:has(.item-floating-nav) .item-step__content { grid-column: 1; }
-  .item-floating-nav {
+  .item-step:has(.item-floating-nav) { grid-template-columns: minmax(0, 1fr) 252px; }
+  .amount-step:has(.amount-floating-nav) { grid-template-columns: minmax(0, 1fr) 216px; column-gap: 32px; }
+  .item-step__content, .amount-step__content { min-inline-size: 0; }
+  .item-step:has(.item-floating-nav) .item-step__content,
+  .amount-step:has(.amount-floating-nav) .amount-step__content { grid-column: 1; }
+  .step-floating-nav {
     display: block;
     grid-column: 2;
     grid-row: 1;
@@ -1762,7 +1768,7 @@ tbody th { font-weight: 700; }
     align-self: start;
     min-inline-size: 0;
   }
-  .item-floating-nav .results-floating-nav__panel {
+  .step-floating-nav .results-floating-nav__panel {
     position: static;
     inline-size: 100%;
     max-block-size: calc(100vh - 48px);
@@ -1772,10 +1778,12 @@ tbody th { font-weight: 700; }
     pointer-events: auto;
     translate: none;
   }
-  .item-step:has(.item-floating-nav) > .step-nav { grid-column: 1; }
+  .item-step:has(.item-floating-nav) > .step-nav,
+  .amount-step:has(.amount-floating-nav) > .step-nav { grid-column: 1; }
 }
 
 .item-group { scroll-margin-top: 24px; }
+.amount-step .leaf-panel { scroll-margin-top: 24px; }
 /* **The edge the client asked to line up is the inline-start one, and a block in this
    panel's own flow already has it** - `.improvement-editor`'s first column starts at
    the panel's content edge too, so the label, the control and the chart card below

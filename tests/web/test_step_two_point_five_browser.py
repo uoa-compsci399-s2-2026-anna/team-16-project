@@ -245,6 +245,40 @@ def test_the_right_navigation_is_open_and_tracks_the_category_it_jumps_to(page, 
     )
 
 
+def test_step_three_navigation_opens_the_selected_food_card(page, released):
+    """The next screen indexes its own leaves, including folded amount cards."""
+    items_by_category = {}
+    for item in released["food_items"]:
+        items_by_category.setdefault(item["food_category"], []).append(item)
+    category_code, items = next(
+        ((code, items) for code, items in items_by_category.items() if len(items) >= 2),
+        (None, []),
+    )
+    if category_code is None:
+        pytest.skip("the published item vocabulary has no category with two foods")
+
+    _to_food_step(page)
+    _tick_category(page, category_code)
+    _continue(page)
+    for item in items[:2]:
+        page.locator(f'input[name="food-item"][value="{item["code"]}"]').click()
+    _continue(page)
+    page.wait_for_selector(".amount-floating-nav")
+    page.wait_for_function("() => window.scrollY === 0")
+
+    links = page.locator(".amount-floating-nav__links a")
+    assert links.all_inner_texts() == [item["name"] for item in items[:2]]
+    nav_box = page.locator(".amount-floating-nav").bounding_box()
+    assert nav_box is not None
+    assert abs(nav_box["y"] + nav_box["height"] / 2 - page.viewport_size["height"] / 2) <= 2
+
+    second_target = links.nth(1).get_attribute("href")
+    assert page.locator(second_target + " .step-card__toggle").get_attribute("aria-expanded") == "false"
+    links.nth(1).click()
+    assert page.locator(second_target + " .step-card__toggle").get_attribute("aria-expanded") == "true"
+    assert page.locator('.amount-floating-nav__links a[aria-current="location"]').inner_text() == items[1]["name"]
+
+
 def test_the_step_number_does_not_advance_into_the_food_panel(page, released):
     """§3.3: step 2.5 refines step 2. The position label and the progress bar
     say the same thing on both panels, because the visitor has not left the

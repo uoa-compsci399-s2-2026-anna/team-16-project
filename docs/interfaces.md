@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-10-02 (v1.83)"
+date: "2026-10-02 (v1.84)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,12 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.84 — 2026-10-02 (Step 3 gains per-food navigation; affects C and D)
+
+Issue #135 now covers Step 3's amount screen. With two or more food leaves, the right-hand card lists each leaf in selection order using its displayed food name. It uses the same always-open styling, viewport-centred sticky placement, scroll tracking and `aria-current="location"` behaviour as Step 2.5. A link opens its leaf's folded amount card and scrolls to it. One leaf retains the original full-width form without a navigation card.
+
+At widths of 1100px and above, the Step 3 navigation is 216px wide in a 1240px page container, 32px from the amount form, placing it a little farther right and making it narrower than Step 2.5's 252px card. Below 1100px, the card is hidden and the form uses the available width. This changes no API fields, translations or fixtures; it reuses the existing section-navigation label.
 
 ### v1.83 — 2026-10-02 (Step 2.5 gains category navigation; affects C and D)
 

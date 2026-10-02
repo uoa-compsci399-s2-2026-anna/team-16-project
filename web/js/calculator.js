@@ -1158,7 +1158,7 @@ function leafPanel(leaf, leaves, index) {
     settled: leafSettled(2, leaf, leafName(leaf)),
     body: `<div class="zones">${zones}</div>`,
     extraClass: 'leaf-panel',
-    dataAttr: `id="amount-leaf-${leafSlug(leaf)}" data-leaf-panel="${keyAttr(key)}"`,
+    dataAttr: `data-leaf-panel="${keyAttr(key)}"`,
   })
 }
 
@@ -1246,84 +1246,13 @@ function toggleFoodItem(target) {
   })
 }
 
-/**
- * The Step 2.5 category list, using the expanded-card treatment from the results
- * page's section navigation but without its disclosure handle. The links are derived from `foodCategories`, not
- * from the item vocabulary: every category chosen on Step 2 therefore remains
- * represented even when it has no more specific foods to show.
- */
-function itemFloatingNavigation() {
-  if (state.foodCategories.length < 2) return ''
-  const entries = state.foodCategories.map((category, index) => {
-    const definition = selected(state.taxonomy.food_categories, category)
-    return { name: definition?.name || category, id: `item-group-${index + 1}-${slug(category)}` }
-  })
-  return stepFloatingNavigation(entries, 'item-floating-nav')
-}
-
-/** Shared expanded navigation for the category, amount and destination panels. */
-function stepFloatingNavigation(entries, extraClass) {
-  const links = entries.map(({ name, id }) => `<li><a href="#${id}">${escapeHtml(name)}</a></li>`).join('')
-  return `<nav class="step-floating-nav ${extraClass}" aria-label="${escapeHtml(t('Sections on this page'))}"><div class="results-floating-nav__panel"><ul class="results-floating-nav__links step-floating-nav__links ${extraClass}__links">${links}</ul></div></nav>`
-}
-
-let itemNavScrollBound = false
-let itemNavFrame = null
-
-/** Mark the last section that has reached the viewport's reading line. */
-function markCurrentStepSection(preferredId = null) {
-  const nav = document.querySelector('.step-floating-nav')
-  if (!nav) return
-  const links = [...nav.querySelectorAll('.step-floating-nav__links a[href^="#"]')]
-  if (!links.length) return
-  // Item groups can be much taller than result sections. Halfway down the
-  // viewport changes the marker when the next group's heading is actually in
-  // view, including a short final group that cannot reach the page top.
-  const threshold = window.innerHeight * 0.5
-  let current = links[0]
-  for (const link of links) {
-    const target = document.getElementById(link.getAttribute('href').slice(1))
-    if (target && target.getBoundingClientRect().top <= threshold) current = link
-    else break
-  }
-  // The last group can be too close to the document end to ever reach the
-  // reading line. At the bottom of the page it is nevertheless the group in
-  // view, so let the document boundary settle the final item.
-  const scrollable = document.documentElement.scrollHeight > window.innerHeight + 1
-  const atBottom = scrollable && Math.ceil(window.scrollY + window.innerHeight) >= document.documentElement.scrollHeight - 1
-  if (atBottom) current = links[links.length - 1]
-  if (preferredId) current = links.find(link => link.getAttribute('href') === `#${preferredId}`) || current
-  for (const link of links) {
-    if (link === current) link.setAttribute('aria-current', 'location')
-    else link.removeAttribute('aria-current')
-  }
-}
-
-/** Rebind the section marker after `render()` replaces `<main>`. */
-function bindStepSectionNavigation(root) {
-  if (!root?.querySelector?.('.step-floating-nav')) return
-  if (!itemNavScrollBound) {
-    itemNavScrollBound = true
-    const schedule = () => {
-      if (itemNavFrame !== null) return
-      itemNavFrame = requestAnimationFrame(() => {
-        itemNavFrame = null
-        markCurrentStepSection()
-      })
-    }
-    document.addEventListener('scroll', schedule, { passive: true })
-    window.addEventListener('resize', schedule, { passive: true })
-  }
-  markCurrentStepSection()
-}
-
 function itemStep() {
   const chosen = Object.values(state.foodItems || {}).reduce((total, items) => total + items.length, 0)
   const ticked = (category, item) => ((state.foodItems || {})[category] || []).includes(item)
   const refused = (category, item) => !ticked(category, item) && itemTickRefused(category, item)
   const atCeiling = state.foodCategories.some(
     category => itemsUnder(category).some(item => refused(category, item.code)))
-  const group = (category, index) => {
+  const group = category => {
     const definition = selected(state.taxonomy.food_categories, category)
     const items = itemsUnder(category)
     const heading = definition?.name || category
@@ -1335,10 +1264,9 @@ function itemStep() {
       ? `<div class="simple-choice-list">${items.map(item =>
           `<label class="simple-choice ${ticked(category, item.code) ? 'selected' : ''}"><input id="food-item-${slug(category)}-${slug(item.code)}" type="checkbox" name="food-item" value="${escapeHtml(item.code)}" data-category="${escapeHtml(category)}" ${ticked(category, item.code) ? 'checked' : ''} ${refused(category, item.code) ? 'disabled' : ''}><span><strong>${escapeHtml(item.name)}</strong></span>${ticked(category, item.code) ? `<span class="selected-label" aria-hidden="true">&#10003; ${escapeHtml(t('Selected'))}</span>` : ''}</label>`).join('')}</div>`
       : `<p class="field-hint">${escapeHtml(t('No specific foods are listed for this category. It is counted as %(category)s.', { category: heading }))}</p>`
-    return `<fieldset class="choice-fieldset item-group" id="item-group-${index + 1}-${slug(category)}"><legend>${escapeHtml(heading)}</legend>${body}</fieldset>`
+    return `<fieldset class="choice-fieldset item-group"><legend>${escapeHtml(heading)}</legend>${body}</fieldset>`
   }
-  const content = `<div class="item-step__content"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 2 }))} &middot; ${escapeHtml(t('Optional'))}</p><h1 id="item-title">${escapeHtml(t('Do you know which foods these were?'))}</h1><p class="section-intro">${escapeHtml(t('Choose the specific foods you measured, or continue without choosing any. A category with no food chosen is counted as that category.'))}</p><p class="choice-count" aria-live="polite">${escapeHtml(t('%(count)s selected', { count: chosen }))}</p>${state.foodCategories.map(group).join('')}${atCeiling ? `<p class="field-hint choice-ceiling" role="status">${escapeHtml(t('You can enter at most %(limit)s food types in one calculation. Untick one, or calculate what you have.', { limit: MAX_LEAVES }))}</p>` : ''}${chosen ? `<button type="button" class="text-button" data-action="clear-items">${escapeHtml(t('Clear all selections'))}</button>` : ''}</div>`
-  return `<section class="content-section item-step" aria-labelledby="item-title">${content}${itemFloatingNavigation()}${stepNav({ step: 1, back: 1, backAction: 'back-to-categories' })}</section>`
+  return `<section class="content-section" aria-labelledby="item-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 2 }))} &middot; ${escapeHtml(t('Optional'))}</p><h1 id="item-title">${escapeHtml(t('Do you know which foods these were?'))}</h1><p class="section-intro">${escapeHtml(t('Choose the specific foods you measured, or continue without choosing any. A category with no food chosen is counted as that category.'))}</p><p class="choice-count" aria-live="polite">${escapeHtml(t('%(count)s selected', { count: chosen }))}</p>${state.foodCategories.map(group).join('')}${atCeiling ? `<p class="field-hint choice-ceiling" role="status">${escapeHtml(t('You can enter at most %(limit)s food types in one calculation. Untick one, or calculate what you have.', { limit: MAX_LEAVES }))}</p>` : ''}${chosen ? `<button type="button" class="text-button" data-action="clear-items">${escapeHtml(t('Clear all selections'))}</button>` : ''}${stepNav({ step: 1, back: 1, backAction: 'back-to-categories' })}</section>`
 }
 
 function amountStep() {
@@ -1356,9 +1284,7 @@ function amountStep() {
   const intro = single
     ? t('Enter the total amount. You will allocate this total across destinations in the next step.')
     : t('Enter an amount for every food type you chose. You will allocate the combined total across destinations in the next step.')
-  const content = `<div class="amount-step__content"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 3 }))}</p><h1 id="amount-title">${escapeHtml(heading)}</h1><p class="section-intro">${escapeHtml(intro)}</p>${bannerError ? `<p class="field-error api-error ${state.errorCode ? `error-${slug(state.errorCode)}` : ''}" role="alert">${escapeHtml(bannerError)}</p>` : ''}<div class="leaf-panel-list">${leaves.map((leaf, index) => leafPanel(leaf, leaves, index)).join('')}</div>${single ? '' : `<p class="combined-total" aria-live="polite"><span>${escapeHtml(t('Combined waste amount'))}</span> <strong data-combined-total>${formatNumber(combinedText, 2)} ${escapeHtml(unitLabel(state.totalUnit))}</strong></p>`}</div>`
-  const navigation = single ? '' : stepFloatingNavigation(leaves.map(leaf => ({ name: leafName(leaf), id: `amount-leaf-${leafSlug(leaf)}` })), 'amount-floating-nav')
-  return `<section class="content-section ${single ? '' : 'wide'} amount-step" aria-labelledby="amount-title">${content}${navigation}${stepNav({ step: 2, back: backTarget(2) })}</section>`
+  return `<section class="content-section ${single ? '' : 'wide'}" aria-labelledby="amount-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 3 }))}</p><h1 id="amount-title">${escapeHtml(heading)}</h1><p class="section-intro">${escapeHtml(intro)}</p>${bannerError ? `<p class="field-error api-error ${state.errorCode ? `error-${slug(state.errorCode)}` : ''}" role="alert">${escapeHtml(bannerError)}</p>` : ''}<div class="leaf-panel-list">${leaves.map((leaf, index) => leafPanel(leaf, leaves, index)).join('')}</div>${single ? '' : `<p class="combined-total" aria-live="polite"><span>${escapeHtml(t('Combined waste amount'))}</span> <strong data-combined-total>${formatNumber(combinedText, 2)} ${escapeHtml(unitLabel(state.totalUnit))}</strong></p>`}${stepNav({ step: 2, back: backTarget(2) })}</section>`
 }
 
 /**
@@ -1415,10 +1341,7 @@ function destinationCell(leaf, line, row, column, paths, allocationExcess) {
   const invalid = Boolean(serverError) || (line.qtyInput !== '' && Number(line.qtyInput) < 0) || (allocationExcess && state.lastChangedDestination === line.destination)
   const rowUnit = line.unit || figures.totalUnit
   const name = destination?.name || line.destination
-  // The first leaf has one visible cell per destination in either the matrix
-  // or the stacked layout, so every navigation target remains reachable.
-  const anchor = column === 2 ? ` id="destination-section-${slug(line.destination)}"` : ''
-  return `<div class="destination-row ${invalid ? 'invalid' : ''}"${anchor} style="--row:${row};--col:${column}"><label for="destination-${line.id}">${escapeHtml(name)}${destination?.description ? `<small>${escapeHtml(destination.description)}</small>` : ''}</label><div class="amount-with-unit"><input id="destination-${line.id}" data-line-field="amount" data-line-id="${line.id}" data-leaf="${leafAttr(leaf)}" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(line.qtyInput)}" ${invalid ? 'aria-invalid="true"' : ''} aria-label="${escapeHtml(t('%(destination)s amount in %(unit)s', { destination: name, unit: rowUnitLabel(rowUnit) }))}"><select data-line-field="unit" data-line-id="${line.id}" data-leaf="${leafAttr(leaf)}" aria-label="${escapeHtml(t('Unit'))}">${unitOptionsHtml(rowUnit, containerPresets())}</select></div>${serverError ? `<p class="field-error" role="alert">${escapeHtml(serverError)}</p>` : ''}</div>`
+  return `<div class="destination-row ${invalid ? 'invalid' : ''}" style="--row:${row};--col:${column}"><label for="destination-${line.id}">${escapeHtml(name)}${destination?.description ? `<small>${escapeHtml(destination.description)}</small>` : ''}</label><div class="amount-with-unit"><input id="destination-${line.id}" data-line-field="amount" data-line-id="${line.id}" data-leaf="${leafAttr(leaf)}" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(line.qtyInput)}" ${invalid ? 'aria-invalid="true"' : ''} aria-label="${escapeHtml(t('%(destination)s amount in %(unit)s', { destination: name, unit: rowUnitLabel(rowUnit) }))}"><select data-line-field="unit" data-line-id="${line.id}" data-leaf="${leafAttr(leaf)}" aria-label="${escapeHtml(t('Unit'))}">${unitOptionsHtml(rowUnit, containerPresets())}</select></div>${serverError ? `<p class="field-error" role="alert">${escapeHtml(serverError)}</p>` : ''}</div>`
 }
 
 /** One leaf's Total / Allocated / Remaining, in that leaf's own unit. */
@@ -1496,15 +1419,10 @@ function destinationStep() {
   const intro = single
     ? t('Enter an amount for every applicable destination. The combined amount cannot exceed your total waste.')
     : t('Enter an amount for every applicable destination, for each food type. No food type may have more allocated than it has.')
-  const content = `<div class="destination-step__content"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 4 }))}</p><h1 id="destination-title">${escapeHtml(t('Where did the food waste go?'))}</h1><p class="section-intro">${escapeHtml(intro)}</p>
+  return `<section class="content-section wide" aria-labelledby="destination-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 4 }))}</p><h1 id="destination-title">${escapeHtml(t('Where did the food waste go?'))}</h1><p class="section-intro">${escapeHtml(intro)}</p>
     ${single ? leafSummary(leaves[0], 2, 2, true) : ''}
     ${body}
-    <p class="field-error" id="allocation-error" role="alert">${escapeHtml(state.error || '')}</p></div>`
-  const navigation = stepFloatingNavigation(destinations.map(line => {
-    const destination = selected(state.taxonomy.destinations, line.destination)
-    return { name: destination?.name || line.destination, id: `destination-section-${slug(line.destination)}` }
-  }), 'destination-floating-nav')
-  return `<section class="content-section wide destination-step" aria-labelledby="destination-title">${content}${navigation}${stepNav({ step: 3, back: backTarget(3), disabled: !canContinue })}</section>`
+    <p class="field-error" id="allocation-error" role="alert">${escapeHtml(state.error || '')}</p>${stepNav({ step: 3, back: backTarget(3), disabled: !canContinue })}</section>`
 }
 
 /** One leaf's destination rows, as the visitor typed them and as they reach the wire. */
@@ -2814,7 +2732,6 @@ export function render(main) {
   // is no nav, and the call disconnects instead. One observer object either way --
   // see `bindResultsSectionSpy` in `results.js` for why that has to be true.
   bindResultsSectionSpy(main)
-  bindStepSectionNavigation(main)
 }
 
 /**
@@ -3010,21 +2927,6 @@ export function bindCalculator(main, retryTaxonomy) {
     // It runs before the `[data-action]` guard below, which returns early for exactly the
     // clicks this needs to see - a label is not an action.
     if (event.target.closest('.term')) event.preventDefault()
-    const stepNavLink = event.target.closest('.step-floating-nav__links a[href^="#"]')
-    if (stepNavLink) {
-      const id = stepNavLink.getAttribute('href').slice(1)
-      if (stepNavLink.closest('.amount-floating-nav')) {
-        // Step 3's cards start folded. A navigation link should expose the
-        // selected food's fields as well as bring its card into view.
-        event.preventDefault()
-        const toggle = document.getElementById(id)?.querySelector('.step-card__toggle')
-        if (toggle?.getAttribute('aria-expanded') === 'false') {
-          setState({ openCards: openedCard(2, decodeURIComponent(toggle.dataset.card || '')) })
-        }
-        document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      }
-      markCurrentStepSection(id)
-    }
     const control = event.target.closest('[data-action]')
     if (!control) return
     const action = control.dataset.action

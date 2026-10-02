@@ -58,6 +58,50 @@ def food_panel_is_showing(page) -> bool:
     return page.locator(ITEM_PANEL).count() > 0
 
 
+#: The collapsible card's header button (#134), and the attribute that says
+#: whether it is shut. Rendered out of `state.openCards`, so what is on screen
+#: is the whole truth about which cards are open.
+CARD_TOGGLE = ".step-card__toggle"
+SHUT_CARD = '.step-card__toggle[aria-expanded="false"]'
+
+
+def expand_step_cards(page, *, settle: int = 120, ceiling: int = 40) -> int:
+    """Open every shut collapsible card on the step on screen, and say how many.
+
+    **Why this exists rather than each test reaching into `state`.** Since #134
+    a step that draws more than one card draws them collapsed, and a collapsed
+    card's body is `hidden` -- so its inputs are not visible, not focusable and
+    not fillable, and `page.fill` and a default `wait_for_selector` both wait
+    out their timeout against a screen that is working correctly. Opening them
+    through the control a visitor would press keeps that one fact in one place;
+    writing `state.openCards` from a test would measure the renderer against a
+    state no press can produce.
+
+    **The single card is not collapsible at all** (decision 2 of #134: a lone
+    card is never shut), so on a one-leaf chain this finds nothing and returns
+    0. Callers do not have to know which case they are in.
+
+    Re-queried after every press because the press re-renders: `render()`
+    replaces `main.innerHTML` on every `setState`, so a NodeList captured before
+    the first click names elements that are no longer in the document.
+
+    `ceiling` is a loop guard rather than a bound on anything real -- `MAX_LEAVES`
+    is twenty - and it exists so that a toggle that silently fails to change
+    `aria-expanded` fails as an assertion naming the card rather than as a hung
+    test.
+    """
+    opened = 0
+    while page.locator(SHUT_CARD).count():
+        page.locator(SHUT_CARD).first.click()
+        page.wait_for_timeout(settle)
+        opened += 1
+        assert opened <= ceiling, (
+            f"pressed {opened} card toggles and {page.locator(SHUT_CARD).count()} are "
+            "still shut: a toggle is not writing its own aria-expanded"
+        )
+    return opened
+
+
 def press_continue(page, *, settle: int = 150) -> bool:
     """Press the step bar's Continue, and press it again if the food panel answered.
 

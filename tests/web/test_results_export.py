@@ -280,6 +280,58 @@ def build_state_zero_totals() -> dict:
     }
 
 
+#: The same harness shape, for `renderResults` instead of
+#: `buildResultsReport`. **Added because a mutation survived**: making
+#: `equivalenceBasis` fall back to `source_note` left every runnable test in
+#: the tree green, and the only thing that would have caught it was a
+#: `@pytest.mark.browser` case against the running container -- which cannot
+#: see a change to `web/js/` until the image is rebuilt (`docker/web.Dockerfile`
+#: COPYs `web/`), and rebuilding is not something a test may do to a deployment
+#: somebody is using.
+#:
+#: `renderResults` is a pure string builder: it reads `state`, calls `t()` and
+#: returns markup. So the markup can be asserted here, off the file, the same
+#: way the text export already is. This is not a replacement for the browser
+#: cases -- they measure layout, visibility and the accessible name, which a
+#: string cannot -- it is the half that can be run on a checkout.
+MARKUP_HARNESS = """
+// The three globals `improvement.js` -> {api.js, state.js} read at module load.
+globalThis.window = { location: { search: '' } }
+globalThis.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {} }
+
+import { readFileSync, writeFileSync } from 'node:fs'
+const { renderResults } = await import(process.argv[2])
+const state = JSON.parse(readFileSync(process.argv[3], 'utf8'))
+writeFileSync(process.argv[4], renderResults(state), 'utf8')
+"""
+
+
+def markup_for(tmp_path: Path, state: dict) -> str:
+    harness = tmp_path / "markup.mjs"
+    harness.write_text(MARKUP_HARNESS, encoding="utf-8")
+    state_file = tmp_path / "markup-state.json"
+    state_file.write_text(json.dumps(state), encoding="utf-8")
+    out = tmp_path / "markup.html"
+    completed = subprocess.run(
+        [
+            shutil.which("node"),
+            str(harness),
+            RESULTS_JS.as_uri(),
+            str(state_file),
+            str(out),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+    )
+    assert completed.returncode == 0, (
+        f"node could not render the results page:\n{completed.stdout}\n"
+        f"{completed.stderr}"
+    )
+    return out.read_text(encoding="utf-8")
+
+
 def report_for(tmp_path: Path, state: dict) -> str:
     harness = tmp_path / "harness.mjs"
     harness.write_text(HARNESS, encoding="utf-8")
@@ -768,17 +820,205 @@ def test_the_placeholder_notice_is_absent_from_a_real_export(tmp_path):
 
 
 @node
-def test_the_equivalence_disclaimer_is_absent_from_a_real_export(tmp_path):
-    """The equivalence caveat's own negative case (L52). Gated on `is_mock`
-    the same way `NOTICE` is above, but until now only
-    `tests/api/test_pdf_render.py::test_a_real_factor_set_carries_no_warning`
-    proved the gate holds - the page and this export were only ever asserted
-    with `is_mock` true. The basis note itself is not gated and must still
-    print; only the placeholder sentence goes."""
-    report = report_for(tmp_path, build_state(is_mock=False))
+@pytest.mark.parametrize("is_mock", (True, False))
+def test_the_equivalence_caveat_is_in_no_export_at_all_now(tmp_path, is_mock):
+    """**v1.80 (#127) turned a gate into a deletion, and this is the test that
+    was a gate.**
+
+    It used to prove the per-equivalence caveat was conditional on `is_mock`,
+    because an unconditional version of it once made a real published set
+    describe itself as placeholder data. The client has now asked for the
+    sentence to go entirely, so the property is no longer "absent when the set
+    is real" but "absent either way" - and it is parametrised over both states
+    rather than asserted on the real one, because a sentence that came back
+    only under `is_mock` would be exactly the old defect wearing the fix.
+
+    **The page-level notice is a separate obligation and is not weakened**:
+    `test_the_placeholder_notice_is_on_a_mock_export` above still requires it
+    on a mock export, and the test beside that one still requires its absence
+    on a real one. That pair is §7.6 rule 2; this one never was.
+    """
+    report = report_for(tmp_path, build_state(is_mock=is_mock))
     assert "The conversion factor comes from the client" not in report
-    assert "placeholder factors" not in report
-    assert "PLACEHOLDER. Open item O-3" in report
+    assert ("placeholder factors" in report) is False
+    assert "Basis:" not in report
+
+
+@node
+def test_the_export_prints_the_sentence_and_not_the_provenance(report):
+    """The positive half of #127 on the surface that gets forwarded.
+
+    `calculate_response.json`'s one equivalence carries both fields, and they
+    are nothing like each other on purpose, so this cannot pass against a
+    renderer that printed the wrong one. `source_note` is the four-sentence
+    audit paragraph; it belongs to `GET /factors` and the methodology page and
+    must not be in a visitor's download.
+    """
+    assert (
+        "The same greenhouse gases as driving an average light petrol car "
+        "this far, at a placeholder 0.24 kg CO2e a kilometre." in report
+    )
+    assert "Open item O-3" not in report
+    assert "Roughly one kilometre of an average light petrol vehicle" not in report
+
+
+@node
+def test_an_equivalence_with_no_sentence_prints_nothing_and_never_the_note(tmp_path):
+    """**The anti-fallback assertion on the text export.**
+
+    `description` is nullable and `null` means print nothing (§6.2, v1.80).
+    The one wrong answer is `source_note`, and this state is the only one in
+    which a fallback is observable at all - so the equivalence keeps its
+    basis, loses its sentence, and the report must carry neither the note nor
+    a label for it. Driven by stripping the field from the response rather
+    than by building a response by hand, so the row is otherwise identical to
+    the one the test above reads.
+    """
+    state = build_state()
+    for scope in (state["result"]["totals"]["current"],):
+        for row in scope["equivalences"]:
+            row["description"] = None
+    for pair in state["result"]["entry_results"]:
+        for key in ("current", "alternative"):
+            scenario = (pair.get("response") or {}).get(key)
+            for row in (scenario or {}).get("equivalences", []):
+                row["description"] = None
+
+    report = report_for(tmp_path, state)
+
+    assert "Open item O-3" not in report, (
+        "the text export fell back to source_note for an equivalence with no "
+        "description, which is the long version #127 removed"
+    )
+    assert "Basis:" not in report
+    #: The premise: the row still HAS a note, so the assertion above is about
+    #: a fallback that was available and not taken.
+    assert any(
+        row.get("source_note")
+        for row in state["result"]["totals"]["current"]["equivalences"]
+    ), "the fixture row carries no source_note, so nothing could have fallen back"
+    #: And the card is still drawn - the label and the figures survive.
+    assert "Equivalent to driving 18,597 km" in report
+
+
+# --------------------------------- the disclosure's markup, without a browser
+
+
+@node
+def test_the_disclosure_holds_the_sentence_and_not_the_provenance(tmp_path):
+    """v1.80 (#127), asserted on the markup `renderResults` produces.
+
+    The browser cases below measure what a person can SEE -- that the panel
+    starts closed, opens, and does not overflow. This measures what is in it,
+    which is the part that can be checked on a checkout rather than against an
+    image somebody would have to rebuild.
+    """
+    markup = markup_for(tmp_path, build_state())
+
+    assert "equivalent-basis__body" in markup, (
+        "the disclosure was not rendered at all, so this test is measuring "
+        "nothing"
+    )
+    assert (
+        "The same greenhouse gases as driving an average light petrol car "
+        "this far, at a placeholder 0.24 kg CO2e a kilometre." in markup
+    )
+    assert "Open item O-3" not in markup, (
+        "the provenance paragraph is back in the equivalence disclosure"
+    )
+    assert "Basis:" not in markup
+
+
+@node
+@pytest.mark.parametrize("is_mock", (True, False))
+def test_the_disclosure_carries_no_per_equivalence_caveat_either_way(tmp_path, is_mock):
+    """The caveat is gone from the panel on every factor set (v1.80, #127).
+
+    Parametrised over both states rather than asserted on the real one,
+    because a sentence that reappeared only under `is_mock` would be precisely
+    the defect `test_a_real_factor_set_carries_no_warning` was written for.
+    The page-level banner is a different thing and is asserted below.
+    """
+    markup = markup_for(tmp_path, build_state(is_mock=is_mock))
+    assert "The conversion factor comes from the client" not in markup
+    assert "comes from placeholder factors" not in markup
+
+
+@node
+@pytest.mark.parametrize("is_mock, expected", ((True, True), (False, False)))
+def test_the_page_level_placeholder_banner_is_exactly_as_it_was(
+    tmp_path, is_mock, expected
+):
+    """**The one thing in #127 that could not be traded for brevity**, pinned
+    on the markup so that removing a per-card sentence cannot quietly weaken
+    it.
+
+    §7.6 rule 2: mandatory and non-dismissible while `is_mock`, and
+    conditional rather than unconditional -- an export that always disclaims
+    becomes an export that disclaims real data the day real factors are
+    published. Both directions, and three properties of the banner itself:
+    it is an `aside.disclaimer`, it carries `role="status"`, and it has no
+    dismiss control of any kind.
+    """
+    markup = markup_for(tmp_path, build_state(is_mock=is_mock))
+    banner = 'class="disclaimer" role="status"'
+    assert (banner in markup) is expected, (
+        f"is_mock={is_mock} and the placeholder banner "
+        f"{'is missing' if expected else 'is drawn anyway'}"
+    )
+    if expected:
+        assert "Placeholder data" in markup
+        assert NOTICE in markup
+        #: Non-dismissible: nothing in the banner closes it. Asserted on the
+        #: whole document because a dismiss control added anywhere would be
+        #: the same defect.
+        for control in ('data-action="dismiss"', "aria-label=\"Close\"",
+                        'class="disclaimer-dismiss"'):
+            assert control not in markup, (
+                f"the placeholder banner gained a dismiss control: {control}"
+            )
+
+
+@node
+def test_a_disclosure_with_no_sentence_falls_back_to_nothing(tmp_path):
+    """**The anti-fallback assertion on the page's own markup.**
+
+    The row keeps its `source_note` and loses its `description`, which is the
+    only state where a fallback is observable. **This test exists because its
+    mutation survived**: rewriting `equivalenceBasis` to
+    `row.description || row.source_note` left every runnable test in the tree
+    green, because the only case that would have caught it drives a browser
+    against an image this work may not rebuild.
+
+    The disclosure still opens onto something -- the three figures -- so an
+    empty sentence is not an empty panel.
+    """
+    state = build_state()
+    for row in state["result"]["totals"]["current"]["equivalences"]:
+        row["description"] = None
+    for pair in state["result"]["entry_results"]:
+        for key in ("current", "alternative"):
+            scenario = (pair.get("response") or {}).get(key)
+            for row in (scenario or {}).get("equivalences", []):
+                row["description"] = None
+
+    markup = markup_for(tmp_path, state)
+
+    assert "equivalent-basis__body" in markup
+    assert "equivalent-basis__note" not in markup, (
+        "an equivalence with no description still drew a note paragraph"
+    )
+    assert "Open item O-3" not in markup, (
+        "the disclosure fell back to source_note, which is the long version "
+        "#127 removed"
+    )
+    assert "not recorded" not in markup.lower()
+    #: The premise, so the assertions above are about a fallback that was
+    #: available and not taken.
+    assert any(
+        row.get("source_note")
+        for row in state["result"]["totals"]["current"]["equivalences"]
+    ), "the fixture row carries no source_note, so nothing could have fallen back"
 
 
 # ------------------------------------------------- the unit each row was measured in
@@ -3126,7 +3366,7 @@ def test_neither_download_button_overflows_in_german(browser, width):
 # on the old `4.1800000000` factor.
 
 
-def _equivalence_response(*, source_note, is_mock: bool = True):
+def _equivalence_response(*, source_note, description=None, is_mock: bool = True):
     """A deep copy of `calculate_response.json` with its one equivalence replaced.
 
     `co2e`'s total in that fixture is `4449.0000000000` at one decimal place
@@ -3136,10 +3376,18 @@ def _equivalence_response(*, source_note, is_mock: bool = True):
     `data/upstream-factors-draft/build_upstream_factors_draft.py`'s `vehicles_year`
     row, not retyped from memory.
 
-    `is_mock` defaults to the fixture's own `True` - the disclaimer beside the
-    basis is gated on it (`equivalenceBasis`, `web/js/results.js`), the same
-    gate `_EQUIVALENCE_DISCLAIMER` enforces in the PDF, so a caller can flip
-    it to prove the negative case without hand-building a whole response.
+    `description` (v1.80, #127) is the sentence the disclosure now prints, and
+    it defaults to `None` - the empty-field state - so that a caller has to
+    name it to get one. `source_note` stays a REQUIRED argument although no
+    surface prints it any more: every caller here passes a real one, which is
+    what makes the empty-`description` cases evidence that nothing fell back
+    to it rather than evidence that there was nothing to fall back to.
+
+    `is_mock` defaults to the fixture's own `True`. It no longer gates
+    anything inside the disclosure - the per-equivalence caveat is gone at
+    v1.80 - and is kept because `results.js` still reads it for the
+    PAGE-LEVEL placeholder banner, which is the obligation (§7.6 rule 2) and
+    which `results_page_on_a_real_factor_set` exercises from the other side.
     """
     response = copy.deepcopy(_fixture("calculate_response.json"))
     response["factor_set"] = dict(response["factor_set"], is_mock=is_mock)
@@ -3152,6 +3400,7 @@ def _equivalence_response(*, source_note, is_mock: bool = True):
             "value_per_unit": "0.0004149378",
             "value_per_unit_display": "0.000414938",
             "source_metric": "co2e",
+            "description": description,
             "source_note": source_note,
         }
     ]
@@ -3168,19 +3417,39 @@ _VEHICLE_SOURCE_NOTE = (
     "so the divisor here is 2,410."
 )
 
+#: Copied verbatim from the same row's `description` (v1.80, #127). **Nothing
+#: like the note above, by design**: the two fields make different claims, and
+#: a test whose two strings overlapped could not tell a correct read from a
+#: fallback.
+_VEHICLE_DESCRIPTION = (
+    "The same greenhouse gases an average passenger vehicle puts out in a "
+    "year of driving, counted as a number of vehicles."
+)
+
 
 @pytest.fixture
 def results_page(page_at):
-    """The results page, reached with one equivalence that carries a recorded basis."""
-    page = page_at(_equivalence_response(source_note=_VEHICLE_SOURCE_NOTE))
+    """The results page, reached with one equivalence that carries both its
+    sentence and its basis - so every assertion that the basis is NOT shown is
+    made against a row that has one."""
+    page = page_at(_equivalence_response(
+        source_note=_VEHICLE_SOURCE_NOTE, description=_VEHICLE_DESCRIPTION,
+    ))
     _submit_two_entries(page)
     return page
 
 
 @pytest.fixture
-def results_page_without_basis(page_at):
-    """O-3 is open and `source_note` is nullable - the same equivalence, unrecorded."""
-    page = page_at(_equivalence_response(source_note=None))
+def results_page_without_a_sentence(page_at):
+    """v1.80, #127: `description` is nullable and `null` means print nothing.
+
+    The row keeps its `source_note`, which is the point: this is the only
+    state in which a fallback to the long version is observable, so the
+    fixture is built so that one was available and must not have been taken.
+    """
+    page = page_at(_equivalence_response(
+        source_note=_VEHICLE_SOURCE_NOTE, description=None,
+    ))
     _submit_two_entries(page)
     return page
 
@@ -3193,7 +3462,10 @@ def results_page_on_a_real_factor_set(page_at):
     most: a real, published factor set once described itself as
     "placeholder" and the mistake shipped. The page and the text export were
     asserted only with `is_mock` true."""
-    page = page_at(_equivalence_response(source_note=_VEHICLE_SOURCE_NOTE, is_mock=False))
+    page = page_at(_equivalence_response(
+        source_note=_VEHICLE_SOURCE_NOTE, description=_VEHICLE_DESCRIPTION,
+        is_mock=False,
+    ))
     _submit_two_entries(page)
     return page
 
@@ -3211,17 +3483,27 @@ def test_each_equivalence_offers_an_explanation_that_starts_closed(results_page)
 
 
 @pytest.mark.browser
-def test_the_explanation_shows_the_total_the_factor_and_the_basis(results_page):
+def test_the_explanation_shows_the_total_the_factor_and_the_sentence(results_page):
     """Asserts what a person can SEE, not that the text is in the DOM. A closed
     <details> still contains its text -- that is exactly how a folded warning
-    passed tests/admin/test_guidance.py once already."""
+    passed tests/admin/test_guidance.py once already.
+
+    v1.80 (#127): the third thing it shows is `description`, one sentence, and
+    it is explicitly NOT `source_note` - the fixture row carries both, so this
+    distinguishes the two rather than merely finding prose.
+    """
     first = results_page.locator(".equivalent-grid article").first
     body = first.locator(".equivalent-basis__body")
     assert not body.is_visible()
     first.locator("details.equivalent-basis > summary").click()
     assert body.is_visible()
-    assert "0.000414938" in body.inner_text()
-    assert "Client, Data sources for impact calculator" in body.inner_text()
+    text = body.inner_text()
+    assert "0.000414938" in text
+    assert _VEHICLE_DESCRIPTION in text
+    assert "Client, Data sources for impact calculator" not in text, (
+        "the provenance paragraph is back on the results page"
+    )
+    assert "Basis:" not in text
 
 
 @pytest.mark.browser
@@ -3244,29 +3526,51 @@ def test_the_last_row_shows_the_figure_and_does_not_repeat_the_whole_sentence(re
 
 @pytest.mark.browser
 def test_a_real_factor_set_carries_no_equivalence_warning(results_page_on_a_real_factor_set):
-    """The negative case, on the page: the factor and the basis still show,
-    but the sentence that says the total comes from placeholder factors does
-    not, because the factor set is not one."""
+    """The negative case, on the page: the factor and the sentence still show,
+    and the caveat that says the total comes from placeholder factors does not.
+
+    **This test outlived the sentence it was written about** (v1.80, #127). The
+    caveat is now absent on every factor set, so the assertion it makes about a
+    real one is weaker than it was - and it is kept, because the mutation it
+    guards against has happened in this repository: an unconditional version of
+    that sentence made a real published set describe itself as placeholder data.
+    Anything that reintroduces it fails here first. Its mock-side twin is
+    `test_the_equivalence_caveat_is_in_no_export_at_all_now`, which asserts the
+    stronger "absent either way" on the text export.
+    """
     first = results_page_on_a_real_factor_set.locator(".equivalent-grid article").first
     first.locator("details.equivalent-basis > summary").click()
     body = first.locator(".equivalent-basis__body").inner_text()
     assert "0.000414938" in body
-    assert "Client, Data sources for impact calculator" in body
+    assert _VEHICLE_DESCRIPTION in body
     assert "placeholder factors" not in body
 
 
 @pytest.mark.browser
-def test_an_equivalence_with_no_basis_says_so_rather_than_opening_onto_nothing(
-    results_page_without_basis,
+def test_an_equivalence_with_no_sentence_opens_onto_its_figures_and_not_the_note(
+    results_page_without_a_sentence,
 ):
-    """O-3 is open and source_note is nullable. A question mark that opens onto
-    nothing is worse than no question mark."""
-    first = results_page_without_basis.locator(".equivalent-grid article").first
+    """**The anti-fallback assertion, in a browser** (v1.80, #127).
+
+    This test used to require the opposite: that a row with no `source_note`
+    said *"The basis for this conversion is not recorded yet."* rather than
+    opening onto nothing. The panel's content changed, so what it must not open
+    onto changed with it. `description` is empty and `source_note` is NOT, so
+    the only way the note can appear is a fallback - and the fallback is what
+    #127 removed. The disclosure is not empty either: the three figures are
+    still there, which is why the `?` still earns its place.
+    """
+    first = results_page_without_a_sentence.locator(".equivalent-grid article").first
     first.locator("details.equivalent-basis > summary").click()
     body = first.locator(".equivalent-basis__body")
     assert body.is_visible()
-    assert "0.000414938" in body.inner_text()
-    assert "not recorded" in body.inner_text().lower()
+    text = body.inner_text()
+    assert "0.000414938" in text
+    assert "Client, Data sources for impact calculator" not in text, (
+        "an equivalence with no description fell back to its source_note"
+    )
+    assert "not recorded" not in text.lower()
+    assert "Basis:" not in text
 
 
 def _extract_pdf_text(path) -> str:
@@ -3336,7 +3640,9 @@ def test_the_page_the_text_export_and_the_pdf_tell_the_same_story_about_an_equiv
     surfaces agree regardless of which one had to go back to the server for
     its numbers.
     """
-    page = page_at(_equivalence_response(source_note=_VEHICLE_SOURCE_NOTE))
+    page = page_at(_equivalence_response(
+        source_note=_VEHICLE_SOURCE_NOTE, description=_VEHICLE_DESCRIPTION,
+    ))
     _submit_two_entries_of_different_sectors(page)
 
     first = page.locator(".equivalent-grid article").first
@@ -3352,6 +3658,12 @@ def test_the_page_the_text_export_and_the_pdf_tell_the_same_story_about_an_equiv
     pdf = _extract_pdf_text(pdf_download.value.path())
 
     factor = "0.000414938"
+    #: v1.80 (#127). The sentence is what all three surfaces must now carry,
+    #: and the provenance paragraph is what none of them may. The PDF reaches
+    #: the real `/export/pdf` route, so its `description` is the PUBLISHED
+    #: row's and not this response's - which is why the two
+    #: must-not-appear strings below are asserted on all three surfaces and
+    #: the sentence itself is asserted per surface a few lines down.
     basis = "Client, Data sources for impact calculator"
     disclaimer = "The conversion factor comes from the client. The total it is applied to comes from placeholder factors."
     # `row.name` (§1b): the page and the PDF both print it; the text export
@@ -3376,9 +3688,23 @@ def test_the_page_the_text_export_and_the_pdf_tell_the_same_story_about_an_equiv
     total_line = re.compile(r"([\d,]+\.\d+) kg CO2e")
     for surface, content in (("screen", on_screen), ("text", text), ("pdf", pdf)):
         assert factor in content, f"{surface} is missing the conversion factor"
-        assert basis in content, f"{surface} is missing the basis"
-        assert disclaimer in content, f"{surface} is missing the disclaimer"
+        assert basis not in content, (
+            f"{surface} prints the provenance paragraph #127 removed"
+        )
+        assert disclaimer not in content, (
+            f"{surface} prints the per-equivalence caveat #127 removed"
+        )
+        assert "Basis:" not in content, f"{surface} still labels a basis"
         assert name in content, f"{surface} is missing the equivalence's name"
+    #: The screen and the text export read the mocked response, so they carry
+    #: THIS row's sentence. The PDF recomputes against the published set, so it
+    #: carries that set's - checked as "a sentence, from the published row"
+    #: rather than as this literal, for the same reason the Total line below is
+    #: checked by shape.
+    for surface, content in (("screen", on_screen), ("text", text)):
+        assert _VEHICLE_DESCRIPTION in content, (
+            f"{surface} is missing the equivalence's own sentence"
+        )
         match = total_line.search(content)
         assert match, f"{surface} is missing a formatted total for co2e"
         fraction_digits = len(match.group(1).split(".")[1])
@@ -3453,11 +3779,15 @@ def test_the_equivalence_icons_share_one_baseline_where_the_cards_are_a_row(brow
     shared baseline there would pin a coincidence.
     """
     #: Three equivalences whose **labels** differ in length, and the labels are
-    #: what matters: the `source_note` sits inside a collapsed `<details>`, so
-    #: varying it changes no card's height and the test passes whatever the
+    #: what matters: the panel's own prose sits inside a collapsed `<details>`,
+    #: so varying it changes no card's height and the test passes whatever the
     #: stylesheet does. Measured that the wrong way round first -- three
-    #: different notes, three identical heights, green under mutation.
-    response = _equivalence_response(source_note=_VEHICLE_SOURCE_NOTE)
+    #: different notes, three identical heights, green under mutation. (v1.80
+    #: swapped which field holds that prose and changed nothing about this: a
+    #: collapsed box contributes no height whatever is in it.)
+    response = _equivalence_response(
+        source_note=_VEHICLE_SOURCE_NOTE, description=_VEHICLE_DESCRIPTION,
+    )
     template = response["totals"]["current"]["equivalences"][0]
     response["totals"]["current"]["equivalences"] = [
         dict(template, code="short", name="Short", label="One short line"),
@@ -3522,7 +3852,10 @@ def test_the_equivalence_explanation_does_not_overflow(browser, language, width)
             "**/api/v1/calculate*",
             lambda route: route.fulfill(
                 status=200, content_type="application/json",
-                body=json.dumps(_equivalence_response(source_note=_VEHICLE_SOURCE_NOTE)),
+                body=json.dumps(_equivalence_response(
+                    source_note=_VEHICLE_SOURCE_NOTE,
+                    description=_VEHICLE_DESCRIPTION,
+                )),
             ),
         )
         try:

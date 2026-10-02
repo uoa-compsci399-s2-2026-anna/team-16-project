@@ -609,6 +609,13 @@ def _make_set(session, label, status, taxonomy, *, populated,
                     source_metric_id=taxonomy.metric.id,
                     value_per_unit=Decimal("0.192") + nudge,
                     label_template="Equivalent to driving {value} km",
+                    #: v1.80. Given a non-default value for this helper's own
+                    #: stated reason -- a clone that copies only NOT NULL
+                    #: columns is indistinguishable from a correct one when
+                    #: every optional column sits at its default. Worded so it
+                    #: shares no substring with the source note beside it, so
+                    #: a test that found one of them has distinguished them.
+                    description=f"{marker} one sentence about the comparison",
                     source_note=f"{marker} equivalence source note",
                     sort_order=3, active=False),
     ])
@@ -666,6 +673,7 @@ def two_sets(_committed_session, taxonomy_for_factors):
                     source_metric_id=taxonomy_for_factors.metric.id,
                     value_per_unit=Decimal("2.2222"),
                     label_template="Equivalent to {value} meals",
+                    description="e6 draft-own second sentence",
                     source_note="e6 draft-own second equivalence",
                     sort_order=4, active=True),
     ])

@@ -326,6 +326,12 @@ def _scenario(scenario: Any, *, with_total_kg: bool = True) -> dict[str, Any] | 
             "value_per_unit": item.value_per_unit,
             "value_per_unit_display": item.value_per_unit_display,
             "source_metric": item.source_metric_code,
+            #: v1.80. The staff sentence saying what the comparison means,
+            #: and the field the results page now prints. `None` is on the
+            #: wire as `null` and means *print nothing*; a consumer must not
+            #: substitute `source_note`, which is still carried beside it
+            #: for `/factors` and the methodology page.
+            "description": item.description,
             "source_note": item.source_note,
         }
         for item in scenario.equivalences

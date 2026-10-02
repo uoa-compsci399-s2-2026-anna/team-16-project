@@ -30,7 +30,7 @@ import os
 
 import pytest
 
-from tests.web.steps import press_continue
+from tests.web.steps import expand_step_cards, press_continue
 
 
 pytestmark = pytest.mark.browser
@@ -76,6 +76,23 @@ def _tick(page, *indices):
     for index in indices:
         boxes.nth(index).click()
         page.wait_for_timeout(60)
+
+
+def _amount_step(page):
+    """Wait for step 3 and open every card on it.
+
+    **`state="attached"`, then the cards.** Since #134 a forked chain draws its
+    cards collapsed and a collapsed card's body carries `hidden`, so the amount
+    fields are in the document and not visible - which the default
+    ``state="visible"`` waits out against a screen that is working correctly, and
+    which ``page.fill`` refuses outright. Every test below either types into
+    those fields or measures them, so it opens the cards through the control a
+    visitor would press. On a one-leaf chain there is no card to open and
+    ``expand_step_cards`` finds nothing (decision 2 of #134: a lone card is never
+    shut), so this is the same wait it always was.
+    """
+    page.wait_for_selector('[data-leaf-field="amount"]', state="attached")
+    expand_step_cards(page)
 
 
 def _amount_fields(page):
@@ -131,7 +148,7 @@ def test_i_do_not_know_is_a_peer_option_that_combines_with_a_category(page):
     unspecified.click()
     page.wait_for_timeout(80)
     press_continue(page)
-    page.wait_for_selector('[data-leaf-field="amount"]')
+    _amount_step(page)
     legends = page.locator(".leaf-panel legend").all_inner_texts()
     assert len(legends) == 2, f"a category plus \"I do not know\" is two leaves, got {legends}"
     assert "Not broken down by type" in legends[-1], (
@@ -167,7 +184,7 @@ def test_unticking_a_category_parks_its_figures_and_re_ticking_brings_them_back(
     _to_food_step(page)
     _tick(page, 0, 1)
     press_continue(page)
-    page.wait_for_selector('[data-leaf-field="amount"]')
+    _amount_step(page)
     fields = _amount_fields(page)
     assert len(fields) == 2, fields
     page.fill(f"#{fields[0]}", "400")
@@ -178,7 +195,7 @@ def test_unticking_a_category_parks_its_figures_and_re_ticking_brings_them_back(
     _tick(page, 1)  # untick
     _tick(page, 1)  # and back on
     press_continue(page)
-    page.wait_for_selector('[data-leaf-field="amount"]')
+    _amount_step(page)
     values = page.evaluate(
         "() => [...document.querySelectorAll('[data-leaf-field=amount]')].map(e => [e.id, e.value])"
     )
@@ -245,7 +262,7 @@ def test_the_form_bounds_the_submissions_leaf_count_at_max_entries(page):
     _tick(page, *range(offered))
     first_leaves = offered
     press_continue(page)
-    page.wait_for_selector('[data-leaf-field="amount"]')
+    _amount_step(page)
     for index, field in enumerate(_amount_fields(page)):
         page.fill(f"#{field}", str(100 + index))
         page.wait_for_timeout(35)
@@ -301,7 +318,7 @@ def test_an_allocation_is_measured_against_its_own_leafs_amount(page):
     _to_food_step(page)
     _tick(page, 0, 1)
     press_continue(page)
-    page.wait_for_selector('[data-leaf-field="amount"]')
+    _amount_step(page)
     fields = _amount_fields(page)
     page.fill(f"#{fields[0]}", "100")
     page.fill(f"#{fields[1]}", "200")
@@ -343,7 +360,7 @@ def test_the_amount_error_lands_on_the_leaf_it_is_about(page):
     _to_food_step(page)
     _tick(page, 0, 1)
     press_continue(page)
-    page.wait_for_selector('[data-leaf-field="amount"]')
+    _amount_step(page)
     fields = _amount_fields(page)
     page.fill(f"#{fields[0]}", "500")
     page.wait_for_timeout(80)
@@ -388,7 +405,7 @@ def test_two_leaves_producing_the_identical_sentence_mark_only_the_one_at_fault(
     _to_food_step(page)
     _tick(page, 0, 1)
     press_continue(page)
-    page.wait_for_selector('[data-leaf-field="amount"]')
+    _amount_step(page)
     fields = _amount_fields(page)
     for field in fields:
         page.fill(f"#{field}", "1e5")

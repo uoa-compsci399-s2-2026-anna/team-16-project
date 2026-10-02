@@ -44,6 +44,66 @@ The client asked for one thing about this panel: *"当 improve 的卡片下拉�
 > **Two pre-existing defects in this panel are deliberately left alone here, and are named so they are not mistaken for new ones.** The inline validation line renders `--muted` grey rather than Beetroot, because `.improvement-scenario > p` (0,1,1) beats `.field-error` (0,1,0) and is later in the file — an error message that does not look like one. And only `#improvement-inline-error` gets the 18px inset that aligns it with the *Total allocation* label; the sibling `state.improvementError` paragraph is also a `.field-error` direct child and gets 0, so when both show they indent differently. Both are older than this work, both are about the error line rather than about the layout, and both belong to one issue of their own.
 
 > **The version number skips v1.79 to v1.81.** v1.79 is held by `feat/d-statistics-content`, which is open and unmerged; v1.80 and v1.81 have merged into `main`. The effective contract is the highest version wherever it lives, merged or not, so v1.82 was taken after scanning the header of this document across every local and remote ref — the highest `### v1.x` anywhere in the repository is v1.81, and nothing holds v1.82. None of the three is in this branch's copy of the change log — the entry directly below this one is v1.78 — and each will arrive with its own merge.
+### v1.81 — 2026-10-02 (step 3's cards fold, and the badge reads Continue's own rules; affects C and D)
+
+The client's report on step 3 was not that the page is long. It is that **a card below the fold gets skipped**: the step scrolls, a food type goes unanswered, and nothing on screen says so. So each food type's panel becomes a collapsible card, shut by default, and the shut card carries a badge saying whether that card is finished — which is the question *"did I fill this in?"* answered without opening anything. Issue #134, with three decisions taken by the owner at the 1 October meeting and not re-derived here.
+
+**Nothing on the wire moves.** No field, no key, no endpoint, no scale, no fixture. This is a front-end change, and it is recorded here for the two reasons v1.61 was: it moves the **catalogue** contract (the English source string is the key, §7.7.1, so a new string is a new key in all twenty catalogues) and it adds a `state` key and a `data-action` that §7's own lists name.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`leafProblem(step, leaf, food)` is the only copy of the per-leaf rules.** `stepProblemAt` encoded the amount step's three rules and the destination step's six inside its own loop over the leaves and returned the first problem — the right answer for Continue and the wrong shape for a per-card badge. The rules move out; `stepProblemAt` becomes the walk that stops at the first problem and stamps it with the leaf, and `leafSettled` is the per-leaf reader. **Nothing about what is refused changes**: the same checks, in the same order, of the same figures. There is still exactly one list of them, which is the point — `destinationStep`'s own comment records that two lists for one button left each list enabling Continue on a state the other had just refused, and a tick computed from a second list is that defect with a tick instead of a button | §7.3a |
+| 2 | **What a tick promises.** Decision 1: *complete means every required field is filled*, and the optional money figures do not affect it. Implemented as `!leafProblem(...)`, which is that plus "and nothing on this card is at fault" — strictly stronger, never weaker. An empty NZ$ pair cannot withhold a tick; two NZ$ figures that contradict each other can, because Continue refuses that state and a tick over it would be a tick over a card the next press rejects. **#133's countdown notice must read the same predicate** | §7.3a |
+| 3 | **`state.openCards`**, a list of `cardId(step, key)` strings, rendered out of `state` and written back on toggle. A native `<details open>` inside `<main>` cannot survive `render()` replacing `main.innerHTML`. It is **not** in `ANSWER_KEYS` and must not be added — transient UI of the same class as the restored open dialog v1.74 item 2 keeps out by construction — and `tests/web/test_snapshot.py`'s forbidden list now names it, so adding it fails a test rather than shipping | §7.2, §7.2a |
+| 4 | **`data-action="toggle-card"`**, with `data-card-step` and `data-card`. Deliberately absent from the click delegate's scroll-to-top list: a disclosure is not a navigation. The toggle carries a stable `id` so `main.js`'s subscriber returns focus to it across the re-render, which is what makes the state change announced rather than only applied | §7.3a |
+| 5 | **Two new catalogue source strings, `Complete` and `Incomplete`**, in all twenty catalogues and in both trees byte-identically (`web/locales/` and `api/assets/locales/`, compared by SHA-256). **Neither introduces a character the CJK subsets do not already cut** — every code point in the four CJK translations already appears in that catalogue — so `recut_cjk_subsets.py` did not run and `test_no_character_in_any_catalogue_would_print_as_a_box` is unmoved. The badge is not colour-only: the mark and the chevron are `aria-hidden` and the word is not, so the button's accessible name reads *"Fruit Incomplete"*, measured through the browser's own accessible-name computation rather than through `innerText` | §7.7, §7.7.1 |
+| 6 | **Decision 2: one card is never shut.** On step 3 one leaf draws no card at all and renders the panel it always has; `cardIsOpen` carries the rule for the consumers that do draw a card at a count of one, so #138 and #142 inherit it rather than restating it | §7.3a |
+| 7 | **Decision 3: a refused Continue expands the offending card and focuses the field at fault**, by the place `leafProblem` returns and never by comparing prose. The scroll-to-top stands aside when it does. A card holding any message is forced open at render time as well, which covers the route Continue does not own — a server `VALIDATION_ERROR` naming a scalar field on a step the visitor was routed back to | §7.3a, §9 |
+| 8 | **The `data-action` vocabulary in §7.3a was two entries short before this revision** and is corrected with the new one: `clear-items` and `back-to-categories` have been handled by the click delegate since v1.60 and were never listed. Recorded rather than quietly fixed, because the list is read as complete | §7.3a |
+
+> **`tests/web/steps.py` gains `expand_step_cards(page)`**, and that is where the collapsing meets every suite that drives a forked step 3. A shut card's body is `hidden`, so its inputs are not visible, not focusable and not fillable — `page.fill` refuses them and a default `wait_for_selector` waits out its timeout against a screen that is working correctly. Twelve tests across two files failed that way and now open the cards through the control a visitor would press, rather than by writing `state.openCards` from a test, which would measure the renderer against a state no press can produce. `test_step_three_zones_browser.py`'s panel probe also moved: a leaf card's padding now belongs to its header and its body, so a content box derived from the panel sits 20px outside the fields.
+
+> **Nothing is published and nothing is republished by this revision.** `is_mock` stays `true`, **O-1 remains the hard blocker**, and the placeholder banner stays mandatory on every results view and export. All thirteen golden cases are byte-identical: nothing here touches the engine, and nothing here touches the wire.
+
+> **The adjacent numbers were held by branches in flight, and one of them has since landed.** v1.79 is claimed by PR #110 (`feat/d-statistics-content`), still open, and **v1.80 merged with PR #145** on 2026-10-02 — its entry is immediately below this one, and this branch resolved that change-log conflict as the second to land. The effective contract is the highest version wherever it lives, merged or not, which is why this took the next free number above both rather than waiting. The same situation v1.78 recorded against `feat/session-restore`. The owner notifies the team.
+
+> **The front matter is raised with the entry, and on 2026-10-02 it was not.** v1.80 landed on `main` with `### v1.80` in this change log and `date: "2026-09-29 (v1.78)"` still in the front matter, so the document disagreed with itself about which contract it was. Resolving this merge corrects it, because this revision's own header is higher than both. Nothing in the suite reports that disagreement today: PR #110 adds a floor (`entry > (1, 78)`) and a duplicate-number guard, which would not have caught it. An assertion that the header equals the highest entry would.
+### v1.80 — 2026-10-02 (a tangible equivalent says in one sentence what it means, and stops reciting its provenance; affects A, B, C, D and E)
+
+Issue #127, raised by the client at the 1 October meeting. Measured off the published set (19, `CLIENT-DRAFT-2026-09-21`, `is_mock = 1`), this is what the `?` beside a tangible-equivalence card actually printed:
+
+> **Basis:** The row above, divided by 365. No new source: it is the client's own 2.41 t CO2e per passenger vehicle per year (Data sources for impact calculator, 2026-08-29) spread over the days of that year, which comes to 6.60 kg CO2e a day. It is the client's own suggestion — "if a year is too much, change it to a day". "An average day" is the whole day and not a journey: the figure includes the hours the vehicle is parked, because the year it is divided from does.
+>
+> The conversion factor comes from the client. The total it is applied to comes from placeholder factors.
+
+That is `equivalence.source_note`, which exists for whoever audits a conversion factor, and it is four sentences of it in a visitor-facing panel. The client, using the tool as a tester, asked for **one sentence saying what the comparison means**, and said the separate disclaimer sentence need not be there. **It is good writing in the wrong place**: this revision moves where it is printed and deletes it from nowhere.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`equivalence` gains `description VARCHAR(255) NULL`** — one staff-authored sentence saying what the comparison means, printed **verbatim in every language** exactly as `label_template` and `preset.label` are (§7.7.7), because it is data and not interface copy. `VARCHAR(255)` rather than `TEXT`, matching `label_template` beside it rather than `source_note` below it: **the length limit is the feature.** A column that can hold four sentences will hold four sentences, which is the thing being fixed. Alembic `0020`; nullable, so no existing row is rewritten by the schema change | §2.2 |
+| 2 | **`NULL` means print nothing, and `source_note` is never a fallback for it.** Not on the page, not in the text export, not in the PDF, not in `api/engine_adapter.py`. A fallback would look correct in the admin panel, in the export and in every fixture while putting the long version back in front of a visitor, which is the whole of what this revision removes. The anti-fallback edge is asserted at the one layer that could reintroduce it (`test_an_empty_description_is_null_on_the_wire_and_is_not_the_basis`) and again fixture-against-fixture in `test_every_equivalence_is_derived_from_the_metric_total_it_names` | §3, §6.2, §7.3a |
+| 3 | **`source_note` stops being printed on the results page, on all three surfaces, and leaves nothing else.** It keeps its column, its place in the admin form, its place in `GET /factors` (§6.3) and its column on the methodology page — which is where a reader who wants to know where a conversion factor came from goes, and **O-3's reasoning lives in it**. §6.3 remains the authoritative provenance surface; what changed is that a visitor reading a result is no longer handed an auditor's paragraph | §6.3, §7.3a |
+| 4 | **The standalone mock caveat goes**, as the client asked — *"The conversion factor comes from the client. The total it is applied to comes from placeholder factors."* **What makes that safe is that it was never the obligation.** §7.6 rule 2's obligation is the **page-level placeholder banner**, mandatory and non-dismissible while `is_mock`, on the results view and on **every** export; nothing about it moved. `api/pdf_render.py::_equivalence_rows` consequently no longer takes `is_mock` at all, because its only use for it was this sentence, and a parameter kept for a caller that no longer exists is a parameter somebody finds a use for. **`test_a_real_factor_set_carries_no_warning` keeps passing and means more than it did**: it exists because an *unconditional* version of the removed sentence once made a real published set describe itself as placeholder data, and the document now has one fewer place to say the word | §7.6, §6.2.3 |
+| 5 | **Three catalogue strings are retired from all twenty catalogues, both trees byte-identical by SHA-256** — `Basis:`, `The basis for this conversion is not recorded yet.` and the caveat in item 4. Nothing in `web/js` or `web/*.html` asks for them any more, so `test_no_catalogue_carries_a_key_the_front_end_never_asks_for` requires their removal rather than merely permitting it; `api/pdf_render.py`'s `DOCUMENT_STRINGS` and `_LABELS["equivalence_basis"]` go in the same change, because `api.i18n.Catalogue.gettext` **raises** on a key it does not carry and a label left behind would answer 500 to every non-English download. **No new interface string, in either direction**: `description` is staff data and the sentence stands alone in the panel, so there are no connective words around it to translate, no nineteen machine translations to review and no CJK subset to re-cut. 453 keys per catalogue, down from 456 | §7.7, §7.7.7 |
+| 6 | **`equivalences[]` on `POST /calculate` gains `description`, string-or-null, present-and-never-omitted** — additive on exactly v1.52's terms, so a consumer reading only `code` / `label` / `value` / `source_metric` is unaffected. `GET /factors` carries it on every equivalence row on the same terms, from the one projection both are built from (`db/repository.build_bundle_data`) | §6.2, §6.3 |
+| 7 | **The admin form carries it beside the two label templates and not beside `source_note`**, and that placement is deliberate: those three are the strings a visitor reads and `source_note` is now the one nobody outside this panel and `/factors` does. `source_note`'s own help text is reworded to say so, so a staff member cannot learn it from a results page that no longer shows it. The field help is translated into Chinese like the other 82; the sentence a staff member types into the box is not (§7.7.7). Export and import carry the column for free, because `AuditedImport.get_export_columns` returns `get_import_columns()` and both are `form_columns` — the round trip is asserted in **both** formats (v1.64) | §8.1, §7.7 |
+| 8 | **`EquivalenceSpec.description` and `EquivalenceResult.description` are pure passthroughs**, optional-and-carried in a bundle on `source_note`'s terms (§10.2). The engine neither reads them nor computes with them. **This is the one place this revision touches `engine/`, and it moves no number**: every bundle written before v1.80 — all thirteen golden cases included — loads with `description=None` and produces the same arithmetic it always did | §4.1, §4.2, §10.2 |
+| 9 | **The sentences themselves are DRAFTS pending the client's confirmation**, seeded by `0020`, by `docker/mock-factors.json` and by the draft builder so the feature is testable end to end rather than demonstrable only against a hand-edited row. They are client-facing words about the client's own comparisons and the owner is putting the list to the client as one list. The `0020` UPDATE is conditional on `description IS NULL`, so it seeds and never corrects — 0015's rule for `unit_preset`, applied again | §2.2, §10 |
+
+> **Two rows' honesty lived inside the prose being taken off the page, and their sentences carry it.** This is the trap in the whole revision: compressing a caveated row into a confident sentence would make the page more certain than the data warrants, which is the opposite of what shortening it was for.
+>
+> * **`showers`** — its `source_note` opens `PLACEHOLDER`, names open item **O-3**, and states **both** halves of the assumption (how long a shower runs, and how fast). Its sentence names the ten minutes, names the nine litres a minute, and says the figure is not yet a New Zealand one.
+> * **`backyard_pools`** — its `source_note` records that the 8 m × 4 m × 1.5 m dimensions are the **team's own judgement** rather than a published figure. Its sentence states the dimensions and says so.
+>
+> The other four rows of the published set rest on the client's own supplied conversions and had no caveat to lose. Every drafted sentence is **ASCII**: a character reaching `api/pdf_render.py` from the database is in no catalogue, so `test_no_character_in_any_catalogue_would_print_as_a_box` cannot see it, and ASCII is in every embedded face and all four CJK subsets.
+
+> **All thirteen golden cases still compute identically, and eleven of their `expected.json` files moved by one key each — which the plan behind this revision got wrong, and this entry records rather than hides.** The plan said the golden files were untouched and the engine unaffected. The engine *is* unaffected arithmetically, but `tests/golden/test_golden.py::_equivalence` derives its key set from `dataclasses.fields(EquivalenceResult)` **on purpose** (`c330025`, and `test_render_drops_no_field` is the same decision at entry level), so a field added to the dataclass is pinned the day it exists and `_diff` — which walks both documents in both directions — reports a key the engine produces and `expected.json` lacks. Sixty-three equivalence objects across twelve files gained `"description": null`. **Not one number changed, and no `bundle.json` was touched**, which is what makes the new value `null` rather than something somebody chose. The alternative — attaching the sentence to the response after serialisation, from the bundle, so the engine stayed literally untouched — was measured and rejected: `serialize_result(result)` is handed no bundle, `api/export.py` hands `pdf_render` the engine's result object and no bundle either, so it would have meant two enrichment sites and therefore two truths about one field.
+
+> **The methodology page is where provenance stays, and it already says so.** `web/js/methodology.js`'s *Published equivalences* table has carried a `Source note` column since it existed, which is what makes item 3 a move rather than a removal. It gains **no** `Description` column in this revision, and that is a decision: a new column header is a twenty-first catalogue string with nineteen machine translations behind it and a CJK recut to check, for data the results page now shows a visitor directly. If the client later wants the sentence on that page as well, it is a one-column change and twenty catalogue entries, stated here so the next reader knows it was weighed.
+
+> **Nothing is published and nothing is republished.** `is_mock` stays `true` on every set in every database, **O-1 remains the hard blocker**, and the placeholder banner stays mandatory and non-dismissible on every results view and every export. No Alembic revision was run against a live database by this work.
+
+> **The adjacent numbers are held by branches in flight.** **v1.79** is claimed by `feat/d-statistics-content` (PR #110, open) in its pushed `docs/interfaces.md`, and **v1.81** is being claimed by the collapsible-card branch out of the same 1 October meeting. Neither is merged; the effective contract is the highest version wherever it lives, merged or not, so this took the next free number above #110's. **Whichever of the three lands second resolves the change-log conflict** — the same situation v1.78 recorded about v1.74–v1.77 and `feat/session-restore`. The owner notifies the team.
 
 ### v1.78 — 2026-09-29 (the response fixtures carry the sixth metric, because the published set prices it; affects A, B, C, D and E)
 
@@ -1944,6 +2004,7 @@ UNIQUE(`factor_set_id`, `metric_id`)
 | `value_per_unit` | DECIMAL(20,10) | NOT NULL | Result = metric total × this factor |
 | `label_template` | VARCHAR(255) | NOT NULL | `Equivalent to driving {value} km`. `{value}` is the only placeholder; everything else is copied verbatim. **The engine interpolates it, and §3's rule 5 fixes the number format** (whole units, comma thousands separator, `ROUND_HALF_UP`) |
 | `label_template_one` | VARCHAR(255) | NULL | v1.71. The same sentence for a value that **prints** as exactly `1`. NULL means none was given and `label_template` is used whatever the number is, which is how `Equivalent to 1 Olympic swimming pools of water` reaches a results page today. A second staff-typed string rather than a pluralisation rule in code — see §3 rule 5 |
+| `description` | VARCHAR(255) | NULL | v1.80. **One staff-authored sentence saying what the comparison MEANS**, and the only prose a visitor reads behind a tangible-equivalence card. Printed verbatim in every language (§7.7.7), exactly as `label_template` above it is. **`NULL` means print nothing, and `source_note` is never substituted for it** — that substitution is the one-to-four-sentence provenance prose #127 took off the results page. `VARCHAR(255)` rather than `TEXT` deliberately: one sentence is the requirement, and the column enforces it. **A row whose figure rests on an assumption has to state the assumption here**, because the prose that used to state it is no longer on the page — `showers` names ten minutes at nine litres a minute, `backyard_pools` names its own dimensions as an estimate |
 | `family` | VARCHAR(64) | NULL | v1.71. Which **ladder** this row is a rung of. Rows sharing a family are the same comparison at several sizes and **exactly one of them is shown**; NULL means the row is not a rung of anything and is always shown, which is what every row in every database carried before this column existed. **Not `source_metric_id`** — km, a vehicle-day and a vehicle-year are all `co2e` and *are* one ladder, while two framings of `co2e` share the metric and must not displace each other |
 | `min_value` | DECIMAL(20,10) | NULL | v1.71. The bottom of the half-open band `[min_value, max_value)` this rung is eligible for, compared against **this row's own converted value** — 3 showers, 0.4 swimming pools — and never against the metric total. NULL is unbounded below |
 | `max_value` | DECIMAL(20,10) | NULL | v1.71. The top of the same band, **not included**. NULL is unbounded above. A rung with neither bound is its family's catch-all |
@@ -3754,7 +3815,7 @@ Because every dry-run request carries its own data, concurrent staff dry runs ar
           "label": "Equivalent to driving 21,400 km",
           "value": "21400.0000000000",
           "value_per_unit": "4.1800000000", "value_per_unit_display": "4.18",
-          "source_metric": "co2e", "source_note": "…" }
+          "source_metric": "co2e", "description": "…", "source_note": "…" }
       ]
     },
     "alternative": { "… same shape as current …" },
@@ -3800,7 +3861,7 @@ Because every dry-run request carries its own data, concurrent staff dry runs ar
             "label": "Equivalent to driving 14,500 km",
             "value": "14500.0000000000",
             "value_per_unit": "4.1800000000", "value_per_unit_display": "4.18",
-            "source_metric": "co2e", "source_note": "…" }
+            "source_metric": "co2e", "description": "…", "source_note": "…" }
         ]
       },
       "alternative": { "… same shape as current …" },
@@ -3821,11 +3882,14 @@ Because every dry-run request carries its own data, concurrent staff dry runs ar
 
 **`equivalences[]` gained four fields at v1.52: `name`, `value_per_unit`, `value_per_unit_display`, `source_note`.** All four are additive — no existing field's type or meaning changes, so a client written against v1.51, reading only `code` / `label` / `value` / `source_metric`, is unaffected by any of them.
 
+**`description` joined them at v1.80 (issue #127), on identical terms, and it is now the field a results page prints.** `source_note` is still carried and is no longer rendered by any visitor-facing surface; it is published by §6.3 and by the methodology page, which is where provenance belongs. **The two are different claims** — one says what the comparison means, the other says where the factor came from — and a surface that answered an empty `description` with `source_note` would undo the revision while every fixture still looked right.
+
 | Field | Type | Notes |
 | --- | --- | --- |
 | `name` | string | The short label (`Kilometres driven`). Already on `GET /factors` (§6.3); `label_template` is a whole sentence, so a consumer building a heading or a legend has nothing else to use |
 | `value_per_unit` | decimal-string | The raw conversion factor at full precision — the same pairing `value` already has with `label`: one field at the precision a machine keeps, one formatted for a reader |
 | `value_per_unit_display` | string | **Engine-formatted, not a decimal-string.** Six significant figures, `ROUND_HALF_UP` on the `Decimal` (never through `float`), trailing zeros after the point trimmed, a comma thousands separator on the integer part — the same style §3 rule 5 fixes for `label`'s own number. A conversion factor in this set spans seven orders of magnitude (`1/2,500,000` against `1/0.45`), so a browser choosing its own precision would be choosing how many digits a reader gets to verify the arithmetic with, which is rounding, which §7.6 rule 1 reserves for the server. Written down rather than left to a default for the reason rule 5 already is: no value in this contract's fixture set lands on a rounding boundary, so no fixture could pin the mode by itself |
+| `description` | string \| null | v1.80. The staff-authored sentence saying **what the comparison means**, verbatim from `equivalence.description` (§2.2) — present-and-null where none was written, never omitted. Never translated (§7.7.7). **`null` means print nothing**: a consumer must not fall back to `source_note` beside it, which is the long provenance prose issue #127 took off the results page. It is the only prose the page prints behind a card's `?` |
 | `source_note` | string \| null | The basis for the conversion, verbatim from `equivalence.source_note` (§2.2) — present-and-null where none is recorded, never omitted, on the same terms as every other nullable provenance field this contract carries. Never translated (§7.6 rule 9): it is the client's approved wording, not interface text |
 
 **The source metric's own total is deliberately not carried onto the equivalence a second time.** It is already on this same response, at `metrics[<source_metric>].total` beside the equivalence that names it (§3: `source_metric_code`, here `source_metric`) — and this section already states that an equivalence's `value` is computed from that same rolled-up total. Sending the total again would give one number two places to arrive from on one response body, and two roundings to disagree about if they ever did.
@@ -4037,18 +4101,22 @@ Factors and formulas are published openly (Decision 7).
       "label_template": "Equivalent to driving {value} km",
       "label_template_one": "Equivalent to driving {value} km",
       "family": "driving", "min_value": "1.0000000000", "max_value": null,
+      "description": "The same greenhouse gases as driving an average light petrol car this far.",
       "source_note": null, "sort_order": 1 },
     { "code": "metres_driven", "name": "Metres driven", "source_metric": "co2e",
       "value_per_unit": "4180.0000000000",
       "label_template": "Equivalent to driving {value} m",
       "label_template_one": "Equivalent to driving {value} m",
       "family": "driving", "min_value": null, "max_value": null,
+      "description": "The same comparison in metres, so a small result still reads as a number.",
       "source_note": null, "sort_order": 2 }
   ]
 }
 ```
 
 **`family`, `min_value`, `max_value` and `label_template_one` are part of every equivalence row from v1.71, and all four may be `null`** — present-and-null, never omitted, on exactly the terms `source_note` beside them is carried on. This endpoint is where a consumer can see the whole ladder; `POST /calculate` deliberately shows only the rung it chose (§6.2), so without these four there is no surface on which "this row is not a rung of anything" can be told apart from "this endpoint does not report ladders". Unlike the provenance columns they are also **read**: §10.2 makes them optional in a bundle and the engine selects on them, so a projection that dropped them would not merely hide information, it would un-ladder every set a staff member pastes into the dry-run box. `min_value` and `max_value` are decimal-strings like every other decimal on the wire (§1.2).
+
+**`description` is part of every equivalence row from v1.80, and may be `null`** — present-and-null, never omitted, on exactly the terms the four ladder columns above it are. It is the one staff-authored sentence a visitor reads behind a tangible-equivalence card (§2.2, issue #127), so unlike the provenance columns below it is not a field only this endpoint shows: it is on `POST /calculate` too, from the same projection. `null` means *print nothing*, and `source_note` must not be substituted for it anywhere.
 
 **`source_note` and `data_quality` are part of this response, and both may be `null`.** v1.1 added `source_note` to `factor_upstream`, `factor_downstream` and `equivalence`, and `data_quality` to the two factor tables only — `equivalence` has no `data_quality` column (§2.2) — and this endpoint is the whole reason they exist: v1.1's stated rationale is that a calculator which cannot say which of its numbers are measured and which are borrowed cannot be defended in public, and §6.3 is the only public surface where a number can say so. A factor export that carries the values and drops their provenance publishes exactly the figure that is hardest to defend, with the defence removed. `null` is a legal value — most rows will carry `null` until the client supplies real data — and it must appear as `null`, not as an omitted key, so a consumer can tell "no provenance recorded" from "this endpoint does not report provenance".
 
@@ -4215,6 +4283,12 @@ Mapping: `/taxonomy` → `taxonomy.json`, `/factors*` → `factors.json`, `/stat
 ## 7.2 `state.js` (written by C)
 
 > **`foodStage` (v1.60) is which panel of step 2 is showing** -- `'categories'` or `'items'` -- and it is a panel rather than a step number because §3.3 of `spec.md` makes step 2.5 a refinement of step 2 and because the panel is absent wherever `item_level_enabled` is off. Anything that lands on a step resets it to `'categories'`. `foodItems` (category code to item codes) was added by the fork with nothing writing it; step 2.5 is its writer, and `entryLeaves` has read it since the day it existed.
+
+> **`openCards` (v1.81) is which collapsible step cards are open** -- a list of `cardId(step, key)` strings, the owning step NUL-joined to the card's own key, which on step 3 is a `leafKey`. Absent from the list is closed, and an empty list is the default because the default is all collapsed. **The step is in the id and not only the key**: steps 3 and 4 both draw one card per leaf, and "dairy open on step 3" and "dairy open on step 4" are two facts about two screens answered minutes apart.
+>
+> It is here and not on the element for `resultsNavOpen`'s reason, restated because this is the key most likely to be moved back: `render()` does `main.innerHTML = ...` on every `setState`, so a native `<details open>` is rebuilt from whatever the renderer believes, and a renderer that believed the DOM would shut every card on the step the moment a unit `<select>` changed. It is **not** in `snapshot.js`'s `ANSWER_KEYS` and must not be added: it is transient UI of the same class as a restored open dialog, which v1.74 item 2 keeps out of the snapshot by construction, and a restored card list would also carry the open state of a card for a food the revalidation may have just dropped. `clearDraft` and `resetCalculator` both clear it, because it describes a draft.
+>
+> **One card is never shut**, which is #134's own decision 2 and lives in `cardIsOpen` rather than at the call sites, so steps 2.5 and 4 inherit it: a lone card collapsed would open its step on an empty screen, and there is nothing below it to be missed.
 
 ```js
 /** Single mutable state object with a subscriber set. */
@@ -4990,6 +5064,56 @@ export function stepNav({step, back, backLabel = 'Back', label = 'Continue',
 > not always one more leaf: a category with no food is already one leaf, so the *first*
 > food under it replaces that leaf and the second adds. Counting ticks gets that wrong.
 
+> **The collapsible step card, and the one invariant it must never lose (v1.81).**
+> `collapsibleCard` is the chrome #134 asked for on step 3 and #138 and #142 will consume
+> on step 2.5 and step 4: a `<fieldset>` whose `<legend>` is `.sr-only` and carries the
+> group's accessible name and nothing else, a header `<button>` with `aria-expanded` and
+> `aria-controls`, a completion badge, and a body that carries `hidden` when the card is
+> shut. `hidden` rather than a class, because the body's controls must be unreachable by
+> Tab and not merely invisible.
+>
+> **The badge and Continue read one rule set, and that is the whole of why `leafProblem`
+> exists.** `destinationStep` already carries the note that two lists of rules for one
+> button left each list enabling Continue on a state the other had just refused; a badge
+> computed from a second list is that defect with a tick instead of a button, and worse,
+> because a tick is read as a promise *before* anybody presses anything and the client's
+> stated use for it is deciding whether to open a card at all. So `stepProblemAt` walks
+> the leaves and stops at the first problem, `leafSettled` asks about one leaf, and both
+> are `leafProblem`.
+>
+> **What a tick therefore means** is #134's decision 1 — every required field on the card
+> is filled — *plus* "and nothing on it is at fault", which is strictly stronger and never
+> weaker. The two optional NZ$ figures cannot withhold a tick by being empty
+> (`moneyContradictionValidation` answers `''` the moment either is blank); two of them
+> *contradicting each other* can, because Continue refuses that state, and a tick over it
+> would be a tick over a card the next press rejects. **#133's countdown notice must
+> share this predicate**, or the page will say one thing and the toast another.
+>
+> **A refused Continue expands the card it is about and focuses the field at fault**
+> (decision 3), by the `field` `leafProblem` returns rather than by comparing the
+> message's prose — two leaves produce the byte-identical sentence, which is what
+> `state.errorAt` exists for. The click delegate's scroll-to-top stands aside when it
+> does, or the page would animate away from the box the visitor was just sent to. A card
+> holding any message is also forced open at render time regardless of `openCards`, which
+> covers the one route Continue does not own: a server `VALIDATION_ERROR` naming a scalar
+> field on a step the visitor was routed back to.
+>
+> **One leaf draws no card on step 3 at all.** Decision 2 says a single card is not
+> collapsed, and the single-leaf panel is also what `test_leaf_figure_migration_browser.py`
+> calls "today's screen byte for byte"; `cardIsOpen` carries the same decision for the
+> consumers that do draw a card at a count of one.
+>
+> **The badge is live on keystroke** (`updateCardBadges`), taking §7.2's documented
+> re-render exception for `updateCombinedTotal`'s exact reason. It is not optional here:
+> step 3's Continue is never disabled, so the badge is the only thing on the screen that
+> says, before the press, whether a card would be refused.
+>
+> **`.step-card` is the one element holding the card's ground** and carries no
+> `backdrop-filter`, no `transform` and no positioned descendant of its own, so #143's
+> frosted-glass token attaches there without re-laying out the card. Note what that makes
+> true in the other direction: `backdrop-filter` creates a containing block, and step 3's
+> term tooltips **are** `position: absolute` inside the card body.
+
 
 ```js
 /** Writes the current screen into `main`. Handles the loading and
@@ -5063,9 +5187,11 @@ const hasData = ();
 const loadingGivesBackTheDraft = entry;
 ```
 
-`data-action` vocabulary handled by the click delegate: `start`, `go-step`, `toggle-sector`, `clear-food`, `continue`, `add-entry`, `edit-entry`, `remove-entry`, `calculate`, `start-over`, `download-results`, `download-pdf`, `breakdown-tab`, `explore-improvements`, `reset-improvement`, `cancel-improvement`, `compare-improvement`, `expand-improvement-chart`, `close-improvement-chart`, `retry`, `view-methodology`.
+`data-action` vocabulary handled by the click delegate: `start`, `go-step`, `toggle-sector`, `toggle-card`, `clear-food`, `clear-items`, `back-to-categories`, `continue`, `add-entry`, `edit-entry`, `remove-entry`, `calculate`, `start-over`, `download-results`, `download-pdf`, `breakdown-tab`, `explore-improvements`, `reset-improvement`, `cancel-improvement`, `compare-improvement`, `expand-improvement-chart`, `close-improvement-chart`, `retry`, `view-methodology`.
 
-Module-private and worth knowing: `stepProblem(step)` returns a display string or `''` for one step's own rules, parameterised on the step so a caller may ask about a step the visitor is not standing on, and `validateCurrentStep()` is `stepProblem(state.step)`; `buildLines(entry)` produces `[{destination, qty_kg}]` filtered to `qty_kg > 0`; `draftLinePaths()` produces the §9 `field` path for each destination row of the draft, **keyed by the row's own line `id`** and rooted at that row's leaf's position in the submission, and `draftFieldPaths()` is its values; `publicError(error)` maps a §9 code to user copy; `validationMessage(error)` and `describeDetail(detail)` build the 400 banner from the details that no row on screen can display; `fieldErrorMap(error)` turns `details[]` into `{fieldPath: message}`; `blocked()` and `clearedError()` implement §9.2's rule that `BLOCKED` is terminal; `submitCalculation()` issues the request.
+> **`toggle-card` (v1.81) is the only action that is deliberately NOT in the scroll-to-top list** at the foot of the click delegate. Opening a card is a disclosure and not a navigation; throwing the page to the top would take the card the visitor just pressed out from under their eyes. It carries `data-card-step` and `data-card` (the key, `encodeURIComponent`-ed, because a `leafKey`'s NUL survives a round trip through an attribute only encoded), so the card pressed and the id written are the same pair by construction rather than by the handler knowing which step it is on. The toggle carries a stable `id`, which is load-bearing rather than decoration: `main.js`'s subscriber restores focus by id across the re-render, and that is what makes the `aria-expanded` change *announced* rather than merely applied.
+
+Module-private and worth knowing: `leafProblem(step, leaf, food)` is **the only copy of the per-leaf rules** and returns `{message, field?}`; `stepProblem(step)` returns a display string or `''` for one step's own rules, parameterised on the step so a caller may ask about a step the visitor is not standing on, and `validateCurrentStep()` is `stepProblem(state.step)`; `leafSettled(step, leaf, food)` is the per-leaf reader the collapsible cards' badge prints and `collapsibleCard`, `cardId`, `cardIsOpen`, `cardStatus`, `updateCardBadges` and `focusLeafField` are that chrome (v1.81); `buildLines(entry)` produces `[{destination, qty_kg}]` filtered to `qty_kg > 0`; `draftLinePaths()` produces the §9 `field` path for each destination row of the draft, **keyed by the row's own line `id`** and rooted at that row's leaf's position in the submission, and `draftFieldPaths()` is its values; `publicError(error)` maps a §9 code to user copy; `validationMessage(error)` and `describeDetail(detail)` build the 400 banner from the details that no row on screen can display; `fieldErrorMap(error)` turns `details[]` into `{fieldPath: message}`; `blocked()` and `clearedError()` implement §9.2's rule that `BLOCKED` is terminal; `submitCalculation()` issues the request.
 
 > **The Back confirmation (v1.53), and the one test that decides whether it appears.** Backing out of a jump restores §7.2's snapshot, and the marker survives a forward walk — so a visitor may press *Add another supply-chain entry*, build a whole second chain across four screens, walk Back to step 1 and press Back there, at which point the restore would throw all four screens away. `goToStep` therefore calls `window.confirm` first, following `start-over`'s precedent, and declining returns without a `setState` at all: same step, same draft, same entries, marker still live.
 >
@@ -5837,7 +5963,7 @@ This branch is narrower than it looks: it requires a stored language that no pan
 
 ### 7.7.7 What is never translated
 
-Decimals (they cross the wire as strings and take no locale-aware separator on either surface); `code` identifiers; factor set version labels; metric units and `metric.name`; the equivalence sentences, which §3 defines as `label_template` interpolated by the engine; the operator messages in `admin/cli.py` and `docker/init.sh`; and **everything a staff member typed** — destination names, food categories, sector names, factor notes, audit log contents. Ruled 2026-08-14: anything a staff member can edit is published exactly as written.
+Decimals (they cross the wire as strings and take no locale-aware separator on either surface); `code` identifiers; factor set version labels; metric units and `metric.name`; the equivalence sentences, which §3 defines as `label_template` interpolated by the engine; `equivalence.description`, the one sentence a tangible-equivalence card's `?` prints (v1.80); the operator messages in `admin/cli.py` and `docker/init.sh`; and **everything a staff member typed** — destination names, food categories, sector names, factor notes, audit log contents. Ruled 2026-08-14: anything a staff member can edit is published exactly as written.
 
 The consequence, stated rather than discovered: a Thai visitor gets a Thai interface listing English destination names.
 
@@ -6862,6 +6988,7 @@ It is a **complete, self-contained snapshot** — the taxonomy as well as the fa
 | No `active` fields | Anything present in a bundle is active. §4.1 already states `metrics` is "active only"; filtering happens in the repository, and the engine does not re-check. |
 | No `unit_presets` | Volume-to-kilogram conversion happens in the front end (§7.3); the engine only ever receives kilograms. |
 | Every decimal is a **string** | §1.2. `from_json()` converts with `Decimal()`; `float` is never an intermediate. |
+| `equivalences[].description` is **optional and ignored** (v1.80) | Absent or `null` both mean "no sentence was written", and the engine carries it without reading it — `source_note`'s own terms, for `source_note`'s own reason: a sentence changes no number. Every bundle written before v1.80 omits it, including all thirteen golden cases, and must still load. **`from_json()` must accept and ignore it, never raise `BundleFormatError`, and `validate()` must not report it.** It is carried rather than dropped because `dry_run.bundle` is where a staff member pastes a `GET /factors` response, and because the result object that reaches `api/pdf_render.py` is built from the bundle — a parser that dropped it would print a card with no sentence and nothing would fail |
 | `source_note` and `data_quality` are **optional and ignored** | They may appear on any `upstream`, `downstream` or `equivalences` row and may be `null`. The engine does not read them — provenance changes no number. **`from_json()` must accept and ignore them, never raise `BundleFormatError`, and `validate()` must not report them.** |
 | `equivalences[].family`, `.min_value`, `.max_value`, `.label_template_one` are **optional and read** (v1.71) | Absent or `null` both mean "not set", and a row with none of them is not a rung of anything and is always shown — which is every bundle written before v1.71, including all thirteen golden cases. **Optional is not the same as ignored**: the engine selects on them (§4.2), so a value that *is* present is parsed with the same strictness as any other. `min_value`/`max_value` are decimal **strings** like every other decimal here (§1.2); a JSON number is refused, because a band that had been through binary floating point would choose a rung from a value the bundle never carried. `validate()` reports a band with no family, a band that admits nothing, and a family whose rungs convert different metrics |
 

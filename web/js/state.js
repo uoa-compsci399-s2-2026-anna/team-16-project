@@ -285,6 +285,27 @@ export const state = {
   // `markerAfterLeaving` (`calculator.js`) is where the two are told apart, on `draft`.
   returnTo: null,
   expandedSectors: [],
+  // **Which collapsible step cards are open** (#134). A list of card ids, where an id
+  // is `cardId(step, key)` in `calculator.js` — the step that owns the card joined to
+  // the card's own key, so step 3's "dairy" and step 4's "dairy" are two cards and
+  // neither can be opened by the other. Absent from the list is closed.
+  //
+  // **Here rather than on the element, and not as a native `<details open>`**, for
+  // `resultsNavOpen`'s reason stated once more: `render()` does `main.innerHTML = ...`
+  // on every `setState`, so an open-ness held by the DOM is erased by the next
+  // unrelated update — choosing a unit on one card would shut every other card on the
+  // step. It is rendered out of here and written back on toggle, which is the only way
+  // the two can agree.
+  //
+  // **Deliberately NOT in `snapshot.js`'s `ANSWER_KEYS`.** It is not an answer: it is
+  // the same class of transient UI as a restored open dialog, which contract v1.74
+  // item 2 keeps out of the snapshot by construction. A restored card list would also
+  // be a list of cards a pruned draft may no longer have.
+  //
+  // **An empty list is the default, and the default is "all collapsed".** The one
+  // exception is a step holding a single card, which `cardIsOpen` answers `true` for
+  // without consulting this list at all — see the note there.
+  openCards: [],
   resultBreakdownTab: 'stage',
   lastChangedDestination: null,
   improvementOpen: false,
@@ -660,6 +681,9 @@ export function resetCalculator() {
     // let Back resurrect entries the visitor had just deleted.
     returnTo: null,
     expandedSectors: [],
+    // Cleared with the answers it describes: a card list that outlived Clear would
+    // decide which cards are open for a calculation that no longer exists.
+    openCards: [],
     resultBreakdownTab: 'stage',
     lastChangedDestination: null,
     improvementOpen: false,

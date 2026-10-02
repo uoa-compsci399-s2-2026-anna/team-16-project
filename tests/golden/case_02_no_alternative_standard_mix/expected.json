@@ -136,7 +136,8 @@
           "name": "Kilometres driven",
           "value_per_unit": "4.1800000000",
           "value_per_unit_display": "4.18",
-          "source_note": "PLACEHOLDER. Open item O-3 — the New Zealand basis for this conversion is not settled. Roughly one kilometre of an average light petrol vehicle per 0.24 kg CO2e."
+          "source_note": "PLACEHOLDER. Open item O-3 — the New Zealand basis for this conversion is not settled. Roughly one kilometre of an average light petrol vehicle per 0.24 kg CO2e.",
+          "description": null
         }
       ]
     },
@@ -289,7 +290,8 @@
             "name": "Kilometres driven",
             "value_per_unit": "4.1800000000",
             "value_per_unit_display": "4.18",
-            "source_note": "PLACEHOLDER. Open item O-3 — the New Zealand basis for this conversion is not settled. Roughly one kilometre of an average light petrol vehicle per 0.24 kg CO2e."
+            "source_note": "PLACEHOLDER. Open item O-3 — the New Zealand basis for this conversion is not settled. Roughly one kilometre of an average light petrol vehicle per 0.24 kg CO2e.",
+            "description": null
           }
         ]
       },

@@ -436,33 +436,44 @@ function summaryCards(totals, taxonomy) {
 // the order it should be drawn. A `family` is not on the wire and must not be inferred --
 // which rung a reader sees is a server-side decision (§7.6 rule 1), exactly as the number
 // inside the sentence is.
-function equivalences(totals, isMock) {
+function equivalences(totals) {
   const rows = totals.current?.equivalences || []
   if (!rows.length) return `<p class="empty-state">${escapeHtml(t('Tangible equivalents are available once approved conversion factors are supplied.'))}</p>`
-  return `<div class="equivalent-grid">${rows.map(row => `<article><h3>${escapeHtml(row.label)}</h3>${equivalenceBasis(row, totals, isMock)}</article>`).join('')}</div>`
+  return `<div class="equivalent-grid">${rows.map(row => `<article><h3>${escapeHtml(row.label)}</h3>${equivalenceBasis(row, totals)}</article>`).join('')}</div>`
 }
 
 // §7.6 rule 1: nothing here is arithmetic. `value_per_unit_display` and the
 // metric total arrive already formatted by the engine, and this only lays them
-// out. §7.6 rule 9: `source_note` is the client's approved wording and is
-// printed verbatim in every language -- only the connective words are
-// translated.
+// out. §7.7.7: `description` is staff-typed and is printed verbatim in every
+// language, exactly as `preset.label` is -- only the connective words around
+// it are translated, and here there are none.
 //
-// The standing caveat below is two facts in one sentence: the conversion
-// factor comes from the client (true regardless of the active factor set),
-// and the total it is multiplied against comes from PLACEHOLDER factors --
-// true only while `isMock`. Printing it unconditionally is what let a real,
-// published factor set say "placeholder factors" about itself; found when
-// extending it to the exports made `test_a_real_factor_set_carries_no_
-// warning` fail in the PDF and made the same sentence false here too.
-function equivalenceBasis(row, totals, isMock) {
+// **v1.80 (#127): what this panel holds is one sentence, and `source_note` is
+// not it.** The client, using the tool as a tester, read one to four sentences
+// of audit provenance behind every `?` and said it meant nothing there. So the
+// panel prints `description` -- one staff sentence saying what the comparison
+// MEANS -- and when there is none it prints NOTHING. It must never fall back
+// to `source_note`: that fallback is the long version coming back, which is
+// the whole of what was removed. `source_note` is still published by
+// `GET /factors` and still rendered by `methodology.js`, which is where a
+// reader who wants to check where a conversion factor came from goes.
+//
+// **The standing per-equivalence caveat went with it** -- "The conversion
+// factor comes from the client. The total it is applied to comes from
+// placeholder factors." It is safe to remove because it was never the
+// obligation: §7.6 rule 2's obligation is the PAGE-LEVEL placeholder banner,
+// mandatory and non-dismissible while `is_mock`, on this view and on every
+// export. Nothing here touches it. The removed sentence is also the one whose
+// unconditional version once made a real published factor set describe itself
+// as placeholder data (`test_a_real_factor_set_carries_no_warning`), so this
+// function no longer needs to know whether the set is mock at all -- and a
+// parameter kept for a caller that no longer exists is a parameter somebody
+// finds a use for.
+function equivalenceBasis(row, totals) {
   const source = totals.current?.metrics?.[row.source_metric]
   const total = source ? `${formatNumber(source.total, source.display_precision)} ${source.unit}` : ''
-  const basis = row.source_note
-    ? escapeHtml(row.source_note)
-    : escapeHtml(t('The basis for this conversion is not recorded yet.'))
-  const disclaimer = isMock
-    ? `<p class="equivalent-basis__note">${escapeHtml(t('The conversion factor comes from the client. The total it is applied to comes from placeholder factors.'))}</p>`
+  const description = row.description
+    ? `<p class="equivalent-basis__note">${escapeHtml(row.description)}</p>`
     : ''
   return `<details class="equivalent-basis">
   <summary aria-label="${escapeHtml(t('How this comparison was worked out'))}">?</summary>
@@ -472,8 +483,7 @@ function equivalenceBasis(row, totals, isMock) {
       <div><dt>${escapeHtml(t('Per unit'))}</dt><dd>&times; ${escapeHtml(row.value_per_unit_display)}</dd></div>
       <div><dt>${escapeHtml(row.name)}</dt><dd>= ${escapeHtml(formatNumber(row.value, 0))}</dd></div>
     </dl>
-    <p class="equivalent-basis__note">${escapeHtml(t('Basis:'))} ${basis}</p>
-    ${disclaimer}
+    ${description}
   </div>
 </details>`
 }
@@ -878,14 +888,16 @@ export function buildResultsReport(state) {
   const totalKg = number(totals.total_kg)
   const summary = metricLines(totals.current, taxonomyForResult(state), '  - ')
   // §3: `label` is the engine's own sentence, copied verbatim. The lines under
-  // it are the same three facts the page shows behind its disclosure -- paper
-  // has no "open" gesture, and the PDF is the copy most likely to be forwarded
-  // to someone who will challenge the figure (§6.3).
-  // The caveat below is true only while the active factor set is mock -- it
-  // says the total the conversion is applied to comes from placeholder
-  // factors, which is false the moment a real one is published. Gated the
-  // same way `notice`/`DEMONSTRATION_NOTICE` already are, a few lines below.
-  const equivalentsAreMock = state.result?.factor_set?.is_mock
+  // it are the same facts the page shows behind its disclosure -- paper has no
+  // "open" gesture, and this file is the copy most likely to be forwarded to
+  // someone who will challenge the figure (§6.3).
+  //
+  // v1.80 (#127): `description` where `Basis: <source_note>` and the mock
+  // caveat used to be, printed only when it is there. The three surfaces say
+  // the same thing or they say nothing; `source_note` is not a fallback here
+  // any more than it is on screen. The placeholder obligation is `notice` /
+  // `DEMONSTRATION_NOTICE` a few lines below, gated on `is_mock` and
+  // untouched.
   const equivalents = (totals.current?.equivalences || []).flatMap(row => {
     const source = totals.current?.metrics?.[row.source_metric]
     const total = source ? `${formatNumber(source.total, source.display_precision)} ${source.unit}` : ''
@@ -893,8 +905,7 @@ export function buildResultsReport(state) {
       `  - ${row.label}`,
       `      ${t('Total')}: ${total}  ${t('Per unit')}: x ${row.value_per_unit_display}`,
       `      ${row.name}: ${formatNumber(row.value, 0)}`,
-      `      ${t('Basis:')} ${row.source_note || t('The basis for this conversion is not recorded yet.')}`,
-      ...(equivalentsAreMock ? [`      ${t('The conversion factor comes from the client. The total it is applied to comes from placeholder factors.')}`] : []),
+      ...(row.description ? [`      ${row.description}`] : []),
     ]
   })
   const entryLines = (state.result?.entry_results || []).flatMap(({ entry, response }, index) => {
@@ -1868,7 +1879,7 @@ export function renderResults(state) {
       // for; the review step is where the two numbers are reconciled.
       : t('Results returned by the calculation service for %(count)s entries.', { count: entryResults.length }))}</p>${resultsPeriod(state)}${warning}${averagedNotice}
     <section class="results-section" id="impact-summary" aria-labelledby="summary-title"><div class="result-section-heading"><span class="section-number">01</span><div><h2 id="summary-title">${escapeHtml(t('Impact summary'))}</h2><p>${escapeHtml(t('A high-level view of the recorded food waste.'))}</p></div></div><div class="results-grid">${summaryCards(totals, taxonomyForResult(state))}</div>${moneySummary(totals)}</section>
-    <section class="results-section" id="tangible-equivalents" aria-labelledby="equivalents-title"><div class="result-section-heading"><span class="section-number">02</span><div><h2 id="equivalents-title">${escapeHtml(t('Tangible equivalents'))}</h2><p>${escapeHtml(t('Plain-language comparisons appear when supplied by the calculation service.'))}</p></div></div>${equivalences(totals, mock)}</section>
+    <section class="results-section" id="tangible-equivalents" aria-labelledby="equivalents-title"><div class="result-section-heading"><span class="section-number">02</span><div><h2 id="equivalents-title">${escapeHtml(t('Tangible equivalents'))}</h2><p>${escapeHtml(t('Plain-language comparisons appear when supplied by the calculation service.'))}</p></div></div>${equivalences(totals)}</section>
     ${breakdownSection(state, entryResults)}
     ${ImprovementScenario(state)}
     ${ComparisonResults(state)}

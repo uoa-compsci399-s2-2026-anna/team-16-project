@@ -71,7 +71,14 @@ def test_mock_factors_and_the_draft_builder_specify_the_same_three_conversions()
             f"the draft's {draft_row['value_per_unit']!r} are not the same "
             f"conversion factor"
         )
-        for field in ("name", "label_template", "source_metric", "source_note"):
+        #: `description` (v1.80, #127) is compared as text for the reason
+        #: `source_note` is, and one more: it is the ONLY prose a visitor
+        #: reads behind a tangible-equivalence card, so a fresh deployment
+        #: whose copy of it had drifted from the draft set's would show a
+        #: different sentence to a visitor than the authored one, with
+        #: nothing else in the repository disagreeing.
+        for field in ("name", "label_template", "source_metric", "source_note",
+                      "description"):
             assert mock_row[field] == draft_row[field], (
                 f"{code}.{field}: mock-factors.json says {mock_row[field]!r}, "
                 f"the draft says {draft_row[field]!r}"

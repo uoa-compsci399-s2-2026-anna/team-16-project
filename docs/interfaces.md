@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-10-02 (v1.82)"
+date: "2026-10-03 (v1.85)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,29 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+
+### v1.85 — 2026-10-03 (the two NZ$ hints say "total", and say it about the card they sit on; affects C)
+
+The client could not tell whether the two optional NZ$ boxes on step 3 wanted the **total value of the amount** or the **value per unit**. PR #147 answered that, and the answer is kept: each hint now says *the total value*, and the production one says *not the value per unit* outright. What #147's wording also said was *"everything produced during this reporting period"*, and that is false the moment step 3 draws more than one card — `leafPanel` renders one panel per leaf, each panel's figure becomes that leaf's own `total_value_nzd`, and §4.5 sums them, so a visitor with three food types who read it literally would have typed the whole-business total three times and been shown three times the true value on the results page. Both hints are therefore scoped to the card.
+
+**Nothing on the wire moves, and no fixture moves.** `POST /api/v1/calculate` sends the byte-identical body before and after, from the same inputs under the same `id`s; nothing in §2, §3, §4, §6 or §9 is touched; all thirteen golden cases are byte-identical. This is recorded here for the reason v1.61 and v1.62 were, and v1.81 item 5 after them: **the English source string is the key (§7.7.1), so rewording a hint orphans every translation of it silently** — and v1.61 is the revision that introduced these very two strings. **This revision is therefore steps one and two of the contract change process, not step three**: `tests/fixtures/*.json` is unchanged because there is nothing in it to change. The owner notifies the team.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **A step 3 card's money figures are that card's own, and the hint on them must say which food they are for.** Both hints carry *"for this food type"* — the scoping `Waste amount for %(food)s` already applies one zone above — and both still read correctly at a leaf count of one, which is the case that draws no card at all (v1.81 decision 2). This is a statement about what the field means, not a style note: §4.5 sums `total_value_nzd` and `wasted_value_nzd` across `entries[]`, so a whole-business reading of a per-leaf box is a visitor-side error the server cannot detect and the results page cannot caveat | §7.3a, §4.5 |
+| 2 | **The waste hint keeps its shared-basis statement, as a clause of the one sentence rather than a second one.** #147 dropped *"Valued the same way as production above."* and left the constraint living only in the term tooltip, which is a hover. `wasted_share_percent` is `wasted_value_nzd ÷ total_value_nzd × 100` (§4.5) and is printed on the results page, so a shared basis is the whole of what makes that percentage mean anything; the only server-side guard is `wasted ≤ total`, which cannot see a basis mismatch. Decision 6 of the step 3 zoning plan — *nothing essential lives behind a hover* — is the rule being applied, and one sentence is the ceiling because the client's complaint was ambiguity and a paragraph is a different kind of unclear | §7.3a, §4.5 |
+| 3 | **Two source strings out, two in; each catalogue stays at 455 strings, in all twenty files and in both trees.** `web/locales/` was written and `api/assets/locales/` **copied byte for byte** from it — never re-serialised — and the twenty-one pairs compare equal by SHA-256. The two removed keys are #147's own, which never reached a published build. **No new CJK code point:** every character of the four CJK translations already appears in that catalogue, so `recut_cjk_subsets.py` did not run, `PROVENANCE.md` is untouched and `test_no_character_in_any_catalogue_would_print_as_a_box` is unmoved. Japanese stops using ふ (U+3075) and 構 (U+69CB), which is harmless — nothing asserts that a subset is minimal. **`zh` and `zh-Hant` carry their sentence-final `。`**, which #147's pair had dropped while the other eighteen kept their own terminal punctuation; Thai correctly carries none, as none of its 455 strings does | §7.7, §7.7.1 |
+| 4 | **The catalogues are fully key-sorted again, in all forty files.** `main` and the merge base are sorted in all twenty of both trees; #147 inserted its two keys where the two it replaced had sat, at index 356, so every file landed unsorted from index 142 onwards. **No test guards the order**, so it shipped silently. The cost is not diff size — the restoration is two moved lines per file, measured — it is that the convention is what a reader relies on to answer *"is this string already in here?"* in a 455-key file, and a key sitting 214 positions from where it belongs is a key that gets a near-duplicate written beside it. §7.7.1's whole key rule is that the English sentence is the identifier, and two sentences differing by a clause are the shape it makes invisible to every test but the stale-key one (v1.61 item 1, v1.62 item 1). Order only: the parsed key→value map of all twenty-one files is unchanged by the restoration, 455 keys each, 216 positions moved, and the serialisation is the one these files already round-trip through unchanged. **A test asserting the order would be worth having and is not in this revision** | §7.7.1 |
+
+> **The two browser assertions on these hints were pinned to the wrong thing, and are fixed with the copy.** `"total value"` is a substring of **both** hints — which is the point of #147 and must stay true of both — so asserting only that left a swap of the two hints green. Each is now also pinned by something only its own sentence says, and the mandatory mutation is the swap: it fails four assertions, each naming the field that received the wrong sentence. Measured against the real render under Node rather than by reading the diff — `render()` is exported, so a stub `document` and `tests/fixtures/taxonomy.json` are enough to evaluate `label[for=…] + .field-hint` on the tree `leafPanel` actually emits, at a leaf count of one and of three.
+
+> **Two statements on this panel are already wrong, and this revision records rather than fixes either.** *Total amount produced*'s hint is scoped to the **stage** and not to the card — §7.3a's callout has the arithmetic, and `production_share_percent` is a headline figure, so it is the worse of the two. And the shared statistics-only sentence ends *"No figure on the results page is calculated from it"*, and the results page prints **Share of value wasted** from exactly those two figures (§4.5 `wasted_share_percent`). Both predate #147 and are out of its scope, but #147's rationale leans on the statistics-only framing, so neither is left for the next reader to rediscover. **Each wants its own issue**, because each is a third and fourth source string in twenty catalogues with a contract row of its own, and a copy-clarification PR is not where that belongs. For the tooltip, the sentence a visitor should read is about **O-2** — these figures do not enter the emissions calculation and are not a cost metric — which is not the same claim as *no figure anywhere is computed from them*.
+
+> **Nothing is published and nothing is republished by this revision.** `is_mock` stays `true`, **O-1 remains the hard blocker**, and the placeholder banner stays mandatory on every results view and export.
+
+> **This entry is v1.85, and the detour it took to get back here is the point.** A scan of all 185 local and remote refs found v1.82 as the highest version written anywhere, with v1.83 and v1.84 claimed but unwritten by two branches in flight, so v1.85 was the next free number. Between that scan and the merge, **three commits went straight to `main`** — `b1b23f9`, `1bdce99`, `f90db0c`, the step 2.5, step 3 and step 4 navigation — and took v1.83, v1.84 and v1.85: precisely the three numbers the three branches in flight were holding. This entry moved to v1.86 to get out of the way and moved back when **PR #153 reverted all three commits**, their change-log entries with them. v1.83 and v1.84 remain held by the two branches that were holding them. **The rule that the highest version wherever it lives is the effective contract only holds while a claim is visible**: a number claimed on an unpushed branch cannot be scanned for, and a number taken by a commit that opened no pull request cannot be reviewed at all. The first is an argument for pushing a branch early; the second is the whole argument for *feature work goes on a branch, then merges*.
+> **v1.82 merged into `main` with PR #144 while this was being written, and resolving that merge is this entry's own doing.** Both revisions insert at the top of this change log, so the conflict is the anchor and nothing else — v1.82's entry is immediately below this one, unmodified, and the front matter carries this revision's number because it is the higher of the two. #147's own files do not conflict with `main` at all; this one file does, because #147 wrote no `docs/` change and that is the defect being fixed.
 
 ### v1.84 — 2026-10-02 (step 4 loses the allocation matrix, step 2.5 folds, and the card chrome gains the three things its second and third consumers needed; affects C and D)
 
@@ -49,7 +72,7 @@ This document defines **what every person's code receives and what it returns.**
 
 > **A pre-existing defect was measured and is left alone**, named so it is not mistaken for a new one. Between 481px and about 610px a `.destination-row`'s two-column minimum (504px) exceeds the width available to it, and `.destination-list { overflow: hidden }` clips the unit `<select>` off the end of the row rather than overflowing anywhere a test can see. That is the same shape as v1.82 item 2 and it is true on `main` today, at the same widths, with the same geometry; item 6 restores exactly `main`'s behaviour and does not improve on it, because the fix is a media query in a stylesheet this change may not edit. It belongs to an issue of its own.
 
-> **The version number skips v1.83, and v1.79 is still held elsewhere.** v1.83 is claimed by the equivalence-panel glass work (#143), which is in flight on its own branch and has not merged; v1.79 is held by `feat/d-statistics-content`, open and unmerged. The effective contract is the highest version wherever it lives, merged or not, so v1.84 was taken after scanning the header of this document across **every local and remote ref** — 181 of them — and the highest `### v1.x` anywhere in the repository is v1.82, on `main`. Neither v1.79 nor v1.83 is in this branch's copy of the change log; the entry directly below this one is v1.82. **Whichever of v1.83 and v1.84 lands second resolves the change-log conflict**, and it is a conflict in this table of contents only: the two changes touch different sections and no item of one contradicts an item of the other.
+> **This entry sits below v1.85 although it was written first, and v1.83 is still held elsewhere.** v1.83 is claimed by the equivalence-panel glass work (#143), in flight on its own branch; v1.79 is held by `feat/d-statistics-content`, open and unmerged. v1.85 merged ahead of this one (PR #147, the NZ$ hints) and its entry is immediately above. Three commits briefly took v1.83, v1.84 and v1.85 by going straight to `main` and were reverted by PR #153; this entry's number was never actually free for anyone else, which is why it did not have to move. The effective contract is the highest version wherever it lives, merged or not, so v1.84 was taken after scanning the header of this document across **every local and remote ref** — 181 of them — and the highest `### v1.x` anywhere in the repository is v1.82, on `main`. Neither v1.79 nor v1.83 is in this branch's copy of the change log; the entry directly below this one is v1.82. **Whichever of v1.83 and v1.84 lands second resolves the change-log conflict**, and it is a conflict in this table of contents only: the two changes touch different sections and no item of one contradicts an item of the other.
 ### v1.82 — 2026-10-02 (the improvement chart follows the editor it belongs to, and the panel's narrow layouts get boundaries that tile; affects C and D)
 
 The client asked for one thing about this panel: *"当 improve 的卡片下拉时，左边的图表始终显示在屏幕上（跟着下滑而一起移动，直到卡片到底）"* — while the improvement card is scrolled, the chart on the left stays on screen, travelling with the scroll until the card ends. **That is `position: sticky`, and this revision records it as the intended behaviour rather than as an approximation of it.** The allocation list is the long half of this editor — the contract fixture's destinations make it 1,454px tall at 1278px — and the donut is the thing those rows change, so the two have to be on screen together or the control and its feedback are never visible at once.
@@ -69,6 +92,7 @@ The client asked for one thing about this panel: *"当 improve 的卡片下拉�
 > **Two pre-existing defects in this panel are deliberately left alone here, and are named so they are not mistaken for new ones.** The inline validation line renders `--muted` grey rather than Beetroot, because `.improvement-scenario > p` (0,1,1) beats `.field-error` (0,1,0) and is later in the file — an error message that does not look like one. And only `#improvement-inline-error` gets the 18px inset that aligns it with the *Total allocation* label; the sibling `state.improvementError` paragraph is also a `.field-error` direct child and gets 0, so when both show they indent differently. Both are older than this work, both are about the error line rather than about the layout, and both belong to one issue of their own.
 
 > **The version number skips v1.79 to v1.81.** v1.79 is held by `feat/d-statistics-content`, which is open and unmerged; v1.80 and v1.81 have merged into `main`. The effective contract is the highest version wherever it lives, merged or not, so v1.82 was taken after scanning the header of this document across every local and remote ref — the highest `### v1.x` anywhere in the repository is v1.81, and nothing holds v1.82. None of the three is in this branch's copy of the change log — the entry directly below this one is v1.78 — and each will arrive with its own merge.
+
 ### v1.81 — 2026-10-02 (step 3's cards fold, and the badge reads Continue's own rules; affects C and D)
 
 The client's report on step 3 was not that the page is long. It is that **a card below the fold gets skipped**: the step scrolls, a food type goes unanswered, and nothing on screen says so. So each food type's panel becomes a collapsible card, shut by default, and the shut card carries a badge saying whether that card is finished — which is the question *"did I fill this in?"* answered without opening anything. Issue #134, with three decisions taken by the owner at the 1 October meeting and not re-derived here.
@@ -5161,6 +5185,30 @@ export function stepNav({step, back, backLabel = 'Back', label = 'Continue',
 > frosted-glass token attaches there without re-laying out the card. Note what that makes
 > true in the other direction: `backdrop-filter` creates a containing block, and step 3's
 > term tooltips **are** `position: absolute` inside the card body.
+>
+> **Every figure on a step 3 card is that card's own, and the copy on it has to say so**
+> (v1.85). `leafPanel` draws one panel per leaf, each panel's five inputs become that
+> leaf's own `entries[]` element, and §4.5 then **sums** `total_value_nzd` and
+> `wasted_value_nzd` across entries for the results page. So a hint phrased as a figure
+> about the whole business — *"everything produced during this reporting period"* — is a
+> hint a visitor with three food types enters three times, and the page shows three times
+> the true value. Both money hints are scoped to the card (*"for this food type"*, the
+> same scoping the waste label one zone above already carries as
+> `Waste amount for %(food)s`), and the wording must still read correctly at a leaf count
+> of one, which is where there is no card at all. **The same reading applies to any copy
+> added to this panel later**; nothing in the suite derives a hint's scope from the field
+> it sits under.
+>
+> **One hint on this panel still has that defect and is deliberately not changed here.**
+> *Total amount produced* reads "Everything that went through this stage over the same
+> period, waste included" — a **stage**, which is the chain, not the card. `total_input_kg`
+> is a per-leaf field and `engine/calculate.py` sums it across entries for
+> `production_share_percent` (§4.6), so three cards each given the whole stage's throughput
+> produce a denominator three times too large and a waste share three times too small.
+> That is worse than the money case, because the share is a headline figure rather than a
+> statistics-only one. It predates #147, it is a third source string in twenty catalogues
+> and a contract row of its own, and it wants its own issue rather than a quiet enlargement
+> of a copy-clarification PR.
 
 
 ```js

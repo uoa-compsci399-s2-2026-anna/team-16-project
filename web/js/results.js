@@ -1447,11 +1447,11 @@ function categoryAverageLines(state, prefix) {
     `${prefix}${t('%(food)s is priced at the %(category)s average. The published factor set carries no factors for this food, so the figures here are its category\'s rather than its own.', { food, category })}`)
 }
 /**
- * The four sections the floating nav indexes, **in the page's order**.
+ * The result sections and actions the floating nav indexes, **in the page's order**.
  *
  * One list, read twice: `resultsFloatingNavigation` writes the links from it and
- * `bindResultsSectionSpy` observes the same four elements. Two lists would be two
- * lists to keep in step, and the order is the whole of this nav's correctness --
+ * `bindResultsSectionSpy` observes the same targets. Two lists would be two lists to
+ * keep in step, and the order is the whole of this nav's correctness --
  * `test_the_results_sections_are_in_the_order_the_floating_nav_claims` asserts it
  * against the rendered page for exactly that reason.
  *
@@ -1470,6 +1470,8 @@ const RESULTS_NAV_SECTIONS = [
   ['tangible-equivalents', () => t('Tangible equivalents')],
   ['breakdown-section', () => t('Breakdown by category')],
   ['improvement-section', () => t('Explore Improvements')],
+  ['start-new-calculation', () => t('Start a new calculation')],
+  ['results-downloads', () => t('Download results')],
 ]
 
 /**
@@ -1725,7 +1727,17 @@ function bindNavGestures() {
   navGesturesBound = true
   document.addEventListener('click', event => {
     const link = event.target?.closest?.('.results-floating-nav__links a[href^="#"]')
-    if (link) pinSection(link.getAttribute('href').slice(1))
+    if (link) {
+      pinSection(link.getAttribute('href').slice(1))
+      return
+    }
+    // The menu is an overlay in the narrow layout. Once it is open, any click
+    // outside the nav should return it to the circular handle state. Keep this
+    // delegated on document because the click may land in the header or footer,
+    // outside the results page's own event boundary.
+    if (!event.target?.closest?.('.results-floating-nav') && liveState.resultsNavOpen === true) {
+      setState({ resultsNavOpen: false })
+    }
   })
   document.addEventListener('wheel', releasePin, { passive: true })
   document.addEventListener('touchmove', releasePin, { passive: true })
@@ -1884,7 +1896,7 @@ export function renderResults(state) {
     ${ImprovementScenario(state)}
     ${ComparisonResults(state)}
     <section class="methodology-compact" id="results-methodology" aria-labelledby="results-methodology-title"><h2 id="results-methodology-title">${escapeHtml(t('Methodology & Limitations'))}</h2><p>${escapeHtml(t('Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.'))}</p><p>${escapeHtml(t('Factor version'))}: ${escapeHtml(version)}.</p><details><summary>${escapeHtml(t('View methodology'))}</summary><div><p>${escapeHtml(t('Data sources and calculation factors are maintained and approved by Kai Commitment.'))}</p><p>${escapeHtml(t('Waste as a share of food handled is a ratio of the two masses you typed, not a factor-based figure, so the placeholder data above does not affect it.'))}</p></div></details></section>
-    <div class="result-actions"><button class="button button-secondary" type="button" data-action="start-over">${escapeHtml(t('Start a new calculation'))}</button><div class="download-actions"><button class="button button-primary" type="button" data-action="download-results">${escapeHtml(t('Download results'))}</button><button class="button button-primary" type="button" data-action="download-pdf" ${state.pdfExporting ? 'disabled' : ''}>${escapeHtml(t('Download PDF'))}</button></div>${state.pdfError ? `<p class="field-error" role="alert">${escapeHtml(state.pdfError)}</p>` : ''}</div>
+    <div class="result-actions"><button id="start-new-calculation" class="button button-secondary" type="button" data-action="start-over">${escapeHtml(t('Start a new calculation'))}</button><div id="results-downloads" class="download-actions"><button class="button button-primary" type="button" data-action="download-results">${escapeHtml(t('Download results'))}</button><button class="button button-primary" type="button" data-action="download-pdf" ${state.pdfExporting ? 'disabled' : ''}>${escapeHtml(t('Download PDF'))}</button></div>${state.pdfError ? `<p class="field-error" role="alert">${escapeHtml(state.pdfError)}</p>` : ''}</div>
     ${contributeBlock(state)}
     ${stepNav({ step: 5, back: 4, backLabel: t('Edit your data'), action: null })}
   </section>`

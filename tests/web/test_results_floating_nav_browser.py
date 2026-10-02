@@ -501,6 +501,25 @@ def test_the_first_press_of_the_handle_opens_the_list_it_is_the_only_way_into(br
     assert after["ariaExpanded"] == "true", after["ariaExpanded"]
 
 
+def test_clicking_outside_the_open_nav_returns_it_to_the_handle(browser):
+    """Clicking ordinary page content closes the overlay back to its circle."""
+    context, page = _open(browser, 1280)
+    try:
+        _to_results(page)
+        page.click(".results-floating-nav__handle")
+        page.wait_for_timeout(200)
+        assert page.evaluate(GEOMETRY)["panelVisible"]
+        page.click("#results-title")
+        page.wait_for_timeout(200)
+        after = page.evaluate(GEOMETRY)
+    finally:
+        context.close()
+
+    assert not after["panelVisible"], after
+    assert after["dataOpen"] == "false", after["dataOpen"]
+    assert after["ariaExpanded"] == "false", after["ariaExpanded"]
+
+
 @pytest.mark.parametrize("width", [w for w in WIDTHS if w >= DOCKED_FROM])
 def test_the_docked_nav_is_simply_there_and_has_no_handle_to_press(browser, width):
     """**Docked, the panel is not "open": it IS the nav.**

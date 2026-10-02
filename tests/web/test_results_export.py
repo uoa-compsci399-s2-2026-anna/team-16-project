@@ -407,6 +407,8 @@ def test_the_results_sections_are_in_the_order_the_floating_nav_claims(tmp_path)
         "#tangible-equivalents": 'id="tangible-equivalents"',
         "#breakdown-section": 'id="breakdown-section"',
         "#improvement-section": 'id="improvement-section"',
+        "#start-new-calculation": 'id="start-new-calculation"',
+        "#results-downloads": 'id="results-downloads"',
     }
     on_page = {}
     for href, marker in markers.items():
@@ -420,7 +422,7 @@ def test_the_results_sections_are_in_the_order_the_floating_nav_claims(tmp_path)
     nav = _re.search(r'class="results-floating-nav__links">(.*?)</ul>', screen, _re.S)
     assert nav, "the floating nav rendered no link list"
     claimed = _re.findall(r'href="(#[a-z-]+)"', nav.group(1))
-    assert len(claimed) == len(markers), f"the nav lists {claimed}, not the four sections"
+    assert len(claimed) == len(markers), f"the nav lists {claimed}, not the six results targets"
 
     actual = sorted(claimed, key=lambda href: on_page[href])
     assert claimed == actual, (

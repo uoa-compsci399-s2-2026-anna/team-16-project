@@ -671,6 +671,9 @@ export function resetCalculator() {
     entries: [],
     result: null,
     resultTaxonomy: null,
+    // A new calculation starts with the viewport's own nav default rather than
+    // carrying an open/closed choice from the result that was just cleared.
+    resultsNavOpen: undefined,
     error: null,
     errorAt: null,
     errorCode: null,

@@ -1,6 +1,6 @@
 import { getTaxonomy } from './api.js'
 import { state, setState, subscribe, resetCalculator } from './state.js'
-import { bindCalculator, goToStepFromHistory, render, renderChrome } from './calculator.js'
+import { bindCalculator, goToStepFromHistory, render, renderChrome } from './calculator.js?v=result-nav-20261002'
 import { installStepHistory, stepFromHistory, withoutAnEntry } from './history.js'
 import { applyDocumentLanguage, applyToDocument, installLanguageChooser, t } from './i18n.js'
 import { pruneAnswers, readResultSnapshot, readSnapshot, restorableStep, restoredPatch } from './snapshot.js'

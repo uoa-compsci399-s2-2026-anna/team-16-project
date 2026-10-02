@@ -1418,6 +1418,7 @@ tbody th { font-weight: 700; }
 .improvement-scenario > #improvement-inline-error { margin-inline-start: 18px; }
 .improvement-scenario { background: rgba(230, 190, 255, 0.12); }
 .results-page > :where(#impact-summary, #improvement-section, #tangible-equivalents, #breakdown-section, #results-methodology) { scroll-margin-top: 24px; }
+.results-page :where(#start-new-calculation, #results-downloads) { scroll-margin-top: 24px; }
 /* THE SECTION NAV LIVES IN THE PAGE'S GUTTER, AND ONLY WHERE THERE IS ONE.
    ========================================================================
    It was `inset-inline-end: 18px` — pinned to the viewport's own edge, which

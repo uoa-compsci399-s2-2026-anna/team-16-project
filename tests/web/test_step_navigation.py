@@ -1321,9 +1321,19 @@ def test_the_unit_mode_select_can_draw_its_own_longest_option(page_at_locale, wi
     242px, the label "Единица измерения" takes 144px of it on its own, and one row
     cannot hold both - so the row wraps and the control keeps its width on a line of its
     own.  Wrapping rather than a breakpoint is deliberate: what has to fit is a
-    translated string, and no viewport width predicts which catalogue is in force.  This
-    case is why `.improvement-mode-field` is a wrapping flex line, and it fails if that
-    line is made `nowrap`.
+    translated string, and no viewport width predicts which catalogue is in force.
+
+    **What `flex-wrap: wrap` guards there is the overflow, not the clipping, and that
+    was measured rather than assumed.** A flex item's automatic minimum size stops this
+    `<select>` shrinking below its own longest option at all, so making the line
+    `nowrap` leaves the control full width and pushes it out of the panel instead:
+    `documentElement.scrollWidth` goes 9px past the viewport at 320px in Russian, while
+    every width assertion above still passes.  Hence the overflow check below, which is
+    the assertion that kills that mutation.  9px is a floor, not the figure a visitor
+    sees - the shared `browser` fixture launches Chromium with Playwright's default
+    `--hide-scrollbars`, so it reports the viewport about 15px wider than a real one
+    (see `test_results_floating_nav_browser.py`, which overrides that for exactly this
+    reason).
 
     German rather than English alone because German is where the measured shortfall in
     the band was largest; Russian because it holds the widest label of the twenty
@@ -1348,12 +1358,22 @@ def test_the_unit_mode_select_can_draw_its_own_longest_option(page_at_locale, wi
             const rect = document.querySelector(selector).getBoundingClientRect();
             return rtl ? rect.right : rect.left;
           };
-          return {field: start('.improvement-mode-field'), chart: start('.improvement-pie-wrap')};
+          return {
+            field: start('.improvement-mode-field'),
+            chart: start('.improvement-pie-wrap'),
+            scroll: document.documentElement.scrollWidth,
+            client: document.documentElement.clientWidth,
+          };
         }"""
     )
     assert edges["field"] == pytest.approx(edges["chart"], abs=1), (
         f"[{lang}@{width}] the mode control's start edge ({edges['field']}) left the chart "
         f"card's ({edges['chart']})"
+    )
+    assert edges["scroll"] <= edges["client"], (
+        f"[{lang}@{width}] the page is {edges['scroll'] - edges['client']}px wider than its "
+        "own viewport with the improvement panel open - the mode control keeps its width "
+        "and takes it out of the panel rather than off its own label"
     )
 
 

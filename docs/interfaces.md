@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-10-02 (v1.82)"
+date: "2026-10-02 (v1.83)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,20 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.83 — 2026-10-02 (Step 2.5 gains category navigation; affects C and D)
+
+Issue #135 is being delivered one screen at a time. This revision covers Step 2.5 only: when Step 2 selected two or more categories, it gives the long item-selection panel a permanently open right-hand navigation card using the results page's expanded-card treatment, and derives the links from the Step 2 choices rather than from whichever categories happen to have item rows. One category needs no within-page navigation and keeps the original full-width screen.
+
+**Nothing on the wire or in the translation catalogue changes.** The navigation reuses `Sections on this page`, already present in all catalogues. No fixture moves.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **At two or more selected categories, every `state.foodCategories` entry gets one link and one stable group target, in selection order; at one category, no navigation is rendered.** A category with no specific foods remains in both places, so the navigation never contradicts the answer shown on Step 2 | §7.3a |
+| 2 | **The current category is marked with `aria-current="location"` as the document scrolls; selecting a link uses the group target and the page's smooth-scroll behaviour.** The first category is marked on first render, before any scroll event | §7.3a, §7.6 |
+| 3 | **From 1100px the 252px list is permanently open in a grid column with a 24px gap.** The Step 2.5 content column and its navigation share an 1180px page container, so the card never overlays a field. Below 1100px it is withheld and the form takes the full row | §7.6 |
+
+> The remaining Step 3 and Step 4 navigation requested by #135 is deliberately outside this revision. Their sections are collapsible per-leaf cards and need a separate decision about whether a navigation jump also opens a closed card.
 
 ### v1.82 — 2026-10-02 (the improvement chart follows the editor it belongs to, and the panel's narrow layouts get boundaries that tile; affects C and D)
 

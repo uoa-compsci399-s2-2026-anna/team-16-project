@@ -1731,6 +1731,51 @@ tbody th { font-weight: 700; }
   border-inline-start-color: var(--green-rule);
   box-shadow: 0 5px 16px rgba(40, 200, 130, 0.45), 0 1px 3px rgba(0, 50, 35, 0.16);
 }
+
+/* Step 2.5 uses the results page's expanded-card treatment without its disclosure
+   handle: the list is already open in a dedicated right-hand column. Enlarging only
+   this screen's main container creates that column rather than floating the panel over
+   form controls. Below 1100px there is no safe 252px side column, so the navigation is
+   withheld and the form keeps the whole row, matching the results page's narrow rule. */
+.item-floating-nav { display: none; }
+
+@media (min-width: 1100px) {
+  .main-content:has(.item-step .item-floating-nav) { max-width: 1180px; }
+  .item-step:has(.item-floating-nav) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 252px;
+    column-gap: 24px;
+    align-items: start;
+  }
+  .item-step:has(.item-floating-nav) .item-step__content { grid-column: 1; }
+  .item-floating-nav {
+    display: block;
+    grid-column: 2;
+    grid-row: 1;
+    position: sticky;
+    /* Keep the always-open category index on the reader's natural sight line.
+       The translation accounts for the panel's own height, so its centre—not
+       its top edge—starts and remains at the viewport midpoint while the form
+       scrolls. The containing step still limits sticky at the section end. */
+    top: 50vh;
+    transform: translateY(-50%);
+    align-self: start;
+    min-inline-size: 0;
+  }
+  .item-floating-nav .results-floating-nav__panel {
+    position: static;
+    inline-size: 100%;
+    max-block-size: calc(100vh - 48px);
+    overflow-y: auto;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    translate: none;
+  }
+  .item-step:has(.item-floating-nav) > .step-nav { grid-column: 1; }
+}
+
+.item-group { scroll-margin-top: 24px; }
 /* **The edge the client asked to line up is the inline-start one, and a block in this
    panel's own flow already has it** - `.improvement-editor`'s first column starts at
    the panel's content edge too, so the label, the control and the chart card below

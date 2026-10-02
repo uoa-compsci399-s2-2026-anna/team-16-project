@@ -1246,13 +1246,79 @@ function toggleFoodItem(target) {
   })
 }
 
+/**
+ * The Step 2.5 category list, using the expanded-card treatment from the results
+ * page's section navigation but without its disclosure handle. The links are derived from `foodCategories`, not
+ * from the item vocabulary: every category chosen on Step 2 therefore remains
+ * represented even when it has no more specific foods to show.
+ */
+function itemFloatingNavigation() {
+  if (state.foodCategories.length < 2) return ''
+  const label = t('Sections on this page')
+  const links = state.foodCategories.map((category, index) => {
+    const definition = selected(state.taxonomy.food_categories, category)
+    const heading = definition?.name || category
+    return `<li><a href="#item-group-${index + 1}-${slug(category)}">${escapeHtml(heading)}</a></li>`
+  }).join('')
+  return `<nav class="item-floating-nav" aria-label="${escapeHtml(label)}"><div class="results-floating-nav__panel"><ul class="results-floating-nav__links item-floating-nav__links">${links}</ul></div></nav>`
+}
+
+let itemNavScrollBound = false
+let itemNavFrame = null
+
+/** Mark the last category heading that has reached the viewport's reading line. */
+function markCurrentItemGroup(preferredId = null) {
+  const nav = document.querySelector('.item-floating-nav')
+  if (!nav) return
+  const links = [...nav.querySelectorAll('.item-floating-nav__links a[href^="#"]')]
+  if (!links.length) return
+  // Item groups can be much taller than result sections. Halfway down the
+  // viewport changes the marker when the next group's heading is actually in
+  // view, including a short final group that cannot reach the page top.
+  const threshold = window.innerHeight * 0.5
+  let current = links[0]
+  for (const link of links) {
+    const target = document.getElementById(link.getAttribute('href').slice(1))
+    if (target && target.getBoundingClientRect().top <= threshold) current = link
+    else break
+  }
+  // The last group can be too close to the document end to ever reach the
+  // reading line. At the bottom of the page it is nevertheless the group in
+  // view, so let the document boundary settle the final item.
+  const atBottom = Math.ceil(window.scrollY + window.innerHeight) >= document.documentElement.scrollHeight - 1
+  if (atBottom) current = links[links.length - 1]
+  if (preferredId) current = links.find(link => link.getAttribute('href') === `#${preferredId}`) || current
+  for (const link of links) {
+    if (link === current) link.setAttribute('aria-current', 'location')
+    else link.removeAttribute('aria-current')
+  }
+}
+
+/** Rebind the Step 2.5 scroll marker after `render()` replaces `<main>`. */
+function bindItemSectionNavigation(root) {
+  if (!root?.querySelector?.('.item-floating-nav')) return
+  if (!itemNavScrollBound) {
+    itemNavScrollBound = true
+    const schedule = () => {
+      if (itemNavFrame !== null) return
+      itemNavFrame = requestAnimationFrame(() => {
+        itemNavFrame = null
+        markCurrentItemGroup()
+      })
+    }
+    document.addEventListener('scroll', schedule, { passive: true })
+    window.addEventListener('resize', schedule, { passive: true })
+  }
+  markCurrentItemGroup()
+}
+
 function itemStep() {
   const chosen = Object.values(state.foodItems || {}).reduce((total, items) => total + items.length, 0)
   const ticked = (category, item) => ((state.foodItems || {})[category] || []).includes(item)
   const refused = (category, item) => !ticked(category, item) && itemTickRefused(category, item)
   const atCeiling = state.foodCategories.some(
     category => itemsUnder(category).some(item => refused(category, item.code)))
-  const group = category => {
+  const group = (category, index) => {
     const definition = selected(state.taxonomy.food_categories, category)
     const items = itemsUnder(category)
     const heading = definition?.name || category
@@ -1264,9 +1330,10 @@ function itemStep() {
       ? `<div class="simple-choice-list">${items.map(item =>
           `<label class="simple-choice ${ticked(category, item.code) ? 'selected' : ''}"><input id="food-item-${slug(category)}-${slug(item.code)}" type="checkbox" name="food-item" value="${escapeHtml(item.code)}" data-category="${escapeHtml(category)}" ${ticked(category, item.code) ? 'checked' : ''} ${refused(category, item.code) ? 'disabled' : ''}><span><strong>${escapeHtml(item.name)}</strong></span>${ticked(category, item.code) ? `<span class="selected-label" aria-hidden="true">&#10003; ${escapeHtml(t('Selected'))}</span>` : ''}</label>`).join('')}</div>`
       : `<p class="field-hint">${escapeHtml(t('No specific foods are listed for this category. It is counted as %(category)s.', { category: heading }))}</p>`
-    return `<fieldset class="choice-fieldset item-group"><legend>${escapeHtml(heading)}</legend>${body}</fieldset>`
+    return `<fieldset class="choice-fieldset item-group" id="item-group-${index + 1}-${slug(category)}"><legend>${escapeHtml(heading)}</legend>${body}</fieldset>`
   }
-  return `<section class="content-section" aria-labelledby="item-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 2 }))} &middot; ${escapeHtml(t('Optional'))}</p><h1 id="item-title">${escapeHtml(t('Do you know which foods these were?'))}</h1><p class="section-intro">${escapeHtml(t('Choose the specific foods you measured, or continue without choosing any. A category with no food chosen is counted as that category.'))}</p><p class="choice-count" aria-live="polite">${escapeHtml(t('%(count)s selected', { count: chosen }))}</p>${state.foodCategories.map(group).join('')}${atCeiling ? `<p class="field-hint choice-ceiling" role="status">${escapeHtml(t('You can enter at most %(limit)s food types in one calculation. Untick one, or calculate what you have.', { limit: MAX_LEAVES }))}</p>` : ''}${chosen ? `<button type="button" class="text-button" data-action="clear-items">${escapeHtml(t('Clear all selections'))}</button>` : ''}${stepNav({ step: 1, back: 1, backAction: 'back-to-categories' })}</section>`
+  const content = `<div class="item-step__content"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 2 }))} &middot; ${escapeHtml(t('Optional'))}</p><h1 id="item-title">${escapeHtml(t('Do you know which foods these were?'))}</h1><p class="section-intro">${escapeHtml(t('Choose the specific foods you measured, or continue without choosing any. A category with no food chosen is counted as that category.'))}</p><p class="choice-count" aria-live="polite">${escapeHtml(t('%(count)s selected', { count: chosen }))}</p>${state.foodCategories.map(group).join('')}${atCeiling ? `<p class="field-hint choice-ceiling" role="status">${escapeHtml(t('You can enter at most %(limit)s food types in one calculation. Untick one, or calculate what you have.', { limit: MAX_LEAVES }))}</p>` : ''}${chosen ? `<button type="button" class="text-button" data-action="clear-items">${escapeHtml(t('Clear all selections'))}</button>` : ''}</div>`
+  return `<section class="content-section item-step" aria-labelledby="item-title">${content}${itemFloatingNavigation()}${stepNav({ step: 1, back: 1, backAction: 'back-to-categories' })}</section>`
 }
 
 function amountStep() {
@@ -2732,6 +2799,7 @@ export function render(main) {
   // is no nav, and the call disconnects instead. One observer object either way --
   // see `bindResultsSectionSpy` in `results.js` for why that has to be true.
   bindResultsSectionSpy(main)
+  bindItemSectionNavigation(main)
 }
 
 /**
@@ -2927,6 +2995,8 @@ export function bindCalculator(main, retryTaxonomy) {
     // It runs before the `[data-action]` guard below, which returns early for exactly the
     // clicks this needs to see - a label is not an action.
     if (event.target.closest('.term')) event.preventDefault()
+    const itemNavLink = event.target.closest('.item-floating-nav__links a[href^="#"]')
+    if (itemNavLink) markCurrentItemGroup(itemNavLink.getAttribute('href').slice(1))
     const control = event.target.closest('[data-action]')
     if (!control) return
     const action = control.dataset.action

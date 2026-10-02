@@ -115,6 +115,23 @@ def _category_without_foods(taxonomy):
     pytest.skip("every offered category has foods, so there is no empty panel to refuse")
 
 
+def _two_categories_for_navigation(taxonomy):
+    """Two Step 2 choices, including an empty group when the vocabulary has one."""
+    first = _category_with_foods(taxonomy)
+    offered = {item["food_category"] for item in taxonomy["food_items"]}
+    second = next(
+        (category for category in taxonomy["food_categories"]
+         if category["code"] != first["code"] and category["code"] not in offered),
+        None,
+    ) or next(
+        (category for category in taxonomy["food_categories"] if category["code"] != first["code"]),
+        None,
+    )
+    if second is None:
+        pytest.skip("this deployment offers fewer than two food categories")
+    return first, second
+
+
 def _to_food_step(page):
     page.click('[data-action="start"]')
     page.wait_for_selector('input[name="sector"]')
@@ -171,6 +188,61 @@ def test_the_panel_groups_the_foods_under_the_category_that_was_chosen(page, rel
         ".map(e => e.innerText.trim())"
     ))
     assert shown == expected, shown
+
+
+def test_one_category_does_not_add_a_right_navigation(page, released):
+    category = _category_with_foods(released)
+    _to_food_step(page)
+    _tick_category(page, category["code"])
+    _continue(page)
+    page.wait_for_selector('input[name="food-item"]')
+
+    assert page.locator(".item-floating-nav").count() == 0
+
+
+def test_the_right_navigation_lists_every_category_chosen_on_step_two(page, released):
+    """The navigation mirrors Step 2, including a category with no item rows."""
+    categories = _two_categories_for_navigation(released)
+    _to_food_step(page)
+    for category in categories:
+        _tick_category(page, category["code"])
+    _continue(page)
+    page.wait_for_selector(".item-floating-nav")
+
+    links = page.evaluate(
+        "() => [...document.querySelectorAll('.item-floating-nav__links a')].map(link => ({"
+        "text: link.innerText.trim(), href: link.getAttribute('href'), current: link.getAttribute('aria-current')"
+        "}))"
+    )
+    assert [link["text"] for link in links] == [category["name"] for category in categories]
+    assert all(link["href"].startswith("#item-group-") for link in links)
+    assert all(page.locator(link["href"]).count() == 1 for link in links)
+    assert links[0]["current"] == "location"
+
+
+def test_the_right_navigation_is_open_and_tracks_the_category_it_jumps_to(page, released):
+    categories = _two_categories_for_navigation(released)
+    _to_food_step(page)
+    for category in categories:
+        _tick_category(page, category["code"])
+    _continue(page)
+    page.wait_for_selector(".item-floating-nav")
+
+    panel = page.locator('.item-floating-nav .results-floating-nav__panel')
+    assert panel.is_visible()
+    nav_box = page.locator('.item-floating-nav').bounding_box()
+    viewport = page.viewport_size
+    assert nav_box is not None and viewport is not None
+    assert abs((nav_box["y"] + nav_box["height"] / 2) - viewport["height"] / 2) <= 2
+    second = page.locator('.item-floating-nav__links a').nth(1)
+    target = second.get_attribute("href")
+    second.click()
+    page.wait_for_function(
+        "selector => Math.ceil(window.scrollY + window.innerHeight) >= document.documentElement.scrollHeight - 1 && "
+        "document.querySelector(`.item-floating-nav__links a[href=\"${selector}\"]`)"
+        ".getAttribute('aria-current') === 'location'",
+        arg=target,
+    )
 
 
 def test_the_step_number_does_not_advance_into_the_food_panel(page, released):

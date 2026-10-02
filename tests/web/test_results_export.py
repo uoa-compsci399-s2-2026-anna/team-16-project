@@ -4126,6 +4126,68 @@ def test_the_open_explanation_is_a_translucent_light_layer(page_at, width):
 
 
 @pytest.mark.browser
+def test_the_question_mark_is_a_native_disclosure_with_a_name(page_at):
+    """**The restyle is paint, and these are the two things paint must not cost**
+    (#143): the keyboard a native `<details>` gives for nothing, and a name for a
+    control whose only glyph is `?`.
+
+    Both are asked of the platform rather than of the markup. The name is read out
+    of Chromium's accessibility tree, not off the `aria-label` attribute — an
+    attribute present in the DOM is not the same claim as a name the platform
+    computes, and `?` is what a screen reader reaches for when there is none.
+    The keyboard is Enter on the focused summary, twice, which is also the only
+    route a keyboard visitor has into this panel at all.
+    """
+    page = page_at(_equivalence_response(
+        source_note=_VEHICLE_SOURCE_NOTE, description=_VEHICLE_DESCRIPTION,
+    ))
+    _submit_two_entries(page)
+    page.wait_for_selector(".equivalent-grid article")
+
+    shape = page.evaluate(
+        """() => {
+             const details = document.querySelector('.equivalent-basis')
+             const summary = details.firstElementChild
+             return {details: details.tagName, summary: summary.tagName,
+                     glyph: summary.textContent.trim()}
+           }"""
+    )
+    assert shape["details"] == "DETAILS" and shape["summary"] == "SUMMARY", (
+        f"the disclosure is {shape}: a div pair gets no keyboard and no open state for free"
+    )
+    assert shape["glyph"] == "?", shape
+
+    summary = page.locator("details.equivalent-basis > summary").first
+    #: Chromium's own accessible-name computation, over CDP. `page.accessibility`
+    #: was removed from Playwright, and the alternative - reading `aria-label`
+    #: back - asserts that an attribute was typed rather than that a name was
+    #: computed from it.
+    session = page.context.new_cdp_session(page)
+    session.send("DOM.enable")
+    session.send("Accessibility.enable")
+    root = session.send("DOM.getDocument")["root"]["nodeId"]
+    node = session.send("DOM.querySelector", {
+        "nodeId": root, "selector": "details.equivalent-basis > summary"})["nodeId"]
+    assert node, "the summary is not in the document"
+    tree = session.send("Accessibility.getPartialAXTree", {
+        "nodeId": node, "fetchRelatives": False})["nodes"]
+    assert tree, "the summary is not in the accessibility tree at all"
+    name = (tree[0].get("name", {}).get("value") or "").strip()
+    assert len(name) > 1 and name != "?", (
+        f"the summary's accessible name is {name!r} - a screen reader announces the glyph, "
+        f"which says nothing about what opens (the node was {tree[0]})"
+    )
+
+    body = page.locator(".equivalent-basis__body").first
+    summary.focus()
+    page.keyboard.press("Enter")
+    page.wait_for_selector(".equivalent-basis__body")
+    assert body.is_visible(), "Enter on the focused summary did not open the panel"
+    page.keyboard.press("Enter")
+    assert not body.is_visible(), "Enter on the focused summary did not close the panel again"
+
+
+@pytest.mark.browser
 def test_the_glass_falls_back_to_an_opaque_ground_and_not_a_lighter_one(page_at):
     """**The fallback is the half nobody looks at, so it is the half measured.**
 

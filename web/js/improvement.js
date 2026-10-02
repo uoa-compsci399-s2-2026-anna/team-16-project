@@ -256,9 +256,14 @@ const PIE_RADIUS = 112
 // any engine holding this geometry in single precision collapses in the same decade.
 //
 // 0.01° is ~1,280x that threshold, which is the margin, and it costs 0.0196 user units
-// of omitted arc (112 * 0.01 * pi/180) — 0.04 device pixels at the largest magnification
-// this chart is ever drawn at, the 720px modal on a 390px viewport at dpr 3. It is also
-// wider than nothing and narrower than anything the panel treats as a real allocation:
+// of omitted arc (112 * 0.01 * pi/180). **Measured in the browser rather than read off
+// the stylesheet**, across this suite's three viewports and both places the chart is
+// drawn: the largest magnification is the expanded modal at 938x898 and dpr 1.5, where
+// the 720px `<svg>` is 2.0769 device pixels per user unit and the omitted arc is
+// **0.0406 device pixels**. The phone is not the worst case and reading the CSS suggests
+// it is — 390x700 at dpr 3 caps the modal at `92vw` and comes to 1.5623 (0.0305px),
+// below the 1278 desktop's 1.7308 (0.0338px). It is also wider than nothing and
+// narrower than anything the panel treats as a real allocation:
 // the finest step the number box declares is 0.01 of a percentage point, whose last stop
 // below a full allocation is 99.99% — a sweep of 359.964°, comfortably under the gate —
 // and every share the gate does take already prints as "100.0%" in its own callout.

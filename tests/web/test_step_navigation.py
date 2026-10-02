@@ -40,6 +40,7 @@ commit that added this file.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 from pathlib import Path
@@ -1081,27 +1082,132 @@ def test_the_improvement_donut_draws_the_share_the_slider_holds(page_at):
     assert page.locator(".improvement-chart-modal").count() == 0
 
 
+#: The circle `web/js/improvement.js` draws a full allocation as, in the SVG user
+#: space of its own `viewBox="0 0 520 420"`: `PIE_CENTRE_X` / `PIE_CENTRE_Y` and
+#: `PIE_RADIUS`. Restated here rather than measured loosely on purpose — "big
+#: enough" is exactly what the assertion below must not settle for, because a
+#: circle drawn at the wrong origin is 224x224 too. If those constants move, this
+#: is *meant* to fail and be moved with them; nothing else in the repository
+#: notices a donut drawn half outside its own viewBox.
+DONUT_CENTRE = (260, 210)
+DONUT_RADIUS = 112
+
+#: Enough of the rendered path to say *which* shape was drawn, not merely that
+#: something was. `x` and `y` are read and asserted, which the first version of
+#: this measurement discarded.
+MEASURE_SLICE = """
+path => {
+  const box = path.getBBox();
+  return {
+    x: box.x, y: box.y, width: box.width, height: box.height,
+    length: path.getTotalLength(),
+  };
+}
+"""
+
+
+def _measure_first_slice(page, scope=".improvement-pie-chart"):
+    """The rendered geometry of the chart's first `<path>`, in SVG user units.
+
+    **The count assertion in front of the read is not decoration.** `PieChart`
+    filters `slice.share > 0`, so a chart whose rows are all still at zero has
+    no `<path>` at all — and `.first.evaluate` on an empty locator raises a
+    Playwright *timeout*, which reads as the harness being broken rather than as
+    the panel having drawn nothing. Counting first makes that failure say what it
+    is.
+    """
+    paths = page.locator(f"{scope} path")
+    assert paths.count() >= 1, (
+        "the donut drew no <path> at all, so there was nothing to measure - "
+        "every allocation row is still at zero"
+    )
+    return paths.first.evaluate(MEASURE_SLICE)
+
+
+def _assert_is_the_full_donut(measured, what):
+    """Assert a measured path is the module's own circle, and not merely large.
+
+    **Two measurements, because neither alone says "a full circle".**
+
+    *The bounding box* pins position and size: `x`, `y`, `width`, `height`
+    against `PIE_CENTRE` +/- `PIE_RADIUS`. This is what rejects a circle drawn
+    at the wrong origin — `M 0 0 A 112 112 ...` measures 224x224 and renders
+    half outside the viewBox, and measured here it comes back at `x=-112`. It
+    also rejects the 205% allocation this file's sibling test types, which
+    measured 224 x 330.518 and passed a `width > 200 and height > 200` check
+    before this one. What it cannot do on its own is tell a full circle from a
+    wedge: a plain 75% slice is 224x224 at exactly (148, 98) as well, and so are
+    80%, 90%, 99% and 99.99%.
+
+    *The perimeter* is what separates them. A closed circle measures `2*pi*r` =
+    703.72 (Chrome's polyline approximation reads 703.816); a wedge is two radii
+    plus an arc, `2r + r*theta`. For a wedge's bounding box to reach the full
+    224x224 it has to contain all four cardinal points of the circle, so its
+    sweep is at least 270 degrees — and the shortest such wedge measured 750.37,
+    some 46 units clear of the circle. So no wedge `slicePath` can emit satisfies
+    both of these, which is the claim the test's name makes. (A ~245-degree wedge
+    does measure 703.3, which is why the length is not asserted alone either: its
+    box is 213.6 wide and the bbox check refuses it.)
+
+    The tolerances are the measurement's own noise, not slack: 0.01 user units on
+    the box (Chrome returned `147.997` for a 99.99% wedge's left edge) and 1.0 on
+    the perimeter, against a 46-unit gap to the nearest wedge.
+    """
+    centre_x, centre_y = DONUT_CENTRE
+    expected = {
+        "x": centre_x - DONUT_RADIUS,
+        "y": centre_y - DONUT_RADIUS,
+        "width": 2 * DONUT_RADIUS,
+        "height": 2 * DONUT_RADIUS,
+    }
+    for key, want in expected.items():
+        assert abs(measured[key] - want) < 0.01, (
+            f"{what}: the donut's {key} is {measured[key]}, not {want} - the path "
+            f"is empty, the wrong size, or drawn somewhere other than the centre "
+            f"the rest of the chart uses. Measured {measured}"
+        )
+    circumference = 2 * math.pi * DONUT_RADIUS
+    assert abs(measured["length"] - circumference) < 1.0, (
+        f"{what}: the donut's perimeter is {measured['length']:.3f}, not the "
+        f"{circumference:.3f} of a closed circle of radius {DONUT_RADIUS} - this "
+        f"is a wedge with two straight radii in it, not a full allocation. "
+        f"Measured {measured}"
+    )
+
+
 def test_the_improvement_donut_draws_a_full_circle_for_a_single_hundred_percent_share(page_at):
     """A full SVG arc needs two half-arcs, because a zero-length arc is empty.
 
     The single-destination case is the ordinary way to reach 100%: its slice
-    starts and ends at the same point, so the path must still occupy the full
-    donut rather than leaving only the centre label and callout behind.
+    starts and ends at the same point, SVG 1.1 §8.3.8 makes such an arc
+    equivalent to omitting the segment, and the path used to come back `0 x 112`
+    — a pair of coincident radii — leaving only the centre label and the callout
+    on screen. So the path must occupy the whole donut, at the centre and radius
+    the rest of the chart is drawn to; `_assert_is_the_full_donut` carries why
+    that takes two measurements rather than one.
+
+    The centre label and the callout are checked too, because the remedy's own
+    risk is the opposite defect: a full disc painted *over* the figures that were
+    the only thing still visible before it.
     """
     page = _improvement_panel(page_at)
     boxes = page.locator('.percentage-input input[type="number"]')
     boxes.first.fill("100")
 
-    bounds = page.locator(".improvement-pie-chart path").first.evaluate(
-        """path => {
-          const box = path.getBBox();
-          return {width: box.width, height: box.height};
-        }"""
-    )
-    assert bounds["width"] > 200 and bounds["height"] > 200, (
-        f"the 100% allocation rendered an empty/degenerate SVG path: {bounds}"
-    )
+    _assert_is_the_full_donut(_measure_first_slice(page), "a typed 100%")
 
+    #: `text_content`, not `inner_text`: an SVG element has no `innerText`, which
+    #: is the same trap the sibling test above records against the callouts.
+    centre = page.locator(".improvement-pie-total").text_content() or ""
+    assert "kg" in centre and re.sub(r"[^\d.]", "", centre) == "1000.00", (
+        f"the centre label stopped reporting the mass being redistributed: {centre!r}"
+    )
+    assert "100.0%" in page.locator(".improvement-pie-label text").all_text_contents(), (
+        "the callout beside the full slice is gone or no longer reads the share"
+    )
+    #: One slice, not two: the remedy must not leave the old degenerate wedge
+    #: behind beside the circle it replaced.
+    assert page.locator(".improvement-pie-chart path").count() == 1
 
 def test_the_improvement_chart_follows_both_scroll_directions_on_desktop(page_at):
     """The chart card stays beside the long allocation list while it is being edited.

@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-10-02 (v1.81)"
+date: "2026-10-02 (v1.85)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,27 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.85 — 2026-10-02 (the two NZ$ hints say "total", and say it about the card they sit on; affects C)
+
+The client could not tell whether the two optional NZ$ boxes on step 3 wanted the **total value of the amount** or the **value per unit**. PR #147 answered that, and the answer is kept: each hint now says *the total value*, and the production one says *not the value per unit* outright. What #147's wording also said was *"everything produced during this reporting period"*, and that is false the moment step 3 draws more than one card — `leafPanel` renders one panel per leaf, each panel's figure becomes that leaf's own `total_value_nzd`, and §4.5 sums them, so a visitor with three food types who read it literally would have typed the whole-business total three times and been shown three times the true value on the results page. Both hints are therefore scoped to the card.
+
+**Nothing on the wire moves, and no fixture moves.** `POST /api/v1/calculate` sends the byte-identical body before and after, from the same inputs under the same `id`s; nothing in §2, §3, §4, §6 or §9 is touched; all thirteen golden cases are byte-identical. This is recorded here for the reason v1.61 and v1.62 were, and v1.81 item 5 after them: **the English source string is the key (§7.7.1), so rewording a hint orphans every translation of it silently** — and v1.61 is the revision that introduced these very two strings. **This revision is therefore steps one and two of the contract change process, not step three**: `tests/fixtures/*.json` is unchanged because there is nothing in it to change. The owner notifies the team.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **A step 3 card's money figures are that card's own, and the hint on them must say which food they are for.** Both hints carry *"for this food type"* — the scoping `Waste amount for %(food)s` already applies one zone above — and both still read correctly at a leaf count of one, which is the case that draws no card at all (v1.81 decision 2). This is a statement about what the field means, not a style note: §4.5 sums `total_value_nzd` and `wasted_value_nzd` across `entries[]`, so a whole-business reading of a per-leaf box is a visitor-side error the server cannot detect and the results page cannot caveat | §7.3a, §4.5 |
+| 2 | **The waste hint keeps its shared-basis statement, as a clause of the one sentence rather than a second one.** #147 dropped *"Valued the same way as production above."* and left the constraint living only in the term tooltip, which is a hover. `wasted_share_percent` is `wasted_value_nzd ÷ total_value_nzd × 100` (§4.5) and is printed on the results page, so a shared basis is the whole of what makes that percentage mean anything; the only server-side guard is `wasted ≤ total`, which cannot see a basis mismatch. Decision 6 of the step 3 zoning plan — *nothing essential lives behind a hover* — is the rule being applied, and one sentence is the ceiling because the client's complaint was ambiguity and a paragraph is a different kind of unclear | §7.3a, §4.5 |
+| 3 | **Two source strings out, two in; each catalogue stays at 455 strings, in all twenty files and in both trees.** `web/locales/` was written and `api/assets/locales/` **copied byte for byte** from it — never re-serialised — and the twenty-one pairs compare equal by SHA-256. The two removed keys are #147's own, which never reached a published build. **No new CJK code point:** every character of the four CJK translations already appears in that catalogue, so `recut_cjk_subsets.py` did not run, `PROVENANCE.md` is untouched and `test_no_character_in_any_catalogue_would_print_as_a_box` is unmoved. Japanese stops using ふ (U+3075) and 構 (U+69CB), which is harmless — nothing asserts that a subset is minimal. **`zh` and `zh-Hant` carry their sentence-final `。`**, which #147's pair had dropped while the other eighteen kept their own terminal punctuation; Thai correctly carries none, as none of its 455 strings does | §7.7, §7.7.1 |
+| 4 | **The catalogues are fully key-sorted again, in all forty files.** `main` and the merge base are sorted in all twenty of both trees; #147 inserted its two keys where the two it replaced had sat, at index 356, so every file landed unsorted from index 142 onwards. **No test guards the order**, so it shipped silently. The cost is not diff size — the restoration is two moved lines per file, measured — it is that the convention is what a reader relies on to answer *"is this string already in here?"* in a 455-key file, and a key sitting 214 positions from where it belongs is a key that gets a near-duplicate written beside it. §7.7.1's whole key rule is that the English sentence is the identifier, and two sentences differing by a clause are the shape it makes invisible to every test but the stale-key one (v1.61 item 1, v1.62 item 1). Order only: the parsed key→value map of all twenty-one files is unchanged by the restoration, 455 keys each, 216 positions moved, and the serialisation is the one these files already round-trip through unchanged. **A test asserting the order would be worth having and is not in this revision** | §7.7.1 |
+
+> **The two browser assertions on these hints were pinned to the wrong thing, and are fixed with the copy.** `"total value"` is a substring of **both** hints — which is the point of #147 and must stay true of both — so asserting only that left a swap of the two hints green. Each is now also pinned by something only its own sentence says, and the mandatory mutation is the swap: it fails four assertions, each naming the field that received the wrong sentence. Measured against the real render under Node rather than by reading the diff — `render()` is exported, so a stub `document` and `tests/fixtures/taxonomy.json` are enough to evaluate `label[for=…] + .field-hint` on the tree `leafPanel` actually emits, at a leaf count of one and of three.
+
+> **A statement in the step 3 tooltips is already false, and this revision does not touch it.** The shared statistics-only sentence ends *"No figure on the results page is calculated from it"*, and the results page prints **Share of value wasted** from exactly those two figures (§4.5 `wasted_share_percent`). That predates #147 and is out of its scope, but #147's rationale leans on the statistics-only framing, so it is recorded here rather than left for the next reader to rediscover. It wants its own issue: the fix is a copy change in one shared key across twenty catalogues, and the sentence a visitor should read is about **O-2** — these figures do not enter the emissions calculation and are not a cost metric — which is not the same claim as *no figure anywhere is computed from them*.
+
+> **Nothing is published and nothing is republished by this revision.** `is_mock` stays `true`, **O-1 remains the hard blocker**, and the placeholder banner stays mandatory on every results view and export.
+
+> **The adjacent numbers are held by branches in flight.** A scan of all 185 local and remote refs finds no `### v1.83`, `v1.84` or `v1.85` written anywhere and `v1.82` as the highest — but v1.83 and v1.84 are claimed by two branches that have not written their entries yet, which is exactly what a scan cannot see. v1.79 remains claimed by PR #110 (`feat/d-statistics-content`), still open. This took v1.85 on that basis rather than the next apparently free number; **whichever of the three lands second resolves the change-log conflict**, as v1.81 did against v1.80. The effective contract is the highest version wherever it lives, merged or not. The owner notifies the team.
 
 ### v1.81 — 2026-10-02 (step 3's cards fold, and the badge reads Continue's own rules; affects C and D)
 
@@ -5094,6 +5115,19 @@ export function stepNav({step, back, backLabel = 'Back', label = 'Continue',
 > frosted-glass token attaches there without re-laying out the card. Note what that makes
 > true in the other direction: `backdrop-filter` creates a containing block, and step 3's
 > term tooltips **are** `position: absolute` inside the card body.
+>
+> **Every figure on a step 3 card is that card's own, and the copy on it has to say so**
+> (v1.85). `leafPanel` draws one panel per leaf, each panel's five inputs become that
+> leaf's own `entries[]` element, and §4.5 then **sums** `total_value_nzd` and
+> `wasted_value_nzd` across entries for the results page. So a hint phrased as a figure
+> about the whole business — *"everything produced during this reporting period"* — is a
+> hint a visitor with three food types enters three times, and the page shows three times
+> the true value. Both money hints are scoped to the card (*"for this food type"*, the
+> same scoping the waste label one zone above already carries as
+> `Waste amount for %(food)s`), and the wording must still read correctly at a leaf count
+> of one, which is where there is no card at all. **The same reading applies to any copy
+> added to this panel later**; nothing in the suite derives a hint's scope from the field
+> it sits under.
 
 
 ```js

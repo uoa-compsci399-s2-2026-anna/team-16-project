@@ -2337,6 +2337,49 @@ def test_step_three_asks_for_the_two_money_figures(page_at):
             f"{field_id} does not say which currency: {label!r}"
         )
 
+    #: **Which sentence, and not merely that there is one.** "total value" is the
+    #: clarification #147 is about and both hints have to keep it - which is
+    #: exactly why asserting only that is not enough: the substring is in both,
+    #: so swapping the two hints left both assertions green. Each field is
+    #: therefore pinned by something only its own sentence says. The production
+    #: hint is the one that says what *you produced* and rules a per-unit figure
+    #: out; the waste hint is the one that names *the waste* and the basis it
+    #: shares with *production above*, which is the §4.5 constraint behind
+    #: `wasted_share_percent` and may not retreat into the hover tooltip.
+    #:
+    #: `label[for=…] + .field-hint` is exact rather than approximate: `leafPanel`
+    #: emits `</label><p class="field-hint">` with no node in between.
+    #:
+    #: **Both must also say which food the figure is for.** `leafPanel` draws one
+    #: panel per leaf and `engine/calculate.py` sums the per-entry figures, so a
+    #: hint phrased as a whole-business total is a hint a visitor with three food
+    #: types types three times - and the results page then shows three times the
+    #: true value.
+    hints = {
+        field_id: page.locator(f'label[for="{field_id}"] + .field-hint').inner_text().lower()
+        for field_id in ("total-value", "wasted-value")
+    }
+    for field_id, hint in hints.items():
+        assert "total value" in hint, f'{field_id} hint does not say "total value": {hint!r}'
+        assert "this food type" in hint, (
+            f"{field_id} hint is not scoped to the card that holds it: {hint!r}"
+        )
+    production, waste = hints["total-value"], hints["wasted-value"]
+    assert "you produced" in production and "per unit" in production, (
+        "total-value carries the wrong sentence - it should be the production hint, "
+        f"which says what you produced and rules out a per-unit figure: {production!r}"
+    )
+    assert "production above" not in production, (
+        f"total-value carries the waste field's sentence: {production!r}"
+    )
+    assert "the waste" in waste and "production above" in waste, (
+        "wasted-value carries the wrong sentence - it should be the waste hint, "
+        f"which names the waste and the basis it shares with production above: {waste!r}"
+    )
+    assert "per unit" not in waste, (
+        f"wasted-value carries the production field's sentence: {waste!r}"
+    )
+
 
 @pytest.mark.parametrize("field_id", ["total-input", "total-value", "wasted-value"])
 def test_a_negative_money_figure_is_refused_as_it_is_typed(page_at, field_id):

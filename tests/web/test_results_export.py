@@ -32,6 +32,7 @@ from the shape the API actually returns.
 
 from __future__ import annotations
 
+import base64
 import copy
 import json
 import os
@@ -3910,6 +3911,521 @@ def test_the_equivalence_explanation_does_not_overflow(browser, language, width)
         )
     finally:
         context.close()
+
+
+# --------------------------------------- the expanded panel's surface (#143)
+#
+# **The client's words were about the expanded state, not the content** — 展开
+# 之后太难看, at the 1 October meeting. v1.80 (#127) shortened what the panel
+# holds; this is the surface it holds it on. The panel was an opaque `#fff`
+# rectangle inside a Banana-tinted card: the heaviest thing either surface could
+# have done, maximum contrast against the one ground it sits on, drawn at the
+# moment a reader asked a small question. It now takes the shared frosted-glass
+# token (`--glass-ground` / `--glass-blur` / `--glass-edge` in
+# `web/css/styles.css`), the treatment the results page's floating section nav
+# has carried since v1.66.
+#
+# **Four properties are measured here and none of them is a class name.** A
+# translucent panel's contrast ratio is not what the stylesheet says it is — the
+# ground it composites onto decides, and `saturate(1.4)` in the blur moves it
+# again — so the ground is read off a PIXEL the compositor painted, and the
+# ratio is computed from that. The fallback is exercised the only way a browser
+# that has `backdrop-filter` can exercise it: the token's own default is forced
+# on, the filter is taken off the element, and the card behind it is painted
+# Beetroot. An opaque ground does not move; a merely-lighter one does.
+
+#: 320 is the floor `test_horizontal_overflow.py` measures at and the width the
+#: panel is narrowest at; 1278 is the three-column grid, where the card is a
+#: flex column and the disclosure is pushed to its foot by an auto margin. The
+#: two are different layouts for the same panel, and a surface that is legible
+#: in one is not thereby legible in the other — `saturate(1.4)` composites over
+#: whatever the card is actually painted, and the card is painted the same at
+#: both, which is the thing being established rather than assumed.
+GLASS_WIDTHS = (320, 1278)
+
+#: Decode a PNG the browser produced, in the browser, and hand back one pixel.
+#: **Pillow is not a dependency of this project** (`requirements.txt` says so
+#: beside `qrcode`), and a test that skips when it is absent is a test that
+#: measures nothing on a machine that never had it — rule 2 of the round this
+#: landed in. Chromium already has a PNG decoder and a canvas, so the screenshot
+#: goes back in as a data URL and `getImageData` answers. The image is same-origin
+#: data, so the canvas is not tainted.
+PAINTED_PIXEL = """
+([b64, x, y]) => new Promise(resolve => {
+  const img = new Image()
+  img.onload = () => {
+    const canvas = document.createElement('canvas')
+    canvas.width = img.width
+    canvas.height = img.height
+    const context = canvas.getContext('2d')
+    context.drawImage(img, 0, 0)
+    const data = context.getImageData(x, y, 1, 1).data
+    resolve([data[0], data[1], data[2], data[3]])
+  }
+  img.src = 'data:image/png;base64,' + b64
+})
+"""
+
+
+def _painted(page, locator, x, y):
+    """The colour actually painted at (x, y) of `locator`'s own box."""
+    shot = base64.b64encode(locator.screenshot()).decode()
+    return tuple(page.evaluate(PAINTED_PIXEL, [shot, x, y]))
+
+
+#: WCAG 2.x relative luminance and ratio. **A fourth copy in this suite**, with
+#: the other three in `test_results_floating_nav_browser.py`,
+#: `test_i18n_browser.py` and `test_d_statistics_content.py`. Kept local rather
+#: than imported from one of those: importing a sibling test module runs its
+#: module-level `importorskip` and its fixtures into this one's collection, and
+#: six lines of arithmetic out of a published formula is the cheaper duplicate.
+def _relative_luminance(colour):
+    channels = []
+    for part in colour[:3]:
+        value = part / 255.0
+        channels.append(value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4)
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+
+
+def _contrast(first, second):
+    high, low = sorted((_relative_luminance(first), _relative_luminance(second)), reverse=True)
+    return (high + 0.05) / (low + 0.05)
+
+
+def _rgb(colour):
+    """`rgb(r, g, b)` / `rgba(r, g, b, a)` to a 3-tuple of integers."""
+    return tuple(int(float(part)) for part in re.findall(r"[\d.]+", colour)[:3])
+
+
+#: The token, read out of the live stylesheet rather than retyped here: the rule
+#: that declares `backdrop-filter`, the `@supports` condition that upgrades its
+#: ground, and the default that condition upgrades FROM. A test that hard-coded
+#: `rgba(255, 255, 255, 0.72)` would still pass after the stylesheet stopped
+#: saying it.
+READ_THE_TOKEN = """
+() => {
+  const found = {consumers: null, condition: null, fallback: null, upgraded: null}
+  for (const sheet of document.styleSheets) {
+    let rules
+    try { rules = sheet.cssRules } catch (error) { continue }
+    for (const rule of rules) {
+      if (rule.type === CSSRule.STYLE_RULE
+          && rule.style.getPropertyValue('backdrop-filter')
+          && !found.consumers) {
+        found.consumers = rule.selectorText
+      }
+      if (rule.type === CSSRule.STYLE_RULE && rule.selectorText === ':root'
+          && rule.style.getPropertyValue('--glass-ground')) {
+        found.fallback = rule.style.getPropertyValue('--glass-ground').trim()
+      }
+      if (rule.type === CSSRule.SUPPORTS_RULE && /backdrop-filter/.test(rule.conditionText)) {
+        found.condition = rule.conditionText
+        for (const inner of rule.cssRules) {
+          const value = inner.style && inner.style.getPropertyValue('--glass-ground')
+          if (value) found.upgraded = value.trim()
+        }
+      }
+    }
+  }
+  return found
+}
+"""
+
+
+def _open_the_first_explanation(page):
+    page.wait_for_selector(".equivalent-grid article")
+    page.locator("details.equivalent-basis > summary").first.click()
+    page.wait_for_selector(".equivalent-basis__body")
+    return page.locator(".equivalent-basis__body").first
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("width", GLASS_WIDTHS)
+def test_the_open_explanation_is_a_translucent_light_layer(page_at, width):
+    """**Measured from the pixel, not from the declaration** (#143).
+
+    What #143 asks for is that the panel read as a light layer over the card
+    rather than a block dropped into it, in the brand's light-ground/Kale-text
+    pairing. Three things make that true and all three are asserted here:
+
+      * the ground is translucent, so the card's own colour reaches through it —
+        the painted pixel is NOT `#ffffff`, which is exactly what it was before;
+      * it is nevertheless LIGHTER than the card it sits on, so it reads as above
+        the card and not as a hole in it;
+      * the text on it is Kale, and both the figures and the staff sentence clear
+        4.5:1 against the ground that was painted rather than the one declared.
+
+    Measured on the running stack: the card composites to `rgb(255, 247, 226)`
+    (Banana at 0.2 over white) and the panel to **`rgb(255, 253, 245)`** — Kale
+    at **13.93:1** and `--muted` at **6.80:1**. The arithmetic alone predicts
+    `(255, 253, 247)`: `saturate(1.4)` in the blur pulls the backdrop's own tint
+    up, which is the whole reason this reads a pixel instead of compositing two
+    `rgba()` values in Python.
+    """
+    page = page_at(_equivalence_response(
+        source_note=_VEHICLE_SOURCE_NOTE, description=_VEHICLE_DESCRIPTION,
+    ), width=width)
+    _submit_two_entries(page)
+    page.wait_for_selector(".equivalent-grid article")
+
+    card = page.locator(".equivalent-grid article").first
+    closed_box = card.bounding_box()
+    assert closed_box is not None
+    #: x=10 is inside the card's own 20px inline padding and y is inside its
+    #: block padding, so this is the card's ground and not a glyph.
+    card_ground = _painted(page, card, 10, round(closed_box["height"]) - 10)
+
+    body = _open_the_first_explanation(page)
+    drawn = page.evaluate(
+        """() => {
+          const body = document.querySelector('.equivalent-basis__body')
+          const note = document.querySelector('.equivalent-basis__note')
+          const style = getComputedStyle(body)
+          return {
+            background: style.backgroundColor,
+            colour: style.color,
+            backdrop: style.backdropFilter || style.webkitBackdropFilter || 'none',
+            noteColour: note ? getComputedStyle(note).color : null,
+          }
+        }"""
+    )
+    #: 6, 6 clears the 1px hairline and sits in the panel's own padding
+    #: (12px block, 14px inline), ahead of the first `<dt>`.
+    ground = _painted(page, body, 6, 6)
+
+    assert drawn["backdrop"] != "none", (
+        f"the panel declares no backdrop-filter at {width}px: {drawn['backdrop']}. "
+        f"Without one a translucent ground is just transparency"
+    )
+    assert drawn["colour"] == "rgb(0, 50, 35)", (
+        f"the panel's text is {drawn['colour']}, not Kale. It sits on a light ground, "
+        f"and the brand pairs a light ground with Kale text"
+    )
+    assert len(re.findall(r"[\d.]+", drawn["background"])) == 4, (
+        f"the panel's declared ground is {drawn['background']}, which carries no alpha: "
+        f"an opaque ground is the block #143 asked to be rid of"
+    )
+    assert ground[:3] != (255, 255, 255), (
+        f"the panel painted {ground} at {width}px - pure white, so nothing of the card "
+        f"reads through it and it is still the opaque rectangle it was"
+    )
+    assert sum(ground[:3]) > sum(card_ground[:3]), (
+        f"the panel painted {ground} over a card painted {card_ground} at {width}px: it is "
+        f"no lighter than the card, so it reads as a hole in the card rather than a layer "
+        f"above it"
+    )
+    for name, colour in (("the figures", drawn["colour"]), ("the sentence", drawn["noteColour"])):
+        if colour is None:
+            continue
+        ratio = _contrast(_rgb(colour), ground)
+        assert ratio >= 4.5, (
+            f"{name} measure {ratio:.2f}:1 ({colour} on the painted ground {ground}) at "
+            f"{width}px - under the 4.5:1 body text needs. A translucent panel's ratio is "
+            f"decided by what it composites onto, not by what the stylesheet declares"
+        )
+
+
+@pytest.mark.browser
+def test_the_question_mark_is_a_native_disclosure_with_a_name(page_at):
+    """**The restyle is paint, and these are the two things paint must not cost**
+    (#143): the keyboard a native `<details>` gives for nothing, and a name for a
+    control whose only glyph is `?`.
+
+    Both are asked of the platform rather than of the markup. The name is read out
+    of Chromium's accessibility tree, not off the `aria-label` attribute — an
+    attribute present in the DOM is not the same claim as a name the platform
+    computes, and `?` is what a screen reader reaches for when there is none.
+    The keyboard is Enter on the focused summary, twice, which is also the only
+    route a keyboard visitor has into this panel at all.
+    """
+    page = page_at(_equivalence_response(
+        source_note=_VEHICLE_SOURCE_NOTE, description=_VEHICLE_DESCRIPTION,
+    ))
+    _submit_two_entries(page)
+    page.wait_for_selector(".equivalent-grid article")
+
+    shape = page.evaluate(
+        """() => {
+             const details = document.querySelector('.equivalent-basis')
+             const summary = details.firstElementChild
+             return {details: details.tagName, summary: summary.tagName,
+                     glyph: summary.textContent.trim()}
+           }"""
+    )
+    assert shape["details"] == "DETAILS" and shape["summary"] == "SUMMARY", (
+        f"the disclosure is {shape}: a div pair gets no keyboard and no open state for free"
+    )
+    assert shape["glyph"] == "?", shape
+
+    summary = page.locator("details.equivalent-basis > summary").first
+    #: Chromium's own accessible-name computation, over CDP. `page.accessibility`
+    #: was removed from Playwright, and the alternative - reading `aria-label`
+    #: back - asserts that an attribute was typed rather than that a name was
+    #: computed from it.
+    session = page.context.new_cdp_session(page)
+    session.send("DOM.enable")
+    session.send("Accessibility.enable")
+    root = session.send("DOM.getDocument")["root"]["nodeId"]
+    node = session.send("DOM.querySelector", {
+        "nodeId": root, "selector": "details.equivalent-basis > summary"})["nodeId"]
+    assert node, "the summary is not in the document"
+    tree = session.send("Accessibility.getPartialAXTree", {
+        "nodeId": node, "fetchRelatives": False})["nodes"]
+    assert tree, "the summary is not in the accessibility tree at all"
+    name = (tree[0].get("name", {}).get("value") or "").strip()
+    assert len(name) > 1 and name != "?", (
+        f"the summary's accessible name is {name!r} - a screen reader announces the glyph, "
+        f"which says nothing about what opens (the node was {tree[0]})"
+    )
+
+    body = page.locator(".equivalent-basis__body").first
+    summary.focus()
+    page.keyboard.press("Enter")
+    page.wait_for_selector(".equivalent-basis__body")
+    assert body.is_visible(), "Enter on the focused summary did not open the panel"
+    page.keyboard.press("Enter")
+    assert not body.is_visible(), "Enter on the focused summary did not close the panel again"
+
+
+@pytest.mark.browser
+def test_the_glass_falls_back_to_an_opaque_ground_and_not_a_lighter_one(page_at):
+    """**The fallback is the half nobody looks at, so it is the half measured.**
+
+    Without `backdrop-filter` a translucent white is simply transparent, and the
+    panel's text would be read against whatever is behind it. The token therefore
+    declares `--glass-ground` **opaque** and upgrades it inside `@supports`,
+    which is the inverse of the `@supports not (...)` spelling the floating nav
+    carried alone: inverted, there is no second selector list for a new consumer
+    to be left out of, and a browser with no `@supports` at all gets the opaque
+    ground rather than the translucent one.
+
+    **Chromium cannot evaluate the prefixed half of that condition.** Measured:
+    `CSS.supports('(-webkit-backdrop-filter: blur(1px))')` is **false** in the
+    Chromium this suite drives, while the unprefixed property is true and is what
+    paints. So "a browser with only the prefixed spelling stays on the glass
+    path" cannot be evaluated directly here; what is asserted instead is the
+    condition's own shape, read off the live rule — a disjunction, not negated,
+    with the prefixed spelling as one of its terms — plus a disjunction of the
+    same shape with a false term and a true one standing in, evaluated by the
+    browser itself. Safari shipped `-webkit-backdrop-filter` alone for years and
+    treating that as unsupported would hand a working browser the fallback.
+
+    The opacity itself is measured rather than parsed: the fallback ground is
+    forced on, the filter is taken off the element, and the card behind it is
+    painted Beetroot. Measured, the panel paints `rgb(255, 255, 255)` either way
+    — Kale at **14.18:1**, `--muted` at **6.93:1** — and a ground that let
+    Beetroot through would have moved.
+    """
+    page = page_at(_equivalence_response(
+        source_note=_VEHICLE_SOURCE_NOTE, description=_VEHICLE_DESCRIPTION,
+    ), width=1278)
+    _submit_two_entries(page)
+    body = _open_the_first_explanation(page)
+
+    token = page.evaluate(READ_THE_TOKEN)
+    condition = token["condition"]
+    assert condition, "no @supports rule mentioning backdrop-filter is in the stylesheet"
+    assert token["fallback"], (
+        "no :root rule outside the @supports block declares --glass-ground, so there is "
+        "no fallback ground at all"
+    )
+    assert token["upgraded"], (
+        f"the @supports block {condition} upgrades no --glass-ground, so the token's "
+        f"ground is not what it gates"
+    )
+    assert "not" not in condition.lower(), (
+        f"the condition is {condition}: negated, the fallback is what a browser WITH "
+        f"backdrop-filter would be handed"
+    )
+    assert " or " in condition, (
+        f"the condition is {condition}, which is not a disjunction - one spelling of the "
+        f"property decides it, and Safari shipped only the prefixed one for years"
+    )
+    assert "-webkit-backdrop-filter" in condition, (
+        f"the condition is {condition} and does not mention the prefixed spelling at all"
+    )
+    #: The condition's shape, evaluated rather than read: one false term and one
+    #: true term joined the way the live rule joins its two, and the browser
+    #: answers true. The prefixed term is one of the live rule's two terms
+    #: (asserted above), so a browser for which only it is true takes this path.
+    shape = page.evaluate(
+        """condition => ({
+             asWritten: CSS.supports(condition),
+             prefixedSpellingAlone: CSS.supports('(-webkit-backdrop-filter: blur(1px))'),
+             eitherTermSuffices: CSS.supports('((kai-not-a-property: 1px) or (color: red))'),
+           })""",
+        condition,
+    )
+    assert shape["asWritten"], (
+        f"this browser does not satisfy {condition}, so everything the test above measured "
+        f"was the fallback and not the glass"
+    )
+    assert shape["eitherTermSuffices"], (
+        "a disjunction with one false term and one true term did not evaluate true in this "
+        "browser, so nothing can be concluded about the shape of the live condition"
+    )
+    assert shape["prefixedSpellingAlone"] is False, (
+        "this Chromium now reports support for -webkit-backdrop-filter. The docstring's "
+        "reason for standing a term in rather than evaluating the real one is stale: "
+        "evaluate the real one"
+    )
+
+    opaque = page.evaluate(
+        """fallback => {
+             document.documentElement.style.setProperty('--glass-ground', fallback)
+             const body = document.querySelector('.equivalent-basis__body')
+             body.style.backdropFilter = 'none'
+             body.style.webkitBackdropFilter = 'none'
+             return getComputedStyle(body).backgroundColor
+           }""",
+        token["fallback"],
+    )
+    on_the_card = _painted(page, body, 6, 6)
+    page.evaluate(
+        """() => { document.querySelector('.equivalent-grid article').style.background = '#87005a' }"""
+    )
+    on_beetroot = _painted(page, body, 6, 6)
+
+    assert on_the_card == on_beetroot, (
+        f"with the fallback ground in force the panel paints {on_the_card} over the card and "
+        f"{on_beetroot} over Beetroot: the fallback is translucent, so it is merely lighter "
+        f"and the text is read against whatever is behind it ({opaque})"
+    )
+    for name, colour in (("the figures", "rgb(0, 50, 35)"), ("the sentence", "rgb(70, 95, 86)")):
+        ratio = _contrast(_rgb(colour), on_the_card)
+        assert ratio >= 4.5, (
+            f"on the fallback ground {on_the_card}, {name} measure {ratio:.2f}:1 - under "
+            f"the 4.5:1 body text needs"
+        )
+
+
+@pytest.mark.browser
+def test_the_glass_is_a_containing_block_for_nothing_positioned(page_at):
+    """**`backdrop-filter` creates a containing block**, and the stylesheet near
+    `.step-nav` already carries what that broke before.
+
+    The consumers are read out of the token's own selector list rather than named
+    here, so a selector added to it is covered the day it is added — on this page.
+    Today that is the equivalence panel and the floating section nav; the step
+    cards (#134's chrome, #138, #142) are not on the results page and are the
+    reason the hazard is written down: step 3's term tooltips are
+    `position: absolute` inside a card body, and `position: absolute` inside a
+    glass surface resolves against the glass rather than against whatever it was
+    written for.
+
+    The panel holds a `<dl>` and a `<p>` and must keep holding nothing
+    positioned. The floating nav's own `position: absolute` panel is a consumer
+    rather than a descendant of one, which is why the nav is measured by
+    `test_results_floating_nav_browser.py` and only its contents are asked about
+    here.
+    """
+    page = page_at(_equivalence_response(
+        source_note=_VEHICLE_SOURCE_NOTE, description=_VEHICLE_DESCRIPTION,
+    ), width=1278)
+    _submit_two_entries(page)
+    _open_the_first_explanation(page)
+
+    token = page.evaluate(READ_THE_TOKEN)
+    assert token["consumers"], "no rule in the stylesheet declares backdrop-filter"
+    positioned = page.evaluate(
+        """selector => {
+             const surfaces = [...document.querySelectorAll(selector)]
+             return {
+               surfaces: surfaces.length,
+               offenders: surfaces.flatMap(surface =>
+                 [...surface.querySelectorAll('*')]
+                   .filter(node => getComputedStyle(node).position !== 'static')
+                   .map(node => `${selector} > ${node.tagName.toLowerCase()}`
+                                + `.${node.className} is ${getComputedStyle(node).position}`)),
+             }
+           }""",
+        token["consumers"],
+    )
+    assert positioned["surfaces"] >= 2, (
+        f"only {positioned['surfaces']} of the token's consumers ({token['consumers']}) are "
+        f"on this page, so this measured less than it claims to"
+    )
+    assert positioned["offenders"] == [], (
+        f"a glass surface is the containing block for {positioned['offenders']}: "
+        f"backdrop-filter makes it one, and that element's offsets now resolve against the "
+        f"glass instead of against whatever they were written for"
+    )
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("width", GLASS_WIDTHS)
+def test_opening_the_explanation_leaves_its_own_card_where_it_was(page_at, width):
+    """**Opening must not shift the card layout under the reader's eye** (#143).
+
+    What the restyle owes is that it moved no box: the panel keeps the margin,
+    the padding, the 1px hairline and the in-flow block it already had, and only
+    the paint changed. So the opened card's own top is unchanged, the panel stays
+    inside that card's box, and a card sharing the opened card's grid row keeps
+    its top too.
+
+    **Two movements are real, pre-existing, and deliberately not asserted
+    against.** Measured on three cards: at 1278 the three sit in one grid row, so
+    opening the first grows the row and the auto margin that pushed every `?` to
+    its card's foot gives up its slack — the opened card's own summary rises
+    1960 → 1840 and its two neighbours' fall 1960 → 2048. At 320 the grid is one
+    column and the cards below the opened one move down, 2811 → 3067. Both are
+    what an in-flow `<details>` in a stretch-aligned grid row does; neither is
+    the paint, and a test that forbade them would be a test against the
+    disclosure existing.
+    """
+    response = _equivalence_response(
+        source_note=_VEHICLE_SOURCE_NOTE, description=_VEHICLE_DESCRIPTION,
+    )
+    template = response["totals"]["current"]["equivalences"][0]
+    response["totals"]["current"]["equivalences"] = [
+        dict(template, code="short", name="Short", label="One short line"),
+        dict(template, code="medium", name="Medium",
+             label="A label of a middling length that takes up about two lines here"),
+        dict(template, code="long", name="Long",
+             label="A deliberately long label that wraps onto several lines so that this "
+                   "card is taller than both of the others beside it in the same row"),
+    ]
+    page = page_at(response, width=width)
+    _submit_two_entries(page)
+    page.wait_for_selector(".equivalent-grid article")
+
+    geometry = """
+    () => [...document.querySelectorAll('.equivalent-grid article')].map(card => {
+      const box = card.getBoundingClientRect()
+      const body = card.querySelector('.equivalent-basis__body')
+      return {
+        top: Math.round(box.top + window.scrollY),
+        bottom: Math.round(box.bottom + window.scrollY),
+        bodyBottom: body
+          ? Math.round(body.getBoundingClientRect().bottom + window.scrollY) : null,
+        bodyPosition: body ? getComputedStyle(body).position : null,
+      }
+    })
+    """
+    before = page.evaluate(geometry)
+    assert len(before) == 3, before
+    _open_the_first_explanation(page)
+    after = page.evaluate(geometry)
+
+    assert after[0]["top"] == before[0]["top"], (
+        f"opening the explanation moved its own card's top from {before[0]['top']} to "
+        f"{after[0]['top']} at {width}px"
+    )
+    assert after[0]["bodyPosition"] == "static", (
+        f"the open panel is {after[0]['bodyPosition']} at {width}px. An out-of-flow panel is "
+        f"how the admin panel's help marker once overflowed a 320px viewport by 27px"
+    )
+    assert after[0]["bodyBottom"] is not None
+    assert after[0]["bodyBottom"] <= after[0]["bottom"] + 1, (
+        f"the open panel ends at {after[0]['bodyBottom']} and its card at "
+        f"{after[0]['bottom']} at {width}px: it is hanging out of the card it belongs to"
+    )
+    row = [index for index, card in enumerate(before) if card["top"] == before[0]["top"]]
+    for index in row:
+        assert after[index]["top"] == before[index]["top"], (
+            f"card {index} shares the opened card's grid row and its top moved from "
+            f"{before[index]['top']} to {after[index]['top']} at {width}px"
+        )
 
 
 # ------------------------------------------------- the reporting period (v1.68)

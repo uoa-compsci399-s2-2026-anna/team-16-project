@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -167,7 +168,22 @@ def page_at(browser):
 #: the same five widths `page_at`'s own tests use so a layout finding
 #: (clipping, in particular) is measured against the same breakpoints in
 #: every direction and every script this file cares about.
-_CONTEXT_LOCALE = {"de": "de-DE", "ar": "ar-SA"}
+#:
+#: `en` is here so that a test which has to compare one measurement **across**
+#: languages can take all of them from one fixture. `page_at_locale(w, h, dpr,
+#: "en")` and `page_at(w, h, dpr)` are then the same page: `en-NZ` is the locale
+#: `page_at` pins, and `?lang=en` is the override `_english` appends.
+#:
+#: `ru` is here because it holds the **longest** label of the twenty catalogues
+#: on the one control measured by `_SELECT_ARROW_PX`'s test below - "Единица
+#: измерения" for `Unit`, seventeen characters against German's eleven - so a
+#: control-width assertion that stopped at German would stop one language short
+#: of its own worst case.
+#:
+#: Adding rows does not reach any existing test: every one of them names its
+#: languages explicitly in its own `parametrize`, so the reason the two fixtures
+#: are separate stands unchanged - nothing here silently defaults.
+_CONTEXT_LOCALE = {"en": "en-NZ", "de": "de-DE", "ar": "ar-SA", "ru": "ru-RU"}
 
 
 @pytest.fixture
@@ -1063,6 +1079,510 @@ def test_the_improvement_donut_draws_the_share_the_slider_holds(page_at):
     assert page.locator(".improvement-chart-modal .improvement-pie-chart").count() == 1
     page.click('[data-action="close-improvement-chart"]')
     assert page.locator(".improvement-chart-modal").count() == 0
+
+
+def test_the_improvement_chart_follows_both_scroll_directions_on_desktop(page_at):
+    """The chart card stays beside the long allocation list while it is being edited.
+
+    This measures the rendered card rather than merely checking ``position: sticky``:
+    a sticky element whose containing block is too short, whose ancestor clips it, or
+    whose inset is missing computes as sticky but still scrolls away.  Moving down and
+    then back up also covers the client's explicit requirement that the visual follow
+    the viewport in both directions.
+    """
+    page = advance_to(page_at(1278, 700, 1), 5)
+    page.click('[data-action="explore-improvements"]')
+    page.wait_for_selector(".improvement-pie-wrap")
+
+    positions = page.evaluate(
+        """async () => {
+          const editor = document.querySelector('.improvement-editor');
+          const card = editor.querySelector('.improvement-pie-wrap');
+          const editorTop = editor.getBoundingClientRect().top + window.scrollY;
+          window.scrollTo(0, editorTop + 20);
+          await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+          const down = card.getBoundingClientRect().top;
+          window.scrollBy(0, 20);
+          await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+          const fartherDown = card.getBoundingClientRect().top;
+          window.scrollBy(0, -10);
+          await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+          const backUp = card.getBoundingClientRect().top;
+          return {
+            position: getComputedStyle(card).position,
+            inset: parseFloat(getComputedStyle(card).insetBlockStart),
+            down,
+            fartherDown,
+            backUp,
+            editorBottom: editor.getBoundingClientRect().bottom,
+            cardBottom: card.getBoundingClientRect().bottom,
+          };
+        }"""
+    )
+
+    assert positions["position"] == "sticky", positions
+    for name in ("down", "fartherDown", "backUp"):
+        assert abs(positions[name] - positions["inset"]) <= 1, positions
+    assert positions["cardBottom"] <= positions["editorBottom"] + 1, (
+        f"the sticky chart escaped the editor that owns it: {positions}"
+    )
+
+
+def test_the_improvement_copy_uses_the_visuals_left_edges(page_at):
+    """The intro aligns with the section title and the error with the total label.
+
+    Both lines used to inherit the same centred 720px text column, even though the
+    elements they describe start at two different edges.  Measure the rendered text
+    boxes so a future shorthand margin cannot silently centre them again.
+    """
+    page = advance_to(page_at(1278, 800, 1), 5)
+    page.click('[data-action="explore-improvements"]')
+    page.wait_for_selector("#improvement-inline-error")
+
+    edges = page.evaluate(
+        """() => {
+          const metrics = selector => {
+            const element = document.querySelector(selector);
+            const box = element.getBoundingClientRect();
+            return {
+              left: box.left,
+              lines: Math.round(box.height / parseFloat(getComputedStyle(element).lineHeight)),
+              fontSize: parseFloat(getComputedStyle(element).fontSize),
+            };
+          };
+          return {
+            title: metrics('#improvement-title'),
+            intro: metrics('.improvement-scenario > p:first-of-type'),
+            totalLabel: metrics('.improvement-total > span:first-child'),
+            error: metrics('#improvement-inline-error'),
+          };
+        }"""
+    )
+
+    assert abs(edges["intro"]["left"] - edges["title"]["left"]) <= 1, edges
+    assert abs(edges["error"]["left"] - edges["totalLabel"]["left"]) <= 1, edges
+    assert edges["intro"]["lines"] == 1, edges
+    assert edges["error"]["fontSize"] == edges["intro"]["fontSize"], edges
+
+
+#: Room Chromium reserves for the native dropdown arrow, **inside** the select's
+#: own padding box. A control exactly as wide as its longest option plus its
+#: horizontal padding is therefore still too narrow by this much, which is why
+#: `MODE_SELECT_FIT` below adds it rather than comparing against the text alone.
+#:
+#: **Measured, not assumed.** `clientWidth` of a `width: max-content` clone of
+#: `#improvement-mode`, minus (longest option measured in the select's own
+#: computed font + `paddingLeft` + `paddingRight`), came to exactly 20.0px in
+#: English, German and Arabic, at every width in `_FIVE_WIDTHS` plus 768 and 803.
+#: The 1px of slack each assertion allows on top is for `clientWidth` being an
+#: integer where the text measurement is fractional, not for the arrow.
+_SELECT_ARROW_PX = 20
+
+#: How much width `#improvement-mode` needs to draw its own longest option, and
+#: how much it has.
+#:
+#: **`scrollWidth` cannot answer this question.** A closed `<select>` paints an
+#: ellipsis or simply cuts its label at the content edge; it does not lay the
+#: text out past that edge and does not become scrollable, so `clientWidth ==
+#: scrollWidth` holds whether the label fits or not - measured 98/98, 107/107,
+#: 122/122 and so on across the whole band where it was in fact clipped. Every
+#: overflow assertion in this file is therefore blind to it, which is why this
+#: measures the *text* against the box: the widest option is drawn into a canvas
+#: with the select's own computed font, and `paddingLeft` + `paddingRight` +
+#: `_SELECT_ARROW_PX` added to it.
+#:
+#: The options are read off the live element rather than named here, so this
+#: measures whichever of the twenty catalogues is in force.
+MODE_SELECT_FIT = """
+async () => {
+  await document.fonts.ready;
+  const select = document.querySelector('#improvement-mode');
+  const style = getComputedStyle(select);
+  const ctx = document.createElement('canvas').getContext('2d');
+  ctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+  let longest = '', textWidth = 0;
+  for (const option of select.options) {
+    const width = ctx.measureText(option.textContent).width;
+    if (width > textWidth) { textWidth = width; longest = option.textContent; }
+  }
+  const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+  return {
+    longest,
+    textWidth,
+    padding,
+    text: textWidth + padding,
+    clientWidth: select.clientWidth,
+    scrollWidth: select.scrollWidth,
+  };
+}
+"""
+
+
+def assert_the_mode_select_is_sized_to_its_own_longest_option(page, where):
+    """`#improvement-mode` is as wide as the widest option it offers, and no wider.
+
+    Two assertions, because the two directions are two different mistakes and one
+    message should not have to describe both. Too narrow is the measured defect: the
+    control took its width from a layout column and cut its own label. Too wide is
+    what "sized to its content" rules out - a control stretched across the whole
+    panel by the site-wide ``input, select { width: 100% }`` - and is the only thing
+    standing in for the end-edge pin this control deliberately no longer has.
+    """
+    fit = page.evaluate(MODE_SELECT_FIT)
+    needs = fit["text"] + _SELECT_ARROW_PX
+    assert fit["clientWidth"] + 1 >= needs, (
+        f"[{where}] the unit-mode select is {fit['clientWidth']}px wide inside its padding "
+        f"but needs {needs:.1f}px to draw {fit['longest']!r} "
+        f"({fit['textWidth']:.1f}px of text + {fit['padding']:.1f}px padding + "
+        f"{_SELECT_ARROW_PX}px for the dropdown arrow) - the option is being clipped, "
+        f"silently: scrollWidth is {fit['scrollWidth']}, the same as clientWidth, because "
+        "a closed select cuts its label rather than overflowing"
+    )
+    #: 2px, for an integer `clientWidth` measured against a fractional canvas
+    #: measurement. The two agreed to 0.0px in English, German, Russian and Arabic
+    #: at 320/390/700/768/803/1278, so this is rounding slack and nothing else -
+    #: it is three hundred-odd pixels short of admitting a full-width control.
+    assert fit["clientWidth"] <= needs + 2, (
+        f"[{where}] the unit-mode select is {fit['clientWidth']}px wide inside its padding "
+        f"where {needs:.1f}px draws its longest option {fit['longest']!r} - it is taking "
+        "its width from its container rather than from its own content"
+    )
+    return fit
+
+
+def test_the_unit_mode_control_sits_in_one_row_above_the_chart(page_at):
+    """The global mode selector belongs to the visual it changes.
+
+    It starts at the chart's own inline-start edge rather than at a separately centred
+    width, and its label and select share one row.  Measuring the rendered boxes
+    protects both parts of the request: horizontal label/control layout and placement
+    directly above the chart.
+
+    **The end edge is deliberately not asserted, and that is a correction.** The first
+    version of this test pinned `field.right` to `chart.right` as well, which made the
+    control's width the chart column's width - `minmax(144px, 0.72fr)`, so 144px at the
+    700px seam - and left it too narrow for its own longest option from 700px to about
+    780px in English and across the whole 700-803px band in German.  What the request
+    asked for is the alignment with the visual below, and that is the start edge; the
+    property the end edge was standing in for is "wide enough for what it says", which
+    is asserted here directly and at the widths where it bites by
+    `test_the_unit_mode_select_can_draw_its_own_longest_option`.
+    """
+    page = advance_to(page_at(1278, 800, 1), 5)
+    page.click('[data-action="explore-improvements"]')
+
+    layout = page.evaluate(
+        """() => {
+          const box = selector => {
+            const rect = document.querySelector(selector).getBoundingClientRect();
+            return {
+              left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom,
+              middle: rect.top + rect.height / 2,
+            };
+          };
+          return {
+            intro: box('.improvement-scenario > p:first-of-type'),
+            field: box('.improvement-mode-field'),
+            label: box('.improvement-mode-field label'),
+            select: box('#improvement-mode'),
+            chart: box('.improvement-pie-wrap'),
+          };
+        }"""
+    )
+
+    assert layout["field"]["left"] == pytest.approx(layout["chart"]["left"], abs=1)
+    assert layout["field"]["top"] >= layout["intro"]["bottom"], layout
+    assert layout["field"]["bottom"] <= layout["chart"]["top"], layout
+    assert layout["label"]["right"] < layout["select"]["left"], layout
+    assert layout["label"]["middle"] == pytest.approx(layout["select"]["middle"], abs=1)
+    assert_the_mode_select_is_sized_to_its_own_longest_option(page, "en@1278")
+
+
+@pytest.mark.parametrize("lang", ["en", "de", "ru", "ar"])
+@pytest.mark.parametrize("width", [320, 700, 768])
+def test_the_unit_mode_select_can_draw_its_own_longest_option(page_at_locale, width, lang):
+    """The unit/percentage control fits its own label at every width and in every script.
+
+    **700-768px is the band where taking the control's width from the chart column cost
+    it its own text.** Measured on the first version of this layout, with no allowance
+    at all for the dropdown arrow: at 700px the select was 100px wide against 111px of
+    `Percentage` plus padding, and 79px against 114px of `Prozentsatz`; at 768px -
+    which `styles.css` names as the likeliest non-desktop demo device - 108.6 against
+    111, and 87.6 against 114.  Russian was worse again, 79px against 170px, and Arabic
+    was the only one of the four that was clear.
+
+    **No other assertion in this file could see it.** `clientWidth == scrollWidth` held
+    throughout, so the overflow checks had nothing to report, and the layout checks were
+    satisfied by a control pinned to exactly the width that was too small - see
+    `MODE_SELECT_FIT`.  Deleting the declaration that caused the clipping
+    (`.improvement-mode-field select { min-width: 0 }`) left all seven of that round's
+    new cases green, which is what says the suite was not watching.
+
+    **320px is the other half, and it is a different mechanism.** There the panel leaves
+    242px, the label "Единица измерения" takes 144px of it on its own, and one row
+    cannot hold both - so the row wraps and the control keeps its width on a line of its
+    own.  Wrapping rather than a breakpoint is deliberate: what has to fit is a
+    translated string, and no viewport width predicts which catalogue is in force.
+
+    **What `flex-wrap: wrap` guards there is the overflow, not the clipping, and that
+    was measured rather than assumed.** A flex item's automatic minimum size stops this
+    `<select>` shrinking below its own longest option at all, so making the line
+    `nowrap` leaves the control full width and pushes it out of the panel instead:
+    `documentElement.scrollWidth` goes 9px past the viewport at 320px in Russian, while
+    every width assertion above still passes.  Hence the overflow check below, which is
+    the assertion that kills that mutation.  9px is a floor, not the figure a visitor
+    sees - the shared `browser` fixture launches Chromium with Playwright's default
+    `--hide-scrollbars`, so it reports the viewport about 15px wider than a real one
+    (see `test_results_floating_nav_browser.py`, which overrides that for exactly this
+    reason).
+
+    German rather than English alone because German is where the measured shortfall in
+    the band was largest; Russian because it holds the widest label of the twenty
+    catalogues on this control (190px against German's 134px), which makes it both the
+    worst case in the band and the only one that wraps at 320px; and Arabic because the
+    start edge it aligns to is the opposite one, and a start-edge assertion that has
+    only ever run LTR is half a test.
+    """
+    page = advance_to(page_at_locale(width, 900, 1.0, lang), 5)
+    page.click('[data-action="explore-improvements"]')
+    page.wait_for_selector("#improvement-mode")
+
+    assert_the_mode_select_is_sized_to_its_own_longest_option(page, f"{lang}@{width}")
+
+    #: The alignment half of the same request, at the widths this test already
+    #: has open: the control's inline-start edge is the chart card's, which is
+    #: `left` in English, German and Russian and `right` in Arabic.
+    edges = page.evaluate(
+        """() => {
+          const rtl = getComputedStyle(document.documentElement).direction === 'rtl';
+          const start = selector => {
+            const rect = document.querySelector(selector).getBoundingClientRect();
+            return rtl ? rect.right : rect.left;
+          };
+          return {
+            field: start('.improvement-mode-field'),
+            chart: start('.improvement-pie-wrap'),
+            scroll: document.documentElement.scrollWidth,
+            client: document.documentElement.clientWidth,
+          };
+        }"""
+    )
+    assert edges["field"] == pytest.approx(edges["chart"], abs=1), (
+        f"[{lang}@{width}] the mode control's start edge ({edges['field']}) left the chart "
+        f"card's ({edges['chart']})"
+    )
+    assert edges["scroll"] <= edges["client"], (
+        f"[{lang}@{width}] the page is {edges['scroll'] - edges['client']}px wider than its "
+        "own viewport with the improvement panel open - the mode control keeps its width "
+        "and takes it out of the panel rather than off its own label"
+    )
+
+
+@pytest.mark.parametrize("width", [699, 560, 559, 390])
+def test_the_improvement_visual_and_controls_reflow_without_horizontal_overflow(page_at, width):
+    """Resize boundaries keep the chart, caption/control and editor in one viewport.
+
+    699px is one pixel below the two-column budget; 560/559 straddle the allocation
+    row's own minimum; and 390px is the client's phone viewport.  These are the seams
+    where a broad phone-only rule would otherwise leave an untested overflow band.
+    """
+    page = advance_to(page_at(1278, 800, 1), 5)
+    page.click('[data-action="explore-improvements"]')
+    page.set_viewport_size({"width": width, "height": 800})
+    page.wait_for_timeout(100)
+
+    layout = page.evaluate(
+        """() => {
+          const root = document.documentElement;
+          const editor = document.querySelector('.improvement-editor');
+          const card = editor.querySelector('.improvement-pie-wrap');
+          const mode = document.querySelector('.improvement-mode-field');
+          const chart = card.querySelector('.improvement-pie-chart');
+          const button = card.querySelector('.improvement-expand-chart');
+          const list = editor.querySelector('.improvement-allocation-list');
+          const row = list.querySelector('.improvement-allocation-row');
+          const box = element => {
+            const rect = element.getBoundingClientRect();
+            return {left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom};
+          };
+          return {
+            viewport: window.innerWidth,
+            scrollWidth: root.scrollWidth,
+            columns: getComputedStyle(editor).gridTemplateColumns.split(' ').length,
+            cardPosition: getComputedStyle(card).position,
+            mode: box(mode),
+            card: box(card),
+            chart: box(chart),
+            button: box(button),
+            list: box(list),
+            rowColumns: getComputedStyle(row).gridTemplateColumns.split(' ').length,
+          };
+        }"""
+    )
+
+    assert layout["scrollWidth"] <= layout["viewport"], layout
+    assert layout["columns"] == 1, layout
+    assert layout["cardPosition"] == "static", layout
+    assert layout["list"]["top"] >= layout["card"]["bottom"] - 1, layout
+    for visual in ("mode", "card", "chart", "button", "list"):
+        assert layout[visual]["left"] >= -1, (visual, layout)
+        assert layout[visual]["right"] <= layout["viewport"] + 1, (visual, layout)
+    if width <= 559:
+        assert layout["rowColumns"] == 1, layout
+
+
+#: The largest fraction this stylesheet's `max-width` convention leaves unclaimed
+#: below the `min-width` it complements. `@media (max-width: 1019.98px)` against
+#: `@media (min-width: 1020px)` is the pair that established it in this file, and
+#: the improvement panel's `699.98` / `700` follows it. It is a convention rather
+#: than a closure: 0.02px stays unclaimed, which is 1/50 of what an integer
+#: `max-width` leaves and below the granularity any device scaling produces.
+_BREAKPOINT_TOLERANCE = 0.02
+
+
+def _improvement_media_blocks():
+    """`(min_widths, max_widths, declarations)` per `@media` block that governs the
+    improvement panel.
+
+    Reads `web/css/styles.css` from the working tree, not the served stylesheet:
+    these are assertions about what the file says, so they need neither the stack
+    on :18080 nor the `web` image rebuilt.
+
+    Comments are stripped first, and that is belt-and-braces rather than a fix for
+    anything the file does today: measured both ways, the bounds that come back are
+    identical, because every breakpoint number this stylesheet quotes in prose sits
+    *before* its `@media` token rather than between it and the `{`. It is kept
+    because both of those are legal CSS - a comment inside a prelude would be read as
+    part of the query, and a comment naming the panel inside an unrelated block would
+    pull that block into this list.
+    """
+    source = (ROOT / "web" / "css" / "styles.css").read_text(encoding="utf-8")
+    body = re.sub(r"/\*.*?\*/", "", source, flags=re.S)
+    blocks = []
+    for match in re.finditer(r"@media([^{]*)\{", body):
+        prelude = match.group(1)
+        depth, index = 1, match.end()
+        while depth and index < len(body):
+            depth += {"{": 1, "}": -1}.get(body[index], 0)
+            index += 1
+        declarations = body[match.end():index - 1]
+        if "improvement" not in declarations:
+            continue
+        blocks.append((
+            [float(value) for value in re.findall(r"min-width:\s*([\d.]+)px", prelude)],
+            [float(value) for value in re.findall(r"max-width:\s*([\d.]+)px", prelude)],
+            declarations,
+        ))
+    return blocks
+
+
+def test_the_improvement_panels_breakpoints_tile_without_a_gap():
+    """A `max-width` and the `min-width` it complements leave no width between them.
+
+    **This reads the two rules instead of measuring at a width, because the defect is
+    a relationship and not a pixel.** `@media (max-width: 699px)` against `@media
+    (min-width: 700px)` leaves every used viewport width in the open interval `(699,
+    700)` matched by neither, and those widths exist. Measured on a 699px window at
+    forced device scale factors of 1.1, 1.25 and 1.5, the used width was 699.107,
+    699.216 and 699.349, `matchMedia` answered **false** to `(max-width: 699px)` and
+    **false** to `(min-width: 700px)` at all three, and `.improvement-editor` took its
+    base two-column template there (`143.991px 440px`) while `.improvement-pie-wrap`
+    stayed `static` - the desktop grid with the sticky half missing, which is a
+    pairing no width is meant to produce.
+
+    **Nothing in this file could have caught that in a browser, for two separate
+    reasons.** Playwright's `viewport` is `Emulation.setDeviceMetricsOverride`, whose
+    `width` is an integer and which rejects a fractional one outright ("Invalid
+    parameters"), so the shared `browser` fixture cannot reach the band at all;
+    reaching it needs a Chromium launched with `--force-device-scale-factor=s` and a
+    context with `no_viewport=True`, where the fraction comes from the physical-pixel
+    rounding `round(W * s) / s`. And the symptom is not an overflow: the 440px
+    allocation list overhangs the editor's grid area by 0.67-0.88px and the panel's
+    own 26px padding absorbs every bit of it, so `documentElement.scrollWidth -
+    clientWidth` measured 0 in the band and 0 at both 699 and 700, with and without
+    `--hide-scrollbars`. The reflow test just above is this panel's overflow check,
+    and it reads 0 against this defect at every width it runs.
+
+    **What it assumes, stated rather than hidden:** that every `min-width` governing
+    this panel is the complement of a `max-width`, so the nearest `max-width` below it
+    is the rule it hands over from. That is true of the panel today - one `min-width`
+    (the sticky card) against three `max-width` rules - and it is the convention this
+    file holds itself to. A future `min-width` enhancement with no else-branch would
+    fail here, and the right answer then is to say so in this test, not to widen the
+    tolerance.
+
+    Scoped to the `@media` blocks whose declarations name the improvement panel. This
+    stylesheet has two other `max-width` / `min-width` pairs an off-by-one apart -
+    `649` / `650` and `999` / `1000`, on the public header and the home page - which
+    are older than this panel and are not this change's subject.
+    """
+    blocks = _improvement_media_blocks()
+    lower_bounds = sorted({value for mins, _, _ in blocks for value in mins})
+    upper_bounds = sorted({value for _, maxes, _ in blocks for value in maxes})
+    assert lower_bounds and upper_bounds, (
+        "no width-bounded `@media` rule governs the improvement panel any more - this "
+        f"test has stopped reading the file it thinks it is reading (blocks: {len(blocks)})"
+    )
+
+    gaps = []
+    for lower in lower_bounds:
+        below = [value for value in upper_bounds if value < lower]
+        if not below:
+            continue
+        nearest = max(below)
+        if lower - nearest > _BREAKPOINT_TOLERANCE:
+            gaps.append((nearest, lower))
+    assert not gaps, (
+        "the improvement panel's breakpoints do not tile: "
+        + "; ".join(
+            f"every used viewport width in ({nearest:g}, {lower:g}) is matched by neither "
+            f"`max-width: {nearest:g}px` nor `min-width: {lower:g}px`, and fractional device "
+            f"scaling produces such widths - write the max-width as "
+            f"{lower - _BREAKPOINT_TOLERANCE:g}px, as the 1019.98/1020 pair in this file does"
+            for nearest, lower in gaps
+        )
+    )
+
+
+def test_the_allocation_rows_stacking_breakpoint_is_the_width_these_tests_name():
+    """`_STACKING_BREAKPOINT` is the stylesheet's own boundary, not a comment about it.
+
+    Two tests in this file branch on 560: the reflow test above, through its `[699,
+    560, 559, 390]` parametrisation, where 560 is deliberately the *unstacked* side of
+    the boundary and 559 the stacked one, and
+    `test_the_range_gets_more_room_than_the_select_in_unit_mode` below, through `width
+    >= _STACKING_BREAKPOINT`. Neither of them reads the stylesheet, so both would go
+    on passing against a breakpoint that had moved: the reflow test's `if width <=
+    559` guard only ever asserts the stacked behaviour, so a stylesheet that stacked
+    at 560 as well would satisfy it while the 560 case silently stopped being the
+    control it was chosen to be.
+
+    So the constant is pinned to the rule. 560 is also the narrow-layout breakpoint
+    `.public-header-inner` and the home page already use, which is why the panel's own
+    rule is written as `559.98` - the same boundary, in the `.98` form that keeps 560
+    itself on the unstacked side - rather than as the `559` it first carried, a number
+    with no arithmetic behind it.
+    """
+    stacking = [
+        (maxes, declarations)
+        for _, maxes, declarations in _improvement_media_blocks()
+        if ".improvement-allocation-row" in declarations
+    ]
+    assert len(stacking) == 1, (
+        f"expected exactly one `@media` block to stack `.improvement-allocation-row`, "
+        f"found {len(stacking)}"
+    )
+    maxes, _ = stacking[0]
+    #: `pytest.approx` because `560 - 0.02` is not the same double as `float("559.98")`
+    #: for every pair of values this arithmetic could be given, and the assertion is
+    #: about the boundary rather than about IEEE 754.
+    assert maxes == pytest.approx([_STACKING_BREAKPOINT - _BREAKPOINT_TOLERANCE]), (
+        f"the allocation row stacks at `max-width: {'/'.join(f'{m:g}' for m in maxes)}px` "
+        f"but every width-dependent "
+        f"assertion in this file is written against _STACKING_BREAKPOINT = "
+        f"{_STACKING_BREAKPOINT}, so the boundary has to be "
+        f"{_STACKING_BREAKPOINT - _BREAKPOINT_TOLERANCE:g}px - 560 itself stays unstacked"
+    )
 
 
 def test_step_three_asks_what_the_stage_put_through(page_at):
@@ -2668,9 +3188,9 @@ _FIVE_WIDTHS = [
     pytest.param(1278, 983, 1.25, id="1278"),
 ]
 
-#: Not stacked below ~480px, per this test's own docstring - the width at
+#: The row and its controls stack below 560px - the width at
 #: and above which the range/select/box comparison is meaningful at all.
-_STACKING_BREAKPOINT = 480
+_STACKING_BREAKPOINT = 560
 
 
 @pytest.mark.parametrize("lang", ["de", "ar"])

@@ -1392,7 +1392,30 @@ tbody th { font-weight: 700; }
 
 .explore-improvements, .improvement-scenario, .comparison-results { margin-top: 32px; padding: 26px; border-radius: 18px; background: rgba(223, 248, 237, 0.34); box-shadow: 0 5px 18px rgba(0, 50, 35, 0.045); }
 .explore-improvements { text-align: center; }
-.explore-improvements p, .improvement-scenario > p { max-width: 720px; margin-inline: auto; color: var(--muted); }
+.explore-improvements p { max-width: 720px; margin-inline: auto; color: var(--muted); }
+/* The improvement copy belongs to the section heading rather than to the centred mode
+   control below it, so it shares the heading's inline-start edge.  The validation line
+   is inset by the total panel's own 18px padding, aligning its first word with the
+   "Total allocation" label instead of with the panel's outer edge.
+
+   **This rule holds that start edge by NOT setting a measure, which is why
+   `margin-inline: 0` is gone from it.** A block in the panel's flow already starts at
+   the panel's content edge; auto inline margins centre an element only when it is
+   narrower than its container, and nothing here makes it narrower. Enumerated in the
+   browser rather than argued: of every author rule in this stylesheet that sets
+   `max-width`, `margin`, `margin-inline-*` or `width`, exactly one matches this
+   paragraph - this one. The centred `max-width: 720px; margin-inline: auto` directly
+   above belongs to `.explore-improvements p`, and the two sections are alternatives
+   that never nest, so there was never an inherited centring to cancel. Deleting
+   `margin-inline: 0` and rebuilding moved nothing: every box and every computed margin
+   on the intro and on the error line was identical at 1278, 700 and 390.
+
+   `max-width: none` stays, and it is **not** a measure being overridden either - the
+   same enumeration says nothing else sets one. It stays because it is what tells a
+   reader comparing these two adjacent rules which one centres its copy and which one
+   does not, and that contrast is the whole point of the split. */
+.improvement-scenario > p { max-width: none; color: var(--muted); }
+.improvement-scenario > #improvement-inline-error { margin-inline-start: 18px; }
 .improvement-scenario { background: rgba(230, 190, 255, 0.12); }
 .results-page > :where(#impact-summary, #improvement-section, #tangible-equivalents, #breakdown-section, #results-methodology) { scroll-margin-top: 24px; }
 /* THE SECTION NAV LIVES IN THE PAGE'S GUTTER, AND ONLY WHERE THERE IS ONE.
@@ -1708,17 +1731,40 @@ tbody th { font-weight: 700; }
   border-inline-start-color: var(--green-rule);
   box-shadow: 0 5px 16px rgba(40, 200, 130, 0.45), 0 1px 3px rgba(0, 50, 35, 0.16);
 }
-.improvement-mode-field { max-width: 220px; margin: 20px auto 0; }
+/* **The edge the client asked to line up is the inline-start one, and a block in this
+   panel's own flow already has it** - `.improvement-editor`'s first column starts at
+   the panel's content edge too, so the label, the control and the chart card below
+   them share one start edge without this row being a grid column of its own.
+   **It deliberately is not one.** Pinning the end edge to the chart as well took the
+   control's width from the chart column - `minmax(144px, 0.72fr)`, so 144px at the
+   700px seam where the editor first becomes two columns - instead of from its own
+   longest option, which needs 131px in English, 134px in German and 190px in Russian
+   ("Единица измерения") once Chromium's 20px of dropdown arrow is counted. A closed
+   `<select>` cuts its own label with no overflow to report (`scrollWidth ==
+   clientWidth` at every width measured), so the clipping was invisible to every
+   assertion in the suite until one compared the text against the box.
+
+   **`flex-wrap` rather than a breakpoint, because what has to fit is a translated
+   string and no viewport width predicts it.** The client asked for the label and the
+   control on one line; this keeps them there wherever one line holds them, which is
+   every language at 390px and above, and lets the control drop to its own line where
+   one does not - Russian at 320px, where the label alone is 144px of the 242px the
+   panel leaves. A flex line wraps on the items' own widths before it shrinks them, so
+   the select reaches its second line still `max-content` wide rather than clipped;
+   `max-width: 100%` is the floor for a catalogue longer than any shipped today, where
+   the only remaining choice is to clip. */
+.improvement-mode-field { margin: 20px 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.improvement-mode-field label { margin: 0; }
+.improvement-mode-field select { width: max-content; max-width: 100%; }
 /* **The list column's own minimum has to cover what the row inside it actually needs,
    not merely look plausible on its own.** The row's `:has()` floor below reserves 260px
    for its control column alone; add the row's label column (120px min), the gap between
-   them (20px) and the row's own padding (18px each side, 36px total - `box-sizing:
-   border-box` counts it inside the row's width) and the row needs at least 436px to lay
+   them (20px) and the row's own padding (`18px 20px`, so 40px horizontally - `box-sizing:
+   border-box` counts it inside the row's width) and the row needs at least 440px to lay
    out without its own tracks being compressed below their stated minimums. The list
-   column's old minimum (380px) was less than that by 56px, so at any viewport narrow
-   enough to hold this editor to its bare minimums - 700px measured, but really the whole
-   band from the 480px mobile stack up to where the two-column split stops being
-   squeezed - the row was compressed well past what its own CSS says it is entitled to,
+   column's old minimum (380px) was less than that by 60px, so at the first viewport
+   wide enough for the editor's two-column layout - 700px measured - the row was
+   compressed well past what its own CSS says it is entitled to,
    and the select (the row's last, narrowest track) was what ran out of room first:
    `.improvement-allocation-list`'s `overflow: hidden` then clipped it rather than
    showing an overflow nobody could scroll to. Not RTL-only - the clip is symmetric, off
@@ -1727,15 +1773,30 @@ tbody th { font-weight: 700; }
    **Fixed by giving both of this grid's own columns a minimum that actually adds up.**
    At 700px this editor is given 608px total (measured, both directions, both English and
    German - the split is pixel-based, not text-based, so it does not move with the
-   language); 144px (pie) + 440px (list) + 24px gap is exactly that, with 4px of the
-   list's own slack carried over from the row's `:has()` floor below. The pie column
+   language); 144px (pie) + 440px (list) + 24px gap is exactly that, and the 440px is
+   exactly the row's own 440px with nothing to spare - measured at 700px, the row is
+   440px wide and its tracks sit on their floors in both modes (`150px 230px` in
+   percentage mode, `120px 260px` in unit mode) with `scrollWidth == clientWidth`,
+   which is the fit at its tightest rather than a fit with margin. The pie column
    does end up narrower at this one width than it was before this fix - there was never
    a way to give the row what it needs inside a fixed 608px budget without taking it from
    somewhere, and the select is exactly what this round was told not to shave further.
    Above roughly 900px there is room for both columns past their minimums and the split
    returns to its usual proportions. */
 .improvement-editor { margin-top: 24px; display: grid; grid-template-columns: minmax(144px, 0.72fr) minmax(440px, 1.28fr); gap: 24px; align-items: start; }
-.improvement-pie-wrap { padding: 12px; border-radius: 14px; background: #fff; }
+/* The chart, its legend and its expand control are one visual unit.  Keep the whole
+   unit in view while the much longer allocation list scrolls past it; sticking only
+   the SVG would detach the caption and control that explain and operate on it.  The
+   sticky rule is gated below to viewports that can actually hold both columns. */
+.improvement-pie-wrap { min-width: 0; max-width: 100%; padding: 12px; border-radius: 14px; background: #fff; }
+.improvement-pie-content { min-width: 0; max-width: 100%; }
+/* `width: 100%` and deliberately no `max-width`. The two would resolve against the
+   same containing block, so a `max-width: 100%` beside a `width: 100%` can never clamp
+   anything; it was deleted and the rebuild moved no box - 308.63px at 1278, 120px at
+   700, 288px at 390, unchanged. The modal is the one place this chart is not
+   full-width, and the cap there is `.improvement-chart-expanded`'s own
+   `width: min(720px, 100%)` below: measured 720px inside an 860px dialog, which is
+   already under 100% and so was never reached by a `max-width` of 100% either. */
 .improvement-pie-chart { display: block; width: 100%; height: auto; overflow: visible; }
 .improvement-pie-chart path { stroke: #fff; stroke-width: 2; }
 .improvement-pie-centre, .improvement-pie-total { pointer-events: none; }
@@ -1801,9 +1862,9 @@ tbody th { font-weight: 700; }
 
    **The three minimums must sum to no more than the row's own `:has()` floor above (260px),
    gaps included, or the row silently overflows its own `.improvement-allocation-list`
-   (`overflow: hidden`) the moment that floor is the width actually on offer - which is every
-   viewport from the mobile stack (480px) up to where `.improvement-editor`'s two-column split
-   stops squeezing it (roughly 900px), not merely one measured breakpoint.** A first pass here
+   (`overflow: hidden`) the moment that floor is the width actually on offer - most notably
+   at the 700px seam where `.improvement-editor` first becomes two columns, not merely at a
+   comfortably wide desktop breakpoint.** A first pass here
    used `140/55/80` - 291px including gaps, 31px over the 260px floor - which fit in English
    only by coincidence of where the row happened to sit; in `dir="rtl"` the overflow was real
    and clipped the select half off the left edge, invisibly, because clipped content raises no
@@ -1835,6 +1896,98 @@ tbody th { font-weight: 700; }
 .improvement-submission-mass { margin-block-start: 18px; color: var(--muted); font-size: 0.9rem; text-align: end; }
 .improvement-total.invalid { color: var(--error); background: rgba(135, 0, 90, 0.06); }
 .improvement-actions { margin-top: 22px; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 12px; }
+
+/* 144px chart + 440px controls + 24px gap needs 608px inside the panel.  A 700px
+   viewport is the first width that supplies exactly that after the page and panel
+   padding, so below it the visual and its controls return to document flow instead of
+   forcing a horizontal scrollbar.  At desktop widths the chart card follows either
+   scroll direction until the end of its own editor, which keeps it paired with the row
+   currently being adjusted without letting it escape into the following content. */
+@media (min-width: 700px) {
+  .improvement-pie-wrap {
+    position: sticky;
+    inset-block-start: clamp(16px, 3vh, 28px);
+    /* **Belt and braces, and measured as such.** `.improvement-editor`'s own
+       `align-items: start` already resolves this item's `auto` to `start`, so deleting
+       this line changes the computed value from `start` to `auto` and moves nothing -
+       rebuilt without it, the card was still 337.27px tall at 1278 and 199.92px at
+       700, still flush with the editor's top, still sticking at its 24px inset.
+
+       **What makes it bind is one change in one other rule, three lines up.** A grid
+       item whose `align-self` resolves to `normal` stretches, and sticky needs a box
+       shorter than its own area to have anywhere to travel. With `.improvement-editor`
+       put back to the initial `align-items: normal`: with this line deleted the card
+       grew from 337.27px to the row's full 1454px and stopped sticking altogether (its
+       top ran 24px -> -20.19px -> -40.19px as the page scrolled, i.e. it scrolled away
+       with the content); with this line kept, the same change to the parent moved
+       nothing at all. That is the pair, both measured, and it is why this stays. */
+    align-self: start;
+  }
+}
+
+/* **`699.98`, and the `.98` is the whole point: a used viewport width is not an
+   integer.** `max-width: 699px` against the `min-width: 700px` above it leaves every
+   width in the open interval `(699, 700)` matched by NEITHER rule, and fractional
+   device scaling produces exactly those widths. Measured on a 699px window at forced
+   device scale factors of 1.1, 1.25 and 1.5, the used width is 699.107 / 699.216 /
+   699.349 and `matchMedia` answers false to `(max-width: 699px)` and false to
+   `(min-width: 700px)` alike. In that band `.improvement-editor` took the base
+   two-column template (`143.991px 440px`) while `.improvement-pie-wrap` stayed
+   `static` - the desktop grid with the sticky half missing, a pairing no width is
+   meant to produce.
+
+   **It is not a horizontal scrollbar, and that is why nothing reported it.** The
+   440px list overhangs the editor's own grid area by 0.67-0.88px (16.3px with a
+   classic scrollbar drawn), and the panel's 26px padding absorbs all of it:
+   `documentElement.scrollWidth - clientWidth` measured 0 in the band and 0 at both
+   699 and 700, with and without `--hide-scrollbars`. An overflow assertion cannot see
+   this; the breakpoints themselves have to be read, which
+   `tests/web/test_step_navigation.py` now does.
+
+   `699.98` is the form this file already uses at its `1019.98` / `1020` pair. It
+   narrows the unclaimed band from 1px to 0.02px rather than closing it outright,
+   which is the trade that pair already made. */
+@media (max-width: 699.98px) {
+  .improvement-editor { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* **A comfort margin, and the arithmetic says by how much.** What stood here said
+   that at this width "the allocation row's own 400px minimum no longer fits after its
+   padding". It does fit, and by a wide margin. Both of the row's templates are exactly
+   400px at their floors - `150 + 20 + 230` in percentage mode, `120 + 20 + 260` in unit
+   mode, gap included - and those are `minmax()` minimums rather than preferences, so
+   the row needs a 400px content box, which is 440px of border box after its own 40px of
+   horizontal padding, which is a 532px viewport after the panel's 26px either side and
+   the page's 20px either side (`440 + 52 + 40`). Measured at 559px the panel hands the
+   row 467px, 27px more than the 440px it needs, and the surplus shows in the tracks:
+   162.8 / 244.2 in percentage mode against floors of 150 / 230, and 120 / 287 in unit
+   mode against 120 / 260, with `scrollWidth == clientWidth` in both. It keeps
+   fitting down to 532px, or to 547px with a classic 15px scrollbar drawn; and the
+   clipping this rule exists to prevent - the tracks overflowing the row's own end
+   padding, which `.improvement-allocation-list`'s `overflow: hidden` then cuts - does
+   not begin until 511px, or 526px with that scrollbar.
+
+   So this breakpoint is chosen rather than derived. It clears the worst of those
+   thresholds (547px, the one with a scrollbar) by 13px, and stacking early costs
+   nothing: a stacked row is the same label, range, value and unit at full width, which
+   is the trade against clipping the inline-end controls that the rule was written to
+   make.
+
+   **`559.98`, because the boundary is 560 and this file already has it.** 560 is the
+   narrow-layout breakpoint `.public-header-inner` and the home page use further down,
+   and `.98` is how the rule above and the `1019.98` / `1020` pair at the foot of this
+   file both say "up to but not including" - so there is one
+   boundary number in the file rather than two a pixel apart, and `559`, which was a
+   number with no arithmetic behind it, is gone. 560 itself stays on the UNSTACKED
+   side, which is what `_STACKING_BREAKPOINT` and the 699/560/559/390 parametrisation
+   in `tests/web/test_step_navigation.py` both assert. */
+@media (max-width: 559.98px) {
+  .improvement-allocation-row,
+  .improvement-allocation-row:has(.improvement-control-unit) { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .improvement-control,
+  .improvement-control-unit { grid-template-columns: minmax(0, 1fr); }
+}
+
 .comparison-results { background: #fff; }
 .comparison-estimate-note { padding: 14px 16px; border-radius: 10px; color: var(--kai-kale); background: rgba(255, 215, 110, 0.28); font-weight: 700; }
 .comparison-summary { margin: 24px 0; padding: 22px; border-radius: 14px; background: rgba(40, 200, 130, 0.12); }
@@ -2217,15 +2370,6 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
   .result-actions { flex-direction: column; }
   .download-actions { flex-direction: column; margin-inline-start: 0; }
   .explore-improvements, .improvement-scenario, .comparison-results { padding: 19px; }
-  .improvement-editor { grid-template-columns: 1fr; }
-  .improvement-allocation-row { grid-template-columns: 1fr; gap: 10px; }
-  /* `:has()` gives the unit-mode row a higher specificity than the plain selector
-     above, so it needs restating here rather than inheriting the stack this rule
-     already sets - a later, lower-specificity rule cannot override an earlier,
-     more specific one just by coming second in the file. */
-  .improvement-allocation-row:has(.improvement-control-unit) { grid-template-columns: 1fr; }
-  .improvement-control { grid-template-columns: 1fr; }
-  .improvement-control-unit { grid-template-columns: 1fr; }
   .improvement-actions { flex-direction: column; }
   .comparison-values { grid-template-columns: 1fr; }
   .comparison-arrow { transform: rotate(90deg); justify-self: start; }

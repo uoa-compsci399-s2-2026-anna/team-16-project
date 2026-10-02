@@ -57,6 +57,38 @@ assert.equal(module.PALETTE.length, 16);
 """)
 
 
+def test_stats_module_imports_from_its_real_file_url_with_chart_renderers_available():
+    """A missing named chart import must fail at ESM link time, before page setup."""
+    if not shutil.which("node"):
+        pytest.skip("Node is required for the statistics module import contract")
+    script = f"""
+import assert from 'node:assert/strict';
+globalThis.Chart = class Chart {{}};
+globalThis.window = {{
+  location: {{search: ''}},
+  addEventListener() {{}},
+}};
+globalThis.document = {{
+  documentElement: {{}},
+  addEventListener() {{}},
+  getElementById() {{ return null; }},
+  querySelector() {{ return null; }},
+  querySelectorAll() {{ return []; }},
+}};
+const module = await import({json.dumps((WEB / 'js/stats.js').as_uri())});
+assert.deepEqual(Object.keys(module).sort(), [
+  'destroyCharts', 'loadStats', 'renderStats', 'renderStatsError',
+  'rerenderInActiveLanguage',
+]);
+"""
+    result = subprocess.run(
+        [shutil.which("node"), "--input-type=module", "-e", script],
+        capture_output=True, text=True, encoding="utf-8", timeout=30,
+        cwd=ROOT,
+    )
+    assert result.returncode == 0, result.stderr or result.stdout
+
+
 @pytest.mark.parametrize("values", [[-1], ["-0.25", "0.75"], [0, "-3"]])
 def test_pie_rejects_finite_negative_values_before_chart_creation(values):
     _probe(f"""
@@ -114,6 +146,24 @@ for (const name of ['renderPie', 'renderDonut', 'renderBar', 'renderLine']) {
   assert.equal(c.options.plugins.tooltip.callbacks.label(parsed), 'Part: 37.9%');
   if (name === 'renderBar' || name === 'renderLine')
     assert.equal(c.options.scales.y.ticks.callback(0.379), '37.9%');
+}
+""")
+
+
+def test_bar_and_line_use_blueberry_for_series_and_tooltip():
+    _probe("""
+const rows = [{label: 'Part', value: 1}];
+for (const name of ['renderBar', 'renderLine']) {
+  const c = config(module[name](canvas, rows));
+  const dataset = c.data.datasets[0];
+  assert.equal(dataset.backgroundColor, '#005AE6', `${name} series fill`);
+  assert.equal(c.options.plugins.tooltip.backgroundColor, '#005AE6', `${name} tooltip fill`);
+  assert.equal(c.options.plugins.tooltip.titleColor, '#FFFFFF', `${name} tooltip title`);
+  assert.equal(c.options.plugins.tooltip.bodyColor, '#FFFFFF', `${name} tooltip body`);
+  if (name === 'renderLine') {
+    assert.equal(dataset.borderColor, '#005AE6', 'renderLine stroke');
+    assert.equal(dataset.pointBackgroundColor, '#005AE6', 'renderLine points');
+  }
 }
 """)
 

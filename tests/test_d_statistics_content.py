@@ -659,7 +659,9 @@ def test_documented_statistics_visual_contract_matches_the_public_modules():
     assert header
     assert len(versions) == len(set(versions))
     assert (int(entry[1]), int(entry[2])) > (1, 78)
-    assert (int(header[1]), int(header[2])) >= (int(entry[1]), int(entry[2]))
+    assert (int(header[1]), int(header[2])) == max(versions), (
+        "the contract front matter must name its latest changelog version"
+    )
 
     charts_source = _read(WEB / "js" / "charts.js")
     actual = set(re.findall(r"(?m)^export (?:function|const)\s+(\w+)", charts_source))

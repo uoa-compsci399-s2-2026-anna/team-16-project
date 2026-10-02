@@ -233,16 +233,38 @@ const polar = (cx, cy, radius, degrees) => {
   return { x: cx + radius * Math.cos(radians), y: cy + radius * Math.sin(radians) }
 }
 
+// The donut's own geometry, in the `viewBox="0 0 520 420"` user space this module draws
+// in. Named rather than repeated because `slicePath` now has two branches and they have
+// to agree: a full allocation and a 99% one must describe the *same* circle, and a
+// literal `112` in one of them and a `PIE_RADIUS` in the other is a drift the chart
+// cannot report — it would simply draw the wrong circle in the wrong place for exactly
+// one allocation. The callouts' own radii are stated as offsets from this one for the
+// same reason: the leader line has to leave the arc it is pointing at.
+const PIE_CENTRE_X = 260
+const PIE_CENTRE_Y = 210
+const PIE_RADIUS = 112
+
 function slicePath(start, end) {
-  // SVG's arc command cannot represent a full circle when its start and end
-  // points are identical: the browser treats that as an empty arc. A single
-  // destination at 100% therefore used to leave the chart's centre text and
-  // callout visible while the slice itself disappeared. Draw the circle as
-  // two half-arcs so the complete allocation remains visible.
-  if (end - start >= 360) return 'M 260 98 A 112 112 0 1 0 260 322 A 112 112 0 1 0 260 98 Z'
-  const from = polar(260, 210, 112, end)
-  const to = polar(260, 210, 112, start)
-  return `M 260 210 L ${from.x} ${from.y} A 112 112 0 ${end - start > 180 ? 1 : 0} 0 ${to.x} ${to.y} Z`
+  // SVG's arc command cannot represent a full circle when its start and end points are
+  // identical: SVG 1.1 §8.3.8 makes such an arc equivalent to omitting the segment, so
+  // the browser paints nothing. A single destination at 100% therefore used to leave the
+  // chart's centre text and callout visible while the slice itself disappeared. Draw the
+  // circle as two half-arcs so the complete allocation remains visible.
+  const sweep = end - start
+  if (sweep >= 360) {
+    // Derived from the same centre and radius the wedge branch uses, through the same
+    // `polar`: the top and bottom of the vertical diameter. `polar` returns them exactly
+    // — `Math.sin(±π/2)` is ±1 and the cosine's 6.1e-17 is below an ulp of 260 — so the
+    // two half-arcs close on the same point and this emits the identical path string the
+    // literals did, while a change to the centre or the radius above now moves both
+    // branches together.
+    const top = polar(PIE_CENTRE_X, PIE_CENTRE_Y, PIE_RADIUS, 0)
+    const bottom = polar(PIE_CENTRE_X, PIE_CENTRE_Y, PIE_RADIUS, 180)
+    return `M ${top.x} ${top.y} A ${PIE_RADIUS} ${PIE_RADIUS} 0 1 0 ${bottom.x} ${bottom.y} A ${PIE_RADIUS} ${PIE_RADIUS} 0 1 0 ${top.x} ${top.y} Z`
+  }
+  const from = polar(PIE_CENTRE_X, PIE_CENTRE_Y, PIE_RADIUS, end)
+  const to = polar(PIE_CENTRE_X, PIE_CENTRE_Y, PIE_RADIUS, start)
+  return `M ${PIE_CENTRE_X} ${PIE_CENTRE_Y} L ${from.x} ${from.y} A ${PIE_RADIUS} ${PIE_RADIUS} 0 ${sweep > 180 ? 1 : 0} 0 ${to.x} ${to.y} Z`
 }
 
 // The improved allocation drawn as shares of one circle, with a leader line per slice.
@@ -265,16 +287,16 @@ function PieChart(state, destinations, allocation, totalKg) {
   const paths = slices.map(slice => `<path d="${slicePath(slice.start, slice.end)}" fill="${slice.colour}"><title>${escapeHtml(slice.destination.name)} — ${formatNumber(slice.share, 1)}%</title></path>`).join('')
   const labels = slices.map(slice => {
     const middle = (slice.start + slice.end) / 2
-    const edge = polar(260, 210, 116, middle)
-    const elbow = polar(260, 210, 142, middle)
-    const right = elbow.x >= 260
+    const edge = polar(PIE_CENTRE_X, PIE_CENTRE_Y, PIE_RADIUS + 4, middle)
+    const elbow = polar(PIE_CENTRE_X, PIE_CENTRE_Y, PIE_RADIUS + 30, middle)
+    const right = elbow.x >= PIE_CENTRE_X
     const endX = right ? 438 : 82
     const textX = right ? 446 : 74
     const anchor = right ? 'start' : 'end'
     return `<g class="improvement-pie-label"><polyline points="${edge.x},${edge.y} ${elbow.x},${elbow.y} ${endX},${elbow.y}" stroke="${slice.colour}"/><circle cx="${edge.x}" cy="${edge.y}" r="3" fill="${slice.colour}"/><text x="${textX}" y="${elbow.y + 4}" text-anchor="${anchor}">${formatNumber(slice.share, 1)}%</text></g>`
   }).join('')
   const legend = slices.map(slice => `<div><i style="background:${slice.colour}"></i><span>${escapeHtml(slice.destination.name)}</span></div>`).join('')
-  return `<svg class="improvement-pie-chart" viewBox="0 0 520 420" role="img" aria-label="${escapeHtml(t('Total allocation'))}">${paths}<circle class="improvement-pie-centre" cx="260" cy="210" r="48" fill="#fff"/><text class="improvement-pie-total" x="260" y="205" text-anchor="middle"><tspan>${formatNumber(totalKg, 2)}</tspan><tspan x="260" dy="20">kg</tspan></text>${labels}</svg><div class="improvement-pie-key">${legend}</div>`
+  return `<svg class="improvement-pie-chart" viewBox="0 0 520 420" role="img" aria-label="${escapeHtml(t('Total allocation'))}">${paths}<circle class="improvement-pie-centre" cx="${PIE_CENTRE_X}" cy="${PIE_CENTRE_Y}" r="48" fill="#fff"/><text class="improvement-pie-total" x="${PIE_CENTRE_X}" y="${PIE_CENTRE_Y - 5}" text-anchor="middle"><tspan>${formatNumber(totalKg, 2)}</tspan><tspan x="${PIE_CENTRE_X}" dy="20">kg</tspan></text>${labels}</svg><div class="improvement-pie-key">${legend}</div>`
 }
 
 export function openImprovement(state) {

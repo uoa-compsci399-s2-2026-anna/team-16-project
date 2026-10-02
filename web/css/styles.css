@@ -131,6 +131,64 @@ button:disabled { cursor: not-allowed; color: rgba(0, 50, 35, 0.56); background:
   border: 0;
 }
 
+/* ---------------------------------------------------------------------------------------
+   THE FROSTED-GLASS SURFACE, AS ONE TOKEN (#143)
+
+   One treatment, several consumers: a light translucent ground with Kale text, which is
+   the brand's light-ground/Kale-text pairing (CLAUDE.md). It was written once for the
+   results page's floating section nav; #143 asks for the same surface on the expanded
+   tangible-equivalence panel, and #138/#142's collapsible cards want it next. **A second
+   copy of the declarations is what this block exists instead of** — two copies of a
+   `backdrop-filter` plus its fallback drift, and the half that drifts is the fallback,
+   which nobody looks at.
+
+   **The support question is answered ONCE, here, rather than per consumer.** `--glass-
+   ground` is declared OPAQUE first and upgraded to the translucent value inside
+   `@supports`, so:
+     * every consumer, present and future, inherits the fallback by construction — there
+       is no second selector list in an `@supports not (...)` block to forget a consumer
+       from, which is the two-list defect this repository has been bitten by elsewhere;
+     * the fallback is **opaque, not merely lighter**. Without `backdrop-filter` a
+       translucent white is simply transparent, and the floating nav's links would be read
+       against whatever paragraph sits behind them;
+     * `(A or B)` keeps a browser that has only the prefixed spelling on the glass path —
+       Safari shipped `-webkit-backdrop-filter` alone for years, and treating that as
+       unsupported hands a working browser the fallback;
+     * a browser with no `@supports` at all gets the opaque ground, which the inverted
+       `@supports not (...)` spelling would not have given it.
+
+   **`backdrop-filter` creates a containing block, so this token is applied deliberately
+   and never broadly.** A consumer must own no positioned descendant: `position: absolute`
+   inside it would resolve against the glass instead of against whatever it was written
+   for, and a `sticky` or `fixed` descendant would be re-anchored outright. Step 3's term
+   tooltips (`.tip`, §7.3a) ARE `position: absolute` inside the card body, which is why
+   `.form-panel.step-card` is a deliberate attachment and not a sweep over `.form-panel`.
+
+   **What is NOT in the token**, so that a card is as welcome here as a floating menu: the
+   radius, the padding, and the drop shadow. `0 14px 36px` of elevation says "this is over
+   the page", which is true of the nav's overlay and false of a panel inside a card.
+
+   Consumers add their own selector to the list below. A consumer whose element already
+   carries a `background` from another rule needs enough specificity to beat it — hence
+   `.form-panel.step-card` rather than `.form-panel` when the step cards land.
+   --------------------------------------------------------------------------------------- */
+:root {
+  --glass-ground: var(--kai-white);
+  --glass-edge: rgba(0, 50, 35, 0.14);
+  --glass-blur: blur(14px) saturate(1.4);
+}
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root { --glass-ground: rgba(255, 255, 255, 0.72); }
+}
+.results-floating-nav__panel,
+.equivalent-basis__body {
+  color: var(--kai-kale);
+  border: 1px solid var(--glass-edge);
+  background: var(--glass-ground);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+}
+
 .site-header {
   background: var(--kai-white);
   border-bottom: 1px solid rgba(0, 50, 35, 0.1);
@@ -1060,14 +1118,36 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
   outline-offset: 2px;
 }
 .equivalent-basis[open] summary { background: var(--ink); color: #fff; }
+/* **The expanded panel is a light layer over the card, not a block dropped into
+   it** (#143, from the client's own words at the 1 October meeting: 展开之后太
+   难看). It was an opaque `#fff` rectangle inside a Banana-tinted card, which is
+   the heaviest thing either surface could have done — maximum contrast against
+   the one ground it sits on, drawn at the moment the reader asked a small
+   question. It now takes the shared glass token: `rgba(255, 255, 255, 0.72)`
+   over the card's own `#fff7e2` composites to `#fffdf7`, so the card's colour
+   still reads through the panel and the panel still reads as being above it.
+
+   **Three things about it are measured rather than assumed**, in
+   `tests/web/test_results_export.py`:
+     * the painted ground, from a screenshot pixel inside the panel's own
+       padding, with Kale at **13.9:1** on it and `--muted` (the sentence) at
+       **6.8:1** — a translucent panel is the standard way a contrast ratio stops
+       being what the stylesheet says it is;
+     * the fallback ground, by painting the card Beetroot underneath it: an
+       opaque ground does not move, a merely-lighter one does;
+     * that it is a containing block for nothing. The token creates one, and this
+       panel holds a `<dl>` and a `<p>` and must keep holding nothing positioned.
+
+   **The box is unchanged**, deliberately: same margin, same padding, same
+   radius, same in-flow block. #143 asks for the surface to be lighter and for
+   the card not to jump when it opens, and changing the geometry at the same time
+   as the paint is how one of those gets traded for the other. */
 .equivalent-basis__body {
   margin-block-start: 8px;
   max-inline-size: 100%;
   padding-block: 12px;
   padding-inline: 14px;
-  border: 1px solid rgba(0, 50, 35, 0.18);
   border-radius: 10px;
-  background: #fff;
   text-align: start;
   font-size: 0.85rem;
   line-height: 1.45;
@@ -1550,12 +1630,13 @@ tbody th { font-weight: 700; }
    ground with Kale text (CLAUDE.md), so every string in here is Kale and the
    reader's own section is Pea — also a light ground, also Kale text.
 
-   **The `@supports` fallback is not decoration.** Without `backdrop-filter`
-   the translucent white is simply transparent, and the links would be read
-   against whatever paragraph happened to be behind them, so the fallback has
-   to be OPAQUE rather than merely darker. `not (A or B)` covers the prefixed
-   spelling as well: Safari shipped only `-webkit-backdrop-filter` for years,
-   and treating that as unsupported would hand a working browser the fallback. */
+   **The surface itself, and its `@supports` fallback, are the shared token near
+   the top of this file** (`--glass-ground` / `--glass-blur` / `--glass-edge`),
+   which this selector is one of two consumers of at #143. The reasoning that
+   used to be written out here — why the fallback is opaque rather than merely
+   lighter, and why the prefixed spelling counts as support — is there, once.
+   What stays here is what belongs to a floating menu and not to a card: the
+   geometry, the radius and the elevation. */
 .results-floating-nav__panel {
   position: absolute;
   inset-inline-end: var(--results-floating-nav-handle-size);
@@ -1563,21 +1644,13 @@ tbody th { font-weight: 700; }
   inline-size: var(--results-floating-nav-panel-size);
   min-inline-size: 0;
   padding: 8px;
-  border: 1px solid rgba(0, 50, 35, 0.14);
   border-radius: 16px;
-  color: var(--kai-kale);
-  background: rgba(255, 255, 255, 0.72);
-  -webkit-backdrop-filter: blur(14px) saturate(1.4);
-  backdrop-filter: blur(14px) saturate(1.4);
   box-shadow: 0 14px 36px rgba(0, 50, 35, 0.18);
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
   translate: var(--results-floating-nav-panel-nudge, 8px) var(--results-floating-nav-panel-rise, -50%);
   transition: opacity 140ms ease, visibility 140ms ease, translate 140ms ease;
-}
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .results-floating-nav__panel { background: var(--kai-white); }
 }
 /* **Closed is the default, and only the docked regime above overrides it.**
    It used to be open wherever the nav was drawn at all — `:not([data-open="false"])`

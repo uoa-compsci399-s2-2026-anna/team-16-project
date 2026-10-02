@@ -30,7 +30,7 @@ import os
 
 import pytest
 
-from tests.web.steps import press_continue
+from tests.web.steps import expand_step_cards, press_continue
 
 
 pytestmark = pytest.mark.browser
@@ -78,9 +78,23 @@ def _tick(page, *indices):
 
 
 def _fill_amounts_and_rows(page, amount="100"):
-    """Step 3 then step 4, filling every leaf's amount and its first destination."""
+    """Step 3 then step 4, filling every leaf's amount and its first destination.
+
+    **`state="attached"`, then `expand_step_cards`, on both steps.** Since #134 a
+    forked chain draws its step-3 cards collapsed, and since #142 its step-4 cards
+    too; a collapsed card's body carries `hidden`, so its inputs are in the document
+    and neither visible nor fillable -- the default `state="visible"` waits out its
+    timeout against a screen that is working correctly, and `page.fill` refuses the
+    box. Opened through the control a visitor would press, which is the one place
+    that fact lives (`tests/web/steps.py`).
+
+    These four tests were a casualty of #134 that its own landing missed: they are
+    the third file to drive a forked step 3 and the two it fixed were found by
+    running them.
+    """
     press_continue(page)
-    page.wait_for_selector('[data-leaf-field="amount"], #total-waste')
+    page.wait_for_selector('[data-leaf-field="amount"], #total-waste', state="attached")
+    expand_step_cards(page)
     fields = page.evaluate(
         "() => [...document.querySelectorAll('[data-leaf-field=amount]')].map(e => e.id)"
     )
@@ -88,7 +102,8 @@ def _fill_amounts_and_rows(page, amount="100"):
         page.fill(f"#{field}", amount)
         page.wait_for_timeout(25)
     press_continue(page)
-    page.wait_for_selector('[data-line-field="amount"]')
+    page.wait_for_selector('[data-line-field="amount"]', state="attached")
+    expand_step_cards(page)
     rows = page.evaluate(
         """() => {
           const byLeaf = {};

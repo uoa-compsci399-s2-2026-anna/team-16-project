@@ -850,6 +850,20 @@ function term(text, tipId, paragraphs) {
 const cardId = (step, key) => `${step}\u0000${key}`
 
 /**
+ * **Whether a step draws so few cards that folding buys nothing**, which is the half of
+ * decision 2 the markup needs as well as the open set.
+ *
+ * `cardIsOpen` asks it to force a lone card open. `collapsibleCard` asks it to leave the
+ * header's toggle **out of the markup entirely**: a card that cannot be shut has nothing
+ * for a toggle to do, and a chevron that changes nothing when pressed is a worse answer
+ * than no chevron — it is reachable by Tab, it carries `aria-expanded="true"` that never
+ * becomes `false`, and a keyboard visitor is told a control exists that does not.
+ *
+ * One expression, asked twice, so the two cannot disagree about which cards are fixed.
+ */
+const cardIsFixedOpen = count => count <= 1
+
+/**
  * Whether one collapsible card is open right now.
  *
  * **`count <= 1` is decision 2 of #134, and it lives here so that every consumer of the
@@ -862,19 +876,19 @@ const cardId = (step, key) => `${step}\u0000${key}`
  * #134 asks for: the client's problem is a card below the fold being skipped, so the
  * step has to be short enough to see whole.
  *
- * **`count <= 1` is not exercised by step 3, and that was measured rather than assumed.**
- * `leafPanel` returns the plain single-leaf panel before any card is built, so a step-3
- * card is only ever one of two or more. Replacing this clause with `false` and rebuilding
- * leaves `test_step_card_collapse_browser.py` and `test_step_three_zones_browser.py` green
- * — 27 passed. It is here because decision 2 belongs to the chrome rather than to one
- * consumer, and #138 and #142 both draw a card at a count of one; whichever of them lands
- * first is what will put a test under it. Do not delete it as dead on that evidence.
+ * **It is exercised since #138 and #142, and it was not before.** `leafPanel` returns the
+ * plain single-leaf panel before any card is built, so a step-3 card is only ever one of
+ * two or more; #134 recorded that replacing this clause with `false` left 27 of step 3's
+ * tests green, and left the note that whichever of #138 and #142 landed first would be
+ * what put a test under it. Both now draw a card at a count of one — one chosen category
+ * on step 2.5, one food type on step 4 — so the clause is live, and
+ * `test_card_folding_browser.py` measures it on both of them.
  *
  * @param {number} step The step that owns the card.
  * @param {string} key The card's own key — a `leafKey` on steps 3 and 4.
  * @param {number} count How many cards the step is drawing.
  */
-const cardIsOpen = (step, key, count) => count <= 1 || (state.openCards || []).includes(cardId(step, key))
+const cardIsOpen = (step, key, count) => cardIsFixedOpen(count) || (state.openCards || []).includes(cardId(step, key))
 
 /** `state.openCards` with one card added, idempotently. */
 const openedCard = (step, key) => {
@@ -906,12 +920,45 @@ const cardStatus = settled => (settled
   : { state: 'incomplete', mark: '✕', text: t('Incomplete') })
 
 /**
+ * **Step 2.5's badge, and it is a different question from `cardStatus`'s on purpose**
+ * (#138).
+ *
+ * The step is optional *as a whole*: `entryLeaves` gives a chosen category with no food
+ * ticked exactly the leaf it gave before step 2.5 existed, so **"no food chosen" is a
+ * legitimate answer and can never be wrong.** `cardStatus`'s second state says *Incomplete*
+ * in `--error` with a cross, which is the right thing to say about a step-3 card that
+ * Continue refuses and the wrong thing to say about an answer nothing refuses. So this
+ * badge reports *answered* against *not looked at* and never *invalid*:
+ *
+ * * **The number is the answer.** `0 selected` is not an error, it is an empty count, and
+ *   a visitor who meant to choose nothing is told their card is in the state they left it.
+ *   It is also #138's own criterion that the collapsed card says how many foods are inside
+ *   it, so the count *is* the badge rather than sitting beside one.
+ * * **`neutral` has no colour rule in the stylesheet**, deliberately: it inherits the
+ *   header's `--ink`, so the unanswered state is neither the green of complete nor the red
+ *   of refused. The mark and the number carry it in the markup, so it is not colour-only
+ *   either way.
+ * * **The key is `%(count)s selected`, which this step's own `.choice-count` already
+ *   prints.** One wording for one fact, and no twenty-first catalogue entry for a sentence
+ *   that is already translated.
+ *
+ * A category the vocabulary offers no food for reads `0 selected` too, which is true;
+ * *why* there is nothing to choose is the group's own `.field-hint`, which `itemStep` keeps
+ * showing for the reason written there.
+ */
+const itemStatus = chosen => ({
+  state: chosen ? 'complete' : 'neutral',
+  mark: chosen ? '✓' : '—',
+  text: t('%(count)s selected', { count: chosen }),
+})
+
+/**
  * **The collapsible step card, built once** (#134, and the chrome #138 and #142 consume).
  *
- * One `<fieldset>`, a header button that opens and closes it, a completion badge, and a
- * body that is `hidden` when the card is shut. Three decisions are baked in here rather
- * than at the call sites, so that step 2.5 and step 4 cannot land on a different version
- * of any of them:
+ * One `<fieldset>`, a header that opens and closes it, a status badge, an optional strip
+ * that stays visible while the card is shut, and a body that is `hidden` when it is. The
+ * decisions below are baked in here rather than at the call sites, so that steps 2.5, 3
+ * and 4 cannot land on a different version of any of them:
  *
  * * **`<legend>` carries the group's name and nothing else, and it is `.sr-only`.** The
  *   legend is what gives the `<fieldset>` its accessible name, so it cannot hold the
@@ -931,6 +978,21 @@ const cardStatus = settled => (settled
  * * **`hidden` rather than `display: none` in a class.** The body's controls must be
  *   unreachable by Tab and unfocusable while the card is shut, which `hidden` is defined
  *   to do; a class is one stylesheet mistake away from a focusable invisible input.
+ * * **A lone card has no toggle at all**, because `cardIsFixedOpen` says it can never be
+ *   shut. The header is then a plain `<div>` carrying the same name and the same badge,
+ *   with no chevron, no `aria-expanded` and nothing in the tab order — see
+ *   `cardIsFixedOpen` for why a control that changes nothing is the worse answer. The one
+ *   declaration such a header must not inherit from `.step-card__toggle` is
+ *   `cursor: pointer`, and it is neutralised in a `style` attribute rather than in
+ *   `web/css/styles.css`: this change is not permitted to touch that file, and the rule
+ *   it is standing in for — a `.step-card__toggle--static { cursor: default }` beside the
+ *   class it modifies — is recorded as owed.
+ * * **`always` is the strip the shut card still shows**, between the header and the body
+ *   and so outside the `hidden`. #142 needs step 4's Remaining readable without opening
+ *   anything; `leafSummary` already renders it with its unit and an `aria-live`, and
+ *   `updateLine` already rewrites it in place on a keystroke, so putting the element it
+ *   already builds outside the fold is the whole of that criterion and no figure is
+ *   computed twice.
  *
  * **Deliberately plain.** The card's whole ground — background, border, radius — is one
  * element, `.step-card`, and it carries no `backdrop-filter`, no `transform` and no
@@ -942,16 +1004,25 @@ const cardStatus = settled => (settled
  * @param {string} options.key The card's own key; the other half.
  * @param {string} options.anchor A slug unique within the step, for the element ids.
  * @param {string} options.name The card's name, shown and announced.
- * @param {boolean} options.open
- * @param {boolean} options.settled Whether the badge reads complete.
- * @param {string} options.body The card's contents, as HTML.
+ * @param {number} options.count How many cards the step is drawing — decision 2's input.
+ * @param {boolean} options.forceOpen Open whatever the open set says, because the card
+ *   holds a message about itself.
+ * @param {{state: string, mark: string, text: string}} options.status What the badge
+ *   reads; `cardStatus` on steps 3 and 4, `itemStatus` on step 2.5.
+ * @param {string} options.body The card's contents, as HTML, hidden while it is shut.
+ * @param {string} options.always HTML that stays visible while it is shut.
  * @param {string} options.extraClass Classes the consumer's own selectors need.
  * @param {string} options.dataAttr Data attributes the consumer's own handlers need.
  */
-function collapsibleCard({ step, key, anchor, name, open, settled, body, extraClass = '', dataAttr = '' }) {
+function collapsibleCard({ step, key, anchor, name, count, forceOpen = false, status, body, always = '', extraClass = '', dataAttr = '' }) {
   const bodyId = `card-body--${anchor}`
-  const status = cardStatus(settled)
-  return `<fieldset class="form-panel step-card ${open ? 'step-card--open' : ''} ${extraClass}" ${dataAttr}><legend class="sr-only">${escapeHtml(name)}</legend><button id="card-toggle--${anchor}" class="step-card__toggle" type="button" data-action="toggle-card" data-card-step="${step}" data-card="${keyAttr(key)}" aria-expanded="${open ? 'true' : 'false'}" aria-controls="${bodyId}"><span class="step-card__chevron ${open ? 'expanded' : ''}" aria-hidden="true">&#8964;</span><span class="step-card__name">${escapeHtml(name)}</span><span class="step-card__status" data-card-status data-state="${status.state}"><span class="step-card__mark" aria-hidden="true">${status.mark}</span><span data-card-status-text>${escapeHtml(status.text)}</span></span></button><div class="step-card__body" id="${bodyId}" ${open ? '' : 'hidden'}>${body}</div></fieldset>`
+  const fixed = cardIsFixedOpen(count)
+  const open = forceOpen || cardIsOpen(step, key, count)
+  const badge = `<span class="step-card__status" data-card-status data-state="${status.state}"><span class="step-card__mark" aria-hidden="true">${status.mark}</span><span data-card-status-text>${escapeHtml(status.text)}</span></span>`
+  const header = fixed
+    ? `<div class="step-card__toggle step-card__toggle--static" style="cursor:default"><span class="step-card__name">${escapeHtml(name)}</span>${badge}</div>`
+    : `<button id="card-toggle--${anchor}" class="step-card__toggle" type="button" data-action="toggle-card" data-card-step="${step}" data-card="${keyAttr(key)}" aria-expanded="${open ? 'true' : 'false'}" aria-controls="${bodyId}"><span class="step-card__chevron ${open ? 'expanded' : ''}" aria-hidden="true">&#8964;</span><span class="step-card__name">${escapeHtml(name)}</span>${badge}</button>`
+  return `<fieldset class="form-panel step-card ${open ? 'step-card--open' : ''} ${extraClass}" ${dataAttr}><legend class="sr-only">${escapeHtml(name)}</legend>${header}${always}<div class="step-card__body" id="${bodyId}" ${open ? '' : 'hidden'}>${body}</div></fieldset>`
 }
 
 /**
@@ -1154,8 +1225,9 @@ function leafPanel(leaf, leaves, index) {
     key,
     anchor: leafSlug(leaf),
     name: leafName(leaf),
-    open: errored || cardIsOpen(2, key, leaves.length),
-    settled: leafSettled(2, leaf, leafName(leaf)),
+    count: leaves.length,
+    forceOpen: errored,
+    status: cardStatus(leafSettled(2, leaf, leafName(leaf))),
     body: `<div class="zones">${zones}</div>`,
     extraClass: 'leaf-panel',
     dataAttr: `data-leaf-panel="${keyAttr(key)}"`,
@@ -1246,12 +1318,32 @@ function toggleFoodItem(target) {
   })
 }
 
+/**
+ * **The step number step 2.5's cards are filed under in `state.openCards`.**
+ *
+ * `cardId` joins the owning step to the card's own key so that two screens drawing one
+ * card per the same thing cannot share a fact. Step 2.5 is the second panel of step 1 —
+ * `state.step` does not advance into it (`itemStep`'s own note) — and step 1's category
+ * panel draws no cards at all, so `1` is this screen's and nothing else's. The constant
+ * exists so the renderer and nothing else decides it: the `toggle-card` handler reads the
+ * step back off the element it was pressed on.
+ */
+const ITEM_CARD_STEP = 1
+
 function itemStep() {
   const chosen = Object.values(state.foodItems || {}).reduce((total, items) => total + items.length, 0)
   const ticked = (category, item) => ((state.foodItems || {})[category] || []).includes(item)
   const refused = (category, item) => !ticked(category, item) && itemTickRefused(category, item)
   const atCeiling = state.foodCategories.some(
     category => itemsUnder(category).some(item => refused(category, item.code)))
+  //: **One collapsible card per chosen category** (#138). The client's report is #134's on
+  //: a different screen: five ticked categories make a page long enough that the one below
+  //: the fold goes unanswered, and nothing on screen says so.
+  //:
+  //: **What is NOT shared with step 3 is the badge**, and that is the whole difference
+  //: between the two consumers. See `itemStatus`: this step is optional as a whole, so the
+  //: badge counts what was chosen and never calls an empty card wrong.
+  const count = state.foodCategories.length
   const group = category => {
     const definition = selected(state.taxonomy.food_categories, category)
     const items = itemsUnder(category)
@@ -1259,13 +1351,34 @@ function itemStep() {
     //: A chosen category the vocabulary has no food for is shown saying so, not
     //: hidden. Hiding it would make the group list disagree with step 2's ticks,
     //: and a visitor who ticked five categories and sees four groups has to work
-    //: out which one went missing and why.
+    //: out which one went missing and why. **Folding does not change that**: the card
+    //: is drawn, its badge reads `0 selected`, and the sentence is what is inside it.
     const body = items.length
       ? `<div class="simple-choice-list">${items.map(item =>
           `<label class="simple-choice ${ticked(category, item.code) ? 'selected' : ''}"><input id="food-item-${slug(category)}-${slug(item.code)}" type="checkbox" name="food-item" value="${escapeHtml(item.code)}" data-category="${escapeHtml(category)}" ${ticked(category, item.code) ? 'checked' : ''} ${refused(category, item.code) ? 'disabled' : ''}><span><strong>${escapeHtml(item.name)}</strong></span>${ticked(category, item.code) ? `<span class="selected-label" aria-hidden="true">&#10003; ${escapeHtml(t('Selected'))}</span>` : ''}</label>`).join('')}</div>`
       : `<p class="field-hint">${escapeHtml(t('No specific foods are listed for this category. It is counted as %(category)s.', { category: heading }))}</p>`
-    return `<fieldset class="choice-fieldset item-group"><legend>${escapeHtml(heading)}</legend>${body}</fieldset>`
+    //: `.item-group` stays on the `<fieldset>`: it is how three browser tests address a
+    //: group and its `<legend>`, and the legend still carries the category's own name —
+    //: `.sr-only` now, because the name a sighted reader sees is the card header's.
+    //: `.choice-fieldset` is gone, and that is not cosmetic: its `border: 0` would erase
+    //: the card's ground, and the step-1 panel it was shared with still has it (which is
+    //: what `test_step_navigation.py`'s first-panel margin measurement reads).
+    return collapsibleCard({
+      step: ITEM_CARD_STEP,
+      key: category,
+      anchor: `item-${slug(category)}`,
+      name: heading,
+      count,
+      status: itemStatus(((state.foodItems || {})[category] || []).length),
+      body,
+      extraClass: 'item-group',
+      dataAttr: `data-item-group="${escapeHtml(category)}"`,
+    })
   }
+  //: **The ceiling notice and the clear button are outside every card**, which is #138's
+  //: criterion that the `MAX_LEAVES` message stays visible whether the cards are open or
+  //: shut: the boxes it explains are inside the cards and go dark there, so a message
+  //: folded away with them would leave a visitor looking at nothing.
   return `<section class="content-section" aria-labelledby="item-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 2 }))} &middot; ${escapeHtml(t('Optional'))}</p><h1 id="item-title">${escapeHtml(t('Do you know which foods these were?'))}</h1><p class="section-intro">${escapeHtml(t('Choose the specific foods you measured, or continue without choosing any. A category with no food chosen is counted as that category.'))}</p><p class="choice-count" aria-live="polite">${escapeHtml(t('%(count)s selected', { count: chosen }))}</p>${state.foodCategories.map(group).join('')}${atCeiling ? `<p class="field-hint choice-ceiling" role="status">${escapeHtml(t('You can enter at most %(limit)s food types in one calculation. Untick one, or calculate what you have.', { limit: MAX_LEAVES }))}</p>` : ''}${chosen ? `<button type="button" class="text-button" data-action="clear-items">${escapeHtml(t('Clear all selections'))}</button>` : ''}${stepNav({ step: 1, back: 1, backAction: 'back-to-categories' })}</section>`
 }
 

@@ -993,6 +993,26 @@ const itemStatus = chosen => ({
  *   `updateLine` already rewrites it in place on a keystroke, so putting the element it
  *   already builds outside the fold is the whole of that criterion and no figure is
  *   computed twice.
+ * * **`min-inline-size: 0` on the `<fieldset>`, and it is load-bearing rather than
+ *   tidiness.** A fieldset's initial `min-inline-size` is `min-content`, so unlike a
+ *   `<div>` it REFUSES to shrink below the widest thing inside it — and step 4's
+ *   `.destination-row` is a two-column grid whose minimum is 220 + 24 + 260 = 504px.
+ *   Measured on this build: at 500px the card was forced to 588px and the document
+ *   scrolled sideways to 608, at every width from 481 (where the row stops being one
+ *   column) to about 610 (where 504px fits again). Before #142 those rows lived in a
+ *   `<div class="leaf-group">`, which shrinks and lets `.destination-list`'s own
+ *   `overflow: hidden` clip; the `<fieldset>` does not, and
+ *   `tests/web/test_horizontal_overflow.py` measures only 320 and 390, where the row is
+ *   a single column and the band is invisible. The stylesheet already carries this fix
+ *   twice in other dimensions (`.choice-fieldset { min-width: 0 }`,
+ *   `.allocation-matrix input, .allocation-matrix select { min-inline-size: 0 }`).
+ *
+ * **Two declarations are in `style` attributes that belong in `web/css/styles.css`**, and
+ * they are here only because this change was not permitted to touch that file while
+ * another was in it: `min-inline-size: 0` above, which belongs beside
+ * `.form-panel.step-card { padding: 0 }`, and `cursor: default` on the static header,
+ * which belongs on a `.step-card__toggle--static` rule. Move them and delete the
+ * attributes; nothing else has to change.
  *
  * **Deliberately plain.** The card's whole ground — background, border, radius — is one
  * element, `.step-card`, and it carries no `backdrop-filter`, no `transform` and no
@@ -1022,7 +1042,7 @@ function collapsibleCard({ step, key, anchor, name, count, forceOpen = false, st
   const header = fixed
     ? `<div class="step-card__toggle step-card__toggle--static" style="cursor:default"><span class="step-card__name">${escapeHtml(name)}</span>${badge}</div>`
     : `<button id="card-toggle--${anchor}" class="step-card__toggle" type="button" data-action="toggle-card" data-card-step="${step}" data-card="${keyAttr(key)}" aria-expanded="${open ? 'true' : 'false'}" aria-controls="${bodyId}"><span class="step-card__chevron ${open ? 'expanded' : ''}" aria-hidden="true">&#8964;</span><span class="step-card__name">${escapeHtml(name)}</span>${badge}</button>`
-  return `<fieldset class="form-panel step-card ${open ? 'step-card--open' : ''} ${extraClass}" ${dataAttr}><legend class="sr-only">${escapeHtml(name)}</legend>${header}${always}<div class="step-card__body" id="${bodyId}" ${open ? '' : 'hidden'}>${body}</div></fieldset>`
+  return `<fieldset class="form-panel step-card ${open ? 'step-card--open' : ''} ${extraClass}" style="min-inline-size:0" ${dataAttr}><legend class="sr-only">${escapeHtml(name)}</legend>${header}${always}<div class="step-card__body" id="${bodyId}" ${open ? '' : 'hidden'}>${body}</div></fieldset>`
 }
 
 /**
@@ -1439,66 +1459,107 @@ const draftFieldPaths = () => [...draftLinePaths().values()]
 /**
  * One cell of the allocation: a destination, for one leaf.
  *
- * **The same `.destination-row` element it has always been**, with `data-leaf` added so
- * the handlers know which leaf's lines they are editing. Above the breakpoint the cells
- * are placed into the matrix by `--row` / `--col` custom properties and the per-cell
- * label is hidden in favour of the shared row label down the side; below it, the cells
- * are ordinary block flow inside their leaf's own group and the label comes back. One
- * DOM, one media query, two layouts - a second copy of the inputs would mean two
- * elements holding one figure.
+ * **The same `.destination-row` element it has always been**, with `data-leaf` so the
+ * handlers know which leaf's lines they are editing. It is ordinary block flow inside its
+ * own food type's card and it carries its own label, which is what the narrow layout
+ * always did and what every width does since #142.
+ *
+ * **The `--row` / `--col` custom properties are gone with the matrix.** They were the
+ * grid's placement and nothing else read them; a row keeps its position from its place in
+ * the document now, which is what a list is.
  */
-function destinationCell(leaf, line, row, column, paths, allocationExcess) {
+function destinationCell(leaf, line, paths, allocationExcess) {
   const figures = draftLeafFigures(leaf)
   const destination = selected(state.taxonomy.destinations, line.destination)
   const serverError = state.fieldErrors[paths.get(line.id)]
   const invalid = Boolean(serverError) || (line.qtyInput !== '' && Number(line.qtyInput) < 0) || (allocationExcess && state.lastChangedDestination === line.destination)
   const rowUnit = line.unit || figures.totalUnit
   const name = destination?.name || line.destination
-  return `<div class="destination-row ${invalid ? 'invalid' : ''}" style="--row:${row};--col:${column}"><label for="destination-${line.id}">${escapeHtml(name)}${destination?.description ? `<small>${escapeHtml(destination.description)}</small>` : ''}</label><div class="amount-with-unit"><input id="destination-${line.id}" data-line-field="amount" data-line-id="${line.id}" data-leaf="${leafAttr(leaf)}" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(line.qtyInput)}" ${invalid ? 'aria-invalid="true"' : ''} aria-label="${escapeHtml(t('%(destination)s amount in %(unit)s', { destination: name, unit: rowUnitLabel(rowUnit) }))}"><select data-line-field="unit" data-line-id="${line.id}" data-leaf="${leafAttr(leaf)}" aria-label="${escapeHtml(t('Unit'))}">${unitOptionsHtml(rowUnit, containerPresets())}</select></div>${serverError ? `<p class="field-error" role="alert">${escapeHtml(serverError)}</p>` : ''}</div>`
+  return `<div class="destination-row ${invalid ? 'invalid' : ''}"><label for="destination-${line.id}">${escapeHtml(name)}${destination?.description ? `<small>${escapeHtml(destination.description)}</small>` : ''}</label><div class="amount-with-unit"><input id="destination-${line.id}" data-line-field="amount" data-line-id="${line.id}" data-leaf="${leafAttr(leaf)}" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(line.qtyInput)}" ${invalid ? 'aria-invalid="true"' : ''} aria-label="${escapeHtml(t('%(destination)s amount in %(unit)s', { destination: name, unit: rowUnitLabel(rowUnit) }))}"><select data-line-field="unit" data-line-id="${line.id}" data-leaf="${leafAttr(leaf)}" aria-label="${escapeHtml(t('Unit'))}">${unitOptionsHtml(rowUnit, containerPresets())}</select></div>${serverError ? `<p class="field-error" role="alert">${escapeHtml(serverError)}</p>` : ''}</div>`
 }
 
-/** One leaf's Total / Allocated / Remaining, in that leaf's own unit. */
-function leafSummary(leaf, row, column, first) {
+/**
+ * One leaf's Total / Allocated / Remaining, in that leaf's own unit.
+ *
+ * **Since #142 it is rendered OUTSIDE its card's fold**, as `collapsibleCard`'s `always`
+ * strip, which is the whole of the client's "hang the remaining value on the outside".
+ * Nothing about this function changed to make that true and nothing is computed twice:
+ * `updateLine` already finds it by `data-summary-leaf` and rewrites Allocated, Remaining
+ * and the `invalid` class in place on every keystroke, so a shut card's Remaining is live
+ * and its over-allocation is visible without being opened.
+ *
+ * `--row` / `--col` are gone with the matrix that read them.
+ */
+function leafSummary(leaf, first) {
   const figures = draftLeafFigures(leaf)
   const total = totalNumber(figures)
   const allocated = allocatedAmount(figures.current, figures.totalUnit)
   const invalid = exceedsTotal(allocated, total) || (figures.current || []).some(line => line.qtyInput !== '' && Number(line.qtyInput) < 0)
   const unit = unitLabel(figures.totalUnit)
-  return `<div class="allocation-summary ${invalid ? 'invalid' : ''}" ${first ? 'id="current-summary"' : ''} data-summary-leaf="${leafAttr(leaf)}" style="--row:${row};--col:${column}" aria-live="polite"><div><span>${escapeHtml(t('Total waste'))}</span><strong>${formatNumber(total, 2)} ${escapeHtml(unit)}</strong></div><div><span>${escapeHtml(t('Allocated'))}</span><strong data-summary="allocated">${formatNumber(allocated, 2)} ${escapeHtml(unit)}</strong></div><div><span>${escapeHtml(t('Remaining'))}</span><strong data-summary="remaining">${formatNumber(remainingAmount(total, allocated), 2)} ${escapeHtml(unit)}</strong></div></div>`
+  return `<div class="allocation-summary ${invalid ? 'invalid' : ''}" ${first ? 'id="current-summary"' : ''} data-summary-leaf="${leafAttr(leaf)}" aria-live="polite"><div><span>${escapeHtml(t('Total waste'))}</span><strong>${formatNumber(total, 2)} ${escapeHtml(unit)}</strong></div><div><span>${escapeHtml(t('Allocated'))}</span><strong data-summary="allocated">${formatNumber(allocated, 2)} ${escapeHtml(unit)}</strong></div><div><span>${escapeHtml(t('Remaining'))}</span><strong data-summary="remaining">${formatNumber(remainingAmount(total, allocated), 2)} ${escapeHtml(unit)}</strong></div></div>`
 }
 
 /**
  * Step 4, which forks too (`design.md` §10).
  *
- * **Every leaf gets its own allocation, not one split divided pro-rata.** The request
- * body already carries one `current[]` per entry, so this is the shape the contract
- * expects; a shared split would have to be derived into each entry as
+ * **Every leaf gets its own allocation, not one split divided pro-rata, and that is still
+ * true.** The request body carries one `current[]` per entry, so this is the shape the
+ * contract expects; a shared split would have to be derived into each entry as
  * `row_kg x leaf_kg / chain_kg`, and three-decimal `qty_kg` rounding can then leave the
- * leaves' lines not summing to the figure the visitor typed - which
- * `improvement.js`'s per-entry mass-conservation check compares. It also means a
- * submission can say "the dairy went to landfill and the bakery went to animal feed",
- * which a shared split cannot express at all.
+ * leaves' lines not summing to the figure the visitor typed - which `improvement.js`'s
+ * per-entry mass-conservation check compares. It also means a submission can say "the
+ * dairy went to landfill and the bakery went to animal feed", which a shared split cannot
+ * express at all. Nothing in #142 touches that: it changes how the per-leaf allocations
+ * are DRAWN, not that there is one per leaf.
  *
- * **A matrix above 650px, per-leaf stacked blocks below it, and that is arithmetic
- * rather than preference.** 320px less the gutters is 288px; a destination label needs
- * about 90px, leaving ~198px shared between the leaf columns - 66px each at three leaves
- * and 40px at five. `tests/web/test_horizontal_overflow.py` measures document
- * `scrollWidth` against `clientWidth` at 320 and 390 in a real browser and is a hard
- * gate, so the matrix is scoped to the same `min-width: 650px` the amount step already
- * splits at.
+ * **THE MATRIX IS GONE, AND IT WAS USED BEFORE IT WAS REJECTED (1 October 2026).** This
+ * step drew a grid - destinations down the side, food types across the top - above 650px,
+ * and per-leaf stacked blocks below it. The client used the wide one in the round-three
+ * demonstration and rejected it as hard to use (#142), and asked for the vertical
+ * per-card layout step 3 has. So the narrow layout became the only layout and the cards
+ * fold.
  *
- * **A chain with one leaf is not a matrix at any width.** A matrix of one column is a
- * list, and this is the commonest journey; it renders exactly the markup it did before
- * the fork.
+ * **The arithmetic that scoped the matrix to 650px is kept here because it is still
+ * true**, and it is the reason nobody should reintroduce the grid as an improvement: 320px
+ * less the gutters is 288px; a destination label needs about 90px; the ~198px left over is
+ * 66px per column at three food types and 40px at five, and a cell that narrow cannot show
+ * the number typed into it. A matrix was therefore never available at a phone width, which
+ * `tests/web/test_horizontal_overflow.py` makes a hard gate by measuring document
+ * `scrollWidth` against `clientWidth` at 320 and 390 in a real browser. What the client's
+ * verdict added is that the grid was not worth having at the widths where it *did* fit
+ * either - so the honest layout is the one that is the same everywhere, and
+ * `test_leaf_layout_browser.py` now measures that it does not become a grid when there is
+ * room for one.
  *
- * **All thirteen destination rows stay**, matching what this step did before: it lists
- * every applicable destination and the visitor fills the ones that apply. A "choose
- * which destinations this chain used" pre-step would shorten the grid a lot and can be
- * added later if the full one proves too heavy.
+ * **All thirteen destination rows stay, inside a card.** This step lists every applicable
+ * destination and the visitor fills the ones that apply, which is what it did before the
+ * fork and before the fold. A "choose which destinations this chain used" pre-step would
+ * shorten each card a lot and can be added later if the full list proves too heavy; the
+ * fold is the cheaper answer to the same complaint and is what #142 asked for.
+ *
+ * **A chain with ONE food type draws a card too** (#142's own criterion), unlike step 3,
+ * where one leaf renders the panel it always had. The difference is that a step-4 card
+ * carries something a lone card still wants: a badge, and the Total / Allocated /
+ * Remaining strip in a header position rather than loose above the list.
+ * `cardIsFixedOpen` keeps it open and gives it no toggle.
+ *
+ * **Continue on this step is disabled before it is pressed, and that is deliberate and
+ * older than #142.** `updateLine` writes the refusal into `#allocation-error` and disables
+ * the button on every keystroke, because the allocation summary beside it is live and a
+ * rule that only spoke when the button was pressed would contradict the running totals
+ * (`test_amount_limits_browser.py::continue_from_step_four` is where that is written
+ * down). So #134's decision 3 - *a refused Continue expands the offending card and focuses
+ * the field at fault* - is wired through the one path this step shares with step 3
+ * (`stepProblemAt` -> `openedCard` -> `focusLeafField`, which knows this step's
+ * `allocation` field) and is the backstop for the routes that do press, not this step's
+ * primary answer. What a visitor with a shut, wrong card actually sees is the three things
+ * the folding had to leave outside the fold: the badge, the `invalid` summary strip with
+ * its Remaining, and `#allocation-error` naming the food type.
  */
 function destinationStep() {
   const leaves = draftLeaves()
   const single = leaves.length === 1
+  const named = !single
   const paths = draftLinePaths()
   // **The same question `updateLine` asks, asked the same way.** One list of rules for
   // one button: any rule added to one of two lists left the other enabling Continue on a
@@ -1508,33 +1569,50 @@ function destinationStep() {
     const figures = draftLeafFigures(leaf)
     return exceedsTotal(allocatedAmount(figures.current, figures.totalUnit), totalNumber(figures))
   }
-  const group = (leaf, column) => {
+  // A server `VALIDATION_ERROR` names a line by the §9 path `draftLinePaths` builds, and a
+  // client-side refusal names a leaf in `state.errorAt`. Either way **a card holding a
+  // message about itself is open whatever the open set says**, which is `leafPanel`'s rule
+  // on step 3: a collapsed card hiding its own error is the reverse of what the folding is
+  // for. Mere over-allocation is NOT this - that is a live state, it is said by the
+  // summary strip outside the fold, and a card that could not be shut while a figure was
+  // wrong would fight the visitor who was fixing it.
+  const isApiError = state.errorCode === 'VALIDATION_ERROR'
+  const card = (leaf, index) => {
     const figures = draftLeafFigures(leaf)
-    const over = excess(leaf)
-    const cells = (figures.current || []).map((line, index) => destinationCell(leaf, line, index + 3, column, paths, over)).join('')
-    return `<div class="leaf-group" data-leaf-group="${leafAttr(leaf)}"><h2 class="leaf-group__heading">${escapeHtml(leafName(leaf))}</h2>${leafSummary(leaf, 2, column, column === 2)}${cells}</div>`
+    const key = leafKey(leaf)
+    const lines = figures.current || []
+    const rows = lines.map(line => destinationCell(leaf, line, paths, excess(leaf))).join('')
+    const errored = (!isApiError && state.errorAt?.leaf === key)
+      || lines.some(line => state.fieldErrors[paths.get(line.id)])
+    return collapsibleCard({
+      step: 3,
+      key,
+      anchor: leafSlug(leaf),
+      name: leafName(leaf),
+      count: leaves.length,
+      forceOpen: Boolean(errored),
+      // The badge asks `leafProblem` through `leafSettled`, which is what Continue is
+      // gated on - including the `food` argument, so that it is the same function with the
+      // same arguments rather than a different one with the same name.
+      status: cardStatus(leafSettled(3, leaf, named ? leafName(leaf) : null)),
+      // Outside the fold, which is #142's "hang the remaining value on the outside".
+      always: leafSummary(leaf, index === 0),
+      body: `<div class="destination-list">${rows}</div>`,
+      // `.leaf-panel` for its `margin: 0` inside the list's own gap, and
+      // `data-leaf-panel` because `updateCardBadges` finds a card's badge through it on
+      // both steps - the attribute means "this leaf's card on the screen in front of
+      // you", and only one step is ever on screen.
+      extraClass: 'leaf-panel',
+      dataAttr: `data-leaf-panel="${keyAttr(key)}"`,
+    })
   }
-  const destinations = (draftLeafFigures(leaves[0]).current || [])
-  const sideLabels = destinations.map((line, index) => {
-    const destination = selected(state.taxonomy.destinations, line.destination)
-    return `<span class="matrix-row-label" style="--row:${index + 3}" aria-hidden="true">${escapeHtml(destination?.name || line.destination)}</span>`
-  }).join('')
-  const columnHeads = leaves.map((leaf, index) => {
-    const figures = draftLeafFigures(leaf)
-    return `<span class="matrix-column-head" style="--col:${index + 2}" aria-hidden="true"><strong>${escapeHtml(leafName(leaf))}</strong><small>${formatNumber(totalNumber(figures), 2)} ${escapeHtml(unitLabel(figures.totalUnit))}</small></span>`
-  }).join('')
-  const body = single
-    ? `<div class="destination-list">${(draftLeafFigures(leaves[0]).current || []).map((line, index) => destinationCell(leaves[0], line, index + 3, 2, paths, excess(leaves[0]))).join('')}</div>`
-    // `data-leaf-count` as well as the custom property: the stylesheet needs the count
-    // in a SELECTOR to decide whether the matrix can fit at all (a media query cannot read
-    // a custom property), and in a VALUE to lay the columns out once it has.
-    : `<div class="allocation-matrix" data-leaf-count="${leaves.length}" style="--leaf-count:${leaves.length}">${sideLabels}${columnHeads}${leaves.map((leaf, index) => group(leaf, index + 2)).join('')}</div>`
   const intro = single
     ? t('Enter an amount for every applicable destination. The combined amount cannot exceed your total waste.')
     : t('Enter an amount for every applicable destination, for each food type. No food type may have more allocated than it has.')
+  // `.leaf-panel-list` is step 3's card stack, reused rather than copied: it is
+  // `display: grid; gap: 16px` and the two screens want the same stack of the same cards.
   return `<section class="content-section wide" aria-labelledby="destination-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 4 }))}</p><h1 id="destination-title">${escapeHtml(t('Where did the food waste go?'))}</h1><p class="section-intro">${escapeHtml(intro)}</p>
-    ${single ? leafSummary(leaves[0], 2, 2, true) : ''}
-    ${body}
+    <div class="leaf-panel-list">${leaves.map(card).join('')}</div>
     <p class="field-error" id="allocation-error" role="alert">${escapeHtml(state.error || '')}</p>${stepNav({ step: 3, back: backTarget(3), disabled: !canContinue })}</section>`
 }
 
@@ -2390,29 +2468,41 @@ function updateCombinedTotal() {
 }
 
 /**
- * Every step-3 card's completion badge, on keystroke.
+ * Every per-leaf card's completion badge, on keystroke — step 3's and, since #142,
+ * step 4's.
  *
  * **The same §7.2 exception `updateCombinedTotal` above takes, and it is not optional
  * here.** Step 3's Continue is never disabled — it validates on the press — so the badge
- * is the only thing on this screen that says, before the press, whether a card would be
+ * is the only thing on that screen that says, before the press, whether a card would be
  * refused. A badge that moved only on Continue would read as a promise about a card the
- * visitor had just finished typing into, and the press would then disagree with it.
+ * visitor had just finished typing into, and the press would then disagree with it. On
+ * step 4 the button IS disabled before the press, and the badge is then the thing that
+ * says *which* card the disabled button is about — the button cannot, and a shut card's
+ * own contents cannot either.
  *
  * It asks `leafSettled`, which is `leafProblem`, which is what Continue asks. The markup
  * it rewrites is `cardStatus`'s, so the two states are stated once.
  *
- * Found through `data-leaf-panel` rather than by index: the panels are keyed by leaf and
- * an index into a NodeList is one untick away from naming a different food.
+ * **`step` is a parameter and not read off `state`** so that the question is the step the
+ * caller is rendering, exactly as `stepProblem` is parameterised: `updateLine` runs on
+ * step 4 and step 3's three scalar handlers run on step 3, and neither has to consult
+ * anything to know which it is.
+ *
+ * Found through `data-leaf-panel` rather than by index: the cards are keyed by leaf and
+ * an index into a NodeList is one untick away from naming a different food. A leaf with no
+ * card on screen — the single-leaf step 3 panel — simply has no badge to rewrite, which is
+ * why this walks the leaves rather than the cards.
  */
-function updateCardBadges() {
+function updateCardBadges(step = 2) {
   const leaves = draftLeaves()
-  if (leaves.length < 2) return
+  if (!leaves.length) return
+  const named = leaves.length > 1
   for (const leaf of leaves) {
     const key = leafKey(leaf)
     const panel = document.querySelector(`[data-leaf-panel="${CSS.escape(keyAttr(key))}"]`)
     const badge = panel?.querySelector('[data-card-status]')
     if (!badge) continue
-    const status = cardStatus(leafSettled(2, leaf, leafName(leaf)))
+    const status = cardStatus(leafSettled(step, leaf, named ? leafName(leaf) : null))
     badge.dataset.state = status.state
     badge.querySelector('.step-card__mark').textContent = status.mark
     badge.querySelector('[data-card-status-text]').textContent = status.text
@@ -2438,14 +2528,28 @@ function updateCardBadges() {
  * `#total-waste`, a count in `#unit-count` — and `leafProblem` does not care which mode
  * the card is in.
  *
+ * **`allocation` is step 4's whole card, so it resolves to the FIRST of that card's
+ * thirteen rows.** Its controls are `data-line-field` — one per destination, keyed by line
+ * id — rather than the single `data-leaf-field` box the other four names are, so this used
+ * to look for a `[data-leaf-field="allocation"]` that no screen has ever drawn and answer
+ * `null` for every step-4 refusal. The first row is where a visitor starts reading the
+ * list, and `leafProblem` knows the leaf and not which of its rows is the wrong one —
+ * "allocated more than you have" is a property of the thirteen together.
+ *
  * @returns {Element|null} what it focused, so the caller can tell whether the page has
  *   already been moved to the fault and must not also be scrolled to the top.
  */
 function focusLeafField(at) {
   if (!at || !at.leaf) return null
+  const leaf = CSS.escape(keyAttr(at.leaf))
+  if (at.field === 'allocation') {
+    const row = document.querySelector(`[data-line-field="amount"][data-leaf="${leaf}"]`)
+    if (row) row.focus()
+    return row || null
+  }
   const fields = at.field === 'amount' ? ['amount', 'count'] : [at.field]
   for (const field of fields) {
-    const control = document.querySelector(`[data-leaf-field="${field}"][data-leaf="${CSS.escape(keyAttr(at.leaf))}"]`)
+    const control = document.querySelector(`[data-leaf-field="${field}"][data-leaf="${leaf}"]`)
     if (control) {
       control.focus()
       return control
@@ -2510,6 +2614,12 @@ function updateLine(control) {
   }
   const continueButton = document.querySelector('[data-action="continue"]')
   if (continueButton) continueButton.disabled = Boolean(error)
+  // **Every card's badge, not only this one's** (#142). An allocation is refused per leaf,
+  // but `#allocation-error` holds only the first refusal, so the badge is what says of
+  // *each* card whether it is the one the disabled button is about — and a shut card has
+  // nothing else to say it with. Step 4, so `leafSettled(3, ...)`: the same `step` the
+  // renderer passed `cardStatus`, and the same question Continue is gated on.
+  updateCardBadges(3)
 }
 
 /**

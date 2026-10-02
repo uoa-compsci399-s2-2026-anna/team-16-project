@@ -295,7 +295,10 @@ def test_the_named_food_reaches_the_request_and_changes_the_figure(page, release
         page.wait_for_timeout(50)
     _continue(page)
 
-    page.wait_for_selector('[data-line-field="amount"]')
+    #: Step 4's cards fold since #142, through the same chrome and for the same
+    #: reason, so the same two lines apply there as on step 3 above.
+    page.wait_for_selector('[data-line-field="amount"]', state="attached")
+    expand_step_cards(page)
     first_row = page.evaluate(
         """() => {
           const byLeaf = {};

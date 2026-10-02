@@ -458,3 +458,331 @@ def test_step_two_point_five_does_not_scroll_sideways_shut_or_open(opened, item_
         assert measured["scrollWidth"] <= max(measured["clientWidth"], 320), (
             f"step 2.5 scrolls sideways at {width}px with the cards {state}: {measured}"
         )
+
+
+# --------------------------------------------------------------------- step 4
+
+
+def _to_step_four(page, leaves, amount=100):
+    """A chain of `leaves` food types, each with `amount`, standing on step 4.
+
+    Step 3's cards are opened through `expand_step_cards` for the reason that helper
+    exists; step 4's are left exactly as the visitor meets them, because the shut
+    state is what this file measures.
+    """
+    boxes = page.locator('input[name="food-category"]')
+    offered = boxes.count()
+    assert offered > leaves, f"step 2 offers {offered} choices, too few to tick {leaves}"
+    for index in range(leaves):
+        boxes.nth(index).click()
+        page.wait_for_timeout(55)
+    press_continue(page)
+    page.wait_for_selector('[data-leaf-field="amount"], #total-waste', state="attached")
+    expand_step_cards(page)
+    fields = page.evaluate(
+        "() => [...document.querySelectorAll('[data-leaf-field=amount]')].map(e => e.id)")
+    assert len(fields) == leaves, f"step 3 drew {len(fields)} amount fields for {leaves}: {fields}"
+    for index, field in enumerate(fields):
+        page.fill(f"#{field}", str(amount * (index + 1)))
+        page.wait_for_timeout(40)
+    press_continue(page)
+    page.wait_for_selector('[data-line-field="amount"]', state="attached")
+
+
+#: Every card's badge and the one button, read in a single breath.
+#:
+#: **They are not the same arity, and that is the point.** `leafSettled` answers about
+#: ONE leaf and `stepProblemAt` walks every leaf and stops at the first problem, so the
+#: badge is per card and Continue is the conjunction over them. A first draft of the
+#: agreement test asserted a biconditional between one card's badge and the button and
+#: failed on the honest state where the first card is finished and the second is not --
+#: which was the test being wrong, not the code.
+VERDICT = """() => {
+  const cards = [...document.querySelectorAll('.step-card')];
+  const first = cards[0];
+  const summary = first.querySelector(':scope > .allocation-summary');
+  return {
+    badges: cards.map(card => card.querySelector('[data-card-status]').dataset.state),
+    words: cards.map(card =>
+      card.querySelector('[data-card-status-text]').textContent.trim()),
+    continueDisabled: document.querySelector('[data-action="continue"]').disabled,
+    error: document.getElementById('allocation-error').textContent.trim(),
+    badge: first.querySelector('[data-card-status]').dataset.state,
+    // Guarded rather than dereferenced: a summary that has been moved INSIDE the fold
+    // is the defect two of these tests are about, and a probe that threw on it would
+    // report a TypeError instead of naming what moved.
+    summaryOutsideFold: Boolean(summary),
+    remaining: summary ? summary.querySelector('[data-summary="remaining"]').textContent.trim() : null,
+    summaryInvalid: Boolean(summary) && summary.classList.contains('invalid'),
+    summaryDrawn: Boolean(summary) && summary.offsetParent !== null,
+    shut: first.querySelector('.step-card__body').hasAttribute('hidden'),
+  };
+}"""
+
+
+def test_step_four_is_one_shut_card_per_food_type_with_its_remaining_outside_the_fold(opened):
+    """#142's shape, in one measurement: no matrix, one card per food type, every
+    card shut, and every card's Remaining readable without opening anything.
+
+    `summaryOutsideFold` is `:scope > .allocation-summary` -- the strip is a child of
+    the `<fieldset>` and not of the `hidden` body, which is the structural half of the
+    claim -- and `summaryDrawn` is `offsetParent`, which is the browser's own answer
+    about whether a visitor can read it. Both, because a strip can be outside the
+    fold and still be invisible for some other reason.
+    """
+    page = opened()
+    _to_step_four(page, 3)
+    cards = page.evaluate(CARDS)
+
+    assert page.evaluate("() => document.querySelectorAll('.allocation-matrix').length") == 0, (
+        "step 4 still draws the allocation matrix the client rejected"
+    )
+    assert len(cards) == 3, f"three food types drew {len(cards)} cards: {cards}"
+    assert all(card["expanded"] == "false" for card in cards), cards
+    assert all(card["bodyHidden"] for card in cards), cards
+    assert all(card["drawnFields"] == 0 for card in cards), cards
+    assert all(card["summaryOutsideFold"] for card in cards), (
+        f"a food type's Total/Allocated/Remaining strip is inside the fold: {cards}"
+    )
+    assert all(card["summaryDrawn"] for card in cards), (
+        f"a shut card's Remaining is in the document and not drawn: {cards}"
+    )
+    for index, card in enumerate(cards):
+        expected = f"{(index + 1) * 100}.00 kilograms"
+        assert f"Remaining {expected}" in card["summaryText"], (
+            f"card {index} does not show its own Remaining with its unit: {card}"
+        )
+
+
+def test_the_cards_are_a_vertical_list_at_every_width(opened):
+    """**No grid at any width** (#142). Measured as geometry rather than from a class
+    name: every card starts where the one above it ended and all of them share a left
+    edge. A grid of one column per food type would put them side by side, which is
+    exactly what the client rejected, and a `display: grid` that happened to resolve
+    to one column would still pass a class-name assertion.
+
+    1600x900 is the widest case and the one the matrix was drawn for; 650 is the
+    breakpoint it used to engage at.
+    """
+    for width in (1600, 650):
+        page = opened(width=width, height=900)
+        _to_step_four(page, 3)
+        boxes = page.evaluate(
+            """() => [...document.querySelectorAll('.step-card')].map(card => {
+              const box = card.getBoundingClientRect();
+              return {left: Math.round(box.left), right: Math.round(box.right),
+                      top: Math.round(box.top), bottom: Math.round(box.bottom)};
+            })"""
+        )
+        assert len(boxes) == 3, (width, boxes)
+        assert len({box["left"] for box in boxes}) == 1, (
+            f"at {width}px the cards do not share a left edge, so they are laid out "
+            f"across rather than down: {boxes}"
+        )
+        for above, below in zip(boxes, boxes[1:]):
+            assert below["top"] >= above["bottom"], (
+                f"at {width}px a card starts before the one above it has ended, so the "
+                f"layout is a grid and not a list: {boxes}"
+            )
+
+
+def test_remaining_stays_right_when_the_card_it_belongs_to_is_shut(opened):
+    """**The figure #142 asks for, through both of the paths that write it.**
+
+    `updateLine` rewrites the strip in place on a keystroke -- §7.2's exception, taken
+    because a re-render per keystroke destroys the focused input -- and `leafSummary`
+    renders it again from `state` on the next re-render. Shutting the card is a
+    re-render, so this walks both: type into an open card and read the strip without
+    a re-render, then shut the card and read the same figure out of fresh markup.
+
+    A figure that was only correct on one of the two paths is the defect this is
+    for: it would be right while the visitor typed and wrong the moment they folded
+    the card away, which is precisely when they are relying on it.
+    """
+    page = opened()
+    _to_step_four(page, 2)
+    page.locator('.step-card__toggle[aria-expanded="false"]').first.click()
+    page.wait_for_timeout(180)
+    first_row = page.evaluate(
+        "() => document.querySelector('.step-card [data-line-field=amount]').id")
+    page.fill(f"#{first_row}", "40")
+    page.wait_for_timeout(200)
+
+    typed = page.evaluate(VERDICT)
+    assert typed["summaryOutsideFold"], (
+        f"the Total/Allocated/Remaining strip is not a child of the card, so folding "
+        f"the card takes it with it: {typed}"
+    )
+    assert typed["remaining"] == "60.00 kilograms", (
+        f"the strip did not follow the keystroke: {typed}"
+    )
+    assert typed["shut"] is False, typed
+
+    page.locator('.step-card__toggle[aria-expanded="true"]').first.click()
+    page.wait_for_timeout(200)
+    folded = page.evaluate(VERDICT)
+    assert folded["shut"] is True, folded
+    assert folded["summaryDrawn"] is True, (
+        f"folding the card took its Remaining with it: {folded}"
+    )
+    assert folded["remaining"] == "60.00 kilograms", (
+        f"the shut card's Remaining disagrees with what was typed into it: {folded}"
+    )
+
+
+def test_over_allocation_is_visible_from_a_shut_card(opened):
+    """#142: over-allocation keeps its current treatment and is visible from the
+    collapsed state.
+
+    The treatment is the summary turning `invalid` -- Beetroot border and ground --
+    and it has to survive the card being folded away, because the card being folded
+    away is how a visitor stops seeing the rows. The badge and the disabled Continue
+    are measured beside it: three things say it, and only the first two are readable
+    without hunting for the button.
+    """
+    page = opened()
+    _to_step_four(page, 2)
+    page.locator('.step-card__toggle[aria-expanded="false"]').first.click()
+    page.wait_for_timeout(180)
+    first_row = page.evaluate(
+        "() => document.querySelector('.step-card [data-line-field=amount]').id")
+    page.fill(f"#{first_row}", "150")  # against a leaf holding 100
+    page.wait_for_timeout(220)
+    over = page.evaluate(VERDICT)
+    assert over["summaryOutsideFold"], (
+        f"the strip is not a child of the card, so a shut card cannot show it: {over}"
+    )
+    assert over["summaryInvalid"] is True, f"150 kg against a 100 kg leaf is not marked: {over}"
+    assert over["badge"] == "incomplete", over
+    assert over["continueDisabled"] is True, over
+
+    page.locator('.step-card__toggle[aria-expanded="true"]').first.click()
+    page.wait_for_timeout(200)
+    folded = page.evaluate(VERDICT)
+    assert folded["shut"] is True, folded
+    assert folded["summaryInvalid"] is True, (
+        f"folding an over-allocated card hides that it is over-allocated: {folded}"
+    )
+    assert folded["summaryDrawn"] is True, folded
+    assert folded["badge"] == "incomplete", folded
+    assert folded["continueDisabled"] is True, folded
+
+
+def test_one_food_type_is_a_card_that_is_open_and_has_no_toggle(opened):
+    """`cardIsFixedOpen` on step 4, which is #142's own criterion: *collapsed by
+    default unless it is the only card*.
+
+    The sibling on step 2.5 measures the same clause on a different screen, and both
+    are kept: the clause lives in the chrome and either consumer could stop asking it
+    without the other noticing.
+
+    Mutation: `cardIsFixedOpen` returning `false` leaves the single card shut with a
+    toggle, and this fails on `bodyHidden` and `headerIsButton` together.
+    """
+    page = opened()
+    _to_step_four(page, 1)
+    cards = page.evaluate(CARDS)
+
+    assert len(cards) == 1, cards
+    assert cards[0]["bodyHidden"] is False, (
+        f"the only food type's card is collapsed, so step 4 opens on an empty screen: {cards}"
+    )
+    assert cards[0]["drawnFields"] > 0, cards
+    assert cards[0]["headerIsButton"] is False, (
+        f"a card that cannot be shut carries a toggle: {cards}"
+    )
+    assert cards[0]["expanded"] is None, cards
+    assert cards[0]["summaryOutsideFold"] and cards[0]["summaryDrawn"], cards
+
+
+def test_every_badge_and_continue_read_one_rule_set(opened):
+    """**One rule set, two readers -- the whole of it, on step 4.**
+
+    `leafProblem` is the only copy of the per-leaf rules. `stepProblemAt` walks them
+    for Continue and stops at the first problem; `leafSettled` asks them about one
+    leaf, which is what a card's badge prints. Nothing else encodes a rule, and
+    `destinationStep`'s own comment records what happened the last time something did:
+    *any rule added to one of two lists left the other enabling Continue on a state the
+    other had just refused.* A badge computed from a second list is that defect with a
+    tick instead of a button, and worse, because a tick is read as a promise before
+    anybody presses anything.
+
+    The two readers have different arities, so the agreement is not a biconditional
+    between one badge and the button: **Continue is live exactly when EVERY badge is
+    complete.** That is asserted at four states, together with each state's concrete
+    verdict, and the two assertions catch different things:
+
+    * the equivalence catches a SECOND list -- a tick over a card the button refuses,
+      or a live button over a card the badge calls incomplete;
+    * the concrete verdicts catch a rule that moved BOTH readers, which the
+      equivalence cannot see because it still holds.
+
+    The third state is the one a first draft of this test got wrong and the one that
+    matters most: the first card finished, the second not. The badge says the first
+    card is done, Continue says the step is not, and both are right.
+
+    Mutation: a rule added to `leafProblem`'s step-3 block -- refusing an allocation
+    whose rows sum to exactly the leaf's own total -- moves the badge and the button
+    together and fails the concrete verdict for *both allocated in full*, with the
+    dump showing both halves moved as one. Neither reader is edited to make that
+    happen, which is the property under test.
+    """
+    page = opened()
+    _to_step_four(page, 2)
+    rows = {}
+    for index in (0, 1):
+        page.locator('.step-card__toggle[aria-expanded="false"]').first.click()
+        page.wait_for_timeout(180)
+        rows[index] = page.evaluate(
+            f"""() => [...document.querySelectorAll('.step-card')][{index}]
+                 .querySelector('[data-line-field=amount]').id"""
+        )
+
+    seen = {}
+    seen["nothing allocated"] = page.evaluate(VERDICT)
+    page.fill(f"#{rows[0]}", "100")
+    page.wait_for_timeout(220)
+    seen["the first card allocated in full"] = page.evaluate(VERDICT)
+    page.fill(f"#{rows[1]}", "200")
+    page.wait_for_timeout(220)
+    seen["both allocated in full"] = page.evaluate(VERDICT)
+    page.fill(f"#{rows[0]}", "150")
+    page.wait_for_timeout(220)
+    seen["the first card over-allocated"] = page.evaluate(VERDICT)
+
+    for state, verdict in seen.items():
+        every = all(badge == "complete" for badge in verdict["badges"])
+        assert every is (not verdict["continueDisabled"]), (
+            f"with {state} the badges read {verdict['badges']} and Continue is "
+            f"{'disabled' if verdict['continueDisabled'] else 'live'}: the badge and "
+            f"the button are reading different rules"
+        )
+    assert seen["nothing allocated"]["badges"] == ["incomplete", "incomplete"], seen
+    assert seen["the first card allocated in full"]["badges"] == ["complete", "incomplete"], (
+        f"a finished card and an untouched one must not read alike: {seen}"
+    )
+    assert seen["both allocated in full"]["badges"] == ["complete", "complete"], seen
+    assert seen["both allocated in full"]["continueDisabled"] is False, seen
+    assert seen["the first card over-allocated"]["badges"] == ["incomplete", "complete"], (
+        f"over-allocating the first card moved the second card's badge: {seen}"
+    )
+
+
+@pytest.mark.parametrize("width", NARROW)
+def test_step_four_does_not_scroll_sideways_shut_or_open(opened, width):
+    """The hard gate on the screen the hard gate cannot reach, in both states.
+
+    `test_leaf_layout_browser.py` measures this with the cards as the visitor meets
+    them and at two leaf counts; this one is the open state, which the other does not
+    reach, and it is the state the thirteen rows are actually in while being filled.
+    """
+    page = opened(width=width, height=700)
+    _to_step_four(page, 3)
+    shut = page.evaluate(OVERFLOW)
+    expand_step_cards(page)
+    openned = page.evaluate(OVERFLOW)
+
+    for state, measured in (("shut", shut), ("open", openned)):
+        assert measured["scrollWidth"] <= max(measured["clientWidth"], 320), (
+            f"step 4 scrolls sideways at {width}px with the cards {state}: {measured}"
+        )

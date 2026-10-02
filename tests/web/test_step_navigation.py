@@ -3793,8 +3793,8 @@ def test_changing_the_unit_changes_every_row_s_figure_and_no_row_s_allocation(pa
     the later one wins**, so the invariant is now its own inverse - one control, every
     row.
 
-    Two assertions, because "every row moved" and "no allocation moved" are the two
-    halves that make this a display change:
+    Two properties, because "every row moved" and "no allocation moved" are the two
+    halves that make this a display change rather than a second calculation:
 
     * every row's *displayed* figure is restated in the new unit, including rows the
       visitor never touched. A per-row unit surviving anywhere - a stray

@@ -244,14 +244,49 @@ const PIE_CENTRE_X = 260
 const PIE_CENTRE_Y = 210
 const PIE_RADIUS = 112
 
+// How short of a full 360° a sweep may fall and still be drawn as a complete circle —
+// see `slicePath`, which is the only reader. **It exists because the collapse this
+// tolerance is guarding against is not an equality.** Chrome holds SVG path geometry in
+// single precision, so a one-slice arc's two endpoints round to the same float32 point —
+// and the arc vanishes, per SVG 1.1 §8.3.8 — for a *range* of sweeps below 360, not only
+// at it. Bisected in this repository's own Chromium at r=112: a share of
+// 99.99999783009287 still paints a 224x224 box, 99.99999783009288 paints nothing, i.e. a
+// sweep 7.8e-06° short of the full turn already collapses. That figure is not arbitrary —
+// it is what a float32 ulp at a coordinate of 260 predicts (1.5e-05 / 112 radians), so
+// any engine holding this geometry in single precision collapses in the same decade.
+//
+// 0.01° is ~1,280x that threshold, which is the margin, and it costs 0.0196 user units
+// of omitted arc (112 * 0.01 * pi/180) — 0.04 device pixels at the largest magnification
+// this chart is ever drawn at, the 720px modal on a 390px viewport at dpr 3. It is also
+// wider than nothing and narrower than anything the panel treats as a real allocation:
+// the finest step the number box declares is 0.01 of a percentage point, whose last stop
+// below a full allocation is 99.99% — a sweep of 359.964°, comfortably under the gate —
+// and every share the gate does take already prints as "100.0%" in its own callout.
+const FULL_SWEEP_TOLERANCE_DEGREES = 0.01
+
 function slicePath(start, end) {
   // SVG's arc command cannot represent a full circle when its start and end points are
   // identical: SVG 1.1 §8.3.8 makes such an arc equivalent to omitting the segment, so
   // the browser paints nothing. A single destination at 100% therefore used to leave the
   // chart's centre text and callout visible while the slice itself disappeared. Draw the
   // circle as two half-arcs so the complete allocation remains visible.
+  //
+  // **The gate is a tolerance and not `>= 360`, because the collapse is not an
+  // equality.** An exact comparison on a float sweep leaves a dead band of shares just
+  // under 100 that still reproduce the original defect with this branch in place, and
+  // both of the panel's entry modes reach it: a typed `99.999999` in percentage mode,
+  // and in unit mode the `toFixed` rounding of a row's own `fixedRowMax` (`12.49%` of
+  // every 0.01 kg mass from 1 to 3,000 kg, measured). `improvementValidation` accepts
+  // every one of them — a typed `99.999999` is 1e-05 kg light on the 1,000 kg fixture
+  // before `improvedLines` rounds it to three places, and nothing like the 0.01 kg
+  // `MASS_TOLERANCE_KG` — so Compare Impact stays enabled and the visitor is left with
+  // an allocation the panel calls valid, a callout reading
+  // "100.0%", and an empty donut. The asymmetry is why nothing else catches it:
+  // `updateImprovementInput`'s range clamp rounds a figure that *overshoots* back to
+  // exactly 100 and leaves one that *undershoots* untouched. See
+  // `FULL_SWEEP_TOLERANCE_DEGREES` for the measurement and what the tolerance costs.
   const sweep = end - start
-  if (sweep >= 360) {
+  if (sweep > 360 - FULL_SWEEP_TOLERANCE_DEGREES) {
     // Derived from the same centre and radius the wedge branch uses, through the same
     // `polar`: the top and bottom of the vertical diameter. `polar` returns them exactly
     // — `Math.sin(±π/2)` is ±1 and the cosine's 6.1e-17 is below an ulp of 260 — so the

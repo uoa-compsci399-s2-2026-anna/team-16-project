@@ -204,6 +204,15 @@ def _scenario_result(lines, *, with_breakdown, rolled_up=False):
                     "this conversion is not settled. Roughly one kilometre "
                     "of an average light petrol vehicle per 0.24 kg CO2e."
                 ),
+                #: v1.80. Mirrors the `km_driven` fixture row, like the four
+                #: above it. `test_the_fake_adapters_equivalence_has_every_
+                #: field_the_engines_does` is what made this line necessary
+                #: the moment the dataclass gained the field.
+                description=(
+                    "The same greenhouse gases as driving an average light "
+                    "petrol car this far, at a placeholder 0.24 kg CO2e a "
+                    "kilometre."
+                ),
             ),
         ),
     )

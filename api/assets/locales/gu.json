@@ -1,10 +1,7 @@
 {
-  "language": "gu",
   "endonym": "ગુજરાતી",
+  "language": "gu",
   "machine_translated": true,
-  "tags": [
-    "gu"
-  ],
   "strings": {
     "%(amount)s combined": "કુલ મળીને %(amount)s",
     "%(caption)s, horizontally scrollable": "%(caption)s, આડી દિશામાં સ્ક્રોલ કરી શકાય તેવું",
@@ -52,7 +49,6 @@
     "Back to calculator": "કેલ્ક્યુલેટર પર પાછા જાઓ",
     "Background reading": "પૂર્વભૂમિકા વાચન",
     "Bar chart": "સ્તંભ આલેખ",
-    "Basis:": "આધાર:",
     "Breakdown by category": "શ્રેણી પ્રમાણે વિગત",
     "Breakdowns of entries contributed to this tool": "આ ટૂલમાં યોગદાન આપેલી નોંધોની વિગતો",
     "By food type": "ખોરાકના પ્રકાર પ્રમાણે",
@@ -95,6 +91,7 @@
     "Compare Impact": "અસરની સરખામણી કરો",
     "Compare Results": "પરિણામોની સરખામણી કરો",
     "Comparing…": "સરખામણી થઈ રહી છે…",
+    "Complete": "પૂર્ણ",
     "Constants are named values referenced by published formulas.": "અચળાંકો એ પ્રકાશિત સૂત્રોમાં વપરાતાં નામ ધરાવતાં મૂલ્યો છે.",
     "Containers": "પાત્રો",
     "Continue": "આગળ વધો",
@@ -216,6 +213,7 @@
     "Improved %(destination)s percentage value": "સુધારેલા દૃશ્યમાં %(destination)s ની ટકાવારીનું મૂલ્ય",
     "Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.": "સુધારેલા દૃશ્યની ગંતવ્ય ફાળવણીઓનો સરવાળો 100% થવો જોઈએ, જેથી એ દૃશ્ય વર્તમાન જેટલા જ કચરાનું વર્ણન કરે. અત્યારનો સરવાળો: %(total)s%.",
     "Improved scenario (Current → Improved)": "સુધારેલું દૃશ્ય (વર્તમાન → સુધારેલું)",
+    "Incomplete": "અપૂર્ણ",
     "It joins the anonymous statistics only. No figure on the results page is calculated from it.": "તે માત્ર અનામી આંકડામાં ઉમેરાય છે. પરિણામ પૃષ્ઠનો કોઈ આંકડો તેના પરથી ગણાતો નથી.",
     "It lets the results show the waste as a share of production. Leaving it empty changes no emissions figure.": "તેનાથી પરિણામો બગાડને ઉત્પાદનના હિસ્સા તરીકે બતાવી શકે છે. ખાલી છોડવાથી કોઈ ઉત્સર્જન આંકડો બદલાતો નથી.",
     "Kai Commitment - Leading action on food waste": "Kai Commitment - ખોરાકના કચરા સામે અગ્રણી પગલાં",
@@ -354,7 +352,6 @@
     "Tangible equivalents are available once approved conversion factors are supplied.": "મંજૂર થયેલાં રૂપાંતર પરિબળો મળ્યા પછી સરળ સરખામણીઓ ઉપલબ્ધ થશે.",
     "That container is no longer available. Choose another.": "તે પાત્ર હવે ઉપલબ્ધ નથી. બીજું પસંદ કરો.",
     "That is about %(mass)s in total.": "તે કુલ મળીને લગભગ %(mass)s થાય છે.",
-    "The basis for this conversion is not recorded yet.": "આ રૂપાંતરણનો આધાર હજુ સુધી નોંધવામાં આવ્યો નથી.",
     "The breakdowns are temporarily unavailable.": "વિગતો થોડા સમય માટે ઉપલબ્ધ નથી.",
     "The calculation could not be completed.": "ગણતરી પૂરી થઈ શકી નથી.",
     "The calculator could not produce a result because its calculation configuration needs attention. Please try again later.": "કેલ્ક્યુલેટરની ગણતરી સંબંધી ગોઠવણ પર ધ્યાન આપવાની જરૂર હોવાથી તે પરિણામ આપી શક્યું નથી. કૃપા કરીને પછીથી ફરી પ્રયાસ કરો.",
@@ -362,7 +359,6 @@
     "The calculator service could not be reached. Check your connection and try again.": "કેલ્ક્યુલેટર સેવા સુધી પહોંચી શકાયું નથી. તમારું જોડાણ તપાસો અને ફરી પ્રયાસ કરો.",
     "The calculator service returned an unexpected response.": "કેલ્ક્યુલેટર સેવાએ અણધાર્યો પ્રતિસાદ આપ્યો.",
     "The calculator turns the count into a weight using the container chosen above.": "કેલ્ક્યુલેટર ઉપર પસંદ કરેલા પાત્ર પરથી આ ગણતરીને વજનમાં ફેરવે છે.",
-    "The conversion factor comes from the client. The total it is applied to comes from placeholder factors.": "રૂપાંતરણ પરિબળ ક્લાયન્ટ તરફથી આવે છે. જે કુલ રકમ પર તે લાગુ થાય છે તે કામચલાઉ પરિબળોમાંથી આવે છે.",
     "The figure beside each destination is the engine's own cross-entry total. The rows beneath it are each entry's own — they can draw different upstream factors, which is why they add up to the total shown rather than repeat it.": "દરેક ગંતવ્યની બાજુમાં દેખાતો આંકડો એન્જિનનો તમામ નોંધો પરનો પોતાનો કુલ સરવાળો છે. તેની નીચેની હરોળો દરેક નોંધના પોતાના મૂલ્યો છે — તેઓ અલગ અલગ અપસ્ટ્રીમ પરિબળોનો ઉપયોગ કરી શકે છે, તેથી તેઓ ઉપર દર્શાવેલા કુલ સરવાળાનું પુનરાવર્તન કરવાને બદલે તેમાં ઉમેરાય છે.",
     "The food category, if known": "ખોરાકની શ્રેણી, જો ખબર હોય તો",
     "The improvement comparison could not be completed.": "સુધારાની સરખામણી પૂરી થઈ શકી નથી.",
@@ -467,5 +463,8 @@
     "no impact figures were returned": "કોઈ અસરના આંકડા મળ્યા નથી",
     "saved": "સાચવેલું",
     "tonnes": "ટન"
-  }
+  },
+  "tags": [
+    "gu"
+  ]
 }

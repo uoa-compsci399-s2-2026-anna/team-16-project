@@ -1,12 +1,7 @@
 {
-  "language": "pa",
   "endonym": "ਪੰਜਾਬੀ",
+  "language": "pa",
   "machine_translated": true,
-  "tags": [
-    "pa",
-    "pa-Guru",
-    "pa-IN"
-  ],
   "strings": {
     "%(amount)s combined": "ਕੁੱਲ ਮਿਲਾ ਕੇ %(amount)s",
     "%(caption)s, horizontally scrollable": "%(caption)s, ਖਿਤਿਜੀ ਸਕ੍ਰੋਲ ਹੋਣ ਯੋਗ",
@@ -54,7 +49,6 @@
     "Back to calculator": "ਕੈਲਕੁਲੇਟਰ ਉੱਤੇ ਵਾਪਸ",
     "Background reading": "ਪਿਛੋਕੜ ਪੜ੍ਹਨ ਸਮੱਗਰੀ",
     "Bar chart": "ਬਾਰ ਚਾਰਟ",
-    "Basis:": "ਆਧਾਰ:",
     "Breakdown by category": "ਸ਼੍ਰੇਣੀ ਅਨੁਸਾਰ ਵੇਰਵਾ",
     "Breakdowns of entries contributed to this tool": "ਇਸ ਸੰਦ ਵਿੱਚ ਯੋਗਦਾਨ ਕੀਤੀਆਂ ਐਂਟਰੀਆਂ ਦੇ ਵੇਰਵੇ",
     "By food type": "ਭੋਜਨ ਦੀ ਕਿਸਮ ਅਨੁਸਾਰ",
@@ -97,6 +91,7 @@
     "Compare Impact": "ਪ੍ਰਭਾਵ ਦੀ ਤੁਲਨਾ ਕਰੋ",
     "Compare Results": "ਨਤੀਜਿਆਂ ਦੀ ਤੁਲਨਾ ਕਰੋ",
     "Comparing…": "ਤੁਲਨਾ ਹੋ ਰਹੀ ਹੈ…",
+    "Complete": "ਪੂਰਾ",
     "Constants are named values referenced by published formulas.": "ਸਥਿਰਾਂਕ ਉਹ ਨਾਂ ਵਾਲੇ ਮੁੱਲ ਹਨ ਜਿਨ੍ਹਾਂ ਦਾ ਹਵਾਲਾ ਪ੍ਰਕਾਸ਼ਿਤ ਫਾਰਮੂਲੇ ਦਿੰਦੇ ਹਨ।",
     "Containers": "ਭਾਂਡੇ",
     "Continue": "ਜਾਰੀ ਰੱਖੋ",
@@ -218,6 +213,7 @@
     "Improved %(destination)s percentage value": "ਸੁਧਰੇ ਦ੍ਰਿਸ਼ ਵਿੱਚ %(destination)s ਦੀ ਪ੍ਰਤੀਸ਼ਤਤਾ ਦਾ ਮੁੱਲ",
     "Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.": "ਸੁਧਰੇ ਦ੍ਰਿਸ਼ ਵਿੱਚ ਮੰਜ਼ਿਲਾਂ ਦੀ ਵੰਡ ਦਾ ਜੋੜ 100% ਹੋਣਾ ਚਾਹੀਦਾ ਹੈ, ਤਾਂ ਜੋ ਸੁਧਰਿਆ ਦ੍ਰਿਸ਼ ਓਨੀ ਹੀ ਬਰਬਾਦੀ ਦੱਸੇ ਜਿੰਨੀ ਮੌਜੂਦਾ। ਮੌਜੂਦਾ ਜੋੜ: %(total)s%।",
     "Improved scenario (Current → Improved)": "ਸੁਧਰਿਆ ਦ੍ਰਿਸ਼ (ਮੌਜੂਦਾ → ਸੁਧਰਿਆ)",
+    "Incomplete": "ਅਧੂਰਾ",
     "It joins the anonymous statistics only. No figure on the results page is calculated from it.": "ਇਹ ਸਿਰਫ਼ ਗੁਮਨਾਮ ਅੰਕੜਿਆਂ ਵਿੱਚ ਸ਼ਾਮਲ ਹੁੰਦਾ ਹੈ। ਨਤੀਜਿਆਂ ਵਾਲੇ ਪੰਨੇ ਦਾ ਕੋਈ ਅੰਕੜਾ ਇਸ ਤੋਂ ਨਹੀਂ ਗਿਣਿਆ ਜਾਂਦਾ।",
     "It lets the results show the waste as a share of production. Leaving it empty changes no emissions figure.": "ਇਸ ਨਾਲ ਨਤੀਜੇ ਬਰਬਾਦੀ ਨੂੰ ਉਤਪਾਦਨ ਦੇ ਹਿੱਸੇ ਵਜੋਂ ਦਿਖਾ ਸਕਦੇ ਹਨ। ਖਾਲੀ ਛੱਡਣ ਨਾਲ ਕੋਈ ਨਿਕਾਸ ਅੰਕੜਾ ਨਹੀਂ ਬਦਲਦਾ।",
     "Kai Commitment - Leading action on food waste": "Kai Commitment - ਭੋਜਨ ਬਰਬਾਦੀ ਵਿਰੁੱਧ ਅਗਵਾਈ",
@@ -356,7 +352,6 @@
     "Tangible equivalents are available once approved conversion factors are supplied.": "ਪ੍ਰਵਾਨਿਤ ਪਰਿਵਰਤਨ ਕਾਰਕ ਮਿਲਣ ਉੱਤੇ ਸਮਝਣਯੋਗ ਬਰਾਬਰੀਆਂ ਉਪਲਬਧ ਹੋਣਗੀਆਂ।",
     "That container is no longer available. Choose another.": "ਉਹ ਭਾਂਡਾ ਹੁਣ ਉਪਲਬਧ ਨਹੀਂ ਹੈ। ਕੋਈ ਹੋਰ ਚੁਣੋ।",
     "That is about %(mass)s in total.": "ਇਹ ਕੁੱਲ ਮਿਲਾ ਕੇ ਲਗਭਗ %(mass)s ਹੈ।",
-    "The basis for this conversion is not recorded yet.": "ਇਸ ਤਬਦੀਲੀ ਦਾ ਆਧਾਰ ਅਜੇ ਦਰਜ ਨਹੀਂ ਕੀਤਾ ਗਿਆ।",
     "The breakdowns are temporarily unavailable.": "ਵੇਰਵੇ ਕੁਝ ਸਮੇਂ ਲਈ ਉਪਲਬਧ ਨਹੀਂ ਹਨ।",
     "The calculation could not be completed.": "ਗਣਨਾ ਪੂਰੀ ਨਹੀਂ ਹੋ ਸਕੀ।",
     "The calculator could not produce a result because its calculation configuration needs attention. Please try again later.": "ਕੈਲਕੁਲੇਟਰ ਨਤੀਜਾ ਨਹੀਂ ਦੇ ਸਕਿਆ ਕਿਉਂਕਿ ਇਸਦੀ ਗਣਨਾ ਸੰਰਚਨਾ ਵੱਲ ਧਿਆਨ ਦੇਣ ਦੀ ਲੋੜ ਹੈ। ਕਿਰਪਾ ਕਰਕੇ ਬਾਅਦ ਵਿੱਚ ਦੁਬਾਰਾ ਕੋਸ਼ਿਸ਼ ਕਰੋ।",
@@ -364,7 +359,6 @@
     "The calculator service could not be reached. Check your connection and try again.": "ਕੈਲਕੁਲੇਟਰ ਸੇਵਾ ਤੱਕ ਪਹੁੰਚ ਨਹੀਂ ਹੋ ਸਕੀ। ਆਪਣਾ ਕਨੈਕਸ਼ਨ ਵੇਖੋ ਅਤੇ ਦੁਬਾਰਾ ਕੋਸ਼ਿਸ਼ ਕਰੋ।",
     "The calculator service returned an unexpected response.": "ਕੈਲਕੁਲੇਟਰ ਸੇਵਾ ਨੇ ਅਣਕਿਆਸਿਆ ਜਵਾਬ ਦਿੱਤਾ।",
     "The calculator turns the count into a weight using the container chosen above.": "ਕੈਲਕੁਲੇਟਰ ਉੱਪਰ ਚੁਣੇ ਭਾਂਡੇ ਦੀ ਮਦਦ ਨਾਲ ਇਸ ਗਿਣਤੀ ਨੂੰ ਭਾਰ ਵਿੱਚ ਬਦਲ ਦਿੰਦਾ ਹੈ।",
-    "The conversion factor comes from the client. The total it is applied to comes from placeholder factors.": "ਤਬਦੀਲੀ ਗੁਣਕ ਕਲਾਇੰਟ ਤੋਂ ਆਉਂਦਾ ਹੈ। ਜਿਸ ਕੁੱਲ ਰਕਮ ਉੱਤੇ ਇਹ ਲਾਗੂ ਕੀਤਾ ਗਿਆ ਹੈ, ਉਹ ਆਰਜ਼ੀ ਗੁਣਕਾਂ ਤੋਂ ਆਉਂਦੀ ਹੈ।",
     "The figure beside each destination is the engine's own cross-entry total. The rows beneath it are each entry's own — they can draw different upstream factors, which is why they add up to the total shown rather than repeat it.": "ਹਰੇਕ ਮੰਜ਼ਿਲ ਦੇ ਨਾਲ ਦਿਖਾਇਆ ਗਿਆ ਅੰਕੜਾ ਇੰਜਣ ਦੁਆਰਾ ਸਾਰੀਆਂ ਐਂਟਰੀਆਂ ਦਾ ਕੱਢਿਆ ਕੁੱਲ ਜੋੜ ਹੈ। ਇਸ ਦੇ ਹੇਠਾਂ ਦੀਆਂ ਕਤਾਰਾਂ ਹਰੇਕ ਐਂਟਰੀ ਦੇ ਆਪਣੇ ਮੁੱਲ ਹਨ — ਇਹ ਵੱਖ-ਵੱਖ ਅਪਸਟ੍ਰੀਮ ਕਾਰਕ ਵਰਤ ਸਕਦੀਆਂ ਹਨ, ਇਸੇ ਕਰਕੇ ਇਹ ਉੱਪਰ ਦਿਖਾਏ ਕੁੱਲ ਜੋੜ ਨੂੰ ਦੁਹਰਾਉਣ ਦੀ ਬਜਾਏ ਉਸ ਤੱਕ ਜੋੜਦੀਆਂ ਹਨ।",
     "The food category, if known": "ਭੋਜਨ ਸ਼੍ਰੇਣੀ, ਜੇ ਪਤਾ ਹੋਵੇ",
     "The improvement comparison could not be completed.": "ਸੁਧਾਰ ਦੀ ਤੁਲਨਾ ਪੂਰੀ ਨਹੀਂ ਹੋ ਸਕੀ।",
@@ -469,5 +463,10 @@
     "no impact figures were returned": "ਪ੍ਰਭਾਵ ਦੇ ਕੋਈ ਅੰਕੜੇ ਨਹੀਂ ਮਿਲੇ",
     "saved": "ਸੰਭਾਲਿਆ ਗਿਆ",
     "tonnes": "ਟਨ"
-  }
+  },
+  "tags": [
+    "pa",
+    "pa-Guru",
+    "pa-IN"
+  ]
 }

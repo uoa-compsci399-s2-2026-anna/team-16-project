@@ -1,10 +1,7 @@
 {
-  "language": "th",
   "endonym": "ไทย",
+  "language": "th",
   "machine_translated": true,
-  "tags": [
-    "th"
-  ],
   "strings": {
     "%(amount)s combined": "รวม %(amount)s",
     "%(caption)s, horizontally scrollable": "%(caption)s เลื่อนตามแนวนอนได้",
@@ -52,7 +49,6 @@
     "Back to calculator": "กลับไปที่เครื่องคำนวณ",
     "Background reading": "เอกสารอ่านประกอบ",
     "Bar chart": "แผนภูมิแท่ง",
-    "Basis:": "ที่มา:",
     "Breakdown by category": "รายละเอียดแยกตามหมวดหมู่",
     "Breakdowns of entries contributed to this tool": "รายละเอียดแยกตามรายการที่ผู้ใช้เลือกแบ่งปันในเครื่องมือนี้",
     "By food type": "ตามประเภทอาหาร",
@@ -95,6 +91,7 @@
     "Compare Impact": "เปรียบเทียบผลกระทบ",
     "Compare Results": "เปรียบเทียบผลลัพธ์",
     "Comparing…": "กำลังเปรียบเทียบ…",
+    "Complete": "ครบถ้วน",
     "Constants are named values referenced by published formulas.": "ค่าคงที่คือค่าที่มีชื่อกำกับ ซึ่งสูตรที่เผยแพร่อ้างอิงถึง",
     "Containers": "ภาชนะ",
     "Continue": "ดำเนินการต่อ",
@@ -216,6 +213,7 @@
     "Improved %(destination)s percentage value": "ค่าเปอร์เซ็นต์ %(destination)s หลังปรับปรุง",
     "Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.": "การจัดสรรปลายทางหลังปรับปรุงต้องรวมกันได้ 100% เพื่อให้แผนที่ปรับปรุงแล้วอธิบายขยะปริมาณเดียวกับปัจจุบัน ยอดรวมปัจจุบัน: %(total)s%",
     "Improved scenario (Current → Improved)": "แผนที่ปรับปรุงแล้ว (ปัจจุบัน → หลังปรับปรุง)",
+    "Incomplete": "ไม่ครบถ้วน",
     "It joins the anonymous statistics only. No figure on the results page is calculated from it.": "ตัวเลขนี้เข้าสู่สถิติแบบไม่ระบุตัวตนเท่านั้น ไม่มีตัวเลขใดในหน้าผลลัพธ์ที่คำนวณจากตัวเลขนี้",
     "It lets the results show the waste as a share of production. Leaving it empty changes no emissions figure.": "ช่วยให้ผลลัพธ์แสดงของเสียเป็นสัดส่วนของการผลิตได้ หากเว้นว่างไว้ ตัวเลขการปล่อยก๊าซจะไม่เปลี่ยนแปลง",
     "Kai Commitment - Leading action on food waste": "Kai Commitment - ผู้นำการลงมือแก้ปัญหาขยะอาหาร",
@@ -354,7 +352,6 @@
     "Tangible equivalents are available once approved conversion factors are supplied.": "การเปรียบเทียบแบบเห็นภาพจะใช้ได้เมื่อมีค่าแปลงหน่วยที่ผ่านการอนุมัติแล้ว",
     "That container is no longer available. Choose another.": "ภาชนะนั้นไม่พร้อมใช้งานแล้ว โปรดเลือกอย่างอื่น",
     "That is about %(mass)s in total.": "รวมแล้วประมาณ %(mass)s",
-    "The basis for this conversion is not recorded yet.": "ยังไม่มีการบันทึกที่มาของการแปลงค่านี้",
     "The breakdowns are temporarily unavailable.": "ขณะนี้ยังแสดงรายละเอียดแยกย่อยไม่ได้ชั่วคราว",
     "The calculation could not be completed.": "ไม่สามารถคำนวณให้เสร็จได้",
     "The calculator could not produce a result because its calculation configuration needs attention. Please try again later.": "เครื่องคำนวณยังให้ผลลัพธ์ไม่ได้ เพราะการตั้งค่าการคำนวณต้องได้รับการแก้ไข กรุณาลองใหม่ภายหลัง",
@@ -362,7 +359,6 @@
     "The calculator service could not be reached. Check your connection and try again.": "ไม่สามารถเชื่อมต่อบริการคำนวณได้ กรุณาตรวจสอบการเชื่อมต่อของคุณแล้วลองใหม่อีกครั้ง",
     "The calculator service returned an unexpected response.": "บริการคำนวณส่งคำตอบที่ไม่คาดคิดกลับมา",
     "The calculator turns the count into a weight using the container chosen above.": "เครื่องคำนวณจะแปลงจำนวนนี้เป็นน้ำหนักโดยใช้ภาชนะที่เลือกไว้ด้านบน",
-    "The conversion factor comes from the client. The total it is applied to comes from placeholder factors.": "ค่าตัวคูณแปลงมาจากลูกค้า ส่วนยอดรวมที่นำค่านี้ไปใช้มาจากค่าตัวประกอบชั่วคราว",
     "The figure beside each destination is the engine's own cross-entry total. The rows beneath it are each entry's own — they can draw different upstream factors, which is why they add up to the total shown rather than repeat it.": "ตัวเลขข้างปลายทางแต่ละแห่งคือผลรวมของเอนจินเองจากทุกรายการ แถวด้านล่างคือค่าของแต่ละรายการเอง — ซึ่งอาจใช้ปัจจัยต้นทางที่แตกต่างกัน จึงรวมกันเป็นผลรวมที่แสดงด้านบนแทนที่จะซ้ำกับผลรวมนั้น",
     "The food category, if known": "หมวดหมู่อาหาร หากคุณทราบ",
     "The improvement comparison could not be completed.": "ไม่สามารถเปรียบเทียบแผนปรับปรุงให้เสร็จได้",
@@ -467,5 +463,8 @@
     "no impact figures were returned": "ไม่มีตัวเลขผลกระทบส่งกลับมา",
     "saved": "บันทึกแล้ว",
     "tonnes": "ตัน"
-  }
+  },
+  "tags": [
+    "th"
+  ]
 }

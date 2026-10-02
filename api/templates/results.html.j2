@@ -255,8 +255,12 @@
       <div><dt>{{ doc.labels.equivalence_per_unit }}</dt><dd>&times; {{ row.per_unit }}</dd></div>
       <div><dt>{{ row.name }}</dt><dd>= {{ row.figure }}</dd></div>
     </dl>
-    <p class="equivalence-basis__note">{{ doc.labels.equivalence_basis }} {{ row.basis }}</p>
-    {% if row.disclaimer %}<p class="equivalence-basis__note">{{ row.disclaimer }}</p>{% endif %}
+    {#- v1.80 (#127): one staff sentence saying what the comparison MEANS,
+        where `Basis: <source_note>` and the mock caveat used to be. Printed
+        only when it is there -- an empty one draws nothing, and
+        `source_note` is never substituted for it. The placeholder
+        obligation is the page-level banner above, not this paragraph. -#}
+    {% if row.description %}<p class="equivalence-basis__note">{{ row.description }}</p>{% endif %}
   </li>
   {% endfor %}
 </ul>

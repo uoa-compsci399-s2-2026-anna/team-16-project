@@ -1,10 +1,7 @@
 {
-  "language": "ru",
   "endonym": "Русский",
+  "language": "ru",
   "machine_translated": true,
-  "tags": [
-    "ru"
-  ],
   "strings": {
     "%(amount)s combined": "%(amount)s в сумме",
     "%(caption)s, horizontally scrollable": "%(caption)s, прокручивается по горизонтали",
@@ -52,7 +49,6 @@
     "Back to calculator": "Вернуться к калькулятору",
     "Background reading": "Дополнительные материалы",
     "Bar chart": "Столбчатая диаграмма",
-    "Basis:": "Основание:",
     "Breakdown by category": "Разбивка по категориям",
     "Breakdowns of entries contributed to this tool": "Разбивки записей, переданных в этот инструмент",
     "By food type": "По виду продуктов",
@@ -95,6 +91,7 @@
     "Compare Impact": "Сравнить воздействие",
     "Compare Results": "Сравнить результаты",
     "Comparing…": "Идёт сравнение…",
+    "Complete": "Заполнено",
     "Constants are named values referenced by published formulas.": "Константы — это именованные значения, на которые ссылаются опубликованные формулы.",
     "Containers": "Контейнеры",
     "Continue": "Продолжить",
@@ -216,6 +213,7 @@
     "Improved %(destination)s percentage value": "Значение доли %(destination)s в улучшенном сценарии",
     "Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.": "Распределение по способам утилизации в улучшенном сценарии должно составлять 100%, чтобы улучшенный сценарий описывал тот же объём отходов, что и текущий. Текущая сумма: %(total)s%.",
     "Improved scenario (Current → Improved)": "Улучшенный сценарий (Текущий → Улучшенный)",
+    "Incomplete": "Не заполнено",
     "It joins the anonymous statistics only. No figure on the results page is calculated from it.": "Она попадает только в анонимную статистику. Ни один показатель на странице результатов по ней не рассчитывается.",
     "It lets the results show the waste as a share of production. Leaving it empty changes no emissions figure.": "Благодаря этому результаты покажут отходы как долю от производства. Если оставить поле пустым, ни один показатель выбросов не изменится.",
     "Kai Commitment - Leading action on food waste": "Kai Commitment - лидерство в борьбе с пищевыми отходами",
@@ -354,7 +352,6 @@
     "Tangible equivalents are available once approved conversion factors are supplied.": "Наглядные сравнения станут доступны после предоставления утверждённых коэффициентов пересчёта.",
     "That container is no longer available. Choose another.": "Этот контейнер больше недоступен. Выберите другой.",
     "That is about %(mass)s in total.": "Это примерно %(mass)s в общей сложности.",
-    "The basis for this conversion is not recorded yet.": "Основание для этого пересчёта пока не указано.",
     "The breakdowns are temporarily unavailable.": "Разбивки временно недоступны.",
     "The calculation could not be completed.": "Не удалось выполнить расчёт.",
     "The calculator could not produce a result because its calculation configuration needs attention. Please try again later.": "Калькулятор не смог выдать результат, так как его настройки расчёта требуют внимания. Повторите попытку позже.",
@@ -362,7 +359,6 @@
     "The calculator service could not be reached. Check your connection and try again.": "Не удалось связаться с сервисом калькулятора. Проверьте подключение и повторите попытку.",
     "The calculator service returned an unexpected response.": "Сервис калькулятора вернул неожиданный ответ.",
     "The calculator turns the count into a weight using the container chosen above.": "Калькулятор пересчитывает это количество в вес по выбранному выше контейнеру.",
-    "The conversion factor comes from the client. The total it is applied to comes from placeholder factors.": "Коэффициент пересчёта предоставлен клиентом. Итоговое значение, к которому он применяется, получено из условных коэффициентов.",
     "The figure beside each destination is the engine's own cross-entry total. The rows beneath it are each entry's own — they can draw different upstream factors, which is why they add up to the total shown rather than repeat it.": "Цифра рядом с каждым способом утилизации — это собственный итог движка по всем записям. Строки под ней — собственные значения каждой записи: они могут использовать разные вышестоящие коэффициенты, поэтому в сумме они складываются в показанный выше итог, а не повторяют его.",
     "The food category, if known": "Категория продуктов, если известна",
     "The improvement comparison could not be completed.": "Не удалось выполнить сравнение улучшений.",
@@ -467,5 +463,8 @@
     "no impact figures were returned": "показатели воздействия не получены",
     "saved": "сохранено",
     "tonnes": "тонны"
-  }
+  },
+  "tags": [
+    "ru"
+  ]
 }

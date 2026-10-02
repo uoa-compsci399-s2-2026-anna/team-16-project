@@ -839,6 +839,122 @@ function term(text, tipId, paragraphs) {
 }
 
 /**
+ * A collapsible card's identity, as a member of `state.openCards`.
+ *
+ * **The step is part of the id, not just the key.** Steps 3 and 4 both draw one card per
+ * leaf, so `leafKey(leaf)` alone would make "dairy open on step 3" and "dairy open on
+ * step 4" the same fact — and the two steps are answered minutes apart, with different
+ * reasons to be open. NUL-joined for `leafKey`'s own reason: a step number followed by a
+ * key that begins with a digit cannot otherwise be told from another pair.
+ */
+const cardId = (step, key) => `${step}\u0000${key}`
+
+/**
+ * Whether one collapsible card is open right now.
+ *
+ * **`count <= 1` is decision 2 of #134, and it lives here so that every consumer of the
+ * chrome gets it from one place:** *a single card is not collapsed*, because one food
+ * type is the commonest journey and collapsing it opens the step on an empty screen. It
+ * is asked before `state.openCards`, so a lone card cannot be closed at all — there is
+ * nothing for folding to buy when there is nothing below it to be missed.
+ *
+ * Otherwise the default is collapsed, which is what an empty `openCards` says, and what
+ * #134 asks for: the client's problem is a card below the fold being skipped, so the
+ * step has to be short enough to see whole.
+ *
+ * **`count <= 1` is not exercised by step 3, and that was measured rather than assumed.**
+ * `leafPanel` returns the plain single-leaf panel before any card is built, so a step-3
+ * card is only ever one of two or more. Replacing this clause with `false` and rebuilding
+ * leaves `test_step_card_collapse_browser.py` and `test_step_three_zones_browser.py` green
+ * — 27 passed. It is here because decision 2 belongs to the chrome rather than to one
+ * consumer, and #138 and #142 both draw a card at a count of one; whichever of them lands
+ * first is what will put a test under it. Do not delete it as dead on that evidence.
+ *
+ * @param {number} step The step that owns the card.
+ * @param {string} key The card's own key — a `leafKey` on steps 3 and 4.
+ * @param {number} count How many cards the step is drawing.
+ */
+const cardIsOpen = (step, key, count) => count <= 1 || (state.openCards || []).includes(cardId(step, key))
+
+/** `state.openCards` with one card added, idempotently. */
+const openedCard = (step, key) => {
+  const id = cardId(step, key)
+  const open = state.openCards || []
+  return open.includes(id) ? open : [...open, id]
+}
+
+/**
+ * **What the completion badge says, in one place, because two things render it.**
+ *
+ * `collapsibleCard` prints it at render time and `updateCardBadges` rewrites it on a
+ * keystroke — §7.2's documented exception, taken here for `updateCombinedTotal`'s exact
+ * reason: a re-render per keystroke destroys the focused input, and a badge that only
+ * moved on Continue would be a tick the visitor could not trust while typing. Two
+ * writers, one definition of the two states, so neither can drift into saying something
+ * the other does not.
+ *
+ * **Not colour-only.** A mark, a word, and `data-state` for the stylesheet. The mark is
+ * `aria-hidden` and the word is not, so the button's accessible name carries the state in
+ * words — a screen reader is told what a sighted reader is shown, which is an acceptance
+ * criterion of #134 and not a nicety.
+ *
+ * `settled` comes from `leafSettled`, which reads `leafProblem` — see there for what the
+ * tick promises and why the optional money figures cannot withhold it.
+ */
+const cardStatus = settled => (settled
+  ? { state: 'complete', mark: '✓', text: t('Complete') }
+  : { state: 'incomplete', mark: '✕', text: t('Incomplete') })
+
+/**
+ * **The collapsible step card, built once** (#134, and the chrome #138 and #142 consume).
+ *
+ * One `<fieldset>`, a header button that opens and closes it, a completion badge, and a
+ * body that is `hidden` when the card is shut. Three decisions are baked in here rather
+ * than at the call sites, so that step 2.5 and step 4 cannot land on a different version
+ * of any of them:
+ *
+ * * **`<legend>` carries the group's name and nothing else, and it is `.sr-only`.** The
+ *   legend is what gives the `<fieldset>` its accessible name, so it cannot hold the
+ *   badge too — the fieldset would then be named "Dairy Complete", and the name of a
+ *   group of inputs would change while the visitor typed in them. The name a sighted
+ *   reader sees is the header button's, which carries the badge beside it. (It also
+ *   keeps `panel.querySelector('legend').textContent` the food's own name, which three
+ *   browser tests dereference and one of them compares against the error message's
+ *   prose.)
+ * * **A `<button>`, not a `<details>`/`<summary>`.** `render()` replaces
+ *   `main.innerHTML` on every `setState`, so a native `open` attribute is erased by the
+ *   next unrelated update; the open set lives in `state.openCards` and is rendered out
+ *   of it. A button is what `aria-expanded` belongs on, it is reached and operated by
+ *   the keyboard with no code, and it has a stable `id` so that `main.js`'s subscriber
+ *   returns focus to it across the re-render the toggle causes — which is what makes the
+ *   state change *announced* rather than merely applied.
+ * * **`hidden` rather than `display: none` in a class.** The body's controls must be
+ *   unreachable by Tab and unfocusable while the card is shut, which `hidden` is defined
+ *   to do; a class is one stylesheet mistake away from a focusable invisible input.
+ *
+ * **Deliberately plain.** The card's whole ground — background, border, radius — is one
+ * element, `.step-card`, and it carries no `backdrop-filter`, no `transform` and no
+ * positioned descendant of its own. WP2's frosted-glass token attaches there without
+ * re-laying out anything inside it.
+ *
+ * @param {object} options
+ * @param {number} options.step The step that owns the card; half of its id.
+ * @param {string} options.key The card's own key; the other half.
+ * @param {string} options.anchor A slug unique within the step, for the element ids.
+ * @param {string} options.name The card's name, shown and announced.
+ * @param {boolean} options.open
+ * @param {boolean} options.settled Whether the badge reads complete.
+ * @param {string} options.body The card's contents, as HTML.
+ * @param {string} options.extraClass Classes the consumer's own selectors need.
+ * @param {string} options.dataAttr Data attributes the consumer's own handlers need.
+ */
+function collapsibleCard({ step, key, anchor, name, open, settled, body, extraClass = '', dataAttr = '' }) {
+  const bodyId = `card-body--${anchor}`
+  const status = cardStatus(settled)
+  return `<fieldset class="form-panel step-card ${open ? 'step-card--open' : ''} ${extraClass}" ${dataAttr}><legend class="sr-only">${escapeHtml(name)}</legend><button id="card-toggle--${anchor}" class="step-card__toggle" type="button" data-action="toggle-card" data-card-step="${step}" data-card="${keyAttr(key)}" aria-expanded="${open ? 'true' : 'false'}" aria-controls="${bodyId}"><span class="step-card__chevron ${open ? 'expanded' : ''}" aria-hidden="true">&#8964;</span><span class="step-card__name">${escapeHtml(name)}</span><span class="step-card__status" data-card-status data-state="${status.state}"><span class="step-card__mark" aria-hidden="true">${status.mark}</span><span data-card-status-text>${escapeHtml(status.text)}</span></span></button><div class="step-card__body" id="${bodyId}" ${open ? '' : 'hidden'}>${body}</div></fieldset>`
+}
+
+/**
  * Step 3.
  *
  * **The containers are options on the unit `<select>`, not a second mode with its own
@@ -1012,11 +1128,38 @@ function leafPanel(leaf, leaves, index) {
   //: element wrapping every step-3 field: `test_step_navigation.py` removes it and
   //: requires the document to collapse to the viewport, selects `.amount-grid
   //: .form-field`, and `test_leaf_figure_migration_browser.py` reads its `innerText`.
+  //: **One leaf is not a card, which is decision 2 of #134 taken literally.** *A single
+  //: card is not collapsed* - and where there is exactly one food type there is nothing
+  //: below the fold to be missed, so there is nothing for the chrome to buy either. This
+  //: branch therefore stays byte for byte what it has always been, which is also what
+  //: `test_leaf_figure_migration_browser.py` says in words ("one leaf renders today's
+  //: screen byte for byte - no card, no legend") and what the three `.amount-grid` tests
+  //: above measure. `cardIsOpen` carries the same decision for the consumers that do
+  //: draw a card at a count of one.
   if (single) return `<div class="form-panel amount-grid zones">${zones}</div>`
-  //: A card per leaf, and `.leaf-panel` stays a `<fieldset>` with a `<legend>` child -
-  //: `test_leaf_multiselect_browser.py` dereferences `panel.querySelector('legend')`
-  //: unconditionally and throws on anything else.
-  return `<fieldset class="form-panel leaf-panel" data-leaf-panel="${keyAttr(key)}"><legend>${escapeHtml(leafName(leaf))}</legend><div class="zones">${zones}</div></fieldset>`
+  //: A card per leaf, collapsible since #134. `.leaf-panel` and `data-leaf-panel` stay
+  //: on the `<fieldset>` - `test_leaf_multiselect_browser.py` dereferences
+  //: `panel.querySelector('legend')` unconditionally and throws on anything else, and
+  //: `updateCardBadges` finds a card's badge through `data-leaf-panel`.
+  //:
+  //: **A card holding a message about itself is open whatever the open set says.** A
+  //: collapsed card hiding its own error is the reverse of the problem #134 is about, so
+  //: openness is forced by the presence of a message rather than only arranged by
+  //: Continue - which also covers the one route Continue does not own, a server
+  //: `VALIDATION_ERROR` naming one of the three scalar fields on a step the visitor was
+  //: routed back to.
+  const errored = Boolean(amountFieldError || totalInputError || totalValueError || wastedValueError)
+  return collapsibleCard({
+    step: 2,
+    key,
+    anchor: leafSlug(leaf),
+    name: leafName(leaf),
+    open: errored || cardIsOpen(2, key, leaves.length),
+    settled: leafSettled(2, leaf, leafName(leaf)),
+    body: `<div class="zones">${zones}</div>`,
+    extraClass: 'leaf-panel',
+    dataAttr: `data-leaf-panel="${keyAttr(key)}"`,
+  })
 }
 
 /**
@@ -1622,6 +1765,108 @@ function massContradictionValidation(figures) {
 }
 
 /**
+ * **What is wrong with ONE leaf on one step, or `''` — and the only copy of these
+ * rules.**
+ *
+ * Two readers ask it. `stepProblemAt` below walks the leaves and hands back the first
+ * problem, which is what Continue is gated on; `leafSettled` beside it asks about one
+ * leaf, which is what a collapsible card's completion badge prints (#134). The badge and
+ * the button therefore ask the same question, in the same words, of the same figures.
+ *
+ * **It is one function rather than two lists because this file has already paid for
+ * two.** `destinationStep` carries the note: *"One list of rules for one button: any
+ * rule added to one of two lists left the other enabling Continue on a state the other
+ * had just refused."* A badge computed from a second list is that same defect with a
+ * tick instead of a button, and it is the worse half of it — a button that refuses says
+ * so at the moment of pressing, whereas a tick is read as a promise before anybody
+ * presses anything, and the client's stated use for it is deciding whether to open a
+ * card at all.
+ *
+ * **What a tick therefore means: every required field on this card is filled, and
+ * nothing on it is at fault.** The two optional money figures cannot make a card
+ * incomplete by being empty — `moneyContradictionValidation` returns `''` the moment
+ * either is blank — so the badge never demands them. What it does report is a
+ * *contradiction* between two figures the visitor did fill in, which is a fault rather
+ * than an absence and which Continue refuses; a tick over that state would be a tick
+ * over a card the next press rejects.
+ *
+ * Returns the field the fault belongs to, never the prose: two leaves produce the
+ * byte-identical sentence, so `amountStep` highlights by place (`state.errorAt`) and
+ * `focusLeafField` moves focus by place.
+ *
+ * @param {number} step 2 for the amount step, 3 for the destination step. Any other
+ *   step has no per-leaf rules and answers `''`.
+ * @param {object} leaf
+ * @param {string|null} food The leaf's own name where there is more than one leaf, and
+ *   `null` where there is one — which is what decides whether a message names a food.
+ * @returns {{message: string, field?: string}}
+ */
+function leafProblem(step, leaf, food) {
+  const figures = draftLeafFigures(leaf)
+  if (step === 2) {
+    // **Today's three rules.** The first problem wins, and it carries the field it
+    // belongs to so that `amountStep` can highlight the right box without comparing
+    // prose.
+    const amountError = amountOnlyValidation(figures, food)
+    if (amountError) return { message: amountError, field: 'amount' }
+    const moneyError = moneyContradictionValidation(figures)
+    if (moneyError) return { message: moneyError, field: 'wastedValue' }
+    const massError = massContradictionValidation(figures)
+    if (massError) return { message: massError, field: 'amount' }
+  }
+  if (step === 3) {
+    // **Per leaf: this leaf's allocation sums to no more than this leaf's OWN amount.**
+    // Validating against the chain's combined total instead would let one leaf take
+    // another's mass and still pass, and the API would then refuse the submission for a
+    // mass-conservation failure the form had already been shown.
+    const unit = figures.totalUnit
+    const lines = figures.current || []
+    const fail = message => ({ message, field: 'allocation' })
+    if (!lines.some(line => Number(line.qtyInput) > 0)) {
+      return fail(food
+        ? t('Enter an amount for at least one waste destination for %(food)s.', { food })
+        : t('Enter an amount for at least one waste destination.'))
+    }
+    if (lines.some(line => line.qtyInput !== '' && Number(line.qtyInput) < 0)) return fail(t('Destination amounts must be zero or greater.'))
+    if (lines.some(line => line.qtyInput && !isPlainDecimal(line.qtyInput))) return fail(t('Write the number out in full, using digits only.'))
+    if (lines.some(line => line.qtyInput && !decimalPattern.test(line.qtyInput))) return fail(t('Enter destination amounts to no more than two decimal places.'))
+    // §6.2's per-line bound, restated. Since v1.46 it is the same number as the step-3
+    // ceiling, so a visitor who puts all of a legal total into one destination is
+    // refused by neither. The finiteness check is asked through the same `null`, where
+    // the true answer is that the row is over the limit and the message says which.
+    const overLine = lines.some(line => {
+      if (line.qtyInput === '') return false
+      const kilograms = lineKilograms(line.qtyInput, line.unit || unit)
+      return kilograms === null || kilograms > MAX_LINE_KG
+    })
+    if (overLine) return fail(t('Enter destination amounts of no more than %(limit)s %(unit)s.', { limit: formatNumber(limitIn(MAX_LINE_KG, unit), 0), unit: unitLabel(unit) }))
+    const total = totalNumber(figures)
+    const sum = allocatedAmount(lines, unit)
+    if (exceedsTotal(sum, total)) {
+      const excess = (sum - total).toFixed(2)
+      const unitName = unit === 'kilograms' ? 'kg' : t('tonnes')
+      return fail(food
+        ? t('Allocated waste for %(food)s exceeds its amount by %(excess)s %(unit)s.', { food, excess, unit: unitName })
+        : t('Allocated waste exceeds total waste by %(excess)s %(unit)s.', { excess, unit: unitName }))
+    }
+  }
+  return { message: '' }
+}
+
+/**
+ * **The badge's reader of `leafProblem`, and the predicate #133's notice must share.**
+ *
+ * `true` when nothing on this leaf's card is at fault — see `leafProblem` for exactly
+ * what that promises and why the optional money figures cannot withhold it.
+ *
+ * It takes the step so that steps 3 and 4 get the same chrome from the same rules, and
+ * it takes `food` for one reason only: `leafProblem`'s messages name the food when there
+ * is more than one leaf, and a predicate that passed a different `food` than Continue
+ * does would be reading a different function with the same name.
+ */
+const leafSettled = (step, leaf, food) => !leafProblem(step, leaf, food).message
+
+/**
  * What is wrong with the draft as far as one step's own rules are concerned, or `''`.
  *
  * **Parameterised on the step rather than reading `state.step`, so that one other
@@ -1632,70 +1877,23 @@ function massContradictionValidation(figures) {
  * this list, and the note over `EMPTY_DRAFT` records what a second copy of a key list
  * costs: the one that drifts is the one nobody notices has drifted.
  *
- * None of the four checks it delegates to reads `state.step` — `amountOnlyValidation`
- * reads the measure mode and the amount fields, the two contradiction checks read their
- * own pairs, and the step-3 block reads `state.current` — so asking about a step from
- * another step answers about the draft, which is the question.
+ * None of the four checks `leafProblem` delegates to reads `state.step` —
+ * `amountOnlyValidation` reads the measure mode and the amount fields, the two
+ * contradiction checks read their own pairs, and the step-3 block reads the leaf's own
+ * `current` — so asking about a step from another step answers about the draft, which is
+ * the question.
+ *
+ * **The leaf key is attached here rather than inside `leafProblem`** because it is the
+ * answer to "which card", and a per-card reader already knows which card it asked
+ * about. `leafErrorAt` is what turns it into `state.errorAt`.
  */
 function stepProblemAt(step) {
   if (step === 0 && !state.sector) return { message: t('Select where in the food supply chain the waste occurred.') }
   const leaves = draftLeaves()
   const named = leaves.length > 1
-  if (step === 2) {
-    // **Today's three rules, N times.** The first problem wins, and it carries the leaf
-    // and the field it belongs to so that `amountStep` can highlight the right box
-    // without comparing prose - two leaves produce the byte-identical sentence.
-    for (const leaf of leaves) {
-      const figures = draftLeafFigures(leaf)
-      const key = leafKey(leaf)
-      const amountError = amountOnlyValidation(figures, named ? leafName(leaf) : null)
-      if (amountError) return { message: amountError, leaf: key, field: 'amount' }
-      const moneyError = moneyContradictionValidation(figures)
-      if (moneyError) return { message: moneyError, leaf: key, field: 'wastedValue' }
-      const massError = massContradictionValidation(figures)
-      if (massError) return { message: massError, leaf: key, field: 'amount' }
-    }
-  }
-  if (step === 3) {
-    // **Per leaf: each leaf's allocation sums to no more than that leaf's OWN amount.**
-    // Today's rule, N times. Validating against the chain's combined total instead would
-    // let one leaf take another's mass and still pass, and the API would then refuse the
-    // submission for a mass-conservation failure the form had already been shown.
-    for (const leaf of leaves) {
-      const figures = draftLeafFigures(leaf)
-      const key = leafKey(leaf)
-      const unit = figures.totalUnit
-      const lines = figures.current || []
-      const food = named ? leafName(leaf) : null
-      const fail = message => ({ message, leaf: key, field: 'allocation' })
-      if (!lines.some(line => Number(line.qtyInput) > 0)) {
-        return fail(food
-          ? t('Enter an amount for at least one waste destination for %(food)s.', { food })
-          : t('Enter an amount for at least one waste destination.'))
-      }
-      if (lines.some(line => line.qtyInput !== '' && Number(line.qtyInput) < 0)) return fail(t('Destination amounts must be zero or greater.'))
-      if (lines.some(line => line.qtyInput && !isPlainDecimal(line.qtyInput))) return fail(t('Write the number out in full, using digits only.'))
-      if (lines.some(line => line.qtyInput && !decimalPattern.test(line.qtyInput))) return fail(t('Enter destination amounts to no more than two decimal places.'))
-      // §6.2's per-line bound, restated. Since v1.46 it is the same number as the step-3
-      // ceiling, so a visitor who puts all of a legal total into one destination is
-      // refused by neither. The finiteness check is asked through the same `null`, where
-      // the true answer is that the row is over the limit and the message says which.
-      const overLine = lines.some(line => {
-        if (line.qtyInput === '') return false
-        const kilograms = lineKilograms(line.qtyInput, line.unit || unit)
-        return kilograms === null || kilograms > MAX_LINE_KG
-      })
-      if (overLine) return fail(t('Enter destination amounts of no more than %(limit)s %(unit)s.', { limit: formatNumber(limitIn(MAX_LINE_KG, unit), 0), unit: unitLabel(unit) }))
-      const total = totalNumber(figures)
-      const sum = allocatedAmount(lines, unit)
-      if (exceedsTotal(sum, total)) {
-        const excess = (sum - total).toFixed(2)
-        const unitName = unit === 'kilograms' ? 'kg' : t('tonnes')
-        return fail(food
-          ? t('Allocated waste for %(food)s exceeds its amount by %(excess)s %(unit)s.', { food, excess, unit: unitName })
-          : t('Allocated waste exceeds total waste by %(excess)s %(unit)s.', { excess, unit: unitName }))
-      }
-    }
+  for (const leaf of leaves) {
+    const problem = leafProblem(step, leaf, named ? leafName(leaf) : null)
+    if (problem.message) return { ...problem, leaf: leafKey(leaf) }
   }
   return { message: '' }
 }
@@ -2079,6 +2277,71 @@ function updateCombinedTotal() {
 }
 
 /**
+ * Every step-3 card's completion badge, on keystroke.
+ *
+ * **The same §7.2 exception `updateCombinedTotal` above takes, and it is not optional
+ * here.** Step 3's Continue is never disabled — it validates on the press — so the badge
+ * is the only thing on this screen that says, before the press, whether a card would be
+ * refused. A badge that moved only on Continue would read as a promise about a card the
+ * visitor had just finished typing into, and the press would then disagree with it.
+ *
+ * It asks `leafSettled`, which is `leafProblem`, which is what Continue asks. The markup
+ * it rewrites is `cardStatus`'s, so the two states are stated once.
+ *
+ * Found through `data-leaf-panel` rather than by index: the panels are keyed by leaf and
+ * an index into a NodeList is one untick away from naming a different food.
+ */
+function updateCardBadges() {
+  const leaves = draftLeaves()
+  if (leaves.length < 2) return
+  for (const leaf of leaves) {
+    const key = leafKey(leaf)
+    const panel = document.querySelector(`[data-leaf-panel="${CSS.escape(keyAttr(key))}"]`)
+    const badge = panel?.querySelector('[data-card-status]')
+    if (!badge) continue
+    const status = cardStatus(leafSettled(2, leaf, leafName(leaf)))
+    badge.dataset.state = status.state
+    badge.querySelector('.step-card__mark').textContent = status.mark
+    badge.querySelector('[data-card-status-text]').textContent = status.text
+  }
+}
+
+/**
+ * Move focus to the field `stepProblemAt` named, once its card has been opened.
+ *
+ * **Decision 3 of #134**: pressing Continue over an incomplete or invalid card expands
+ * that card and moves focus to the first field at fault. The place comes from
+ * `leafProblem`'s own `field`, never from comparing the message's prose — two leaves
+ * produce the byte-identical sentence, which is why `state.errorAt` exists at all.
+ *
+ * **Called after the `setState` that opened the card, and synchronously.**
+ * `main.js`'s subscriber runs inside `setState`, so by the time this returns to the
+ * caller the new DOM is already in place and has already had focus moved to `<main>` by
+ * that subscriber — this is what moves it on to the box. Not inside a
+ * `requestAnimationFrame`: a frame does not arrive in a background tab, and a refusal
+ * that silently failed to focus anything there would be a refusal nobody could act on.
+ *
+ * `amount` names two controls because it is one question asked in two modes — a mass in
+ * `#total-waste`, a count in `#unit-count` — and `leafProblem` does not care which mode
+ * the card is in.
+ *
+ * @returns {Element|null} what it focused, so the caller can tell whether the page has
+ *   already been moved to the fault and must not also be scrolled to the top.
+ */
+function focusLeafField(at) {
+  if (!at || !at.leaf) return null
+  const fields = at.field === 'amount' ? ['amount', 'count'] : [at.field]
+  for (const field of fields) {
+    const control = document.querySelector(`[data-leaf-field="${field}"][data-leaf="${CSS.escape(keyAttr(at.leaf))}"]`)
+    if (control) {
+      control.focus()
+      return control
+    }
+  }
+  return null
+}
+
+/**
  * One leaf's figures, patched in place.
  *
  * **In place, not through `setState`**, for the keystroke handlers only: `render()`
@@ -2362,7 +2625,11 @@ const currentSnapshot = () => contentSnapshot(state.entries, draftEntry())
 const movedSnapshot = (step, moved) => ({ from: 0, step, entries: [...state.entries], draft: draftEntry(), ...moved })
 
 function clearDraft() {
-  setState({ ...EMPTY_DRAFT, step: 0, error: null, errorAt: null, fieldErrors: {}, expandedSectors: [], lastChangedDestination: null })
+  // `openCards` goes with the draft it describes: the next chain has its own leaves, and
+  // a card id left behind from the chain just committed would decide the open state of a
+  // card for a food this one may not even name. The stated default is all collapsed, so
+  // an empty list is what a fresh chain starts on.
+  setState({ ...EMPTY_DRAFT, step: 0, error: null, errorAt: null, fieldErrors: {}, expandedSectors: [], openCards: [], lastChangedDestination: null })
 }
 
 /**
@@ -2663,6 +2930,13 @@ export function bindCalculator(main, retryTaxonomy) {
     const control = event.target.closest('[data-action]')
     if (!control) return
     const action = control.dataset.action
+    // **The field a refused Continue has just put the caret in, or `null`** (#134,
+    // decision 3). It exists so that the scroll-to-top at the bottom of this listener
+    // can stand aside: `focus()` has already brought the box into view, and a smooth
+    // `scrollTo({top: 0})` arriving afterwards would animate the page away from the
+    // field the visitor was just sent to — the same shape of defect the declined-discard
+    // note above records, through a different door.
+    let refusedAt = null
     // Step 5's calendar owns four actions and answers whether it took the click,
     // so the chain below is not extended by a component that has its own module.
     if (handlePeriodClick(action, control, event)) return
@@ -2677,6 +2951,25 @@ export function bindCalculator(main, retryTaxonomy) {
     if (action === 'toggle-sector') {
       const code = control.dataset.sector
       setState({ expandedSectors: state.expandedSectors.includes(code) ? state.expandedSectors.filter(item => item !== code) : [...state.expandedSectors, code] })
+    }
+    // **One collapsible card, opened or closed** (#134). Written back to `state`, because
+    // `render()` replaces `main.innerHTML` on every `setState` and an open-ness held by
+    // the element would be erased by the next keystroke anywhere on the step.
+    //
+    // `decodeURIComponent` because the attribute holds `keyAttr(key)` - the leaf key's
+    // own NUL survives a round trip through the DOM only encoded. The step comes off the
+    // element too, so the card the visitor pressed and the id this writes are the same
+    // pair by construction rather than by this handler knowing which step it is on.
+    //
+    // **Not in the scroll-to-top list at the bottom of this listener.** Opening a card
+    // is a disclosure, not a navigation; throwing the page to the top would take the
+    // card the visitor just pressed out from under their eyes. `main.js`'s subscriber
+    // returns focus to the toggle by its `id`, so a keyboard user is left on the control
+    // they operated with its `aria-expanded` freshly changed.
+    if (action === 'toggle-card') {
+      const id = cardId(Number(control.dataset.cardStep), decodeURIComponent(control.dataset.card || ''))
+      const open = state.openCards || []
+      setState({ openCards: open.includes(id) ? open.filter(one => one !== id) : [...open, id] })
     }
     // Clearing the category takes any category-specific container with it, for the same
     // reason choosing a different one does: the preset is no longer on the list step 3
@@ -2705,7 +2998,19 @@ export function bindCalculator(main, retryTaxonomy) {
       // whether `errorCode` is still set from that response, and a leftover code from an
       // earlier submit must not survive to mislabel this one. `errorAt` says WHICH leaf
       // and which field, because with N leaves the sentence alone no longer does.
-      if (error) setState({ error, errorAt: leafErrorAt(problem), errorCode: null })
+      //
+      // **Decision 3 of #134 is these three lines.** A refusal that named a leaf expands
+      // that leaf's card and moves focus into the box at fault, because a collapsed card
+      // hiding its own error is the reverse of the problem the collapsing exists to fix.
+      // The card is added to `state.openCards` rather than only forced open by the
+      // message's presence (`leafPanel` does that too): the message is cleared on the
+      // next keystroke, and a card that shut itself again the moment the visitor started
+      // fixing it would be the same defect two seconds later.
+      if (error) {
+        const at = leafErrorAt(problem)
+        setState({ error, errorAt: at, errorCode: null, ...(at ? { openCards: openedCard(state.step, at.leaf) } : {}) })
+        refusedAt = focusLeafField(at)
+      }
       // Step 3 -> 4 builds the destination rows, and it hands the marker to
       // `markerAfterLeaving` exactly as the general branch below does: this is the one
       // forward move with a patch of its own, and leaving `returnTo` out of it meant a
@@ -2892,7 +3197,7 @@ export function bindCalculator(main, retryTaxonomy) {
     // the period are typed, and a submission that comes back `RATE_LIMITED` must still
     // leave the answers restorable.
     if (action === 'continue' || action === 'calculate') writeSnapshot(state)
-    if (['start', 'go-step', 'continue', 'add-entry', 'edit-entry', 'calculate', 'start-over', 'retry', 'view-methodology'].includes(action)) {
+    if (!refusedAt && ['start', 'go-step', 'continue', 'add-entry', 'edit-entry', 'calculate', 'start-over', 'retry', 'view-methodology'].includes(action)) {
       window.scrollTo({ top: 0, behavior: 'smooth' })
     }
   })
@@ -3096,6 +3401,7 @@ export function bindCalculator(main, retryTaxonomy) {
       state.error = null
       state.errorAt = null
       updateCombinedTotal()
+      updateCardBadges()
     }
     // **The three round-two scalar fields now clear `state.error` on keystroke too,
     // the same way `#total-waste` already did above.** Before item ①'s two
@@ -3108,8 +3414,16 @@ export function bindCalculator(main, retryTaxonomy) {
     // side of it would be exactly the defect `#total-waste`'s own clear exists
     // to avoid, one field over.
     const scalarKey = { totalInput: 'totalInputKg', totalValue: 'totalValueNzd', wastedValue: 'wastedValueNzd' }[target.dataset.leafField]
-    if (scalarKey) { patchLeaf(leafOf(target), { [scalarKey]: target.value }); state.error = null; state.errorAt = null }
-    if (target.dataset.leafField === 'count') updateContainerCount(target)
+    // `updateCardBadges` is called for all three although only `wastedValue` and
+    // `totalInput` can currently change a card's state - `totalValue` is one half of the
+    // money contradiction, so typing in it changes whether the OTHER box is at fault.
+    // Asking for all three is also what keeps the badge reading one rule set rather than
+    // this handler's idea of which fields that rule set happens to use today.
+    if (scalarKey) { patchLeaf(leafOf(target), { [scalarKey]: target.value }); state.error = null; state.errorAt = null; updateCardBadges() }
+    if (target.dataset.leafField === 'count') {
+      updateContainerCount(target)
+      updateCardBadges()
+    }
     if (target.matches('[data-line-field="amount"]')) {
       // `beforeinput` cannot always be the whole story. A lone "-" leaves
       // `.value === ''` — the browser will not call one character a number — so

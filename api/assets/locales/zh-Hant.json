@@ -1,13 +1,7 @@
 {
-  "language": "zh-Hant",
   "endonym": "中文（繁體）",
+  "language": "zh-Hant",
   "machine_translated": true,
-  "tags": [
-    "zh-Hant",
-    "zh-TW",
-    "zh-HK",
-    "zh-MO"
-  ],
   "strings": {
     "%(amount)s combined": "合計 %(amount)s",
     "%(caption)s, horizontally scrollable": "%(caption)s，可橫向捲動",
@@ -55,7 +49,6 @@
     "Back to calculator": "返回計算機",
     "Background reading": "延伸閱讀",
     "Bar chart": "長條圖",
-    "Basis:": "依據：",
     "Breakdown by category": "依類別細分",
     "Breakdowns of entries contributed to this tool": "本工具中所貢獻記錄的細分情形",
     "By food type": "依食物類型",
@@ -98,6 +91,7 @@
     "Compare Impact": "比較影響",
     "Compare Results": "比較結果",
     "Comparing…": "比較中…",
+    "Complete": "已填完",
     "Constants are named values referenced by published formulas.": "常數是已公開的公式所引用的具名數值。",
     "Containers": "容器",
     "Continue": "繼續",
@@ -219,6 +213,7 @@
     "Improved %(destination)s percentage value": "改善後 %(destination)s 的百分比數值",
     "Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.": "改善方案中各去向的分配合計必須為 100%，這樣改善方案描述的才是與目前方案相同的浪費量。目前合計：%(total)s%。",
     "Improved scenario (Current → Improved)": "改善方案（目前 → 改善後）",
+    "Incomplete": "未填完",
     "It joins the anonymous statistics only. No figure on the results page is calculated from it.": "它只會併入匿名統計。結果頁上的任何數據都不會由它算出。",
     "It lets the results show the waste as a share of production. Leaving it empty changes no emissions figure.": "有了它，結果就能以佔生產量的比例顯示浪費量。留空不會改變任何排放數據。",
     "Kai Commitment - Leading action on food waste": "Kai Commitment - 引領食物浪費的行動",
@@ -357,7 +352,6 @@
     "Tangible equivalents are available once approved conversion factors are supplied.": "提供經過核可的換算因子後，即可顯示具體對照說明。",
     "That container is no longer available. Choose another.": "該容器已無法使用，請另選一種。",
     "That is about %(mass)s in total.": "合計約為 %(mass)s。",
-    "The basis for this conversion is not recorded yet.": "這項換算的依據尚未記錄。",
     "The breakdowns are temporarily unavailable.": "各項細分暫時無法顯示。",
     "The calculation could not be completed.": "無法完成計算。",
     "The calculator could not produce a result because its calculation configuration needs attention. Please try again later.": "計算機無法產生結果，因為它的計算設定需要檢查。請稍後再試。",
@@ -365,7 +359,6 @@
     "The calculator service could not be reached. Check your connection and try again.": "無法連線到計算服務。請檢查網路連線後再試一次。",
     "The calculator service returned an unexpected response.": "計算服務回傳了非預期的回應。",
     "The calculator turns the count into a weight using the container chosen above.": "計算機會依上面選擇的容器，把這個數量換算成重量。",
-    "The conversion factor comes from the client. The total it is applied to comes from placeholder factors.": "換算係數由客戶提供；套用該係數的總量則來自暫定係數。",
     "The figure beside each destination is the engine's own cross-entry total. The rows beneath it are each entry's own — they can draw different upstream factors, which is why they add up to the total shown rather than repeat it.": "每個去向旁邊的數字，是引擎針對各筆記錄加總後得出的總計。下方各列是每筆記錄各自的數值——它們可能採用不同的上游因子，因此加總後等於上方顯示的總計，而非重複該總計。",
     "The food category, if known": "食物類別（如果知道）",
     "The improvement comparison could not be completed.": "無法完成改善方案的比較。",
@@ -470,5 +463,11 @@
     "no impact figures were returned": "未回傳任何影響數據",
     "saved": "減少",
     "tonnes": "公噸"
-  }
+  },
+  "tags": [
+    "zh-Hant",
+    "zh-TW",
+    "zh-HK",
+    "zh-MO"
+  ]
 }

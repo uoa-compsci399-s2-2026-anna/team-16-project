@@ -622,6 +622,13 @@ def build_bundle_data(session: Session, factor_set_id: int) -> dict[str, Any]:
     carrying them costs the engine nothing. Publishing the values and dropping
     their provenance is the one combination v1.1 added the columns to prevent:
     it removes the defence and keeps the exposure.
+
+    `equivalence.description` (v1.80) is selected on the same terms, with one
+    difference worth stating: it is the sentence the **results page** prints,
+    so unlike `source_note` it is not provenance that only `/factors` shows.
+    A projection that dropped it would leave every tangible-equivalence card
+    on the site with an empty disclosure and nothing failing, because `None`
+    is a legal value there and means *print nothing*.
     """
     factor_set = session.get(FactorSet, factor_set_id)
     if factor_set is None:
@@ -757,6 +764,18 @@ def build_bundle_data(session: Session, factor_set_id: int) -> dict[str, Any]:
                 "min_value": None if x.min_value is None else str(x.min_value),
                 "max_value": None if x.max_value is None else str(x.max_value),
                 "label_template_one": x.label_template_one,
+                #: v1.80. The one staff sentence the results page prints
+                #: beside the figures, now that `source_note` no longer
+                #: reaches that page (#127). Present-and-null on the same
+                #: terms as everything above it: §6.3 is the public export
+                #: and a consumer has to be able to tell "no sentence was
+                #: written" from "this endpoint does not report one".
+                #:
+                #: `source_note` stays in this projection and in the export.
+                #: It left one surface, not the database -- O-3's reasoning
+                #: lives in it, and §6.3 is where a number says where it
+                #: came from.
+                "description": x.description,
                 "source_note": x.source_note,
                 "sort_order": x.sort_order,
             }

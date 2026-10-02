@@ -1,11 +1,7 @@
 {
-  "language": "tl",
   "endonym": "Tagalog",
+  "language": "tl",
   "machine_translated": true,
-  "tags": [
-    "tl",
-    "fil"
-  ],
   "strings": {
     "%(amount)s combined": "%(amount)s sa kabuuan",
     "%(caption)s, horizontally scrollable": "%(caption)s, maaaring i-scroll nang pahalang",
@@ -53,7 +49,6 @@
     "Back to calculator": "Bumalik sa pantuos",
     "Background reading": "Karagdagang babasahin",
     "Bar chart": "Tsart na bar",
-    "Basis:": "Batayan:",
     "Breakdown by category": "Paghahati ayon sa kategorya",
     "Breakdowns of entries contributed to this tool": "Paghahati ng mga talang inambag sa kasangkapang ito",
     "By food type": "Ayon sa uri ng pagkain",
@@ -96,6 +91,7 @@
     "Compare Impact": "Ihambing ang Epekto",
     "Compare Results": "Ihambing ang Resulta",
     "Comparing…": "Inihahambing…",
+    "Complete": "Kumpleto",
     "Constants are named values referenced by published formulas.": "Ang mga konstante ay mga pinangalanang halagang tinutukoy ng mga inilathalang pormula.",
     "Containers": "Mga lalagyan",
     "Continue": "Magpatuloy",
@@ -217,6 +213,7 @@
     "Improved %(destination)s percentage value": "Halaga ng pinabuting porsyento ng %(destination)s",
     "Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.": "Ang pinabuting paglalaan sa mga patutunguhan ay dapat umabot sa 100%, upang ilarawan ng pinabuting senaryo ang kaparehong dami ng basura tulad ng kasalukuyan. Kasalukuyang kabuuan: %(total)s%.",
     "Improved scenario (Current → Improved)": "Pinabuting senaryo (Kasalukuyan → Pinabuti)",
+    "Incomplete": "Hindi kumpleto",
     "It joins the anonymous statistics only. No figure on the results page is calculated from it.": "Napupunta ito sa di-nagpapakilalang istatistika lamang. Walang bilang sa pahina ng mga resulta ang kinakalkula mula rito.",
     "It lets the results show the waste as a share of production. Leaving it empty changes no emissions figure.": "Dahil dito, maipapakita ng mga resulta ang basura bilang bahagi ng produksyon. Kung iiwang blangko, walang magbabago sa anumang bilang ng emisyon.",
     "Kai Commitment - Leading action on food waste": "Kai Commitment - Nangunguna sa pagkilos laban sa basurang pagkain",
@@ -355,7 +352,6 @@
     "Tangible equivalents are available once approved conversion factors are supplied.": "Makukuha ang mga madaling maunawaang katumbas kapag naibigay na ang mga aprubadong saligang bilang sa pagpapalit.",
     "That container is no longer available. Choose another.": "Hindi na magagamit ang lalagyang iyon. Pumili ng iba.",
     "That is about %(mass)s in total.": "Iyan ay humigit-kumulang %(mass)s sa kabuuan.",
-    "The basis for this conversion is not recorded yet.": "Hindi pa naitala ang batayan ng pag-convert na ito.",
     "The breakdowns are temporarily unavailable.": "Pansamantalang hindi makuha ang mga paghahati.",
     "The calculation could not be completed.": "Hindi natapos ang pagtuos.",
     "The calculator could not produce a result because its calculation configuration needs attention. Please try again later.": "Hindi nakabuo ng resulta ang pantuos dahil kailangang ayusin ang pagkakatakda ng pagtuos nito. Pakisubukan muli mamaya.",
@@ -363,7 +359,6 @@
     "The calculator service could not be reached. Check your connection and try again.": "Hindi maabot ang serbisyo ng pantuos. Suriin ang iyong koneksyon at subukan muli.",
     "The calculator service returned an unexpected response.": "Nagbalik ng hindi inaasahang tugon ang serbisyo ng pantuos.",
     "The calculator turns the count into a weight using the container chosen above.": "Ginagawang timbang ng pantuos ang bilang na ito gamit ang lalagyang pinili sa itaas.",
-    "The conversion factor comes from the client. The total it is applied to comes from placeholder factors.": "Ang salik ng pag-convert ay mula sa kliyente. Ang kabuuang halaga na kinakapitan nito ay mula sa mga pansamantalang salik.",
     "The figure beside each destination is the engine's own cross-entry total. The rows beneath it are each entry's own — they can draw different upstream factors, which is why they add up to the total shown rather than repeat it.": "Ang bilang sa tabi ng bawat patutunguhan ay ang sariling kabuuan ng makina sa lahat ng tala. Ang mga hanay sa ibaba nito ay ang sarili ng bawat tala — maaaring gumamit ang mga ito ng iba't ibang paktor sa unahan, kaya't nagtutuos sila tungo sa kabuuang ipinapakita sa halip na ulitin ito.",
     "The food category, if known": "Ang kategorya ng pagkain, kung alam mo",
     "The improvement comparison could not be completed.": "Hindi natapos ang paghahambing ng pagpapabuti.",
@@ -468,5 +463,9 @@
     "no impact figures were returned": "walang naibalik na bilang ng epekto",
     "saved": "naitabi",
     "tonnes": "tonelada"
-  }
+  },
+  "tags": [
+    "tl",
+    "fil"
+  ]
 }

@@ -351,6 +351,114 @@ async def test_a_round_trip_turns_an_empty_string_into_null(
     )
 
 
+# --- 1b. the same round trip on `equivalence`, for the column v1.80 added --
+#
+# `unit_preset` is this file's main subject because it carries every cell shape
+# that was broken, and it carries no draft-only rule. `equivalence` is the
+# screen a NEW column landed on, and it is the one screen in the tree where a
+# missing export column was NOT NULL and therefore uncorrectable by hand (see
+# the module docstring, item 1). So the new column is driven here rather than
+# argued about: `description` is nullable, free text, and the only prose a
+# visitor now reads behind a tangible-equivalence card.
+#
+# `one_draft` rather than `two_sets`: the five factor children refuse a file
+# naming a published set, and the export route serves the whole table, so a
+# round trip is only reachable on a deployment with nothing published. That
+# limitation has its own test further down this file.
+
+
+@pytest.mark.parametrize(
+    "export_type, filename, content_type",
+    [
+        ("csv", "equivalences.csv", "text/csv"),
+        ("json", "equivalences.json", "application/json"),
+    ],
+)
+async def test_an_equivalence_file_this_panel_exported_re_imports_unchanged(
+    admin_client, admin_app, one_draft, session, export_type, filename, content_type
+):
+    """v1.64's promise, on v1.80's column, in both formats.
+
+    The assertion is the whole `equivalence` table, cell by cell, read with SQL
+    on both sides -- so a `description` the export dropped, truncated, wrote as
+    the word `None`, or quietly replaced with `source_note` fails here. A test
+    narrowed to "the response was 200" would pass against all four.
+    """
+    session.commit()
+    before = _table(admin_app, "equivalence")
+    assert before, "the equivalence table is empty, so this proves nothing"
+    assert any(row["description"] for row in before.values()), (
+        "no row carries a description, so this round trip would not exercise "
+        "the column it was written for"
+    )
+    assert any(
+        row["description"] != row["source_note"] for row in before.values()
+    ), "description and source_note are the same text; the two cannot be told apart"
+
+    export = await admin_client.get(f"/admin/equivalence/export/{export_type}")
+    assert export.status_code == 200, export.text
+    #: Asserted in BOTH formats and not only in CSV. A round trip that never
+    #: carries a column still round-trips -- the table is unchanged because
+    #: nothing touched it -- so "nothing changed" is insufficient on its own
+    #: and this is the half that says the column was in the file. Measured:
+    #: dropping `Equivalence.description` from `form_columns` leaves the
+    #: assertion below green and fails here.
+    if export_type == "csv":
+        columns = export.text.splitlines()[0].split(",")
+    else:
+        columns = sorted({key for row in json.loads(export.text) for key in row})
+    assert "description" in columns, (
+        f"the exported {export_type.upper()} carries no `description` column, "
+        f"so this round trip would not exercise it: {columns}"
+    )
+
+    token = await _token(admin_client, "equivalence")
+    response = await _post(admin_client, "equivalence", export.content, token=token,
+                           filename=filename, content_type=content_type)
+    assert response.status_code == 200, (
+        f"a {export_type.upper()} file this panel exported was refused by its "
+        f"own import: {response.text}"
+    )
+    result = _result(response)
+    assert result["imported"] == len(before), (
+        f"the export carried {len(before)} rows and the import took "
+        f"{result['imported']}: {result.get('summary')}"
+    )
+
+    assert _table(admin_app, "equivalence") == before, (
+        "a file this panel exported did not come back as the table it was "
+        "exported from"
+    )
+
+
+@pytest.mark.parametrize("export_type", ["csv", "json"])
+async def test_the_exported_equivalence_carries_the_sentence_and_the_note_apart(
+    admin_client, one_draft, session, export_type
+):
+    """Both columns, distinguishable, in both formats.
+
+    `description` and `source_note` are different claims -- what the comparison
+    means, and where the factor came from -- and v1.80 took the second off
+    every visitor-facing surface while keeping it here and in `GET /factors`.
+    An export that carried one in place of the other, or carried one and not
+    the other, would make the panel the place the distinction stops being
+    true.
+    """
+    session.commit()
+    export = await admin_client.get(f"/admin/equivalence/export/{export_type}")
+    assert export.status_code == 200, export.text
+
+    if export_type == "csv":
+        rows = {row["code"]: row for row in csv.DictReader(io.StringIO(export.text))}
+    else:
+        rows = {row["code"]: row for row in json.loads(export.text)}
+
+    row = rows["km_driven"]
+    assert "one sentence about the comparison" in row["description"], row
+    assert "equivalence source note" in row["source_note"], row
+    assert row["description"] != row["source_note"]
+
+
 # --- 2. the cells the round trip turns on ----------------------------------
 
 

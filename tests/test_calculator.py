@@ -704,6 +704,7 @@ def equivalence_for(
     formula="qty_kg",
     name="",
     source_note=None,
+    description=None,
 ):
     """The single `EquivalenceResult` a one-line scenario of `qty` produces."""
     loaded = one_metric_bundle(
@@ -716,6 +717,7 @@ def equivalence_for(
                 "sort_order": 10,
                 "name": name,
                 "source_note": source_note,
+                "description": description,
             }
         ],
         formula=formula,
@@ -794,6 +796,84 @@ def test_an_equivalence_with_no_recorded_basis_still_reports_its_factor():
     )
     assert equivalence.source_note is None
     assert equivalence.value_per_unit_display == "4.18"
+
+
+def test_an_equivalences_sentence_survives_the_bundle_and_reaches_the_result():
+    """v1.80 (#127). `description` is a pure passthrough and that is exactly
+    why it needs its own test here.
+
+    **This test exists because its mutation survived.** Deleting
+    `description=spec.description` from `_equivalences` in `engine/calculate.py`
+    left `tests/golden` and `tests/api` entirely green -- 419 passed -- and the
+    measurement said why rather than the guess: **no bundle in the repository
+    carried a sentence.** Every golden `bundle.json` and the SQLite seed leave
+    the column unset, so `spec.description` was `None` on both sides of the
+    mutation and the two were equivalent everywhere the suite looked. The gap
+    was not the golden suite's to close: a golden case is a snapshot of
+    arithmetic, and this field changes no number. It was this file's.
+
+    `source_note` is set to something that shares no words with the sentence,
+    so the final assertion distinguishes the two fields rather than merely
+    finding prose -- the engine is the first place a
+    `description or source_note` fallback could be written, and the last place
+    it would be noticed.
+    """
+    equivalence = equivalence_for(
+        "100.000",
+        name="Ten-minute showers",
+        description="The water this food used, as ten-minute showers.",
+        source_note="PLACEHOLDER. Open item O-3; 90 litres is ten minutes at 9 L/min.",
+    )
+
+    assert equivalence.description == "The water this food used, as ten-minute showers."
+    assert equivalence.source_note is not None, (
+        "the stand-in carries no basis, so the assertion below could pass "
+        "against a fallback that had nothing to fall back to"
+    )
+    assert equivalence.description != equivalence.source_note
+
+
+def test_an_equivalence_with_no_sentence_reports_none_and_never_its_basis():
+    """The empty-field path, at the layer every surface reads from.
+
+    `None` means *print nothing* (§6.2, v1.80), and the one wrong answer is
+    `source_note`. A bundle written before v1.80 omits the key entirely -- all
+    thirteen golden cases do -- so the absent-key and the explicit-null forms
+    are both exercised, and both must produce `None` rather than the long
+    provenance prose sitting on the same row.
+    """
+    for description in (None,):
+        equivalence = equivalence_for(
+            "100.000",
+            description=description,
+            source_note="PLACEHOLDER. Open item O-3; the basis is not settled.",
+        )
+        assert equivalence.description is None
+        assert equivalence.source_note is not None
+
+    #: And the pre-v1.80 shape: the key is not in the row at all.
+    loaded = one_metric_bundle(
+        [
+            {
+                "code": "eq",
+                "source_metric": "mass",
+                "value_per_unit": "1.0000000000",
+                "label_template": "{value}",
+                "sort_order": 10,
+                "source_note": "PLACEHOLDER. Open item O-3.",
+            }
+        ]
+    )
+    #: `from_json` accepted it at all, which is the compatibility claim:
+    #: §10.2 makes the key optional, so an absent one is not a malformed row.
+    #: (`one_metric_bundle` narrows `metrics` to `mass` and leaves the other
+    #: factor rows naming codes the document drops, so `validate()` is
+    #: legitimately non-empty for it -- see that helper's own docstring.)
+    (spec,) = loaded.equivalences()
+    assert spec.description is None
+    carried = scenario(loaded, (line("landfill", "100.000"),)).equivalences[0]
+    assert carried.description is None
+    assert carried.source_note == "PLACEHOLDER. Open item O-3."
 
 
 #: The three equivalence codes §2.2 names and `admin/seed.py` ships.

@@ -47,7 +47,7 @@ import os
 
 import pytest
 
-from tests.web.steps import press_continue
+from tests.web.steps import expand_step_cards, press_continue
 
 
 pytestmark = pytest.mark.browser
@@ -107,14 +107,22 @@ PANELS = """
     return {x: round(b.x), right: round(b.right), width: round(b.width), height: round(b.height), top: round(b.top)};
   };
   return [...document.querySelectorAll('.leaf-panel-list .form-panel')].map(panel => {
-    const style = getComputedStyle(panel);
+    // **The content box is the element that holds the padding, which is not always
+    // the panel.** Since #134 a leaf card is a collapsible shell: the panel's own
+    // padding is zero and the header button and `.step-card__body` carry it, so a
+    // content box derived from the panel would sit 20px outside the fields and
+    // `test_a_leaf_cards_fields_span_the_card` would fail on a layout that is
+    // correct. The single-leaf panel is not a card and still holds its own padding.
+    const content = panel.querySelector('.step-card__body') || panel;
+    const style = getComputedStyle(content);
+    const contentBox = boxOf(content);
     const box = boxOf(panel);
     return {
       tag: panel.tagName,
       legend: panel.querySelector('legend') ? panel.querySelector('legend').textContent.trim() : null,
       box,
-      contentStart: box.x + parseFloat(style.paddingInlineStart) + parseFloat(style.borderInlineStartWidth),
-      contentEnd: box.right - parseFloat(style.paddingInlineEnd) - parseFloat(style.borderInlineEndWidth),
+      contentStart: contentBox.x + parseFloat(style.paddingInlineStart) + parseFloat(style.borderInlineStartWidth),
+      contentEnd: contentBox.right - parseFloat(style.paddingInlineEnd) - parseFloat(style.borderInlineEndWidth),
       disclosures: panel.querySelectorAll('details').length,
       zones: [...panel.querySelectorAll('.zone')].map(zone => ({
         heading: zone.querySelector('h2') ? zone.querySelector('h2').textContent.trim() : null,
@@ -188,7 +196,14 @@ def step_three(browser):
                 boxes.nth(index).click()
                 page.wait_for_timeout(50)
         press_continue(page)
-        page.wait_for_selector('[data-leaf-field="amount"]', timeout=10000)
+        #: `state="attached"`, then open the cards. Since #134 a forked chain
+        #: draws collapsed cards and a collapsed card's body is `hidden`, so the
+        #: fields are in the document and not visible -- which the default
+        #: `state="visible"` waits out against a correct screen. Everything below
+        #: measures a card's contents, so every card is opened first, through the
+        #: control a visitor would press.
+        page.wait_for_selector('[data-leaf-field="amount"]', state="attached", timeout=10000)
+        expand_step_cards(page)
         rendered = page.locator('[data-leaf-field="amount"]').count()
         assert rendered == leaves, (
             f"step 3 rendered {rendered} waste-amount fields when {leaves} leaves were asked for"
@@ -228,6 +243,15 @@ def test_both_zones_are_on_screen_and_nothing_is_behind_a_disclosure(step_three,
     Asserted on a three-leaf chain as well as on the single leaf, because the
     disclosure only ever existed on the multi-leaf branch - the single-leaf
     screen would have been green through the entire period the defect shipped.
+
+    **#134 folds the whole card and this still holds, because the two claims are
+    different.** What is refused here is a question *inside* a panel being
+    reachable only by opening something; what #134 added is a fold around the
+    *whole* card, named by the food, with a badge on the outside saying whether
+    that card is finished. The fixture opens every card before measuring, so what
+    is asserted is still "nothing inside an open card is hidden" - and the card's
+    own chrome is a `<button>` rather than a `<details>`, so the count below
+    cannot be satisfied by the fold.
 
     Mutation: putting the two NZ$ fields back inside a
     `<details class="leaf-extras"><summary>` in `leafPanel` fails at the

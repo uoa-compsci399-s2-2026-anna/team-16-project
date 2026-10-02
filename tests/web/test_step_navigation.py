@@ -3764,6 +3764,21 @@ def test_changing_the_unit_converts_the_figure_rather_than_reinterpreting_it(pag
     )
 
 
+#: The share each donut slice claims, read off the `<title>` `PieChart` writes
+#: as `"<destination> — <share>%"` from `state.improvedAllocations` directly.
+#:
+#: **Read with `textContent`, because an SVG `<title>` has no rendered box.**
+#: Playwright's `all_inner_texts()` answers `None` for one, so a list of them
+#: compares equal to any other list of them - measured `[None, None]` against a
+#: donut whose slices read "6.0%" and "4.0%". That is the shape of assertion
+#: this file calls passing for the wrong reason, and it is why this is a script
+#: rather than a locator call.
+SLICE_SHARES = """
+() => [...document.querySelectorAll('.improvement-pie-chart path title')]
+        .map(title => title.textContent)
+"""
+
+
 def test_changing_the_unit_changes_every_row_s_figure_and_no_row_s_allocation(page_at):
     """**The reversal.** This test is the opposite of the one it replaces, and
     deliberately keeps its shape so the diff reads as a reversal and not a deletion.
@@ -3810,7 +3825,17 @@ def test_changing_the_unit_changes_every_row_s_figure_and_no_row_s_allocation(pa
 
     before = boxes.evaluate_all("els => els.map(el => el.value)")
     total_before = page.locator("#improvement-total-value").inner_text().strip()
-    shares_before = page.locator(".improvement-pie-chart path title").all_inner_texts()
+    #: **`textContent`, through `evaluate`, and not `all_inner_texts()`.** An SVG
+    #: `<title>` has no rendered box, so Playwright's inner-text reader answers
+    #: `None` for every one of them - measured `[None, None]` against a donut whose
+    #: two slices really did read "Prevented — waste avoided — 6.0%" and "Food
+    #: redistribution — 4.0%". Comparing two lists of `None` is an assertion that
+    #: cannot fail, and this one was written that way first.
+    shares_before = page.evaluate(SLICE_SHARES)
+    assert shares_before, (
+        "the donut drew no slice with a share in it, so the allocation half of this test "
+        "would compare two empty lists"
+    )
 
     page.select_option("#improvement-mode", "tonnes")
     page.wait_for_timeout(150)
@@ -3837,14 +3862,15 @@ def test_changing_the_unit_changes_every_row_s_figure_and_no_row_s_allocation(pa
         f"{before!r}"
     )
 
+    shares_after = page.evaluate(SLICE_SHARES)
+    assert shares_after == shares_before, (
+        "the donut's slice shares moved when only the display unit changed; "
+        "state.improvedAllocations holds percentages in every unit (§7.3a) and the chart "
+        f"reads it directly (before: {shares_before!r}, after: {shares_after!r})"
+    )
     assert page.locator("#improvement-total-value").inner_text().strip() == total_before, (
         "the running total moved when only the display unit changed - it is computed from "
         "state.improvedAllocations, so this says a unit reached the stored allocation"
-    )
-    assert page.locator(".improvement-pie-chart path title").all_inner_texts() == shares_before, (
-        "the donut's slice shares moved when only the display unit changed; "
-        "state.improvedAllocations holds percentages in every unit (§7.3a) and the chart "
-        f"reads it directly (before: {shares_before!r})"
     )
 
 

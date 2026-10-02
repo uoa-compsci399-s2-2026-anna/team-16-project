@@ -1123,9 +1123,11 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
    难看). It was an opaque `#fff` rectangle inside a Banana-tinted card, which is
    the heaviest thing either surface could have done — maximum contrast against
    the one ground it sits on, drawn at the moment the reader asked a small
-   question. It now takes the shared glass token: `rgba(255, 255, 255, 0.72)`
-   over the card's own `#fff7e2` composites to `#fffdf7`, so the card's colour
-   still reads through the panel and the panel still reads as being above it.
+   question. It now takes the shared glass token. Over the card's own `#fff7e2`
+   (Banana at 0.2 over white) the panel PAINTS `#fffdf5` — measured, not
+   composited: the arithmetic alone says `#fffdf7` and `saturate(1.4)` in the
+   blur pulls the card's tint up by the other two counts. So the card's colour
+   still reads through the panel and the panel still reads as above it.
 
    **Three things about it are measured rather than assumed**, in
    `tests/web/test_results_export.py`:

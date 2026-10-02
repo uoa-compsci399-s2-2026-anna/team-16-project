@@ -167,7 +167,22 @@ def page_at(browser):
 #: the same five widths `page_at`'s own tests use so a layout finding
 #: (clipping, in particular) is measured against the same breakpoints in
 #: every direction and every script this file cares about.
-_CONTEXT_LOCALE = {"de": "de-DE", "ar": "ar-SA"}
+#:
+#: `en` is here so that a test which has to compare one measurement **across**
+#: languages can take all of them from one fixture. `page_at_locale(w, h, dpr,
+#: "en")` and `page_at(w, h, dpr)` are then the same page: `en-NZ` is the locale
+#: `page_at` pins, and `?lang=en` is the override `_english` appends.
+#:
+#: `ru` is here because it holds the **longest** label of the twenty catalogues
+#: on the one control measured by `_SELECT_ARROW_PX`'s test below - "Единица
+#: измерения" for `Unit`, seventeen characters against German's eleven - so a
+#: control-width assertion that stopped at German would stop one language short
+#: of its own worst case.
+#:
+#: Adding rows does not reach any existing test: every one of them names its
+#: languages explicitly in its own `parametrize`, so the reason the two fixtures
+#: are separate stands unchanged - nothing here silently defaults.
+_CONTEXT_LOCALE = {"en": "en-NZ", "de": "de-DE", "ar": "ar-SA", "ru": "ru-RU"}
 
 
 @pytest.fixture
@@ -1149,12 +1164,108 @@ def test_the_improvement_copy_uses_the_visuals_left_edges(page_at):
     assert edges["error"]["fontSize"] == edges["intro"]["fontSize"], edges
 
 
+#: Room Chromium reserves for the native dropdown arrow, **inside** the select's
+#: own padding box. A control exactly as wide as its longest option plus its
+#: horizontal padding is therefore still too narrow by this much, which is why
+#: `MODE_SELECT_FIT` below adds it rather than comparing against the text alone.
+#:
+#: **Measured, not assumed.** `clientWidth` of a `width: max-content` clone of
+#: `#improvement-mode`, minus (longest option measured in the select's own
+#: computed font + `paddingLeft` + `paddingRight`), came to exactly 20.0px in
+#: English, German and Arabic, at every width in `_FIVE_WIDTHS` plus 768 and 803.
+#: The 1px of slack each assertion allows on top is for `clientWidth` being an
+#: integer where the text measurement is fractional, not for the arrow.
+_SELECT_ARROW_PX = 20
+
+#: How much width `#improvement-mode` needs to draw its own longest option, and
+#: how much it has.
+#:
+#: **`scrollWidth` cannot answer this question.** A closed `<select>` paints an
+#: ellipsis or simply cuts its label at the content edge; it does not lay the
+#: text out past that edge and does not become scrollable, so `clientWidth ==
+#: scrollWidth` holds whether the label fits or not - measured 98/98, 107/107,
+#: 122/122 and so on across the whole band where it was in fact clipped. Every
+#: overflow assertion in this file is therefore blind to it, which is why this
+#: measures the *text* against the box: the widest option is drawn into a canvas
+#: with the select's own computed font, and `paddingLeft` + `paddingRight` +
+#: `_SELECT_ARROW_PX` added to it.
+#:
+#: The options are read off the live element rather than named here, so this
+#: measures whichever of the twenty catalogues is in force.
+MODE_SELECT_FIT = """
+async () => {
+  await document.fonts.ready;
+  const select = document.querySelector('#improvement-mode');
+  const style = getComputedStyle(select);
+  const ctx = document.createElement('canvas').getContext('2d');
+  ctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+  let longest = '', textWidth = 0;
+  for (const option of select.options) {
+    const width = ctx.measureText(option.textContent).width;
+    if (width > textWidth) { textWidth = width; longest = option.textContent; }
+  }
+  const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+  return {
+    longest,
+    textWidth,
+    padding,
+    text: textWidth + padding,
+    clientWidth: select.clientWidth,
+    scrollWidth: select.scrollWidth,
+  };
+}
+"""
+
+
+def assert_the_mode_select_is_sized_to_its_own_longest_option(page, where):
+    """`#improvement-mode` is as wide as the widest option it offers, and no wider.
+
+    Two assertions, because the two directions are two different mistakes and one
+    message should not have to describe both. Too narrow is the measured defect: the
+    control took its width from a layout column and cut its own label. Too wide is
+    what "sized to its content" rules out - a control stretched across the whole
+    panel by the site-wide ``input, select { width: 100% }`` - and is the only thing
+    standing in for the end-edge pin this control deliberately no longer has.
+    """
+    fit = page.evaluate(MODE_SELECT_FIT)
+    needs = fit["text"] + _SELECT_ARROW_PX
+    assert fit["clientWidth"] + 1 >= needs, (
+        f"[{where}] the unit-mode select is {fit['clientWidth']}px wide inside its padding "
+        f"but needs {needs:.1f}px to draw {fit['longest']!r} "
+        f"({fit['textWidth']:.1f}px of text + {fit['padding']:.1f}px padding + "
+        f"{_SELECT_ARROW_PX}px for the dropdown arrow) - the option is being clipped, "
+        f"silently: scrollWidth is {fit['scrollWidth']}, the same as clientWidth, because "
+        "a closed select cuts its label rather than overflowing"
+    )
+    #: 2px, for an integer `clientWidth` measured against a fractional canvas
+    #: measurement. The two agreed to 0.0px in English, German, Russian and Arabic
+    #: at 320/390/700/768/803/1278, so this is rounding slack and nothing else -
+    #: it is three hundred-odd pixels short of admitting a full-width control.
+    assert fit["clientWidth"] <= needs + 2, (
+        f"[{where}] the unit-mode select is {fit['clientWidth']}px wide inside its padding "
+        f"where {needs:.1f}px draws its longest option {fit['longest']!r} - it is taking "
+        "its width from its container rather than from its own content"
+    )
+    return fit
+
+
 def test_the_unit_mode_control_sits_in_one_row_above_the_chart(page_at):
     """The global mode selector belongs to the visual it changes.
 
-    It uses the editor's chart column rather than a separately centred width, and its
-    label and select share one row.  Measuring all four edges protects both parts of the
-    request: horizontal label/control layout and placement directly above the chart.
+    It starts at the chart's own inline-start edge rather than at a separately centred
+    width, and its label and select share one row.  Measuring the rendered boxes
+    protects both parts of the request: horizontal label/control layout and placement
+    directly above the chart.
+
+    **The end edge is deliberately not asserted, and that is a correction.** The first
+    version of this test pinned `field.right` to `chart.right` as well, which made the
+    control's width the chart column's width - `minmax(144px, 0.72fr)`, so 144px at the
+    700px seam - and left it too narrow for its own longest option from 700px to about
+    780px in English and across the whole 700-803px band in German.  What the request
+    asked for is the alignment with the visual below, and that is the start edge; the
+    property the end edge was standing in for is "wide enough for what it says", which
+    is asserted here directly and at the widths where it bites by
+    `test_the_unit_mode_select_can_draw_its_own_longest_option`.
     """
     page = advance_to(page_at(1278, 800, 1), 5)
     page.click('[data-action="explore-improvements"]')
@@ -1179,11 +1290,71 @@ def test_the_unit_mode_control_sits_in_one_row_above_the_chart(page_at):
     )
 
     assert layout["field"]["left"] == pytest.approx(layout["chart"]["left"], abs=1)
-    assert layout["field"]["right"] == pytest.approx(layout["chart"]["right"], abs=1)
     assert layout["field"]["top"] >= layout["intro"]["bottom"], layout
     assert layout["field"]["bottom"] <= layout["chart"]["top"], layout
     assert layout["label"]["right"] < layout["select"]["left"], layout
     assert layout["label"]["middle"] == pytest.approx(layout["select"]["middle"], abs=1)
+    assert_the_mode_select_is_sized_to_its_own_longest_option(page, "en@1278")
+
+
+@pytest.mark.parametrize("lang", ["en", "de", "ru", "ar"])
+@pytest.mark.parametrize("width", [320, 700, 768])
+def test_the_unit_mode_select_can_draw_its_own_longest_option(page_at_locale, width, lang):
+    """The unit/percentage control fits its own label at every width and in every script.
+
+    **700-768px is the band where taking the control's width from the chart column cost
+    it its own text.** Measured on the first version of this layout, with no allowance
+    at all for the dropdown arrow: at 700px the select was 100px wide against 111px of
+    `Percentage` plus padding, and 79px against 114px of `Prozentsatz`; at 768px -
+    which `styles.css` names as the likeliest non-desktop demo device - 108.6 against
+    111, and 87.6 against 114.  Russian was worse again, 79px against 170px, and Arabic
+    was the only one of the four that was clear.
+
+    **No other assertion in this file could see it.** `clientWidth == scrollWidth` held
+    throughout, so the overflow checks had nothing to report, and the layout checks were
+    satisfied by a control pinned to exactly the width that was too small - see
+    `MODE_SELECT_FIT`.  Deleting the declaration that caused the clipping
+    (`.improvement-mode-field select { min-width: 0 }`) left all seven of that round's
+    new cases green, which is what says the suite was not watching.
+
+    **320px is the other half, and it is a different mechanism.** There the panel leaves
+    242px, the label "Единица измерения" takes 144px of it on its own, and one row
+    cannot hold both - so the row wraps and the control keeps its width on a line of its
+    own.  Wrapping rather than a breakpoint is deliberate: what has to fit is a
+    translated string, and no viewport width predicts which catalogue is in force.  This
+    case is why `.improvement-mode-field` is a wrapping flex line, and it fails if that
+    line is made `nowrap`.
+
+    German rather than English alone because German is where the measured shortfall in
+    the band was largest; Russian because it holds the widest label of the twenty
+    catalogues on this control (190px against German's 134px), which makes it both the
+    worst case in the band and the only one that wraps at 320px; and Arabic because the
+    start edge it aligns to is the opposite one, and a start-edge assertion that has
+    only ever run LTR is half a test.
+    """
+    page = advance_to(page_at_locale(width, 900, 1.0, lang), 5)
+    page.click('[data-action="explore-improvements"]')
+    page.wait_for_selector("#improvement-mode")
+
+    assert_the_mode_select_is_sized_to_its_own_longest_option(page, f"{lang}@{width}")
+
+    #: The alignment half of the same request, at the widths this test already
+    #: has open: the control's inline-start edge is the chart card's, which is
+    #: `left` in English, German and Russian and `right` in Arabic.
+    edges = page.evaluate(
+        """() => {
+          const rtl = getComputedStyle(document.documentElement).direction === 'rtl';
+          const start = selector => {
+            const rect = document.querySelector(selector).getBoundingClientRect();
+            return rtl ? rect.right : rect.left;
+          };
+          return {field: start('.improvement-mode-field'), chart: start('.improvement-pie-wrap')};
+        }"""
+    )
+    assert edges["field"] == pytest.approx(edges["chart"], abs=1), (
+        f"[{lang}@{width}] the mode control's start edge ({edges['field']}) left the chart "
+        f"card's ({edges['chart']})"
+    )
 
 
 @pytest.mark.parametrize("width", [699, 560, 559, 390])

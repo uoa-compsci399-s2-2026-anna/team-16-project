@@ -40,7 +40,7 @@ The client could not tell whether the two optional NZ$ boxes on step 3 wanted th
 
 > **The two browser assertions on these hints were pinned to the wrong thing, and are fixed with the copy.** `"total value"` is a substring of **both** hints — which is the point of #147 and must stay true of both — so asserting only that left a swap of the two hints green. Each is now also pinned by something only its own sentence says, and the mandatory mutation is the swap: it fails four assertions, each naming the field that received the wrong sentence. Measured against the real render under Node rather than by reading the diff — `render()` is exported, so a stub `document` and `tests/fixtures/taxonomy.json` are enough to evaluate `label[for=…] + .field-hint` on the tree `leafPanel` actually emits, at a leaf count of one and of three.
 
-> **A statement in the step 3 tooltips is already false, and this revision does not touch it.** The shared statistics-only sentence ends *"No figure on the results page is calculated from it"*, and the results page prints **Share of value wasted** from exactly those two figures (§4.5 `wasted_share_percent`). That predates #147 and is out of its scope, but #147's rationale leans on the statistics-only framing, so it is recorded here rather than left for the next reader to rediscover. It wants its own issue: the fix is a copy change in one shared key across twenty catalogues, and the sentence a visitor should read is about **O-2** — these figures do not enter the emissions calculation and are not a cost metric — which is not the same claim as *no figure anywhere is computed from them*.
+> **Two statements on this panel are already wrong, and this revision records rather than fixes either.** *Total amount produced*'s hint is scoped to the **stage** and not to the card — §7.3a's callout has the arithmetic, and `production_share_percent` is a headline figure, so it is the worse of the two. And the shared statistics-only sentence ends *"No figure on the results page is calculated from it"*, and the results page prints **Share of value wasted** from exactly those two figures (§4.5 `wasted_share_percent`). Both predate #147 and are out of its scope, but #147's rationale leans on the statistics-only framing, so neither is left for the next reader to rediscover. **Each wants its own issue**, because each is a third and fourth source string in twenty catalogues with a contract row of its own, and a copy-clarification PR is not where that belongs. For the tooltip, the sentence a visitor should read is about **O-2** — these figures do not enter the emissions calculation and are not a cost metric — which is not the same claim as *no figure anywhere is computed from them*.
 
 > **Nothing is published and nothing is republished by this revision.** `is_mock` stays `true`, **O-1 remains the hard blocker**, and the placeholder banner stays mandatory on every results view and export.
 
@@ -5150,6 +5150,17 @@ export function stepNav({step, back, backLabel = 'Back', label = 'Continue',
 > of one, which is where there is no card at all. **The same reading applies to any copy
 > added to this panel later**; nothing in the suite derives a hint's scope from the field
 > it sits under.
+>
+> **One hint on this panel still has that defect and is deliberately not changed here.**
+> *Total amount produced* reads "Everything that went through this stage over the same
+> period, waste included" — a **stage**, which is the chain, not the card. `total_input_kg`
+> is a per-leaf field and `engine/calculate.py` sums it across entries for
+> `production_share_percent` (§4.6), so three cards each given the whole stage's throughput
+> produce a denominator three times too large and a waste share three times too small.
+> That is worse than the money case, because the share is a headline figure rather than a
+> statistics-only one. It predates #147, it is a third source string in twenty catalogues
+> and a contract row of its own, and it wants its own issue rather than a quiet enlargement
+> of a copy-clarification PR.
 
 
 ```js

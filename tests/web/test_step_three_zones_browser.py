@@ -43,10 +43,10 @@ Requires Playwright and the stack::
 
 from __future__ import annotations
 
-import os
 
 import pytest
 
+from tests.web.base_url import CALCULATOR
 from tests.web.steps import expand_step_cards, press_continue
 
 
@@ -57,7 +57,7 @@ playwright_api = pytest.importorskip(
     reason="playwright is required to measure a rendered layout; the zones and the tooltip are unverified without it",
 )
 
-BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rstrip("/") + "/index.html"
+BASE = CALCULATOR
 
 #: The breakpoint `.zones` splits at, shared with the rest of step 3's layout.
 BREAKPOINT = 650

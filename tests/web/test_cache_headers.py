@@ -38,16 +38,17 @@ not up::
 
 from __future__ import annotations
 
-import os
 import urllib.error
 import urllib.request
 
 import pytest
 
+from tests.web.base_url import ORIGIN
+
 pytestmark = pytest.mark.browser
 
 #: The ORIGIN, not a page - every path below is appended to it.
-BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rstrip("/")
+BASE = ORIGIN
 
 #: One of each kind of thing ``location /`` serves, because the rule is the
 #: block's and not any one file's.

@@ -35,10 +35,10 @@ from __future__ import annotations
 
 import datetime as dt
 import math
-import os
 
 import pytest
 
+from tests.web.base_url import CALCULATOR
 from tests.web.steps import press_continue
 
 pytest.importorskip(
@@ -46,7 +46,7 @@ pytest.importorskip(
     reason="playwright is required to drive the clock with a pointer; the dial is unverified without it",
 )
 
-BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080/index.html")
+BASE = CALCULATOR
 
 CALCULATE = '.step-nav [data-action="calculate"]'
 

@@ -21,16 +21,17 @@ Skipped, never failed, when it is not up.
 from __future__ import annotations
 
 import json
-import os
 import re
 import urllib.error
 import urllib.request
 
 import pytest
 
+from tests.web.base_url import ORIGIN
+
 pytestmark = pytest.mark.browser
 
-BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rstrip("/")
+BASE = ORIGIN
 
 #: All three reachable pages. The drawer is one markup block repeated, and "repeated"
 #: is a claim about three files that only three measurements can hold.

@@ -47,6 +47,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.web.base_url import CALCULATOR
 from tests.web.steps import press_continue
 
 
@@ -62,7 +63,7 @@ FIXTURE = json.loads((ROOT / "tests" / "fixtures" / "calculate_response_single.j
 #: `/index.html` rather than `/`, and they are now the same document: nginx says
 #: `index index.html` again. Named explicitly so this file measures the calculator
 #: whatever the `index` directive says next.
-BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080/index.html")
+BASE = CALCULATOR
 
 
 def _english(url: str) -> str:

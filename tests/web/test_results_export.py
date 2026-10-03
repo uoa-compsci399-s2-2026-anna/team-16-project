@@ -35,7 +35,6 @@ from __future__ import annotations
 import base64
 import copy
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -45,6 +44,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.web.base_url import CALCULATOR
 from tests.web.steps import press_continue
 
 
@@ -1286,7 +1286,7 @@ def test_the_download_no_longer_hard_codes_one_name():
 #: The origin, not a page - `/index.html` is named explicitly so this measures the
 #: calculator whatever the `index` directive does next, the same reasoning
 #: `test_step_navigation.py` gives for its own `BASE`.
-CALCULATOR_URL = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rstrip("/") + "/index.html"
+CALCULATOR_URL = CALCULATOR
 
 FORCE_AUTO_SCROLL = "html { scroll-behavior: auto !important; }"
 

@@ -60,9 +60,11 @@ import urllib.request
 
 import pytest
 
+from tests.web.base_url import ORIGIN
+
 pytestmark = pytest.mark.browser
 
-BASE = "http://localhost:18080"
+BASE = ORIGIN
 
 #: The width in the report. A 390px viewport is an iPhone 12/13/14, which is
 #: the single most common phone width in New Zealand traffic; 320px is kept

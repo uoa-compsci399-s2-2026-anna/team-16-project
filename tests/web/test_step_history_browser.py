@@ -64,11 +64,11 @@ Requires the stack, and the image rebuilt -- ``web/`` is baked in by
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import pytest
 
+from tests.web.base_url import ORIGIN
 from tests.web.steps import press_continue
 
 
@@ -79,7 +79,7 @@ playwright_api = pytest.importorskip(
     reason="playwright is required to press Back in a real browser",
 )
 
-ORIGIN = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rstrip("/")
+ORIGIN = ORIGIN
 BASE = ORIGIN + "/index.html?lang=en"
 
 ROOT = Path(__file__).resolve().parents[2]

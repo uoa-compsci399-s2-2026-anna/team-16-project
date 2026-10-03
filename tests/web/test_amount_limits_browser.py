@@ -90,12 +90,12 @@ that is never executed.
 from __future__ import annotations
 
 import json
-import os
 import urllib.request
 from decimal import Decimal
 
 import pytest
 
+from tests.web.base_url import ORIGIN
 from tests.web.steps import press_continue
 
 pytestmark = pytest.mark.browser
@@ -108,7 +108,7 @@ pytest.importorskip(
 #: The ORIGIN, not a page — the taxonomy probe and the calculator are built from
 #: it and are different shapes. `/` serves this same file, and it is named anyway
 #: so the constant does not move when the `index` directive does.
-BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rstrip("/")
+BASE = ORIGIN
 CALCULATOR = BASE + "/index.html"
 
 #: §6.2's two bounds, in kilograms, written out here rather than imported. This

@@ -43,10 +43,10 @@ run here.
 
 from __future__ import annotations
 
-import os
 
 import pytest
 
+from tests.web.base_url import CALCULATOR
 from tests.web.steps import press_continue
 
 pytest.importorskip(
@@ -54,7 +54,7 @@ pytest.importorskip(
     reason="the mask is an event handler; it is unverified without a real keyboard",
 )
 
-BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080/index.html")
+BASE = CALCULATOR
 
 START_DATE = "#period-start-date"
 START_TIME = "#period-start-time"

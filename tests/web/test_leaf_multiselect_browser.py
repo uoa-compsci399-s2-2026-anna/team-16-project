@@ -26,10 +26,10 @@ Requires the stack: ``docker compose -f docker/compose.yaml up -d --build web``.
 
 from __future__ import annotations
 
-import os
 
 import pytest
 
+from tests.web.base_url import CALCULATOR
 from tests.web.steps import expand_step_cards, press_continue
 
 
@@ -40,7 +40,7 @@ playwright_api = pytest.importorskip(
     reason="playwright is required to drive the multi-select",
 )
 
-BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rstrip("/") + "/index.html"
+BASE = CALCULATOR
 
 #: `api/schemas.py`'s `MAX_ENTRIES`, restated here for the same reason
 #: `calculator.js` restates it: a client-side ceiling may refuse earlier and more
@@ -585,10 +585,14 @@ def scrollbar_browser(_playwright):
     test."* The previous version of this measurement took the shared `browser` fixture
     and was blind in exactly that way.
 
-    **It is here rather than in that file for one reason**: that file hardcodes
-    `http://localhost:18080` with no environment override, so it cannot be pointed at a
-    worktree's own container, and a test that can only ever be run against the shared
-    stack is a test nobody runs before they push. Built on the package-scoped
+    **It is here rather than in that file for one reason**: that file was the last
+    one to hardcode `http://localhost:18080` with no environment override, so it
+    could not be pointed at a worktree's own container, and a test that can only
+    ever be run against the shared stack is a test nobody runs before they push.
+    Both files now take their origin from `tests/web/base_url.py` and this case
+    could move; it stays because the scrollbar-visible `browser` override it needs
+    is local to this module, and moving the measurement would mean exporting that
+    override as well. Built on the package-scoped
     `_playwright` driver rather than a second `sync_playwright()`, for the reason
     `tests/web/conftest.py` gives.
     """

@@ -52,8 +52,9 @@ if str(ROOT) not in sys.path:  # pragma: no cover - import path guard
 
 from tests.support import red_line  # noqa: E402
 from tests.web import i18n_keys  # noqa: E402
+from tests.web.base_url import ORIGIN
 
-BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080")
+BASE = ORIGIN
 STATS = json.loads((ROOT / "tests" / "fixtures" / "stats.json").read_text(encoding="utf-8"))
 MUTATION_CSS = os.environ.get("KAICALC_MUTATION_CSS", "")
 

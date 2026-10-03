@@ -52,10 +52,10 @@ limit.
 from __future__ import annotations
 
 import json
-import os
 
 import pytest
 
+from tests.web.base_url import CALCULATOR
 from tests.web.steps import press_continue
 
 
@@ -71,7 +71,7 @@ playwright_api = pytest.importorskip(
     reason="playwright is required to drive the real 400 this file asserts against",
 )
 
-BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rstrip("/") + "/index.html"
+BASE = CALCULATOR
 
 
 @pytest.fixture

@@ -41,10 +41,10 @@ Requires the stack: ``docker compose -f docker/compose.yaml up -d --build web``.
 
 from __future__ import annotations
 
-import os
 
 import pytest
 
+from tests.web.base_url import CALCULATOR
 from tests.web.steps import expand_step_cards, press_continue
 
 
@@ -55,7 +55,7 @@ playwright_api = pytest.importorskip(
     reason="playwright is required to measure a rendered layout",
 )
 
-BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rstrip("/") + "/index.html"
+BASE = CALCULATOR
 
 #: `body { min-width: 320px }` is a deliberate floor: below 320px of content this
 #: interface stops reflowing and lets the reader scroll. Same constant, same

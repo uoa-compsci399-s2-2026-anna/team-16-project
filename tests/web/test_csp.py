@@ -40,6 +40,7 @@ from pathlib import Path
 import pytest
 
 from tests.web import i18n_keys
+from tests.web.base_url import ORIGIN
 
 pytestmark = pytest.mark.browser
 
@@ -49,7 +50,7 @@ playwright_api = pytest.importorskip(
 )
 
 ROOT = Path(__file__).resolve().parents[2]
-BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080")
+BASE = ORIGIN
 STATS = json.loads((ROOT / "tests" / "fixtures" / "stats.json").read_text(encoding="utf-8"))
 
 #: The policy is set on nginx's static `location /`, so it covers every file under

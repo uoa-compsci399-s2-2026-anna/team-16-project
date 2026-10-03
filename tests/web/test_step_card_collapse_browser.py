@@ -35,10 +35,10 @@ kaicalc-web`` compared against the tag's ``{{.Id}}`` before any of it is trusted
 
 from __future__ import annotations
 
-import os
 
 import pytest
 
+from tests.web.base_url import CALCULATOR
 from tests.web.steps import CONTINUE, expand_step_cards, press_continue
 
 
@@ -49,7 +49,7 @@ playwright_api = pytest.importorskip(
     reason="playwright is required to measure a collapsed card; folding is unverified without it",
 )
 
-BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rstrip("/") + "/index.html"
+BASE = CALCULATOR
 
 #: `body { min-width: 320px }` is a deliberate floor; 390 is the other width
 #: `test_horizontal_overflow.py` measures at, and both are restated here because a

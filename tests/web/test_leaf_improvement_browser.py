@@ -26,11 +26,11 @@ Requires the stack: ``docker compose -f docker/compose.yaml up -d --build web``.
 from __future__ import annotations
 
 import json
-import os
 from decimal import Decimal
 
 import pytest
 
+from tests.web.base_url import CALCULATOR
 from tests.web.steps import expand_step_cards, press_continue
 
 
@@ -41,7 +41,7 @@ playwright_api = pytest.importorskip(
     reason="playwright is required to drive Compare Impact against the real API",
 )
 
-BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rstrip("/") + "/index.html"
+BASE = CALCULATOR
 
 #: One chain, two leaves, two masses that share no common factor with each other's
 #: percentage - 100 and 200 are 33.33% and 66.67% of 300, so a rounding correction

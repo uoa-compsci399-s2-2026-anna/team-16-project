@@ -35,11 +35,11 @@ that is not on disk.
 from __future__ import annotations
 
 import datetime as dt
-import os
 import re
 
 import pytest
 
+from tests.web.base_url import CALCULATOR
 from tests.web.steps import press_continue
 
 pytest.importorskip(
@@ -47,7 +47,7 @@ pytest.importorskip(
     reason="playwright is required to drive the calendar from a keyboard; the dialog is unverified without it",
 )
 
-BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080/index.html")
+BASE = CALCULATOR
 
 #: The four boxes, and the ids the labels point at.
 FIELDS = ("period-start-date", "period-start-time", "period-end-date", "period-end-time")

@@ -30,10 +30,10 @@ Requires the stack, with the published set releasing the item level::
 
 from __future__ import annotations
 
-import os
 
 import pytest
 
+from tests.web.base_url import ORIGIN
 from tests.web.steps import CONTINUE, expand_step_cards, press_continue
 
 
@@ -44,7 +44,7 @@ playwright_api = pytest.importorskip(
     reason="playwright is required to measure a collapsed card; folding is unverified without it",
 )
 
-ROOT = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rstrip("/")
+ROOT = ORIGIN
 BASE = ROOT + "/index.html"
 
 #: `body { min-width: 320px }` is the floor; 390 is the other width

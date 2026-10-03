@@ -318,7 +318,10 @@ button:disabled { cursor: not-allowed; color: rgba(0, 50, 35, 0.56); background:
 /* The introduction screen is a full-bleed Kale panel rather than a 900px column, so it
    takes the page's measure and padding off. `:has()` rather than the `.introduction-main`
    class `render()` also sets, because the class is what a test can assert and this is what
-   the browser needs; both are set from the one `state.step === -1`. */
+   the browser needs; both are set from the one `state.step === -1`. That class therefore
+   has no rule of its own and is declared with its reason in
+   `tests/web/test_class_rules.py`'s `CLASSES_WITH_NO_RULE_OF_THEIR_OWN` (#160); giving
+   `:has()` up is what would make it bind. */
 .main-content:has(.hero) {
   max-width: none;
   padding: 0;
@@ -2501,6 +2504,13 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
    `.choice-fieldset { min-width: 0 }` and the matrix's own inputs, before #160 deleted
    the latter with the rest of the withdrawn grid. */
 .form-panel.step-card { padding: 0; min-inline-size: 0; }
+/* **`.item-group` and `.leaf-panel` are the two `extraClass` values this card is given**,
+   and only the second carries a rule (`margin: 0`, below, for the list's own gap).
+   `.item-group` is step 2.5's per-category card and the card above already styles it; the
+   class is how three of `test_step_two_point_five_browser.py`'s assertions address a food
+   group (`.item-group legend`, `.item-group .simple-choice strong`). What would make it
+   bind is a food group needing a box unlike step 3's and step 4's. Declared in
+   `tests/web/test_class_rules.py`'s `CLASSES_WITH_NO_RULE_OF_THEIR_OWN` (#160). */
 /* **`.step-card--open` is the open state in the DOM and is deliberately not styled**
    (#160). Openness is expressed by the body's `hidden` attribute rather than by a class -
    decision 3 of `collapsibleCard`, so that a shut card's controls are genuinely
@@ -3338,6 +3348,13 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 .stats-page .stats-chart-controls label { font-weight: 600; }
 .stats-page .stats-chart-region { position: relative; min-width: 0; min-height: 320px; margin: 22px 0; }
 .stats-page .stats-chart-region canvas { max-width: 100%; }
+/* **`.stats-list-region` wraps the list below with its `sr-only` heading and carries no
+   rule** (#160). The list has the layout and the heading is visually hidden, so the
+   grouping <div> has nothing to declare; it is named rather than left anonymous because a
+   bare <div> between `.stats-breakdown` and the list is the hardest kind of element to
+   address later. What would make it bind is the region needing a box of its own - spacing
+   between several breakdowns, a border, or the heading made visible. Declared in
+   `tests/web/test_class_rules.py`'s `CLASSES_WITH_NO_RULE_OF_THEIR_OWN`. */
 .stats-page .stats-breakdown-list { margin: 0; padding: 0; display: grid; gap: 8px; list-style: none; }
 .stats-page .stats-breakdown-list li { padding: 14px 0; display: grid; gap: 6px; border-top: 1px solid var(--border); }
 .stats-page .stats-breakdown-list li > span { display: grid; gap: 3px; color: var(--muted); font-size: 0.92rem; }

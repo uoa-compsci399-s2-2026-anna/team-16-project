@@ -182,11 +182,34 @@ BAND_BOTTOM = 360
 
 #: Every section's box, so an assertion about which one the spy picked can print the
 #: geometry that made that the right or the wrong answer.
+#:
+#: **Read out of the nav's own link list, not named here.** It used to carry the four
+#: ids as literals, which was a second copy of `RESULTS_NAV_SECTIONS` -- the thing
+#: that list's docstring exists to prevent ("the order is the whole of this nav's
+#: correctness"). A fifth entry added there and not here is not a failure, it is a
+#: silent loss of coverage: in `fills_the_band`, the last of the hard-coded four has
+#: `successor is None`, so `assert successor is None or successor_top > BAND_BOTTOM`
+#: passes **vacuously** about a successor the nav does in fact claim.
+#:
+#: Reading the page instead means the one list is still the one list. What stops this
+#: from being circular -- a nav that drops a section agreeing with itself -- is
+#: `test_the_results_sections_are_in_the_order_the_floating_nav_claims` in
+#: `test_results_export.py`, which names the four and fails on a fifth or a fourth
+#: missing. That is the right place for the roster: it is a contract assertion and it
+#: needs no browser. Here, what matters is that the geometry measured is the geometry
+#: of whatever the nav actually offers.
+#:
+#: A link whose target is not on the page returns `null` for its box rather than
+#: throwing, so the caller can say *which* id went missing.
 SECTION_BOXES = """
-() => ['impact-summary','tangible-equivalents','breakdown-section','improvement-section'].map(id => {
-  const r = document.getElementById(id).getBoundingClientRect();
-  return {id, top: Math.round(r.top), bottom: Math.round(r.bottom), height: Math.round(r.height)};
-})
+() => [...document.querySelectorAll('.results-floating-nav__links a[href^="#"]')]
+  .map(a => a.getAttribute('href').slice(1))
+  .map(id => {
+    const el = document.getElementById(id);
+    if (!el) return {id, top: null, bottom: null, height: null};
+    const r = el.getBoundingClientRect();
+    return {id, top: Math.round(r.top), bottom: Math.round(r.bottom), height: Math.round(r.height)};
+  })
 """
 
 
@@ -1008,7 +1031,20 @@ def _band_cases(page):
     Returned in page order, so a caller taking `[0]` gets the same case run after
     run rather than whichever the dict happened to yield.
     """
-    order = [entry["id"] for entry in page.evaluate(SECTION_BOXES)]
+    boxes_now = page.evaluate(SECTION_BOXES)
+    #: Every target the nav offers has to be on the page, said here rather than left
+    #: to `SCROLL_TO_REST` throwing a `TypeError` about `null` four frames away.
+    missing = [entry["id"] for entry in boxes_now if entry["top"] is None]
+    assert not missing, (
+        f"the floating nav links to {missing}, which is not on the rendered results page. "
+        f"Every entry in `RESULTS_NAV_SECTIONS` is both a link and an observed element, so "
+        f"a target that is not there is a link that goes nowhere and a spy watching nothing"
+    )
+    assert len(boxes_now) >= 4, (
+        f"the nav offers {len(boxes_now)} section links, and every measurement in this "
+        f"file was taken against the four it is documented to index: {boxes_now}"
+    )
+    order = [entry["id"] for entry in boxes_now]
     shares, fills = [], []
     for index, section in enumerate(order):
         page.evaluate(SCROLL_TO_REST, section)

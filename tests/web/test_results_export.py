@@ -442,6 +442,107 @@ def test_the_results_sections_are_in_the_order_the_floating_nav_claims(tmp_path)
     )
 
 
+def test_the_navs_two_actions_are_controls_and_not_two_more_jumps(tmp_path):
+    """**#126 asked for *Download* and *Start a new calculator* in this nav, and a
+    jump to them is not what it asked for.**
+
+    They arrived as two `href="#..."` entries in the link list, onto
+    `.result-actions` -- `display: flex`, with its column override at
+    `max-width: 480px` while the nav is not drawn below 1100px. So the two entries
+    were two names for one destination, and #126's criteria 2 and 3 ("Download
+    produces the expected results file" and "Start a new calculator clearly begins a
+    fresh calculation") were answered by scrolling the reader to a button and
+    stopping there.
+
+    They are buttons now, each a remote control for the action row's own button:
+    `results.js` forwards the press to `.result-actions [data-action="..."]`, whose
+    click reaches the one delegated listener in `calculator.js` exactly as the row's
+    own press does. Five separable things are asserted, and each fails on its own:
+
+    * the panel holds exactly the two actions, as `<button>`s;
+    * neither of them is a link -- the thing this test exists to stop coming back is
+      an `href` in this group;
+    * each names the `data-action` of a control that is actually on the page, since
+      the forwarding is a `querySelector` and a typo in it is a silent no-op;
+    * the section link list is untouched by them, because a section index with
+      actions in it is what made the pin unreleasable;
+    * the labels are the action row's own strings, which is what keeps this at zero
+      new catalogue entries -- and legitimate, because the two controls that share a
+      name now do the same thing.
+
+    **`data-nav-action`, not `data-action`**, and that is asserted too, below.
+    `[data-action="download-results"]` is how this whole suite names *the* download
+    button -- eighteen selectors in five files -- so a second element answering to it
+    made nine of them resolve to this hidden panel instead. Measured: this file went
+    from 135 passed to 9 failed on actionability timeouts.
+    """
+    screen = screen_for(tmp_path, build_state())
+
+    import re as _re
+
+    group = _re.search(r'<div class="results-floating-nav__actions" role="group">(.*?)</div>',
+                       screen, _re.S)
+    assert group, (
+        "the floating nav renders no action group, so #126's two actions are reachable "
+        "only by scrolling to the bottom of the page again"
+    )
+    body = group.group(1)
+
+    assert 'href' not in body, (
+        f"the nav's action group contains a link: {body!r}. These are actions, and as "
+        f"`#` anchors they were two entries on one flex row -- both jumping to the same "
+        f"place, and neither able to release the `aria-current` mark a press puts on it, "
+        f"because the row never reaches the 24px rest line a release latches on"
+    )
+    offered = _re.findall(r'data-nav-action="([a-z-]+)"', body)
+    assert offered == ["start-over", "download-results"], (
+        f"the nav's actions are {offered}; each has to name the `data-action` of the "
+        f"action row's own button, because the press is forwarded to it by "
+        f"`querySelector` -- and `data-nav-action` is the attribute, because a second "
+        f"element answering to `data-action` makes this panel's hidden copy the one "
+        f"every unscoped selector in the suite finds"
+    )
+    assert 'data-action=' not in body, (
+        f"the nav's action group carries a `data-action`: {body!r}. Eighteen selectors "
+        f"across five test files name the real controls that way, and this panel is "
+        f"hidden -- so they resolve here and wait thirty seconds for a button that will "
+        f"never become visible"
+    )
+    assert body.count("<button") == 2, f"the action group holds {body.count('<button')} buttons: {body!r}"
+
+    #: The forwarding target has to exist, **inside `.result-actions`**, which is the
+    #: selector `results.js` forwards through. `querySelector(...)?.click()` is a
+    #: silent no-op against a typo, and the non-browser render is the cheapest place
+    #: to see that both ends of the pair are spelled the same way.
+    row = _re.search(r'<div class="result-actions">(.*?)\Z', screen, _re.S)
+    assert row, "the results page renders no `.result-actions` row for the nav to forward to"
+    in_the_row = _re.findall(r'data-action="([a-z-]+)"', row.group(1))
+    for action in offered:
+        assert action in in_the_row, (
+            f"the nav forwards to `.result-actions [data-action=\"{action}\"]` and the row "
+            f"offers {in_the_row}. `querySelector(...)?.click()` fails silently, so a nav "
+            f"item pointed at a control that is not there simply does nothing"
+        )
+
+    #: The strings, so that a redesign which coins new labels here is reported --
+    #: a new string reaching the PDF raises 500 on every non-English download until
+    #: all twenty catalogues carry it (`api.i18n.Catalogue.gettext`).
+    for label in ("Start a new calculation", "Download results"):
+        assert f">{label}</button>" in body, (
+            f"the nav's action group does not print {label!r}. These are the action row's "
+            f"own strings on purpose: reusing them is why this change needed nothing in "
+            f"twenty catalogues, and it is honest because both doors run one action"
+        )
+
+    #: And the section index is still only sections. This is the assertion that
+    #: fails if the two entries are put back into `RESULTS_NAV_SECTIONS` as well.
+    links = _re.search(r'class="results-floating-nav__links">(.*?)</ul>', screen, _re.S)
+    assert links, "the floating nav rendered no link list"
+    assert _re.findall(r'href="(#[a-z-]+)"', links.group(1)) == [
+        "#impact-summary", "#tangible-equivalents", "#breakdown-section", "#improvement-section",
+    ], _re.findall(r'href="(#[a-z-]+)"', links.group(1))
+
+
 def test_the_results_page_renders_every_section_it_composes(tmp_path):
     """**The improvement panel has now vanished in a merge twice.**
 

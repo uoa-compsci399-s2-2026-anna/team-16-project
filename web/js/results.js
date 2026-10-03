@@ -1790,6 +1790,13 @@ function resultsNavPanelIsOpen(nav) {
  * @returns {boolean} Whether anything was closed.
  */
 function closeResultsNav(focusHandle = false) {
+  //: **No nav, nothing to do, and no `setState` either.** The flag outlives the
+  //: results page -- `goToStep` does not clear it, only `resetCalculator` does --
+  //: so a visitor who opens the list, presses *Edit your data* and then clicks
+  //: anything on step 4 used to fire one extra full re-render of step 4, with the
+  //: same focus side effect and nothing on screen to show for it. This returns
+  //: instead, and the flag is left standing: it is still the last choice that
+  //: visitor made about a nav they will meet again when they recalculate.
   const nav = document.querySelector('.results-floating-nav')
   //: Docked, the panel is not "open": it IS the nav (`styles.css`'s
   //: `min-width: 1600px` block shows it unconditionally, with no

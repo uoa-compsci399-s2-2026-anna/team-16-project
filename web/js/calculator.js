@@ -983,10 +983,10 @@ const itemStatus = chosen => ({
  *   with no chevron, no `aria-expanded` and nothing in the tab order — see
  *   `cardIsFixedOpen` for why a control that changes nothing is the worse answer. The one
  *   declaration such a header must not inherit from `.step-card__toggle` is
- *   `cursor: pointer`, and it is neutralised in a `style` attribute rather than in
- *   `web/css/styles.css`: this change is not permitted to touch that file, and the rule
- *   it is standing in for — a `.step-card__toggle--static { cursor: default }` beside the
- *   class it modifies — is recorded as owed.
+ *   `cursor: pointer`, and it is neutralised by
+ *   `.step-card__toggle--static { cursor: default }` in `web/css/styles.css`, beside the
+ *   class it modifies. It shipped here as a `style` attribute, because this change was
+ *   not permitted to touch that file; #160 moved it and the attribute is gone.
  * * **`always` is the strip the shut card still shows**, between the header and the body
  *   and so outside the `hidden`. #142 needs step 4's Remaining readable without opening
  *   anything; `leafSummary` already renders it with its unit and an `aria-live`, and
@@ -994,7 +994,10 @@ const itemStatus = chosen => ({
  *   already builds outside the fold is the whole of that criterion and no figure is
  *   computed twice.
  * * **`min-inline-size: 0` on the `<fieldset>`, and it is load-bearing rather than
- *   tidiness.** A fieldset's initial `min-inline-size` is `min-content`, so unlike a
+ *   tidiness.** It is `.form-panel.step-card`'s second declaration in
+ *   `web/css/styles.css`; it shipped here as a `style` attribute for the same reason as
+ *   the cursor above, and #160 moved it there too.
+ *   A fieldset's initial `min-inline-size` is `min-content`, so unlike a
  *   `<div>` it REFUSES to shrink below the widest thing inside it — and step 4's
  *   `.destination-row` is a two-column grid whose minimum is 220 + 24 + 260 = 504px.
  *   Measured on this build: at 500px the card was forced to 588px and the document
@@ -1003,16 +1006,18 @@ const itemStatus = chosen => ({
  *   `<div class="leaf-group">`, which shrinks and lets `.destination-list`'s own
  *   `overflow: hidden` clip; the `<fieldset>` does not, and
  *   `tests/web/test_horizontal_overflow.py` measures only 320 and 390, where the row is
- *   a single column and the band is invisible. The stylesheet already carries this fix
- *   twice in other dimensions (`.choice-fieldset { min-width: 0 }`,
- *   `.allocation-matrix input, .allocation-matrix select { min-inline-size: 0 }`).
+ *   a single column and the band is invisible, so the band has a test of its own in
+ *   `tests/web/test_leaf_layout_browser.py`. The stylesheet carries the same fix in
+ *   another dimension as `.choice-fieldset { min-width: 0 }`; it carried a third copy on
+ *   the matrix's own inputs until #160 deleted the withdrawn grid's rules.
  *
- * **Two declarations are in `style` attributes that belong in `web/css/styles.css`**, and
- * they are here only because this change was not permitted to touch that file while
- * another was in it: `min-inline-size: 0` above, which belongs beside
- * `.form-panel.step-card { padding: 0 }`, and `cursor: default` on the static header,
- * which belongs on a `.step-card__toggle--static` rule. Move them and delete the
- * attributes; nothing else has to change.
+ * **Neither declaration is in a `style` attribute any more.** Both were, while this
+ * change was not permitted to touch `web/css/styles.css` — `min-inline-size: 0` above
+ * and `cursor: default` on the static header — and v1.84's entry recorded both as owed
+ * there. #160 moved them, to `.form-panel.step-card` and
+ * `.step-card__toggle--static` respectively, and this function now emits no inline style
+ * at all. Nothing else changed: the computed values and the measured boxes are the same
+ * either way.
  *
  * **Deliberately plain.** The card's whole ground — background, border, radius — is one
  * element, `.step-card`, and it carries no `backdrop-filter`, no `transform` and no
@@ -1040,9 +1045,9 @@ function collapsibleCard({ step, key, anchor, name, count, forceOpen = false, st
   const open = forceOpen || cardIsOpen(step, key, count)
   const badge = `<span class="step-card__status" data-card-status data-state="${status.state}"><span class="step-card__mark" aria-hidden="true">${status.mark}</span><span data-card-status-text>${escapeHtml(status.text)}</span></span>`
   const header = fixed
-    ? `<div class="step-card__toggle step-card__toggle--static" style="cursor:default"><span class="step-card__name">${escapeHtml(name)}</span>${badge}</div>`
+    ? `<div class="step-card__toggle step-card__toggle--static"><span class="step-card__name">${escapeHtml(name)}</span>${badge}</div>`
     : `<button id="card-toggle--${anchor}" class="step-card__toggle" type="button" data-action="toggle-card" data-card-step="${step}" data-card="${keyAttr(key)}" aria-expanded="${open ? 'true' : 'false'}" aria-controls="${bodyId}"><span class="step-card__chevron ${open ? 'expanded' : ''}" aria-hidden="true">&#8964;</span><span class="step-card__name">${escapeHtml(name)}</span>${badge}</button>`
-  return `<fieldset class="form-panel step-card ${open ? 'step-card--open' : ''} ${extraClass}" style="min-inline-size:0" ${dataAttr}><legend class="sr-only">${escapeHtml(name)}</legend>${header}${always}<div class="step-card__body" id="${bodyId}" ${open ? '' : 'hidden'}>${body}</div></fieldset>`
+  return `<fieldset class="form-panel step-card ${open ? 'step-card--open' : ''} ${extraClass}" ${dataAttr}><legend class="sr-only">${escapeHtml(name)}</legend>${header}${always}<div class="step-card__body" id="${bodyId}" ${open ? '' : 'hidden'}>${body}</div></fieldset>`
 }
 
 /**

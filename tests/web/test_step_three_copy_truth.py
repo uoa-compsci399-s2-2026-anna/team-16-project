@@ -272,20 +272,19 @@ def test_each_card_asks_for_that_cards_own_production_total(rendered):
     five hints on this card, so a substring pin would survive a swap. See
     `test_no_step_three_hint_can_be_swapped_for_its_neighbour`.
     """
-    for category in LEAVES:
-        field_id = f"total-input--{_slug(category)}"
-        hint = _hint(rendered["many"], field_id)
-        assert hint == PRODUCTION_TOTAL_HINT, (
-            f"{field_id} does not carry the production-total hint: {hint!r}"
-        )
-
-    #: The word that was wrong, named here so the failure says *why*. "stage" is
-    #: the supply chain; this box is one leaf of it.
+    #: **The three named words come before the equality, and the order is the
+    #: point.** An equality fails with a diff and leaves the reader to work out
+    #: which property of the sentence mattered; these three say it. "stage" is the
+    #: word that was wrong - it is the supply chain, and this box is one leaf of
+    #: it. "this food type" is the scoping that stops three cards collecting the
+    #: same figure three times. "waste included" is what makes the figure a
+    #: denominator at all, and it is also the phrase no other hint on this card
+    #: carries, so it is what distinguishes this sentence from its neighbours.
     for category in LEAVES:
         hint = _hint(rendered["many"], f"total-input--{_slug(category)}")
         assert "this stage" not in hint, (
             f"the production-total hint on {category} asks for the whole stage's "
-            f"throughput on a per-leaf box: {hint!r}"
+            f"throughput on a box §4.6 sums once per leaf: {hint!r}"
         )
         assert "this food type" in hint, (
             f"the production-total hint on {category} is not scoped to the card "
@@ -294,6 +293,16 @@ def test_each_card_asks_for_that_cards_own_production_total(rendered):
         assert "waste included" in hint, (
             "the production-total hint has lost the clarification that the figure "
             f"includes the waste, which is what makes it a denominator: {hint!r}"
+        )
+
+    #: And then the whole sentence, because the three above are each satisfied by
+    #: a hint one field along (see
+    #: `test_no_step_three_hint_can_be_swapped_for_its_neighbour`).
+    for category in LEAVES:
+        field_id = f"total-input--{_slug(category)}"
+        hint = _hint(rendered["many"], field_id)
+        assert hint == PRODUCTION_TOTAL_HINT, (
+            f"{field_id} does not carry the production-total hint: {hint!r}"
         )
 
     #: A leaf count of one: no card, no legend, bare `#total-input` (v1.81
@@ -390,13 +399,14 @@ def test_the_money_tooltip_names_the_results_figure_the_page_computes_from_it(re
         paragraphs = _tooltip(rendered["many"], f"term-tip-{base}--dairy")
         assert len(paragraphs) == 2, f"{base}: {len(paragraphs)} tooltip paragraphs, not two"
         shared = paragraphs[-1]
-        assert shared == STATISTICS_ONLY_TIP, (
-            f"{base}'s second tooltip paragraph is not the shared statistics "
-            f"sentence: {shared!r}"
-        )
+        #: **The tie comes before the equality**, so the failure reads as what it
+        #: is: the results page computes a figure from this box and the tooltip
+        #: does not name it. An equality first would report a diff and leave the
+        #: reader to work out which half of the sentence was the claim.
         assert MONEY_DERIVED_RESULT_LABEL.casefold() in shared.casefold(), (
             f"{base}'s tooltip does not name {MONEY_DERIVED_RESULT_LABEL!r}, which "
-            f"the results page computes from this very box: {shared!r}"
+            f"the report above shows the results page computing from this very "
+            f"box (§4.5 `wasted_value_nzd / total_value_nzd * 100`): {shared!r}"
         )
         assert DENIAL not in shared.casefold(), (
             f"{base}'s tooltip still denies that the results page computes anything "
@@ -417,6 +427,15 @@ def test_the_money_tooltip_names_the_results_figure_the_page_computes_from_it(re
     assert _tooltip(rendered["many"], "term-tip-total-value--dairy")[-1] == (
         _tooltip(rendered["many"], "term-tip-wasted-value--dairy")[-1]
     ), "the two money tooltips no longer share the one statistics sentence"
+
+    #: And then the whole sentence, last, for the reason the hint test gives: the
+    #: phrases above are each satisfiable by a sentence that is not this one.
+    for base in ("total-value", "wasted-value"):
+        shared = _tooltip(rendered["many"], f"term-tip-{base}--dairy")[-1]
+        assert shared == STATISTICS_ONLY_TIP, (
+            f"{base}'s second tooltip paragraph is not the shared statistics "
+            f"sentence: {shared!r}"
+        )
 
 
 @node

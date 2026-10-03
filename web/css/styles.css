@@ -1500,7 +1500,6 @@ tbody th { font-weight: 700; }
 .improvement-scenario > #improvement-inline-error { margin-inline-start: 18px; }
 .improvement-scenario { background: rgba(230, 190, 255, 0.12); }
 .results-page > :where(#impact-summary, #improvement-section, #tangible-equivalents, #breakdown-section, #results-methodology) { scroll-margin-top: 24px; }
-.results-page :where(#start-new-calculation, #results-downloads) { scroll-margin-top: 24px; }
 /* THE SECTION NAV LIVES IN THE PAGE'S GUTTER, AND ONLY WHERE THERE IS ONE.
    ========================================================================
    It was `inset-inline-end: 18px` — pinned to the viewport's own edge, which
@@ -1807,6 +1806,57 @@ tbody th { font-weight: 700; }
   border-inline-start-color: var(--green-rule);
   box-shadow: 0 5px 16px rgba(40, 200, 130, 0.45), 0 1px 3px rgba(0, 50, 35, 0.16);
 }
+/* **THE PANEL'S TWO ACTIONS, AND WHY THEY ARE NOT MORE LINKS** (#126/#150).
+   *Start a new calculation* and *Download results* were asked for in this nav and
+   first arrived as two `#` links onto `.result-actions` - one `display: flex` row,
+   whose column override is `@media (max-width: 480px)` while this nav does not exist
+   below 1100px. So they were two entries on one destination: both jumped to the same
+   place, and a pin on either could never be released by a scroll, because the row
+   sits about 430px from the end of the document and the release latches only once the
+   target has reached the 24px rest line. They are controls, so they are drawn as
+   controls, and `results.js` gives them the action row's own `data-action` values.
+
+   **Nothing in here may be positioned**, and that is a rule rather than an
+   observation: this panel is one of the `--glass-*` token's consumers, `backdrop-filter`
+   makes a consumer a containing block, and `test_the_glass_is_a_containing_block_for_
+   nothing_positioned` reads the token's selector list out of the live CSSOM and asserts
+   `position: static` for every descendant of every consumer (§7.6 rule 11). A badge, a
+   count, or a current-item accent drawn with an absolutely positioned pseudo-element
+   would fail a test in another file about another feature. The accent that IS used here
+   is `border-inline-start`, for exactly that reason.
+
+   **The colours are the list's colours, not new ones.** `--muted` measures 6.52:1 on
+   the panel's frosted ground and the hover pair 10.51:1 on the composited green - both
+   already written down above the links - so these two controls read as members of the
+   same list rather than as a second palette. `font: inherit` first and `font-weight`
+   after it: the shorthand resets the weight, and 400 and 700 are the only two weights
+   this stylesheet may ask for (`font-synthesis: none`). `text-align: start` rather than
+   a button's centred default, and logical, so Arabic mirrors with the panel. */
+.results-floating-nav__actions {
+  display: grid;
+  gap: 3px;
+  margin-block-start: 7px;
+  padding-block-start: 7px;
+  border-block-start: 1px solid var(--glass-edge);
+}
+.results-floating-nav__action {
+  min-block-size: 44px;
+  display: flex;
+  align-items: center;
+  padding-inline: 12px;
+  border: 0;
+  border-inline-start: 3px solid transparent;
+  border-radius: 10px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 400;
+  line-height: 1.3;
+  text-align: start;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.results-floating-nav__action:hover { color: var(--kai-kale); background: rgba(40, 200, 130, 0.32); }
 /* **The edge the client asked to line up is the inline-start one, and a block in this
    panel's own flow already has it** - `.improvement-editor`'s first column starts at
    the panel's content edge too, so the label, the control and the chart card below

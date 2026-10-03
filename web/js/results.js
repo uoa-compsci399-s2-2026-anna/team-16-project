@@ -1447,13 +1447,27 @@ function categoryAverageLines(state, prefix) {
     `${prefix}${t('%(food)s is priced at the %(category)s average. The published factor set carries no factors for this food, so the figures here are its category\'s rather than its own.', { food, category })}`)
 }
 /**
- * The result sections and actions the floating nav indexes, **in the page's order**.
+ * The four sections the floating nav indexes, **in the page's order**.
  *
  * One list, read twice: `resultsFloatingNavigation` writes the links from it and
- * `bindResultsSectionSpy` observes the same targets. Two lists would be two lists to
- * keep in step, and the order is the whole of this nav's correctness --
+ * `bindResultsSectionSpy` observes the same four elements. Two lists would be two
+ * lists to keep in step, and the order is the whole of this nav's correctness --
  * `test_the_results_sections_are_in_the_order_the_floating_nav_claims` asserts it
  * against the rendered page for exactly that reason.
+ *
+ * **Every entry here must be a place the page can actually come to rest**, and that
+ * is a real constraint rather than a tidiness one (#126/#150). A jump leaves its
+ * target at `SECTION_REST_TOP`, and `bindNavGestures`'s scroll path releases a pin
+ * only once the target has *reached* that line and then left it. An entry close
+ * enough to the end of the document that the scroll clamps before it gets there can
+ * never set `pinnedSettled`, so the `aria-current` mark a press put on it is never
+ * taken off again by a scroll -- and a dragged scrollbar, which is precisely the
+ * gesture the scroll path exists for, fires no wheel, no touch and no key to take it
+ * off either. That is why the *Start a new calculation* and *Download results*
+ * entries #126 asked for are not here: they are the page's closing action row, which
+ * sits about 430px from the end of the document, and `.result-actions` is one flex
+ * row so both of them were also the same destination. They are in the panel as the
+ * controls they are instead -- see `resultsFloatingNavigation`.
  *
  * The label is a function because `t()` has to run at render time: changing language
  * re-renders in place rather than reloading (`main.js`), so a label evaluated once at
@@ -1470,8 +1484,33 @@ const RESULTS_NAV_SECTIONS = [
   ['tangible-equivalents', () => t('Tangible equivalents')],
   ['breakdown-section', () => t('Breakdown by category')],
   ['improvement-section', () => t('Explore Improvements')],
-  ['start-new-calculation', () => t('Start a new calculation')],
-  ['results-downloads', () => t('Download results')],
+]
+
+/**
+ * The results page's own actions, offered **inside the nav panel as controls**.
+ *
+ * #126 asked for *Download* and *Start a new calculator* in the results-page
+ * navigation. They are not sections and they are not entries in
+ * `RESULTS_NAV_SECTIONS`: as `#`-links they were two links onto one flex row, so
+ * both jumped to the same place, only the first could ever be marked by the
+ * observer, and neither could release the pin a press put on it (see that list's
+ * note). As buttons they do the thing the issue asks for -- the download downloads
+ * and *Start a new calculation* starts one -- from wherever the reader has got to,
+ * without scrolling anywhere at all.
+ *
+ * **The `data-action` values are the action row's own**, so `calculator.js`'s one
+ * delegated `main` click listener already serves them and nothing had to be added
+ * there. That is also what makes the shared accessible name correct rather than the
+ * defect it would be on a link: the panel's *Download results* and the action row's
+ * *Download results* are two doors onto one action, not a link and a button that
+ * happen to read alike while doing different things.
+ *
+ * Labels are functions for the same reason `RESULTS_NAV_SECTIONS`' are, and they are
+ * the two strings the action row already uses, so twenty catalogues needed nothing.
+ */
+const RESULTS_NAV_ACTIONS = [
+  ['start-over', () => t('Start a new calculation')],
+  ['download-results', () => t('Download results')],
 ]
 
 /**
@@ -1692,6 +1731,7 @@ function releasePin() {
  */
 const SCROLL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ', 'Spacebar'])
 
+
 /**
  * The three listeners the pin needs, installed **once on `document`** for the life of
  * the page.
@@ -1850,7 +1890,18 @@ function resultsFloatingNavigation(state) {
   //: re-render its own press causes. Without one, `document.activeElement.id` is `''`,
   //: focus lands on `<main>`, and a keyboard visitor who opens the list is thrown to
   //: the top of the page instead of into it.
-  return `<nav class="results-floating-nav"${openAttribute} aria-label="${escapeHtml(label)}"><button class="results-floating-nav__handle" id="results-floating-nav-handle" type="button" data-action="toggle-results-nav" aria-controls="results-floating-nav-menu"${expanded} aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"><span aria-hidden="true">⋮</span></button><div class="results-floating-nav__panel" id="results-floating-nav-menu"><ul class="results-floating-nav__links">${links}</ul></div></nav>`
+  //:
+  //: **The two actions below are buttons, and that is the answer to #126 rather than
+  //: a shortcut past it** -- see `RESULTS_NAV_ACTIONS`. They carry the action row's
+  //: own `data-action` values, so the delegated listener in `calculator.js` runs the
+  //: same code the row's own buttons run; there is nothing nav-specific behind them.
+  //: They are outside the `<ul>` because that list is the section index and these are
+  //: not sections, and `role="group"` is what says "these belong together" without
+  //: claiming they are a second list of places to go.
+  const actions = RESULTS_NAV_ACTIONS
+    .map(([action, text]) => `<button class="results-floating-nav__action" type="button" data-action="${action}">${escapeHtml(text())}</button>`)
+    .join('')
+  return `<nav class="results-floating-nav"${openAttribute} aria-label="${escapeHtml(label)}"><button class="results-floating-nav__handle" id="results-floating-nav-handle" type="button" data-action="toggle-results-nav" aria-controls="results-floating-nav-menu"${expanded} aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"><span aria-hidden="true">⋮</span></button><div class="results-floating-nav__panel" id="results-floating-nav-menu"><ul class="results-floating-nav__links">${links}</ul><div class="results-floating-nav__actions" role="group">${actions}</div></div></nav>`
 }
 
 export function renderResults(state) {
@@ -1896,7 +1947,7 @@ export function renderResults(state) {
     ${ImprovementScenario(state)}
     ${ComparisonResults(state)}
     <section class="methodology-compact" id="results-methodology" aria-labelledby="results-methodology-title"><h2 id="results-methodology-title">${escapeHtml(t('Methodology & Limitations'))}</h2><p>${escapeHtml(t('Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.'))}</p><p>${escapeHtml(t('Factor version'))}: ${escapeHtml(version)}.</p><details><summary>${escapeHtml(t('View methodology'))}</summary><div><p>${escapeHtml(t('Data sources and calculation factors are maintained and approved by Kai Commitment.'))}</p><p>${escapeHtml(t('Waste as a share of food handled is a ratio of the two masses you typed, not a factor-based figure, so the placeholder data above does not affect it.'))}</p></div></details></section>
-    <div class="result-actions"><button id="start-new-calculation" class="button button-secondary" type="button" data-action="start-over">${escapeHtml(t('Start a new calculation'))}</button><div id="results-downloads" class="download-actions"><button class="button button-primary" type="button" data-action="download-results">${escapeHtml(t('Download results'))}</button><button class="button button-primary" type="button" data-action="download-pdf" ${state.pdfExporting ? 'disabled' : ''}>${escapeHtml(t('Download PDF'))}</button></div>${state.pdfError ? `<p class="field-error" role="alert">${escapeHtml(state.pdfError)}</p>` : ''}</div>
+    <div class="result-actions"><button class="button button-secondary" type="button" data-action="start-over">${escapeHtml(t('Start a new calculation'))}</button><div class="download-actions"><button class="button button-primary" type="button" data-action="download-results">${escapeHtml(t('Download results'))}</button><button class="button button-primary" type="button" data-action="download-pdf" ${state.pdfExporting ? 'disabled' : ''}>${escapeHtml(t('Download PDF'))}</button></div>${state.pdfError ? `<p class="field-error" role="alert">${escapeHtml(state.pdfError)}</p>` : ''}</div>
     ${contributeBlock(state)}
     ${stepNav({ step: 5, back: 4, backLabel: t('Edit your data'), action: null })}
   </section>`

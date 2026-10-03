@@ -3941,7 +3941,16 @@ def test_the_equivalence_explanation_does_not_overflow(browser, language, width)
     """Measured, not reasoned about - `test_horizontal_overflow.py`'s own rule.
     Checked with the disclosure open: the open body is the box `test_horizontal_
     overflow.py`'s own docstring warns an absolutely-positioned version of this
-    exact affordance once overflowed by about 27px at 320px."""
+    exact affordance once overflowed by about 27px at 320px.
+
+    **The panel IS absolutely positioned since #83, and that is why this test
+    matters more than it did, not less.** The 27px failure was a box sized by
+    its own content and hung off a 1.4rem icon; this one is pinned to both
+    inline edges of its containing block (`inset-inline: 0`), so its width is
+    that block's width and the admin panel's defect is unreachable by
+    construction rather than by a `max-inline-size` cap. Measured at 320px, the
+    panel's box is x=61 w=198 in a 320px viewport - the identical box the
+    in-flow block occupied."""
     context = browser.new_context(
         viewport={"width": width, "height": 900},
         locale=language,
@@ -4136,8 +4145,70 @@ READ_THE_TOKEN = """
 def _open_the_first_explanation(page):
     page.wait_for_selector(".equivalent-grid article")
     page.locator("details.equivalent-basis > summary").first.click()
-    page.wait_for_selector(".equivalent-basis__body")
+    #: `.first`, not the bare selector. All three panels are in the DOM at all
+    #: times - a closed `<details>` keeps its children - so `wait_for_selector`
+    #: on the class alone would be satisfied by whichever one Playwright picked.
+    #: It happens to pick the first, which is the one opened here, and it is
+    #: spelled out because the same line in a test that opened the THIRD `?`
+    #: would wait for the first and then measure a panel that is not rendered.
+    #: (Measured: `checkVisibility()` is false on a closed panel and Playwright's
+    #: own visibility check agrees, so this waits for a real open.)
+    page.locator(".equivalent-basis__body").first.wait_for(state="visible")
     return page.locator(".equivalent-basis__body").first
+
+
+#: The DARKEST pixel inside a locator's own box, decoded in the browser the way
+#: `PAINTED_PIXEL` decodes one. **An overlay needs this and an in-flow panel did
+#: not** (#83): in flow the panel had ONE backdrop, its own card, so one pixel
+#: described it; floating, its backdrop is whatever it hangs over and that
+#: changes down its own height - the Banana card, then the next card, then
+#: `#breakdown-section`. The ratio has to be taken against the worst of them.
+DARKEST_PIXEL = """
+([b64, inset]) => new Promise(resolve => {
+  const img = new Image()
+  img.onload = () => {
+    const canvas = document.createElement('canvas')
+    canvas.width = img.width
+    canvas.height = img.height
+    const context = canvas.getContext('2d')
+    context.drawImage(img, 0, 0)
+    const data = context.getImageData(0, 0, img.width, img.height).data
+    let worst = null, worstSum = Infinity
+    for (let y = inset; y < img.height - inset; y++) {
+      for (let x = inset; x < img.width - inset; x++) {
+        const i = (y * img.width + x) * 4
+        const sum = data[i] + data[i + 1] + data[i + 2]
+        if (sum < worstSum) { worstSum = sum; worst = [data[i], data[i + 1], data[i + 2], x, y] }
+      }
+    }
+    resolve(worst)
+  }
+  img.src = 'data:image/png;base64,' + b64
+})
+"""
+
+#: Past the 14px corner radius. Outside the rounded corner the panel paints
+#: nothing at all and the raw page shows through unfiltered, which is how a
+#: scan at 3px came back rgb(0, 49, 34) - a 72%-white ground floors every
+#: channel at 183, so that pixel could not have been ground, and reading it as
+#: a contrast failure would have been the wrong conclusion from a real number.
+GLASS_CORNER_INSET = 16
+
+
+def _darkest_ground(page, body):
+    """The darkest ground anywhere in the panel, with its own glyphs made
+    invisible so a letter cannot be mistaken for a backdrop."""
+    page.evaluate(
+        """() => { document.querySelectorAll('.equivalent-basis__body, .equivalent-basis__body *')
+             .forEach(node => { node.style.color = 'transparent' }) }"""
+    )
+    shot = base64.b64encode(body.screenshot()).decode()
+    found = page.evaluate(DARKEST_PIXEL, [shot, GLASS_CORNER_INSET])
+    page.evaluate(
+        """() => { document.querySelectorAll('.equivalent-basis__body, .equivalent-basis__body *')
+             .forEach(node => { node.style.color = '' }) }"""
+    )
+    return tuple(found[:3]), tuple(found[3:])
 
 
 @pytest.mark.browser
@@ -4162,6 +4233,19 @@ def test_the_open_explanation_is_a_translucent_light_layer(page_at, width):
     `(255, 253, 247)`: `saturate(1.4)` in the blur pulls the backdrop's own tint
     up, which is the whole reason this reads a pixel instead of compositing two
     `rgba()` values in Python.
+
+    **#83 moved the panel out of the card and the three assertions above still
+    hold, for a reason worth stating rather than relying on.** The panel is now
+    an overlay anchored below the `?`, and its top edge still overlaps its own
+    card — 13px of it at 1278px — so the pixel at (6, 6) is still glass over
+    Banana and still neither white nor darker than the card. What has changed is
+    that a pixel is no longer the whole story, so two measurements are added
+    below: the darkest ground anywhere in the panel, and the translucency
+    demonstrated by moving the backdrop rather than inferred from a pixel that
+    is not white. And what now says "above the card" first is the **elevation**,
+    which v1.83 deliberately kept out of the shared token because it was false
+    of a panel inside a card — `test_the_floating_explanation_paints_above_what_
+    it_covers` is where that is asserted.
     """
     page = page_at(_equivalence_response(
         source_note=_VEHICLE_SOURCE_NOTE, description=_VEHICLE_DESCRIPTION,
@@ -4224,6 +4308,58 @@ def test_the_open_explanation_is_a_translucent_light_layer(page_at, width):
             f"{width}px - under the 4.5:1 body text needs. A translucent panel's ratio is "
             f"decided by what it composites onto, not by what the stylesheet declares"
         )
+
+    #: ------------------------------------------------------------------ #83
+    #: **The WORST ground in the whole panel, not one pixel of it.** Floating,
+    #: the panel's backdrop changes down its own height, so the pixel above is
+    #: only the ground under the first `<dt>`. Measured, worst over the entire
+    #: panel: rgb(225, 233, 230) at 320px and rgb(227, 234, 232) at 1278px -
+    #: Kale 11.48:1 / 11.62:1 and `--muted` 5.61:1 / 5.67:1, where the single
+    #: pixel above reads 13.94:1 and 6.81:1. Both clear 4.5:1; `--muted` at
+    #: 320px is the floor and it is the figure to watch if anything dark is ever
+    #: drawn under this grid.
+    worst, where = _darkest_ground(page, body)
+    for name, colour in (("the figures", drawn["colour"]), ("the sentence", drawn["noteColour"])):
+        if colour is None:
+            continue
+        ratio = _contrast(_rgb(colour), worst)
+        assert ratio >= 4.5, (
+            f"{name} measure {ratio:.2f}:1 against the DARKEST ground anywhere in the panel, "
+            f"{worst} at pixel {where} of it, at {width}px. The panel floats over the cards "
+            f"below it and over #breakdown-section, so one sampled pixel does not bound it"
+        )
+
+    #: **Translucency DEMONSTRATED, not inferred from a pixel that is not white.**
+    #: The panel hangs below the grid at 1278px, where the page behind it is
+    #: white and a translucent white ground paints white honestly - so `!=
+    #: (255, 255, 255)` stops being evidence the moment the panel leaves the
+    #: card, and it holds above only because the panel's top 13px still overlaps
+    #: its own Banana card. What is asserted here instead is the inverse of the
+    #: fallback test next door: change what is behind the panel and the painted
+    #: pixel MOVES. An opaque ground would not.
+    #:
+    #: **This one is REDUNDANT today and is kept as the statement rather than as
+    #: the guard, which is the honest description of it.** Mutation-tested: the
+    #: ground taken to `rgba(255, 255, 255, 0.995)` - translucent enough to keep
+    #: the alpha check above happy, opaque enough that swapping the backdrop for
+    #: Beetroot moves no pixel - is killed by `!= (255, 255, 255)` three lines up
+    #: before this is reached, because the panel's top pixel is still over Banana.
+    #: There is no alpha that passes that one and fails this one. It earns its
+    #: place the day the panel stops overlapping its own card, which is one
+    #: `top` value away.
+    page.evaluate(
+        """() => {
+             document.querySelectorAll('.equivalent-grid article').forEach(card => {
+               card.style.background = '#87005a' })
+             document.querySelector('.equivalent-grid').style.background = '#87005a'
+           }"""
+    )
+    on_beetroot = _painted(page, body, 6, 6)
+    assert on_beetroot != ground, (
+        f"the panel paints {ground} over the card and {on_beetroot} over a Beetroot one at "
+        f"{width}px: nothing of the backdrop reaches through, so the glass is doing nothing "
+        f"and the declared alpha is decoration"
+    )
 
 
 @pytest.mark.browser
@@ -4419,6 +4555,24 @@ def test_the_glass_is_a_containing_block_for_nothing_positioned(page_at):
     rather than a descendant of one, which is why the nav is measured by
     `test_results_floating_nav_browser.py` and only its contents are asked about
     here.
+
+    **#83 CHANGED THE DIRECTION THIS RULE WOULD BITE FROM, AND IT IS RECORDED
+    HERE RATHER THAN DISCOVERED LATER.** The equivalence panel is now
+    `position: absolute` itself, which puts it in the nav panel's position — a
+    consumer, not a descendant of one — so this test is unmoved by that. What is
+    new is that the panel is a POSITIONED DESCENDANT of
+    `.equivalent-grid article`. The card is not on the token's consumer list, so
+    rule 11 does not bite today. **The day it joins, this test fails naming this
+    panel**, and that is the correct outcome: a glass card would become the
+    containing block for the overlay hanging out of it, and the panel's
+    `top: 100%` would resolve against the glass instead of against the `?`.
+    #138's and #142's step cards are the plausible next additions, and #83's own
+    title asks about this very card's colour — so it is a live hazard and not a
+    theoretical one. The containing block is `.equivalent-basis` rather than the
+    card for an unrelated reason (the disclosure's padding box is already the
+    card's content width and its block end is where the `?` ends), and choosing
+    the card instead would not have avoided this: the panel is the card's
+    descendant either way.
     """
     page = page_at(_equivalence_response(
         source_note=_VEHICLE_SOURCE_NOTE, description=_VEHICLE_DESCRIPTION,
@@ -4453,27 +4607,45 @@ def test_the_glass_is_a_containing_block_for_nothing_positioned(page_at):
     )
 
 
-@pytest.mark.browser
-@pytest.mark.parametrize("width", GLASS_WIDTHS)
-def test_opening_the_explanation_leaves_its_own_card_where_it_was(page_at, width):
-    """**Opening must not shift the card layout under the reader's eye** (#143).
+# ------------------------------- the panel becomes a floating platform (#83)
+#
+# **#83 is titled "Change the Equivalent colours" and that is not what it is
+# about.** The owner carries the client's position from the 17:09 meeting:
+#
+#     客户那边对于颜色没有意见，主要是看着都觉得暖黄色里套个白框再把整个卡片拉长
+#     有点不太美观。
+#     *No objection to the colour. What everyone finds unattractive is a white
+#     box inside the warm yellow, and the whole card being stretched.*
+#
+# So the Banana stays, and the two complaints are composition: the panel was
+# INSIDE the card, and opening it GREW the card. The second has an exact cause
+# that v1.83 measured and deliberately did not assert against — the panel was in
+# flow, so it grew its card and its grid row. v1.83's figures, with three cards
+# whose labels run one / two / four lines, opening the first:
+#
+#     1278px   the opened card's own "?"      1960 -> 1840
+#              its two row-mates' "?"         1960 -> 2048
+#      320px   the card below it              2811 -> 3067
+#
+# The panel is now an absolutely-positioned overlay anchored to its own
+# `<details>`, so all six of those numbers hold still. **The assertion below is
+# the RELATION — nothing moves — and not the pixel values**, for contract v1.78's
+# reason: a pixel constant is a measurement with an expiry date, and one of
+# v1.78's two broke the day a sixth metric made a section taller.
 
-    What the restyle owes is that it moved no box: the panel keeps the margin,
-    the padding, the 1px hairline and the in-flow block it already had, and only
-    the paint changed. So the opened card's own top is unchanged, the panel stays
-    inside that card's box, and a card sharing the opened card's grid row keeps
-    its top too.
+#: 320 and 390 are the two the overflow gate measures at and the two where the
+#: grid is a single column, which is the hard case for an overlay: the card is
+#: nearly the viewport's width and there is nowhere sideways to go. 1278 is the
+#: three-column grid. The decision taken was to overlay at ALL of them rather
+#: than stay in flow below the breakpoint, because the stretch is worst exactly
+#: where staying in flow would have left it: +256px of card displacement and
+#: +257px below the grid at 320px, against +88px at 1278px.
+FLOATING_WIDTHS = (320, 390, 1278)
 
-    **Two movements are real, pre-existing, and deliberately not asserted
-    against.** Measured on three cards: at 1278 the three sit in one grid row, so
-    opening the first grows the row and the auto margin that pushed every `?` to
-    its card's foot gives up its slack — the opened card's own summary rises
-    1960 → 1840 and its two neighbours' fall 1960 → 2048. At 320 the grid is one
-    column and the cards below the opened one move down, 2811 → 3067. Both are
-    what an in-flow `<details>` in a stretch-aligned grid row does; neither is
-    the paint, and a test that forbade them would be a test against the
-    disclosure existing.
-    """
+
+def _three_cards_of_different_heights():
+    """Three equivalences whose LABELS differ in length, so the cards differ in
+    height and the row has slack for an auto margin to give up."""
     response = _equivalence_response(
         source_note=_VEHICLE_SOURCE_NOTE, description=_VEHICLE_DESCRIPTION,
     )
@@ -4486,47 +4658,539 @@ def test_opening_the_explanation_leaves_its_own_card_where_it_was(page_at, width
              label="A deliberately long label that wraps onto several lines so that this "
                    "card is taller than both of the others beside it in the same row"),
     ]
-    page = page_at(response, width=width)
-    _submit_two_entries(page)
-    page.wait_for_selector(".equivalent-grid article")
+    return response
 
-    geometry = """
-    () => [...document.querySelectorAll('.equivalent-grid article')].map(card => {
+
+#: Everything the opening of one panel could move, in one read: every card's own
+#: box, every "?"'s position, the grid, the first element BELOW the grid and the
+#: document's own height. The last two are what a reader notices — the complaint
+#: is that the page jumped, not that a box grew.
+STRETCH_GEOMETRY = """
+() => {
+  const grid = document.querySelector('.equivalent-grid')
+  const below = document.querySelector('#breakdown-section')
+  return {
+    cards: [...document.querySelectorAll('.equivalent-grid article')].map(card => {
       const box = card.getBoundingClientRect()
-      const body = card.querySelector('.equivalent-basis__body')
+      const summary = card.querySelector('details.equivalent-basis > summary')
       return {
         top: Math.round(box.top + window.scrollY),
         bottom: Math.round(box.bottom + window.scrollY),
-        bodyBottom: body
-          ? Math.round(body.getBoundingClientRect().bottom + window.scrollY) : null,
-        bodyPosition: body ? getComputedStyle(body).position : null,
+        summaryTop: summary
+          ? Math.round(summary.getBoundingClientRect().top + window.scrollY) : null,
       }
-    })
-    """
-    before = page.evaluate(geometry)
-    assert len(before) == 3, before
-    _open_the_first_explanation(page)
-    after = page.evaluate(geometry)
+    }),
+    gridBottom: Math.round(grid.getBoundingClientRect().bottom + window.scrollY),
+    belowTop: below
+      ? Math.round(below.getBoundingClientRect().top + window.scrollY) : null,
+    docHeight: Math.round(document.documentElement.scrollHeight),
+  }
+}
+"""
 
-    assert after[0]["top"] == before[0]["top"], (
-        f"opening the explanation moved its own card's top from {before[0]['top']} to "
-        f"{after[0]['top']} at {width}px"
+
+@pytest.mark.browser
+@pytest.mark.parametrize("width", FLOATING_WIDTHS)
+def test_opening_the_explanation_moves_nothing(page_at, width):
+    """**The acceptance test for #83, and it is a relation rather than six
+    numbers.**
+
+    With the panel floating, opening the first card's `?` must leave every card
+    where it was, every other card's `?` where it was, the grid's own foot where
+    it was, the first section below the grid where it was, and the document the
+    height it was. Each of those moved before (the figures are in this block's
+    header), and each of them is what "the whole card stretched" means to the
+    person who said it.
+
+    **Not asserted as pixels.** v1.78 replaced two hard-coded pixel heights for
+    exactly this reason, and one of them had already broken when a sixth metric
+    made a section taller. What is asserted is `after == before` — which is
+    stronger than any pixel constant, because it cannot be satisfied by a
+    coincidence and cannot expire.
+
+    **Including the card whose panel was opened.** v1.83 could only assert that
+    card's `top`, because its `bottom` necessarily grew. It no longer does, which
+    is the whole of the change.
+    """
+    page = page_at(_three_cards_of_different_heights(), width=width)
+    _submit_two_entries(page)
+    page.wait_for_selector(".equivalent-grid article")
+
+    before = page.evaluate(STRETCH_GEOMETRY)
+    assert len(before["cards"]) == 3, before
+    assert before["belowTop"] is not None, (
+        "there is no #breakdown-section below the grid, so the one measurement a reader "
+        "would actually notice is not being taken"
     )
-    assert after[0]["bodyPosition"] == "static", (
-        f"the open panel is {after[0]['bodyPosition']} at {width}px. An out-of-flow panel is "
-        f"how the admin panel's help marker once overflowed a 320px viewport by 27px"
-    )
-    assert after[0]["bodyBottom"] is not None
-    assert after[0]["bodyBottom"] <= after[0]["bottom"] + 1, (
-        f"the open panel ends at {after[0]['bodyBottom']} and its card at "
-        f"{after[0]['bottom']} at {width}px: it is hanging out of the card it belongs to"
-    )
-    row = [index for index, card in enumerate(before) if card["top"] == before[0]["top"]]
-    for index in row:
-        assert after[index]["top"] == before[index]["top"], (
-            f"card {index} shares the opened card's grid row and its top moved from "
-            f"{before[index]['top']} to {after[index]['top']} at {width}px"
+    _open_the_first_explanation(page)
+    after = page.evaluate(STRETCH_GEOMETRY)
+
+    for index, (was, now) in enumerate(zip(before["cards"], after["cards"])):
+        assert now == was, (
+            f"opening the first explanation moved card {index} at {width}px: {was} -> "
+            f"{now}. The panel is in flow again, so it is growing its card and its row"
         )
+    for name in ("gridBottom", "belowTop", "docHeight"):
+        assert after[name] == before[name], (
+            f"opening the first explanation moved {name} at {width}px: "
+            f"{before[name]} -> {after[name]}. Nothing below the grid may move"
+        )
+
+    #: And it really is out of flow, read off the element rather than inferred
+    #: from the fact that nothing moved — an empty panel would also move nothing.
+    shape = page.evaluate(
+        """() => {
+             const body = document.querySelector('.equivalent-basis__body')
+             const box = body.getBoundingClientRect()
+             const card = body.closest('article').getBoundingClientRect()
+             return {
+               position: getComputedStyle(body).position,
+               height: Math.round(box.height),
+               hangsBelowTheCard: Math.round(box.bottom - card.bottom),
+             }
+           }"""
+    )
+    assert shape["position"] == "absolute", (
+        f"the open panel is {shape['position']} at {width}px, so it is still in flow and "
+        f"the six measurements above passed for some other reason"
+    )
+    assert shape["height"] > 40, (
+        f"the open panel measures {shape['height']}px tall at {width}px - nothing moved "
+        f"because there is nothing in it"
+    )
+    assert shape["hangsBelowTheCard"] > 0, (
+        f"the open panel ends {-shape['hangsBelowTheCard']}px above its own card's foot at "
+        f"{width}px, so it fits inside the card and this proves nothing about an overlay"
+    )
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("width", FLOATING_WIDTHS)
+def test_the_floating_explanation_is_clipped_by_nothing_above_it(page_at, width):
+    """**An overlay clipped by its own card is worse than an in-flow panel.**
+
+    So every ancestor from the panel to `<html>` is asked for the four properties
+    that would clip or re-anchor it — `overflow`, `contain`, `clip-path` and
+    `transform` — rather than the two that were in mind when it was written.
+    Measured on the running stack: every ancestor is `visible` / `none` / `none` /
+    `none`, and the grid in particular declares no containment of its own.
+
+    **The panel's own height is checked against its content**, because a clip
+    does not change `getBoundingClientRect()` on the clipped box — it changes
+    what is painted. `scrollHeight` of the nearest clipping ancestor would be the
+    other half, and the cheaper equivalent used here is that the panel's box
+    holds its own `<dl>` and `<p>` with nothing hanging out of it.
+    """
+    page = page_at(_three_cards_of_different_heights(), width=width)
+    _submit_two_entries(page)
+    _open_the_first_explanation(page)
+
+    chain = page.evaluate(
+        """() => {
+             const out = []
+             let node = document.querySelector('.equivalent-basis__body').parentElement
+             while (node) {
+               const s = getComputedStyle(node)
+               out.push({
+                 tag: node.tagName.toLowerCase()
+                      + (node.className ? '.' + String(node.className).trim().split(/\\s+/).join('.') : ''),
+                 overflowX: s.overflowX, overflowY: s.overflowY,
+                 contain: s.contain, clipPath: s.clipPath, transform: s.transform,
+               })
+               node = node.parentElement
+             }
+             return out
+           }"""
+    )
+    assert len(chain) >= 6, (
+        f"only {len(chain)} ancestors were walked at {width}px, so the panel is not where "
+        f"this test thinks it is: {chain}"
+    )
+    offenders = [
+        row for row in chain
+        if row["overflowX"] != "visible" or row["overflowY"] != "visible"
+        or row["contain"] != "none" or row["clipPath"] != "none" or row["transform"] != "none"
+    ]
+    assert offenders == [], (
+        f"an ancestor of the open panel clips or re-anchors it at {width}px: {offenders}. "
+        f"An overflow other than visible clips an overlay, `contain` does both, and a "
+        f"transform makes that ancestor the containing block instead of the disclosure"
+    )
+
+    held = page.evaluate(
+        """() => {
+             const body = document.querySelector('.equivalent-basis__body')
+             const box = body.getBoundingClientRect()
+             const parts = [...body.children].map(n => n.getBoundingClientRect())
+             return {
+               height: Math.round(box.height),
+               contentBottom: Math.round(Math.max(...parts.map(r => r.bottom))),
+               bottom: Math.round(box.bottom),
+               overflowing: Math.round(body.scrollHeight - body.clientHeight),
+             }
+           }"""
+    )
+    assert held["contentBottom"] <= held["bottom"] + 1, (
+        f"the panel's content ends at {held['contentBottom']} and its box at "
+        f"{held['bottom']} at {width}px: the panel is cutting its own content off"
+    )
+    assert held["overflowing"] <= 1, (
+        f"the panel scrolls its own content by {held['overflowing']}px at {width}px"
+    )
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("width", FLOATING_WIDTHS)
+def test_the_floating_explanation_paints_above_what_it_covers(page_at, width):
+    """**`z-index: 1` on the panel is load-bearing, and reasoning from the
+    desktop case would have missed it.**
+
+    `position: relative` on `.equivalent-basis` promotes all three cards'
+    disclosures into the positioned paint layer. The open panel and the other
+    cards' disclosures are then all at effective level 0, where TREE ORDER
+    decides — so a card later in the document painted its own `?` on top of an
+    earlier card's open panel. Measured with `elementsFromPoint` at 320px and
+    390px: topmost was `summary` with the rule dropped and
+    `div.equivalent-basis__body` with it in force. At 1278px the three cards are
+    one row, the panel hangs over `#breakdown-section` whose content is not
+    positioned, and it wins there either way.
+
+    **1 is the smallest number that does it**, and the stylesheet's own stack
+    was checked rather than guessed: `.allocation-summary` 2,
+    `.result-explanation__body` 3, `.step-nav` 3, `.term > .tip` 5,
+    `.results-floating-nav` 30, `.site-drawer` 40, `.skip-link` 100, both
+    dialogs 1000. Every one is an overlay that must stay above this panel or a
+    surface it cannot reach.
+
+    **The occlusion is deliberate and is the measured cost of the decision.** An
+    open panel covers the next card's `?` at the single-column widths, the way
+    any menu covers what is under it; the `?` is behind `blur(14px)` so it is not
+    inviting a press, and one click anywhere outside dismisses the panel. The
+    alternatives were measured and rejected: `pointer-events: none` would make
+    the figures unselectable, and lifting the summaries above the panel would
+    float a stray `?` disc over the panel's own right-aligned values.
+    """
+    page = page_at(_three_cards_of_different_heights(), width=width)
+    _submit_two_entries(page)
+    _open_the_first_explanation(page)
+
+    drawn = page.evaluate(
+        """() => {
+             const body = document.querySelector('.equivalent-basis__body')
+             const panel = body.getBoundingClientRect()
+             const style = getComputedStyle(body)
+             const covered = []
+             for (const s of document.querySelectorAll('details.equivalent-basis > summary')) {
+               const b = s.getBoundingClientRect()
+               const x = b.left + b.width / 2, y = b.top + b.height / 2
+               if (x < panel.left || x > panel.right || y < panel.top || y > panel.bottom) continue
+               if (s.closest('details').open) continue
+               const top = document.elementsFromPoint(x, y)[0]
+               covered.push(top.tagName.toLowerCase()
+                 + (top.className ? '.' + String(top.className).trim().split(/\\s+/).join('.') : ''))
+             }
+             return {zIndex: style.zIndex, shadow: style.boxShadow, covered}
+           }"""
+    )
+    assert drawn["zIndex"] != "auto", (
+        "the panel declares no z-index. Every card's disclosure is position: relative, so "
+        "a later card's `?` paints over an earlier card's open panel at level 0 and tree "
+        "order is the whole of the difference"
+    )
+    for topmost in drawn["covered"]:
+        assert topmost == "div.equivalent-basis__body", (
+            f"something is painted over the open panel at {width}px: the topmost element at "
+            f"a covered `?` is {topmost}. z-index is what keeps the overlay on top"
+        )
+    #: The elevation, which is what says "over the page" now that it is. v1.83
+    #: kept this value OUT of the shared glass token with the reason written
+    #: down - "that shadow says 'over the page', which is true of an overlay and
+    #: false of a panel inside a card" - and #83 moves this panel into the first
+    #: of those two cases. Compared against the nav panel's own value read off
+    #: the live CSSOM rather than retyped, because reusing it is the point.
+    nav_shadow = page.evaluate(
+        """() => {
+             for (const sheet of document.styleSheets) {
+               let rules
+               try { rules = sheet.cssRules } catch (e) { continue }
+               for (const rule of rules) {
+                 if (rule.type === CSSRule.STYLE_RULE
+                     && rule.selectorText === '.results-floating-nav__panel'
+                     && rule.style.boxShadow) return rule.style.boxShadow
+               }
+             }
+             return null
+           }"""
+    )
+    assert nav_shadow, "the floating nav panel declares no box-shadow to be compared against"
+    assert drawn["shadow"] not in ("none", ""), (
+        f"the floating panel has no elevation at {width}px. A translucent ground over the "
+        f"white page below the grid paints near-white, and with no shadow there is nothing "
+        f"left saying it is above anything"
+    )
+    assert _rgb(nav_shadow) == _rgb(drawn["shadow"]), (
+        f"the panel's elevation {drawn['shadow']} is not the floating nav's {nav_shadow}: "
+        f"these are now the same kind of object and a second shadow is the second copy "
+        f"the glass token exists instead of"
+    )
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("width", (320, 1278))
+def test_only_one_explanation_is_open_at_a_time(page_at, width):
+    """**Three cards, three panels, and only one open — a decision, with a
+    measurement behind it.**
+
+    At 320px the first card's open panel is about 250px tall over a 97px card
+    and the next card starts 14px below it, so two open panels put translucent
+    glass over translucent glass and the ground every contrast figure on this
+    surface was measured against stops being the one that is there.
+
+    **Asserted through the pointer AND the keyboard**, because they are different
+    routes to the same `open`: a `<summary>` is activated by Enter and by Space
+    as well as by a press, and all three dispatch a trusted `click` that the one
+    delegated listener sees. The third card is the one pressed, at both widths,
+    because at 320px the second card's `?` is underneath the first card's open
+    panel — which is this overlay's own doing and is asserted next door.
+    """
+    page = page_at(_three_cards_of_different_heights(), width=width)
+    _submit_two_entries(page)
+    page.wait_for_selector(".equivalent-grid article")
+    summaries = page.locator("details.equivalent-basis > summary")
+    open_state = "() => [...document.querySelectorAll('details.equivalent-basis')].map(d => d.open)"
+
+    summaries.nth(0).click()
+    page.locator(".equivalent-basis__body").nth(0).wait_for(state="visible")
+    assert page.evaluate(open_state) == [True, False, False], page.evaluate(open_state)
+
+    summaries.nth(2).click()
+    page.locator(".equivalent-basis__body").nth(2).wait_for(state="visible")
+    assert page.evaluate(open_state) == [False, False, True], (
+        f"pressing the third `?` left more than one panel open at {width}px: "
+        f"{page.evaluate(open_state)}. Two open overlays stack glass on glass"
+    )
+
+    #: From the keyboard, which is the route a native <details> is kept for.
+    summaries.nth(0).focus()
+    page.keyboard.press("Enter")
+    page.locator(".equivalent-basis__body").nth(0).wait_for(state="visible")
+    assert page.evaluate(open_state) == [True, False, False], (
+        f"Enter on the first `?` did not close the third's panel at {width}px: "
+        f"{page.evaluate(open_state)}"
+    )
+    summaries.nth(2).focus()
+    page.keyboard.press("Space")
+    page.locator(".equivalent-basis__body").nth(2).wait_for(state="visible")
+    assert page.evaluate(open_state) == [False, False, True], (
+        f"Space on the third `?` did not close the first's panel at {width}px: "
+        f"{page.evaluate(open_state)}"
+    )
+
+
+@pytest.mark.browser
+def test_a_click_away_closes_the_explanation_and_a_click_in_it_does_not(page_at):
+    """**An overlay over the text closes when the reader's attention goes
+    elsewhere**, and #150 (v1.88) built this for the floating nav two days
+    earlier. What is reused is the reasoning and the two guards, not the code —
+    the nav's own path closes a nav.
+
+    * delegated on `document`, not on `main`, because the click may land in the
+      header, the language chooser or the footer;
+    * **a click INSIDE the open panel is not a dismissal.** The panel holds three
+      figures a reader may want to select, and `closest('details.equivalent-
+      basis')` on a `<dt>` finds the panel's own disclosure.
+
+    The dismissal writes `details.open` and nothing else. A `setState` would
+    rebuild `main.innerHTML`, and `main.js` restores focus **by `id`** — a
+    `<summary>` has none, so `document.getElementById('')` is `null` and
+    `main.focus()` wins, which is how the nav's first version threw a reader to
+    the top of the page.
+    """
+    page = page_at(_three_cards_of_different_heights(), width=1278)
+    _submit_two_entries(page)
+    page.wait_for_selector(".equivalent-grid article")
+    is_open = "() => document.querySelector('details.equivalent-basis').open"
+
+    _open_the_first_explanation(page)
+    assert page.evaluate(is_open) is True
+
+    page.locator(".equivalent-basis__body dt").first.click()
+    page.wait_for_timeout(120)
+    assert page.evaluate(is_open) is True, (
+        "a click on a `<dt>` INSIDE the open panel dismissed it, so a reader cannot select "
+        "the figures the panel exists to show them"
+    )
+
+    #: **A mark a render would wipe, rather than a look at where focus went.**
+    #: Tried the focus way first and it measures nothing: an `<h2>` is not
+    #: focusable, so clicking one moves focus to the nearest focusable ancestor,
+    #: which is `<main id="main-content" tabindex="-1">` - the same
+    #: `activeElement` a `setState` would have produced, for an unrelated reason.
+    #: `setState` replaces `main.innerHTML` wholesale, so an attribute written
+    #: onto a node inside `<main>` cannot survive one.
+    page.evaluate("() => { document.querySelector('.equivalent-grid').dataset.kai83 = 'here' }")
+    page.locator("#tangible-equivalents h2").first.click()
+    page.wait_for_timeout(120)
+    assert page.evaluate(is_open) is False, (
+        "a click on the section's own heading did not dismiss the overlay. It covers the "
+        "cards below it and the section beneath the grid, so it has to go when the reader "
+        "looks away"
+    )
+    assert page.evaluate(
+        "() => document.querySelector('.equivalent-grid').dataset.kai83 || 'gone'"
+    ) == "here", (
+        "the dismissal re-rendered <main>: the mark written onto the grid is gone. "
+        "`main.js` restores focus by `id` after a render and a `<summary>` has none, so a "
+        "reader who dismissed this panel would be thrown to the top of the page"
+    )
+
+
+@pytest.mark.browser
+def test_escape_closes_the_explanation_and_returns_focus_to_its_question_mark(page_at):
+    """**Escape, so the keyboard has the way out the pointer now has** — v1.88
+    item 4's rule, applied to the second overlay on this page.
+
+    Focus returns to the `<summary>` that opened it, and by the element rather
+    than by `id`: that is what a disclosure rendered three-to-a-page can offer,
+    and it works because nothing re-renders. The nav's handle carries an `id`
+    for precisely the opposite reason, and the nav's two phases — opened by
+    press, opened by focus — have no counterpart here: a `<details>` opens on
+    activation of its summary and on nothing else.
+
+    **Asserted from two focus positions.** With focus still on the summary it
+    would pass whatever the handler did about focus, so the second half presses
+    Escape with focus moved away, which is the case the line exists for.
+    """
+    page = page_at(_three_cards_of_different_heights(), width=1278)
+    _submit_two_entries(page)
+    page.wait_for_selector(".equivalent-grid article")
+    state = """
+    () => {
+      const all = [...document.querySelectorAll('details.equivalent-basis > summary')]
+      return {open: all.map(s => s.closest('details').open),
+              focused: all.indexOf(document.activeElement),
+              tag: document.activeElement.tagName.toLowerCase()}
+    }
+    """
+
+    summaries = page.locator("details.equivalent-basis > summary")
+    summaries.nth(1).click()
+    page.locator(".equivalent-basis__body").nth(1).wait_for(state="visible")
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(100)
+    assert page.evaluate(state) == {"open": [False, False, False], "focused": 1,
+                                    "tag": "summary"}, page.evaluate(state)
+
+    #: The half that cannot pass by accident: focus is elsewhere when Escape is
+    #: pressed, so the summary is reached only because the handler put it there.
+    summaries.nth(1).focus()
+    page.keyboard.press("Enter")
+    page.locator(".equivalent-basis__body").nth(1).wait_for(state="visible")
+    page.evaluate("() => document.querySelector('main').focus()")
+    assert page.evaluate(state)["focused"] == -1
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(100)
+    after = page.evaluate(state)
+    assert after["open"] == [False, False, False], (
+        f"Escape from outside the disclosure did not close the overlay: {after}"
+    )
+    assert after["focused"] == 1, (
+        f"Escape closed the overlay but left focus at {after} instead of on the `?` that "
+        f"opened it - a reader who presses Escape has nowhere to carry on from"
+    )
+
+
+@pytest.mark.browser
+def test_the_closed_panel_is_out_of_the_tab_order_and_the_open_one_adds_nothing(page_at):
+    """**The nav needed a stylesheet rule for this and the disclosure does not**,
+    which is the whole reason #83 keeps `<details>`/`<summary>` rather than a
+    button and a class toggle.
+
+    v1.83's stylesheet records that `visibility: hidden` is what takes the nav's
+    links out of the tab order and that `:focus-within` is the only thing making
+    its closed panel keyboard-reachable. A closed `<details>` does not render its
+    non-summary children at all — measured here as `checkVisibility()` false
+    while the box still has a size, which is the thing that would otherwise be
+    believed the wrong way round — and the panel holds no focusable descendant
+    open or closed. So the summary is the one tab stop in both states.
+    """
+    page = page_at(_three_cards_of_different_heights(), width=1278)
+    _submit_two_entries(page)
+    page.wait_for_selector(".equivalent-grid article")
+
+    closed = page.evaluate(
+        """() => {
+             const body = document.querySelector('.equivalent-basis__body')
+             return {rendered: body.checkVisibility(),
+                     focusable: [...body.querySelectorAll('*')]
+                       .filter(n => n.tabIndex >= 0).map(n => n.tagName.toLowerCase())}
+           }"""
+    )
+    assert closed["rendered"] is False, (
+        "the CLOSED panel is still rendered. It is position: absolute inside a closed "
+        "<details>, and if the UA stopped hiding it, three glass platforms would be "
+        "painted over the grid at all times"
+    )
+    assert closed["focusable"] == [], closed
+
+    _open_the_first_explanation(page)
+    summaries = page.locator("details.equivalent-basis > summary")
+    summaries.nth(0).focus()
+    stops = []
+    for _ in range(2):
+        page.keyboard.press("Tab")
+        stops.append(page.evaluate(
+            """() => {
+                 const all = [...document.querySelectorAll('details.equivalent-basis > summary')]
+                 const index = all.indexOf(document.activeElement)
+                 return index >= 0 ? `summary#${index}` : document.activeElement.tagName.toLowerCase()
+               }"""))
+    assert stops == ["summary#1", "summary#2"], (
+        f"tabbing out of the OPEN first `?` reached {stops} rather than the next two `?`s: "
+        f"the open panel has put something of its own into the tab order"
+    )
+
+
+@pytest.mark.browser
+def test_opening_an_equivalence_panel_dismisses_the_floating_nav(page_at):
+    """**Two overlays on one page, and they cannot be open at once** — which is
+    why #83 installs its own pair of listeners rather than ordering a handler
+    against `bindNavGestures`'s.
+
+    Opening a `?` is a trusted click in the page's content, which is outside the
+    nav, and v1.88's own click-away dismisses the nav on exactly that. Measured
+    rather than argued, because the alternative design — one ordered Escape
+    handler that closes the topmost overlay — is only unnecessary if this holds.
+    """
+    page = page_at(_three_cards_of_different_heights(), width=1278)
+    _submit_two_entries(page)
+    page.wait_for_selector(".equivalent-grid article")
+
+    page.locator(".results-floating-nav__handle").click()
+    page.wait_for_timeout(260)
+    nav_state = """
+    () => {
+      const nav = document.querySelector('.results-floating-nav')
+      return {
+        open: nav.getAttribute('data-open'),
+        visibility: getComputedStyle(nav.querySelector('.results-floating-nav__panel')).visibility,
+        expanded: nav.querySelector('.results-floating-nav__handle').getAttribute('aria-expanded'),
+        panelOpen: document.querySelector('details.equivalent-basis').open,
+      }
+    }
+    """
+    assert page.evaluate(nav_state) == {"open": "true", "visibility": "visible",
+                                        "expanded": "true", "panelOpen": False}, \
+        page.evaluate(nav_state)
+
+    _open_the_first_explanation(page)
+    page.wait_for_timeout(400)
+    after = page.evaluate(nav_state)
+    assert after == {"open": "false", "visibility": "hidden", "expanded": "false",
+                     "panelOpen": True}, (
+        f"the nav and an equivalence panel are both showing: {after}. Escape would then "
+        f"have to decide which of two overlays it closes, and nothing decides it"
+    )
 
 
 # ------------------------------------------------- the reporting period (v1.68)

@@ -295,7 +295,10 @@ def test_the_named_food_reaches_the_request_and_changes_the_figure(page, release
         page.wait_for_timeout(50)
     _continue(page)
 
-    page.wait_for_selector('[data-line-field="amount"]')
+    #: Step 4's cards fold since #142, through the same chrome and for the same
+    #: reason, so the same two lines apply there as on step 3 above.
+    page.wait_for_selector('[data-line-field="amount"]', state="attached")
+    expand_step_cards(page)
     first_row = page.evaluate(
         """() => {
           const byLeaf = {};
@@ -358,6 +361,15 @@ def test_an_empty_group_is_still_shown_beside_a_full_one(page, released):
     it has nothing listed, rather than dropped. Hiding it would leave a visitor
     who ticked two categories looking at one group with no way to tell which of
     their answers went missing or why.
+
+    **`state="attached"` and nothing opened.** Two ticked categories is two cards
+    since #138, and a shut card's body carries `hidden`, so the food checkboxes
+    are in the document and not visible -- which the default `state="visible"`
+    would wait out against a screen that is working correctly. The legends are
+    read off the `<fieldset>`s rather than out of the bodies, and they are
+    `.sr-only` either way, so nothing here needs a card open. That is also the
+    point: what this test is about is that both groups EXIST, and folding must
+    not be a way for one of them to stop existing.
     """
     full = _category_with_foods(released)
     empty = _category_without_foods(released)
@@ -365,7 +377,7 @@ def test_an_empty_group_is_still_shown_beside_a_full_one(page, released):
     _tick_category(page, full["code"])
     _tick_category(page, empty["code"])
     _continue(page)
-    page.wait_for_selector('input[name="food-item"]', timeout=5000)
+    page.wait_for_selector('input[name="food-item"]', state="attached", timeout=5000)
 
     legends = page.evaluate(
         "() => [...document.querySelectorAll('.item-group legend')].map(e => e.innerText.trim())"

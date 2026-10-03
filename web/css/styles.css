@@ -131,6 +131,64 @@ button:disabled { cursor: not-allowed; color: rgba(0, 50, 35, 0.56); background:
   border: 0;
 }
 
+/* ---------------------------------------------------------------------------------------
+   THE FROSTED-GLASS SURFACE, AS ONE TOKEN (#143)
+
+   One treatment, several consumers: a light translucent ground with Kale text, which is
+   the brand's light-ground/Kale-text pairing (CLAUDE.md). It was written once for the
+   results page's floating section nav; #143 asks for the same surface on the expanded
+   tangible-equivalence panel, and #138/#142's collapsible cards want it next. **A second
+   copy of the declarations is what this block exists instead of** — two copies of a
+   `backdrop-filter` plus its fallback drift, and the half that drifts is the fallback,
+   which nobody looks at.
+
+   **The support question is answered ONCE, here, rather than per consumer.** `--glass-
+   ground` is declared OPAQUE first and upgraded to the translucent value inside
+   `@supports`, so:
+     * every consumer, present and future, inherits the fallback by construction — there
+       is no second selector list in an `@supports not (...)` block to forget a consumer
+       from, which is the two-list defect this repository has been bitten by elsewhere;
+     * the fallback is **opaque, not merely lighter**. Without `backdrop-filter` a
+       translucent white is simply transparent, and the floating nav's links would be read
+       against whatever paragraph sits behind them;
+     * `(A or B)` keeps a browser that has only the prefixed spelling on the glass path —
+       Safari shipped `-webkit-backdrop-filter` alone for years, and treating that as
+       unsupported hands a working browser the fallback;
+     * a browser with no `@supports` at all gets the opaque ground, which the inverted
+       `@supports not (...)` spelling would not have given it.
+
+   **`backdrop-filter` creates a containing block, so this token is applied deliberately
+   and never broadly.** A consumer must own no positioned descendant: `position: absolute`
+   inside it would resolve against the glass instead of against whatever it was written
+   for, and a `sticky` or `fixed` descendant would be re-anchored outright. Step 3's term
+   tooltips (`.tip`, §7.3a) ARE `position: absolute` inside the card body, which is why
+   `.form-panel.step-card` is a deliberate attachment and not a sweep over `.form-panel`.
+
+   **What is NOT in the token**, so that a card is as welcome here as a floating menu: the
+   radius, the padding, and the drop shadow. `0 14px 36px` of elevation says "this is over
+   the page", which is true of the nav's overlay and false of a panel inside a card.
+
+   Consumers add their own selector to the list below. A consumer whose element already
+   carries a `background` from another rule needs enough specificity to beat it — hence
+   `.form-panel.step-card` rather than `.form-panel` when the step cards land.
+   --------------------------------------------------------------------------------------- */
+:root {
+  --glass-ground: var(--kai-white);
+  --glass-edge: rgba(0, 50, 35, 0.14);
+  --glass-blur: blur(14px) saturate(1.4);
+}
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root { --glass-ground: rgba(255, 255, 255, 0.72); }
+}
+.results-floating-nav__panel,
+.equivalent-basis__body {
+  color: var(--kai-kale);
+  border: 1px solid var(--glass-edge);
+  background: var(--glass-ground);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+}
+
 .site-header {
   background: var(--kai-white);
   border-bottom: 1px solid rgba(0, 50, 35, 0.1);
@@ -1060,14 +1118,38 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
   outline-offset: 2px;
 }
 .equivalent-basis[open] summary { background: var(--ink); color: #fff; }
+/* **The expanded panel is a light layer over the card, not a block dropped into
+   it** (#143, from the client's own words at the 1 October meeting: 展开之后太
+   难看). It was an opaque `#fff` rectangle inside a Banana-tinted card, which is
+   the heaviest thing either surface could have done — maximum contrast against
+   the one ground it sits on, drawn at the moment the reader asked a small
+   question. It now takes the shared glass token. Over the card's own `#fff7e2`
+   (Banana at 0.2 over white) the panel PAINTS `#fffdf5` — measured, not
+   composited: the arithmetic alone says `#fffdf7` and `saturate(1.4)` in the
+   blur pulls the card's tint up by the other two counts. So the card's colour
+   still reads through the panel and the panel still reads as above it.
+
+   **Three things about it are measured rather than assumed**, in
+   `tests/web/test_results_export.py`:
+     * the painted ground, from a screenshot pixel inside the panel's own
+       padding, with Kale at **13.9:1** on it and `--muted` (the sentence) at
+       **6.8:1** — a translucent panel is the standard way a contrast ratio stops
+       being what the stylesheet says it is;
+     * the fallback ground, by painting the card Beetroot underneath it: an
+       opaque ground does not move, a merely-lighter one does;
+     * that it is a containing block for nothing. The token creates one, and this
+       panel holds a `<dl>` and a `<p>` and must keep holding nothing positioned.
+
+   **The box is unchanged**, deliberately: same margin, same padding, same
+   radius, same in-flow block. #143 asks for the surface to be lighter and for
+   the card not to jump when it opens, and changing the geometry at the same time
+   as the paint is how one of those gets traded for the other. */
 .equivalent-basis__body {
   margin-block-start: 8px;
   max-inline-size: 100%;
   padding-block: 12px;
   padding-inline: 14px;
-  border: 1px solid rgba(0, 50, 35, 0.18);
   border-radius: 10px;
-  background: #fff;
   text-align: start;
   font-size: 0.85rem;
   line-height: 1.45;
@@ -1551,12 +1633,13 @@ tbody th { font-weight: 700; }
    ground with Kale text (CLAUDE.md), so every string in here is Kale and the
    reader's own section is Pea — also a light ground, also Kale text.
 
-   **The `@supports` fallback is not decoration.** Without `backdrop-filter`
-   the translucent white is simply transparent, and the links would be read
-   against whatever paragraph happened to be behind them, so the fallback has
-   to be OPAQUE rather than merely darker. `not (A or B)` covers the prefixed
-   spelling as well: Safari shipped only `-webkit-backdrop-filter` for years,
-   and treating that as unsupported would hand a working browser the fallback. */
+   **The surface itself, and its `@supports` fallback, are the shared token near
+   the top of this file** (`--glass-ground` / `--glass-blur` / `--glass-edge`),
+   which this selector is one of two consumers of at #143. The reasoning that
+   used to be written out here — why the fallback is opaque rather than merely
+   lighter, and why the prefixed spelling counts as support — is there, once.
+   What stays here is what belongs to a floating menu and not to a card: the
+   geometry, the radius and the elevation. */
 .results-floating-nav__panel {
   position: absolute;
   inset-inline-end: var(--results-floating-nav-handle-size);
@@ -1564,21 +1647,13 @@ tbody th { font-weight: 700; }
   inline-size: var(--results-floating-nav-panel-size);
   min-inline-size: 0;
   padding: 8px;
-  border: 1px solid rgba(0, 50, 35, 0.14);
   border-radius: 16px;
-  color: var(--kai-kale);
-  background: rgba(255, 255, 255, 0.72);
-  -webkit-backdrop-filter: blur(14px) saturate(1.4);
-  backdrop-filter: blur(14px) saturate(1.4);
   box-shadow: 0 14px 36px rgba(0, 50, 35, 0.18);
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
   translate: var(--results-floating-nav-panel-nudge, 8px) var(--results-floating-nav-panel-rise, -50%);
   transition: opacity 140ms ease, visibility 140ms ease, translate 140ms ease;
-}
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .results-floating-nav__panel { background: var(--kai-white); }
 }
 /* **Closed is the default, and only the docked regime above overrides it.**
    It used to be open wherever the nav was drawn at all — `:not([data-open="false"])`
@@ -1753,35 +1828,57 @@ tbody th { font-weight: 700; }
    panel leaves. A flex line wraps on the items' own widths before it shrinks them, so
    the select reaches its second line still `max-content` wide rather than clipped;
    `max-width: 100%` is the floor for a catalogue longer than any shipped today, where
-   the only remaining choice is to clip. */
+   the only remaining choice is to clip.
+
+   **`max-width: 100%` stopped being a hypothetical on 2026-10-03, and it is now what
+   this control relies on at 320px** (#74: one unit for the whole Improvement panel, so
+   every `unit_preset` container joins this select's options). The widest option is no
+   longer a translated word at all - it is a staff-typed container label printed verbatim
+   (§7.7.7), "23 L kerbside food scraps bin (full)", which measures **254px** of text and
+   therefore needs **300px** with this control's own 26px of padding and Chromium's 20px
+   of arrow. That is the same figure in all twenty catalogues, because staff text is not
+   translated, so Russian is no longer the worst case on this control - every language is.
+   It fits at 390px (312px available) and above and does not at 320px (242px), where
+   `max-width` is what keeps the control inside the panel instead of 58px outside it.
+
+   **A clip here is bounded and the full name stays reachable two ways**, which is what
+   makes it a last resort rather than the v1.82 defect returning: the native dropdown
+   draws each option at its own width rather than the closed control's, and the select
+   carries a `title` with the selected unit's full name (see `ImprovementScenario`). The
+   assertion that watches this is width-aware for the same reason - it requires the
+   control to be as wide as its longest option **or as wide as the panel leaves it**,
+   whichever is smaller, so "it clipped because there was no room" and "it clipped because
+   it took its width from a layout column" stay two different failures. */
 .improvement-mode-field { margin: 20px 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .improvement-mode-field label { margin: 0; }
 .improvement-mode-field select { width: max-content; max-width: 100%; }
 /* **The list column's own minimum has to cover what the row inside it actually needs,
-   not merely look plausible on its own.** The row's `:has()` floor below reserves 260px
-   for its control column alone; add the row's label column (120px min), the gap between
+   not merely look plausible on its own.** The row below reserves 230px for its control
+   column; add the row's label column (150px min), the gap between
    them (20px) and the row's own padding (`18px 20px`, so 40px horizontally - `box-sizing:
    border-box` counts it inside the row's width) and the row needs at least 440px to lay
    out without its own tracks being compressed below their stated minimums. The list
    column's old minimum (380px) was less than that by 60px, so at the first viewport
    wide enough for the editor's two-column layout - 700px measured - the row was
    compressed well past what its own CSS says it is entitled to,
-   and the select (the row's last, narrowest track) was what ran out of room first:
+   and the row's last, narrowest track was what ran out of room first:
    `.improvement-allocation-list`'s `overflow: hidden` then clipped it rather than
    showing an overflow nobody could scroll to. Not RTL-only - the clip is symmetric, off
-   whichever edge is the inline end.
+   whichever edge is the inline end. (The figures the 440px was first derived from were
+   the unit-mode row's own, `120 + 20 + 260`; #74 retired that second template and the
+   remaining one needs the identical 440px, `150 + 20 + 230`, so the budget is unchanged.)
 
    **Fixed by giving both of this grid's own columns a minimum that actually adds up.**
    At 700px this editor is given 608px total (measured, both directions, both English and
    German - the split is pixel-based, not text-based, so it does not move with the
    language); 144px (pie) + 440px (list) + 24px gap is exactly that, and the 440px is
    exactly the row's own 440px with nothing to spare - measured at 700px, the row is
-   440px wide and its tracks sit on their floors in both modes (`150px 230px` in
-   percentage mode, `120px 260px` in unit mode) with `scrollWidth == clientWidth`,
+   440px wide and its tracks sit on their floors (`150px 230px`) with
+   `scrollWidth == clientWidth`,
    which is the fit at its tightest rather than a fit with margin. The pie column
    does end up narrower at this one width than it was before this fix - there was never
    a way to give the row what it needs inside a fixed 608px budget without taking it from
-   somewhere, and the select is exactly what this round was told not to shave further.
+   somewhere, and the range was exactly what this round was told not to shave further.
    Above roughly 900px there is room for both columns past their minimums and the split
    returns to its usual proportions. */
 .improvement-editor { margin-top: 24px; display: grid; grid-template-columns: minmax(144px, 0.72fr) minmax(440px, 1.28fr); gap: 24px; align-items: start; }
@@ -1826,65 +1923,40 @@ tbody th { font-weight: 700; }
 .improvement-control input[type="range"] { width: 100%; accent-color: var(--kai-kale); }
 .percentage-input { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 7px; }
 .percentage-input input { min-width: 0; }
-/* Item ⑧'s per-row unit `<select>` (tonnes, or a staff-named container, alongside
-   kilograms) replaces the plain `%`/`kg` suffix in unit mode. Its text is a translated
-   word or a staff-typed container label, either of which can run well past one
-   character - German's own "Kilogramm" already does - so a row offering the choice
-   gets more room, and the choice among range / number / select is one flat split
-   rather than two grids nested inside one another.
+/* **The allocation row has one layout again, and that is #74 landing** (17 September 2026:
+   *use one consistent unit throughout the Improvement section*).
 
-   **`display: contents` on `.percentage-input`, only in unit mode.** Nesting a
-   nested `grid-template-columns` for the number+select pair inside `.improvement-control-unit`'s
-   own two columns split one width budget twice, and the second split always lost:
-   measured 28px for a box reading "0.00590" at a 700px viewport, where the ROW's own
-   two-column split (label | control) - unchanged by item ⑧ - already leaves `.improvement-control`
-   only ~230px, not the 320px this might suggest. `display: contents` removes `.percentage-input`
-   from layout entirely, so its two children become items of `.improvement-control-unit`'s
-   own grid directly - one budget, three tracks, sized together instead of in two
-   uncoordinated passes. Percentage mode is untouched: its own `.percentage-input` still
-   pairs a number box with a plain `%` span, in its own right.
+   Four rules stood here and all four are retired together, because all four existed to make
+   room for a `<select>` that is no longer in the row:
 
-   **`:has()` on the row is what recovers enough total width to make that budget workable
-   at every measured breakpoint.** `.improvement-allocation-row`'s label/control split
-   predates item ⑧ and was already tight for two columns (a number box and a fixed 108px
-   suffix); the same split for three left too little for all three even after flattening
-   the nested grid. Already used elsewhere in this file (`.main-content:has(.hero)`), so
-   this is the same tool, not a new dependency. */
-.improvement-allocation-row:has(.improvement-control-unit) { grid-template-columns: minmax(120px, 0.55fr) minmax(260px, 1.45fr); }
-/* Item ⑨: the range is the control a visitor actually drags; the select is a choice made
-   once and does not need to compete with it for room. The three tracks were `1fr / 100px /
-   170px` - the select's own upper bound (170px) wider than the box's, and the range's lower
-   bound (50px) low enough to leave it a stub once the other two claimed their own space, which
-   is what the client's screenshot showed ("23 L kerbside foo…" next to a squeezed thumb). The
-   range now carries a real minimum of its own and the select's own ceiling is lower than the
-   range's - the range still grows into whatever the row has left (`1fr`), the select does not
-   grow past a sensible width for a closed control, and a name too long for that width relies on
-   the select's own `title` (see `DestinationAllocationRow`), not on the track widening for it.
+     * `.improvement-allocation-row:has(.improvement-control-unit)` - a second label/control
+       split (`120/260` rather than `150/230`), to buy total width for a third track;
+     * `.improvement-control-unit` - that third track, `minmax(130px, 1fr) minmax(50px, 90px)
+       minmax(60px, 100px)`;
+     * `.improvement-control-unit .percentage-input { display: contents }` - flattening the
+       number+select pair into the row's own grid, because splitting one width budget twice
+       left 28px for a box reading "0.00590" at a 700px viewport;
+     * `.improvement-row-unit` - the select itself.
 
-   **The three minimums must sum to no more than the row's own `:has()` floor above (260px),
-   gaps included, or the row silently overflows its own `.improvement-allocation-list`
-   (`overflow: hidden`) the moment that floor is the width actually on offer - most notably
-   at the 700px seam where `.improvement-editor` first becomes two columns, not merely at a
-   comfortably wide desktop breakpoint.** A first pass here
-   used `140/55/80` - 291px including gaps, 31px over the 260px floor - which fit in English
-   only by coincidence of where the row happened to sit; in `dir="rtl"` the overflow was real
-   and clipped the select half off the left edge, invisibly, because clipped content raises no
-   scrollbar.
+   **Why none of it can be rescued rather than removed.** The whole sequence was an attempt
+   to fit a staff-typed container label (§7.7.7, printed verbatim) into a track a row can
+   afford. It cannot be done: "23 L kerbside food scraps bin (full)" measures 254px in this
+   font and the widest the third track ever got was 100px. Item ⑨ lowered the select's own
+   ceiling precisely so it would stop stealing room from the range, which left the name
+   clipped by design and reachable only through the select's `title` - and a clipped
+   container name beside a squeezed slider is the screenshot the client sent in the first
+   place. #74 is the same complaint with the only remedy that works: say the unit once,
+   above the cards, in a control that has the panel's full width to say it in
+   (`.improvement-mode-field` above), and give the row back to the two controls a visitor
+   actually manipulates.
 
-   **A track's growth past its own minimum is not "whatever's left goes to the `1fr` track
-   first" - grid fills every `minmax(min, <length>)` track up to its own fixed ceiling BEFORE
-   a `1fr` track gets anything at all** (the spec's own "Maximize Tracks" step runs before
-   "Expand Flexible Tracks"). A first pass at `110/55/65` with box/select ceilings of `90/130`
-   spent the tightest budget's entire few pixels of slack on the box and select, leaving the
-   range sitting at its bare minimum while the other two grew past theirs - the opposite of
-   the stated goal. Fixed by giving the range a minimum that is already the majority of the
-   260px floor on its own (130 of 244 available past gaps), so the outcome does not depend on
-   which track the grid algorithm happens to feed first, and by lowering the box's and
-   select's own ceilings (90/100, down from 90/130) so they stop growing sooner at wider
-   viewports too, leaving the surplus for the range rather than the select. */
-.improvement-control-unit { grid-template-columns: minmax(130px, 1fr) minmax(50px, 90px) minmax(60px, 100px); gap: 8px; }
-.improvement-control-unit .percentage-input { display: contents; }
-.improvement-row-unit { max-width: 100%; min-width: 0; font: inherit; }
+   `.improvement-control`'s own `minmax(90px, 1fr) 108px` is therefore the row's only
+   template, in both modes. The number box is better off for it: it had `minmax(50px, 90px)`
+   of the three-track budget and now has the whole 108px suffix column, with
+   `.percentage-input`'s `auto` track collapsing to nothing where there is no `%` to print.
+   The per-control statement of the unit that is left is each input's own `aria-label`
+   (see `DestinationAllocationRow`), which is text and is not clipped by anything. */
+
 .improvement-total { margin-top: 18px; padding: 16px 18px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 20px; border-radius: 12px; background: rgba(255, 255, 255, 0.8); }
 .improvement-total-mass { color: var(--muted); font-size: 0.9rem; }
 /* One food's editor, when the chain forked. A single-leaf panel renders no wrapper at
@@ -1954,15 +2026,14 @@ tbody th { font-weight: 700; }
 
 /* **A comfort margin, and the arithmetic says by how much.** What stood here said
    that at this width "the allocation row's own 400px minimum no longer fits after its
-   padding". It does fit, and by a wide margin. Both of the row's templates are exactly
-   400px at their floors - `150 + 20 + 230` in percentage mode, `120 + 20 + 260` in unit
-   mode, gap included - and those are `minmax()` minimums rather than preferences, so
+   padding". It does fit, and by a wide margin. The row's template is exactly 400px at
+   its floor - `150 + 20 + 230`, gap included - and those are `minmax()` minimums rather
+   than preferences, so
    the row needs a 400px content box, which is 440px of border box after its own 40px of
    horizontal padding, which is a 532px viewport after the panel's 26px either side and
    the page's 20px either side (`440 + 52 + 40`). Measured at 559px the panel hands the
    row 467px, 27px more than the 440px it needs, and the surplus shows in the tracks:
-   162.8 / 244.2 in percentage mode against floors of 150 / 230, and 120 / 287 in unit
-   mode against 120 / 260, with `scrollWidth == clientWidth` in both. It keeps
+   162.8 / 244.2 against floors of 150 / 230, with `scrollWidth == clientWidth`. It keeps
    fitting down to 532px, or to 547px with a classic 15px scrollbar drawn; and the
    clipping this rule exists to prevent - the tracks overflowing the row's own end
    padding, which `.improvement-allocation-list`'s `overflow: hidden` then cuts - does
@@ -1970,7 +2041,7 @@ tbody th { font-weight: 700; }
 
    So this breakpoint is chosen rather than derived. It clears the worst of those
    thresholds (547px, the one with a scrollbar) by 13px, and stacking early costs
-   nothing: a stacked row is the same label, range, value and unit at full width, which
+   nothing: a stacked row is the same label, range and value at full width, which
    is the trade against clipping the inline-end controls that the rule was written to
    make.
 
@@ -1983,10 +2054,8 @@ tbody th { font-weight: 700; }
    side, which is what `_STACKING_BREAKPOINT` and the 699/560/559/390 parametrisation
    in `tests/web/test_step_navigation.py` both assert. */
 @media (max-width: 559.98px) {
-  .improvement-allocation-row,
-  .improvement-allocation-row:has(.improvement-control-unit) { grid-template-columns: minmax(0, 1fr); gap: 10px; }
-  .improvement-control,
-  .improvement-control-unit { grid-template-columns: minmax(0, 1fr); }
+  .improvement-allocation-row { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .improvement-control { grid-template-columns: minmax(0, 1fr); }
 }
 
 .comparison-results { background: #fff; }

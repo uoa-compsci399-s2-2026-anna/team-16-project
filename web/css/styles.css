@@ -434,6 +434,13 @@ p { line-height: 1.65; }
   background: rgba(230, 190, 255, 0.38);
 }
 .disclaimer.compact { padding: 16px; }
+/* **`.restore-notice` is a hook on the two rules above** (#160). The session-restore
+   notice is `class="disclaimer compact restore-notice"`, so it is already the compact
+   disclaimer in full and has nothing of its own to declare; the third class is how
+   `test_session_restore_browser.py` and `test_step_history_browser.py` tell it apart
+   from the other disclaimers on the page (both hold it as `NOTICE = ".restore-notice"`).
+   What would make it bind is wanting this one disclaimer to look unlike the rest.
+   Declared in `tests/web/test_class_rules.py`'s `CLASSES_WITH_NO_RULE_OF_THEIR_OWN`. */
 .disclaimer strong {
   display: block;
   color: var(--beetroot);
@@ -572,7 +579,24 @@ p { line-height: 1.65; }
 .required { color: var(--kai-orange); font-size: 0.8rem; }
 .optional-tag { color: var(--muted); font-size: 0.8rem; font-weight: 400; }
 .field-hint { margin: -2px 0 8px; color: var(--muted); font-size: 0.92rem; }
+/* **`.time-frame-field` is a hook on `.form-field`, not a rule of its own** (#160). The
+   reporting-period `<select>` sits in an ordinary `.form-field` and wants nothing extra;
+   the second class is how `test_step_navigation.py` reaches `.time-frame-field >
+   .field-hint` rather than whichever hint happens to be first on the step. What would
+   make it bind is this one field needing a width or a rhythm of its own. Declared in
+   `tests/web/test_class_rules.py`'s `CLASSES_WITH_NO_RULE_OF_THEIR_OWN`. */
 .field-error { margin: 8px 0 0; color: var(--error); font-weight: 700; }
+/* **`.api-error` and `.entry-problem` are hooks on this rule, not rules of their own**
+   (#160). Both are second classes on a `.field-error`, so both are styled by the line
+   above and neither has anything left to declare: `api-error` names the banner the
+   amount and review steps raise from a failed `POST /calculate`
+   (`test_amount_step_field_errors_browser.py` waits on `.field-error.api-error`, and
+   `test_duplicate_entry_routing_browser.py` says in prose why it waits on the narrower
+   one), `entry-problem` names the per-entry message on the review step
+   (`test_duplicate_entry_routing_browser.py` locates `.entry-problem`). What would make
+   either bind is a declaration that must apply to one kind of error and not the other -
+   today there is none, and adding one here would be the only rule they need. Declared in
+   `tests/web/test_class_rules.py`'s `CLASSES_WITH_NO_RULE_OF_THEIR_OWN`. */
 input, select {
   width: 100%;
   min-height: 54px;
@@ -771,11 +795,13 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 
    **Both branches of `leafPanel` use this one layout**, the single leaf and the leaf
    card alike. The single-leaf panel carries `amount-grid` as well, and that class now
-   has no declarations anywhere in this file: it is the hook three browser tests use to
+   has no declarations anywhere in this file: it is the hook the browser tests use to
    address "the one element wrapping every step-3 field" (removing it and requiring the
    document to collapse to the viewport, selecting `.amount-grid .form-field`, and
    reading its `innerText`). Styling it a second time here would mean two rules for one
-   box, and the second would silently win.
+   box, and the second would silently win. Declared with that reason in
+   `tests/web/test_class_rules.py`'s `CLASSES_WITH_NO_RULE_OF_THEIR_OWN`, which is the
+   register the rest of these live in since #160.
 
    **The zones stack below `min-width: 650px`** and the two-column template is in the
    650px media rule, with the rest of this step's breakpoint. The stacked order is
@@ -1510,6 +1536,14 @@ tbody th { font-weight: 700; }
    swap, is what actually carries the state - see the rule this answers in `results.js`'s
    own note over `contributeBlock`. */
 .contribute-control input:checked + .contribute-toggle { background: var(--kai-pea); border-color: var(--green-dark); }
+/* **`.contribute-toggle__text` is the mark's BEM pair and carries no rule** (#160). The
+   toggle is a two-child flex row and only the mark has a box to describe; the text is
+   the row's other child and takes the toggle's own `font-weight`, `color` and
+   `line-height`. It is still named rather than left a bare `<span>`, because every rule
+   below addresses `__mark` specifically and an anonymous sibling would be whatever a
+   later `.contribute-toggle span` selector swept up. What would make it bind is the text
+   needing its own wrapping or flex behaviour. Declared in
+   `tests/web/test_class_rules.py`'s `CLASSES_WITH_NO_RULE_OF_THEIR_OWN`. */
 .contribute-toggle__mark {
   flex: 0 0 auto;
   width: 26px;
@@ -2311,6 +2345,16 @@ tbody th { font-weight: 700; }
 footer { position: relative; padding: 28px 20px; color: #fff; background: var(--green-dark); text-align: center; font-size: 0.9rem; overflow: hidden; }
 footer p { margin: 0; }
 .transparency-notice { max-width: 760px; margin: 10px auto 0; color: rgba(255, 255, 255, 0.78); font-size: 0.82rem; }
+/* **`.notice-server` and `.notice-browser` are hooks inside that paragraph, not rules**
+   (#160). The footer's privacy copy is two sentences about two different stores - what
+   the server keeps and what the browser tab keeps - and they are two `<span data-i18n>`
+   elements rather than one because `applyToDocument` assigns `textContent`, so one
+   element can only carry one key. The classes name the halves for
+   `test_i18n_browser.py`, which compares each against its own catalogue entry in all
+   twenty languages; they are deliberately not styled, because the paragraph is one
+   paragraph to read. What would make either bind is wanting the two halves to look
+   different. Declared in `tests/web/test_class_rules.py`'s
+   `CLASSES_WITH_NO_RULE_OF_THEIR_OWN`. */
 footer a { color: var(--kai-white); text-underline-offset: 3px; }
 footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; width: 110px; height: 55px; border: 1px solid rgba(40, 200, 130, 0.5); border-bottom: 0; border-radius: 110px 110px 0 0; }
 
@@ -2437,6 +2481,17 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
    exactly the widths `test_horizontal_overflow.py` measures. The padding belongs to the
    header and the body, which are separately present. */
 .form-panel.step-card { padding: 0; }
+/* **`.step-card--open` is the open state in the DOM and is deliberately not styled**
+   (#160). Openness is expressed by the body's `hidden` attribute rather than by a class -
+   decision 3 of `collapsibleCard`, so that a shut card's controls are genuinely
+   unreachable by Tab rather than merely invisible - and the card's own ground does not
+   change when it opens, so there is nothing for a rule here to say. The class is kept
+   because it is the ONLY open-state marker a lone card carries: a lone card is fixed open
+   and therefore has no toggle, so it has no `aria-expanded` either, and
+   `.step-card--open` is all a reader of the DOM has. What would make it bind is any
+   treatment that differs between an open and a shut card - a shadow, a border colour, the
+   glass token applying only while open. Declared in `tests/web/test_class_rules.py`'s
+   `CLASSES_WITH_NO_RULE_OF_THEIR_OWN`. */
 /* The header strip. A `<button>` so the keyboard gets it free and `aria-expanded`
    has somewhere legitimate to live; stripped back to text because it is a card
    header rather than a control the eye should look for.
@@ -3254,7 +3309,17 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 }
 
 /* Statistics page: kept under a page namespace so the shared public shell can be unified
-   without coupling calculator controls to Chart.js layout. */
+   without coupling calculator controls to Chart.js layout.
+
+   **`.calculator-page` is the fourth member of that namespace and the only one with no
+   rules, because it is the default** (#160). `home.html`, `stats.html` and
+   `methodology.html` each carry their page class on `<body>` and each is scoped by it
+   below; `index.html` carries `.calculator-page` and everything above this point is
+   already the calculator, so scoping any of it would be a prefix that excludes nothing.
+   The class stays on the body so that the convention reads the same on all four pages
+   and so a rule that genuinely must apply to the calculator alone has somewhere to go -
+   which is also what would make it bind. Declared in `tests/web/test_class_rules.py`'s
+   `CLASSES_WITH_NO_RULE_OF_THEIR_OWN`. */
 .stats-page .stats-main { max-width: 1120px; }
 .stats-page .stats-introduction,
 .methodology-page .methodology-main > section:first-child { padding-top: 8px; }
@@ -3736,6 +3801,14 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 .period-bound-row { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
 .period-bound-row .form-field { flex: 1 1 200px; margin: 0; }
 .period-bound-row .period-time-field { flex: 0 1 190px; }
+/* **`.period-date-field` is the time field's named counterpart and has nothing to
+   declare** (#160). The rule two lines up gives every `.form-field` in the row
+   `flex: 1 1 200px` and the rule one line up takes the time field off that basis, so the
+   date field is exactly the default and a rule for it would restate the default. It is
+   named anyway, because `.period-bound-row > .form-field:first-child` would say "the one
+   on the left" about a row that wraps. What would make it bind is giving the date box a
+   basis of its own. Declared in `tests/web/test_class_rules.py`'s
+   `CLASSES_WITH_NO_RULE_OF_THEIR_OWN`. */
 .period-date-control { display: flex; gap: 6px; align-items: stretch; }
 .period-date-control .period-input { flex: 1 1 auto; min-inline-size: 0; }
 .period-input[aria-invalid="true"] { border-color: var(--error); }
@@ -3792,6 +3865,16 @@ td.period-day[data-day]:hover { background: var(--mint); }
    only one. */
 td.period-day.is-disabled { color: var(--muted); cursor: not-allowed; opacity: 0.4; }
 td.period-day.is-selected { font-weight: 700; color: var(--kai-white); background: var(--kai-kale); }
+/* **`.is-outside` is deliberately unstyled, and it is read by `period.js` rather than by
+   this file** (#160). A cell from the neighbouring month is drawn empty - no number, no
+   `data-day`, no `tabindex` - so there is nothing on it to style, and giving it a tint
+   would advertise a cell that cannot be chosen. The class is what `dayGrid` tests for
+   when it decides whether a sixth week is worth drawing
+   (`cells.some(cell => !cell.includes('is-outside'))`, a substring test against the row's
+   own HTML), so renaming it silently restores the empty sixth row and the dialog starts
+   changing height between months. What would make it bind is deciding to show those
+   dates. Declared in `tests/web/test_class_rules.py`'s
+   `CLASSES_WITH_NO_RULE_OF_THEIR_OWN`. */
 td.period-day:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 
 /* The month and year grids behind the caption.
@@ -3808,6 +3891,15 @@ td.period-day:focus-visible { outline: 2px solid var(--focus); outline-offset: -
    `position: relative` makes it the `offsetParent` of its own cells, which is
    what `period.js`'s `focusAfterRender` measures against to centre the cursor. */
 .period-scroller { position: relative; max-block-size: 232px; overflow-y: auto; }
+/* **`.period-choices` is the second class on those two tables and carries no rule**
+   (#160). Everything the month and year grids need is already on `.period-grid` (shared,
+   see the note above) and on `td.period-choice` below, so the table-level class has
+   nothing of its own; it exists so that a test can say *which* grid is on screen, and
+   `test_period_picker_browser.py` leans on it a dozen times - waiting for the choices to
+   appear, asserting exactly one `td[tabindex="0"]`, and asserting the count is back to
+   zero once a year is chosen. What would make it bind is wanting the choices table to
+   differ from the day table at the table level. Declared in
+   `tests/web/test_class_rules.py`'s `CLASSES_WITH_NO_RULE_OF_THEIR_OWN`. */
 td.period-choice { block-size: 40px; padding: 2px; font-size: 0.9rem; text-align: center; border-radius: 8px; }
 td.period-choice[data-action] { cursor: pointer; }
 td.period-choice[data-action]:hover { background: var(--mint); }

@@ -1230,7 +1230,9 @@ function contributeBlock(state) {
   // occupant at a time: **Submit → Undo → the flower, each replacing the last in the
   // position the eye is already on.** The handover is exact — `done` empties `action`
   // and turns `celebrate` on in the same `setState` (`contributeCalculation`), so the
-  // one render that removes Undo is the one that plants the flower.
+  // one render that removes Undo is the one that plants the flower. The class itself
+  // outlived its rule by three rounds and is gone with #160: the slot is `.contribute-
+  // slot` and the button is reached by its id, so nothing was left for it to name.
   //
   // The flower is unchanged in every other respect: still gated on
   // `state.contributeCelebrating` so an unrelated re-render cannot replay it, and still
@@ -1241,8 +1243,8 @@ function contributeBlock(state) {
   const action = done
     ? ''
     : armed
-      ? `<button class="button button-secondary contribute-action" type="button" id="contribute-action" data-action="contribute-undo">${escapeHtml(t('Undo'))}</button>`
-      : `<button class="button button-primary contribute-action" type="button" id="contribute-action" data-action="contribute-submit" ${ticked && !pending ? '' : 'disabled'}>${escapeHtml(t('Submit'))}</button>`
+      ? `<button class="button button-secondary" type="button" id="contribute-action" data-action="contribute-undo">${escapeHtml(t('Undo'))}</button>`
+      : `<button class="button button-primary" type="button" id="contribute-action" data-action="contribute-submit" ${ticked && !pending ? '' : 'disabled'}>${escapeHtml(t('Submit'))}</button>`
   return `<div class="contribute-block">
     <p class="contribute-sentence" id="contribute-sentence">${escapeHtml(t('This sends an anonymous copy of your results into this calculator\'s public statistics — no name, no address, nothing that identifies you. You have five seconds after pressing Submit to undo it; once those five seconds pass it cannot be undone from here, and if you come back and recalculate, your updated figures take its place under this same choice.'))}</p>
     <div class="contribute-control">

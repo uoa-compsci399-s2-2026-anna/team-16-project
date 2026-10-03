@@ -40,6 +40,7 @@ commit that added this file.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 from pathlib import Path
@@ -228,9 +229,17 @@ def page_at_locale(browser):
         ctx.close()
 
 
-def walk(page):
+def walk(page, mass="1000"):
     """Drive the wizard as a visitor would, yielding the step index *on arrival*
     at each screen — intro, 0..4, then results (5), plus `1.5` for step 2.5.
+
+    `mass` is the kilogram figure typed at step 3 and at the one destination row
+    on step 4, and it defaults to the `"1000"` every caller here was calibrated
+    on. It is a parameter because one test below needs a *different* mass rather
+    than a different screen: `fixedRowMax`'s `toFixed` rounding is what puts a
+    unit-mode row's own maximum inside the donut's dead band, and whether it
+    does depends only on the leaf's mass (1,000 kg converts to tonnes exactly
+    and so cannot show it). Nothing else passes it.
 
     **`1.5` is a screen, not a `state.step` value.** Step 2.5 is step 2's second
     panel and the step number does not move for it (`docs/interfaces.md` §7.3a), so
@@ -323,11 +332,11 @@ def walk(page):
     page.wait_for_timeout(150)
     page.wait_for_selector("#total-waste")
     yield 2
-    page.fill("#total-waste", "1000")
+    page.fill("#total-waste", mass)
     press_continue(page)
     page.wait_for_selector('[data-line-field="amount"]')
     yield 3
-    page.fill('[data-line-field="amount"] >> nth=0', "1000")
+    page.fill('[data-line-field="amount"] >> nth=0', mass)
     page.wait_for_timeout(60)
     press_continue(page)
     page.wait_for_selector('[data-action="calculate"]')
@@ -338,9 +347,9 @@ def walk(page):
     yield 5
 
 
-def advance_to(page, step):
+def advance_to(page, step, mass="1000"):
     """The single-screen form of `walk`, for the tests that measure one step."""
-    for arrived in walk(page):
+    for arrived in walk(page, mass):
         if arrived == step:
             return page
     raise AssertionError(f"step {step} was never reached")
@@ -920,14 +929,17 @@ def test_the_step_position_moved_into_the_bar_and_left_no_band_behind(page_at):
     assert measured["bands"] == 0, f"a progress band is still costing height at the top: {measured}"
 
 
-def _improvement_panel(page_at):
+def _improvement_panel(page_at, mass="1000"):
     """A page at step 5 (results) with the improvement panel open.
 
     Shared by every test in this module that needs the destination-allocation
     sliders — factored out rather than repeated so the wizard walk that reaches
     them is written once.
+
+    `mass` is passed through to `walk`; see its docstring for the one test that
+    needs anything other than the default 1,000 kg.
     """
-    page = advance_to(page_at(1278, 983, 1.25), 5)
+    page = advance_to(page_at(1278, 983, 1.25), 5, mass)
     page.click('[data-action="explore-improvements"]')
     return page
 
@@ -1079,6 +1091,212 @@ def test_the_improvement_donut_draws_the_share_the_slider_holds(page_at):
     assert page.locator(".improvement-chart-modal .improvement-pie-chart").count() == 1
     page.click('[data-action="close-improvement-chart"]')
     assert page.locator(".improvement-chart-modal").count() == 0
+
+
+#: The circle `web/js/improvement.js` draws a full allocation as, in the SVG user
+#: space of its own `viewBox="0 0 520 420"`: `PIE_CENTRE_X` / `PIE_CENTRE_Y` and
+#: `PIE_RADIUS`. Restated here rather than measured loosely on purpose — "big
+#: enough" is exactly what the assertion below must not settle for, because a
+#: circle drawn at the wrong origin is 224x224 too. If those constants move, this
+#: is *meant* to fail and be moved with them; nothing else in the repository
+#: notices a donut drawn half outside its own viewBox.
+DONUT_CENTRE = (260, 210)
+DONUT_RADIUS = 112
+
+#: Enough of the rendered path to say *which* shape was drawn, not merely that
+#: something was. `x` and `y` are read and asserted, which the first version of
+#: this measurement discarded.
+MEASURE_SLICE = """
+path => {
+  const box = path.getBBox();
+  return {
+    x: box.x, y: box.y, width: box.width, height: box.height,
+    length: path.getTotalLength(),
+  };
+}
+"""
+
+
+def _measure_first_slice(page, scope=".improvement-pie-chart"):
+    """The rendered geometry of the chart's first `<path>`, in SVG user units.
+
+    **The count assertion in front of the read is not decoration.** `PieChart`
+    filters `slice.share > 0`, so a chart whose rows are all still at zero has
+    no `<path>` at all — and `.first.evaluate` on an empty locator raises a
+    Playwright *timeout*, which reads as the harness being broken rather than as
+    the panel having drawn nothing. Counting first makes that failure say what it
+    is.
+    """
+    paths = page.locator(f"{scope} path")
+    assert paths.count() >= 1, (
+        "the donut drew no <path> at all, so there was nothing to measure - "
+        "every allocation row is still at zero"
+    )
+    return paths.first.evaluate(MEASURE_SLICE)
+
+
+def _assert_is_the_full_donut(measured, what):
+    """Assert a measured path is the module's own circle, and not merely large.
+
+    **Two measurements, because neither alone says "a full circle".**
+
+    *The bounding box* pins position and size: `x`, `y`, `width`, `height`
+    against `PIE_CENTRE` +/- `PIE_RADIUS`. This is what rejects a circle drawn
+    at the wrong origin — `M 0 0 A 112 112 ...` measures 224x224 and renders
+    half outside the viewBox, and measured here it comes back at `x=-112`. It
+    also rejects the 205% allocation this file's sibling test types, which
+    measured 224 x 330.518 and passed a `width > 200 and height > 200` check
+    before this one. What it cannot do on its own is tell a full circle from a
+    wedge: a plain 75% slice is 224x224 at exactly (148, 98) as well, and so are
+    80%, 90%, 99% and 99.99%.
+
+    *The perimeter* is what separates them. A closed circle measures `2*pi*r` =
+    703.72 (Chrome's polyline approximation reads 703.816); a wedge is two radii
+    plus an arc, `2r + r*theta`. For a wedge's bounding box to reach the full
+    224x224 it has to contain all four cardinal points of the circle, so its
+    sweep is at least 270 degrees — and the shortest such wedge measured 750.37,
+    some 46 units clear of the circle. So no wedge `slicePath` can emit satisfies
+    both of these, which is the claim the test's name makes. (A ~245-degree wedge
+    does measure 703.3, which is why the length is not asserted alone either: its
+    box is 213.6 wide and the bbox check refuses it.)
+
+    The tolerances are the measurement's own noise, not slack: 0.01 user units on
+    the box (Chrome returned `147.997` for a 99.99% wedge's left edge) and 1.0 on
+    the perimeter, against a 46-unit gap to the nearest wedge.
+    """
+    centre_x, centre_y = DONUT_CENTRE
+    expected = {
+        "x": centre_x - DONUT_RADIUS,
+        "y": centre_y - DONUT_RADIUS,
+        "width": 2 * DONUT_RADIUS,
+        "height": 2 * DONUT_RADIUS,
+    }
+    for key, want in expected.items():
+        assert abs(measured[key] - want) < 0.01, (
+            f"{what}: the donut's {key} is {measured[key]}, not {want} - the path "
+            f"is empty, the wrong size, or drawn somewhere other than the centre "
+            f"the rest of the chart uses. Measured {measured}"
+        )
+    circumference = 2 * math.pi * DONUT_RADIUS
+    assert abs(measured["length"] - circumference) < 1.0, (
+        f"{what}: the donut's perimeter is {measured['length']:.3f}, not the "
+        f"{circumference:.3f} of a closed circle of radius {DONUT_RADIUS} - this "
+        f"is a wedge with two straight radii in it, not a full allocation. "
+        f"Measured {measured}"
+    )
+
+
+def test_the_improvement_donut_draws_a_full_circle_for_a_single_hundred_percent_share(page_at):
+    """A full SVG arc needs two half-arcs, because a zero-length arc is empty.
+
+    The single-destination case is the ordinary way to reach 100%: its slice
+    starts and ends at the same point, SVG 1.1 §8.3.8 makes such an arc
+    equivalent to omitting the segment, and the path used to come back `0 x 112`
+    — a pair of coincident radii — leaving only the centre label and the callout
+    on screen. So the path must occupy the whole donut, at the centre and radius
+    the rest of the chart is drawn to; `_assert_is_the_full_donut` carries why
+    that takes two measurements rather than one.
+
+    The centre label and the callout are checked too, because the remedy's own
+    risk is the opposite defect: a full disc painted *over* the figures that were
+    the only thing still visible before it.
+    """
+    page = _improvement_panel(page_at)
+    boxes = page.locator('.percentage-input input[type="number"]')
+    boxes.first.fill("100")
+
+    _assert_is_the_full_donut(_measure_first_slice(page), "a typed 100%")
+
+    #: `text_content`, not `inner_text`: an SVG element has no `innerText`, which
+    #: is the same trap the sibling test above records against the callouts.
+    centre = page.locator(".improvement-pie-total").text_content() or ""
+    assert "kg" in centre and re.sub(r"[^\d.]", "", centre) == "1000.00", (
+        f"the centre label stopped reporting the mass being redistributed: {centre!r}"
+    )
+    assert "100.0%" in page.locator(".improvement-pie-label text").all_text_contents(), (
+        "the callout beside the full slice is gone or no longer reads the share"
+    )
+    #: One slice, not two: the remedy must not leave the old degenerate wedge
+    #: behind beside the circle it replaced.
+    assert page.locator(".improvement-pie-chart path").count() == 1
+
+
+def test_the_improvement_donut_still_draws_a_share_a_hair_under_a_hundred(page_at):
+    """**The residual the two-arc remedy does not reach on its own**, and the
+    reason `slicePath`'s gate is a tolerance rather than `>= 360`.
+
+    Chrome holds SVG path geometry in single precision, so the arc collapses for
+    a *range* of sweeps below a full turn, not only at it: bisected in this
+    Chromium, a share of 99.99999783009287 still paints a 224x224 box and
+    99.99999783009288 paints nothing at all. An exact gate therefore leaves the
+    original defect reachable with the fix applied.
+
+    `99.999999` is inside that band and the panel accepts it on every other
+    count. The number box is `step="0.01"` but a typed figure is never snapped or
+    clamped — the sibling test above proves it by typing `205` and watching the
+    value survive — and `improvementValidation` passes it too, so the visitor is
+    offered Compare Impact on an allocation whose chart is blank while its own
+    callout reads 100.0%. That pairing is the assertion: a drawn donut *and* an
+    enabled button.
+    """
+    page = _improvement_panel(page_at)
+    page.locator('.percentage-input input[type="number"]').first.fill("99.999999")
+    page.wait_for_timeout(80)
+
+    _assert_is_the_full_donut(_measure_first_slice(page), "a typed 99.999999%")
+    assert page.locator('[data-action="compare-improvement"]').is_enabled(), (
+        "the premise is gone: this share is no longer offered as a valid "
+        "allocation, so an invisible chart beside it would be a different bug"
+    )
+
+
+def test_the_improvement_donut_draws_a_unit_mode_row_typed_to_its_own_maximum(page_at):
+    """**Unit mode is where the residual above is reached without typing
+    anything unusual at all** — the maximum the control itself advertises is
+    enough.
+
+    `fixedRowMax` gives a row a `max` of `kgToUnitAmount(totalKg, rowUnit)`
+    rounded to that unit's own display precision, five places for tonnes, and
+    `updateImprovementInput` converts a keystroke straight back through
+    `kgToPercentage(unitAmountToKg(raw, rowUnit), totalKg)`. The round trip does
+    not have to land on 100: for 37,461 of the 299,901 masses from 1.00 to
+    3000.00 kg at a 0.01 kg step — 12.49% — typing a tonnes row to its own
+    declared maximum lands inside the dead band instead. Nothing cleans it,
+    because the only clamp on this path is the range's ceiling and it rewrites a
+    figure that *overshoots* (`Math.round(clamped * 100) / 100` is exactly 100)
+    while leaving one that *undershoots* alone.
+
+    **1.04 kg is why this test walks a different mass.** The 1,000 kg every other
+    test here uses converts to `"1.00000"` tonnes exactly and lands on 100, so it
+    cannot show this at all; 1.04 kg gives a max of `"0.00104"`, which converts
+    back to 99.99999999999997% — a sweep of 359.9999999999999 degrees, inside the
+    band, and measured `0 x 112` before the tolerance went in.
+
+    The row's `max` is read off the control rather than written in, because the
+    claim is about the figure the panel offers the visitor, not about a number
+    this file believes it offers.
+    """
+    page = _improvement_panel(page_at, mass="1.04")
+    page.select_option("#improvement-mode", "unit")
+    page.wait_for_timeout(80)
+    page.select_option("select.improvement-row-unit >> nth=0", "tonnes")
+    page.wait_for_timeout(80)
+
+    box = page.locator('.percentage-input input[type="number"]').first
+    ceiling = box.get_attribute("max")
+    assert ceiling == "0.00104", (
+        f"the premise moved: a 1.04 kg leaf's tonnes row now offers a maximum of "
+        f"{ceiling!r}, so it may no longer be the figure that misses 100%"
+    )
+    box.fill(ceiling)
+    page.wait_for_timeout(80)
+
+    _assert_is_the_full_donut(
+        _measure_first_slice(page), f"a tonnes row typed to its own max of {ceiling}"
+    )
+    assert page.locator('[data-action="compare-improvement"]').is_enabled(), (
+        "a row at its own advertised maximum is no longer a valid allocation"
+    )
 
 
 def test_the_improvement_chart_follows_both_scroll_directions_on_desktop(page_at):

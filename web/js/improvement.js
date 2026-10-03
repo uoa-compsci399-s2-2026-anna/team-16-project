@@ -233,10 +233,78 @@ const polar = (cx, cy, radius, degrees) => {
   return { x: cx + radius * Math.cos(radians), y: cy + radius * Math.sin(radians) }
 }
 
+// The donut's own geometry, in the `viewBox="0 0 520 420"` user space this module draws
+// in. Named rather than repeated because `slicePath` now has two branches and they have
+// to agree: a full allocation and a 99% one must describe the *same* circle, and a
+// literal `112` in one of them and a `PIE_RADIUS` in the other is a drift the chart
+// cannot report — it would simply draw the wrong circle in the wrong place for exactly
+// one allocation. The callouts' own radii are stated as offsets from this one for the
+// same reason: the leader line has to leave the arc it is pointing at.
+const PIE_CENTRE_X = 260
+const PIE_CENTRE_Y = 210
+const PIE_RADIUS = 112
+
+// How short of a full 360° a sweep may fall and still be drawn as a complete circle —
+// see `slicePath`, which is the only reader. **It exists because the collapse this
+// tolerance is guarding against is not an equality.** Chrome holds SVG path geometry in
+// single precision, so a one-slice arc's two endpoints round to the same float32 point —
+// and the arc vanishes, per SVG 1.1 §8.3.8 — for a *range* of sweeps below 360, not only
+// at it. Bisected in this repository's own Chromium at r=112: a share of
+// 99.99999783009287 still paints a 224x224 box, 99.99999783009288 paints nothing, i.e. a
+// sweep 7.8e-06° short of the full turn already collapses. That figure is not arbitrary —
+// it is what a float32 ulp at a coordinate of 260 predicts (1.5e-05 / 112 radians), so
+// any engine holding this geometry in single precision collapses in the same decade.
+//
+// 0.01° is ~1,280x that threshold, which is the margin, and it costs 0.0196 user units
+// of omitted arc (112 * 0.01 * pi/180). **Measured in the browser rather than read off
+// the stylesheet**, across this suite's three viewports and both places the chart is
+// drawn: the largest magnification is the expanded modal at 938x898 and dpr 1.5, where
+// the 720px `<svg>` is 2.0769 device pixels per user unit and the omitted arc is
+// **0.0406 device pixels**. The phone is not the worst case and reading the CSS suggests
+// it is — 390x700 at dpr 3 caps the modal at `92vw` and comes to 1.5623 (0.0305px),
+// below the 1278 desktop's 1.7308 (0.0338px). It is also wider than nothing and
+// narrower than anything the panel treats as a real allocation:
+// the finest step the number box declares is 0.01 of a percentage point, whose last stop
+// below a full allocation is 99.99% — a sweep of 359.964°, comfortably under the gate —
+// and every share the gate does take already prints as "100.0%" in its own callout.
+const FULL_SWEEP_TOLERANCE_DEGREES = 0.01
+
 function slicePath(start, end) {
-  const from = polar(260, 210, 112, end)
-  const to = polar(260, 210, 112, start)
-  return `M 260 210 L ${from.x} ${from.y} A 112 112 0 ${end - start > 180 ? 1 : 0} 0 ${to.x} ${to.y} Z`
+  // SVG's arc command cannot represent a full circle when its start and end points are
+  // identical: SVG 1.1 §8.3.8 makes such an arc equivalent to omitting the segment, so
+  // the browser paints nothing. A single destination at 100% therefore used to leave the
+  // chart's centre text and callout visible while the slice itself disappeared. Draw the
+  // circle as two half-arcs so the complete allocation remains visible.
+  //
+  // **The gate is a tolerance and not `>= 360`, because the collapse is not an
+  // equality.** An exact comparison on a float sweep leaves a dead band of shares just
+  // under 100 that still reproduce the original defect with this branch in place, and
+  // both of the panel's entry modes reach it: a typed `99.999999` in percentage mode,
+  // and in unit mode the `toFixed` rounding of a row's own `fixedRowMax` (`12.49%` of
+  // every 0.01 kg mass from 1 to 3,000 kg, measured). `improvementValidation` accepts
+  // every one of them — a typed `99.999999` is 1e-05 kg light on the 1,000 kg fixture
+  // before `improvedLines` rounds it to three places, and nothing like the 0.01 kg
+  // `MASS_TOLERANCE_KG` — so Compare Impact stays enabled and the visitor is left with
+  // an allocation the panel calls valid, a callout reading
+  // "100.0%", and an empty donut. The asymmetry is why nothing else catches it:
+  // `updateImprovementInput`'s range clamp rounds a figure that *overshoots* back to
+  // exactly 100 and leaves one that *undershoots* untouched. See
+  // `FULL_SWEEP_TOLERANCE_DEGREES` for the measurement and what the tolerance costs.
+  const sweep = end - start
+  if (sweep > 360 - FULL_SWEEP_TOLERANCE_DEGREES) {
+    // Derived from the same centre and radius the wedge branch uses, through the same
+    // `polar`: the top and bottom of the vertical diameter. `polar` returns them exactly
+    // — `Math.sin(±π/2)` is ±1 and the cosine's 6.1e-17 is below an ulp of 260 — so the
+    // two half-arcs close on the same point and this emits the identical path string the
+    // literals did, while a change to the centre or the radius above now moves both
+    // branches together.
+    const top = polar(PIE_CENTRE_X, PIE_CENTRE_Y, PIE_RADIUS, 0)
+    const bottom = polar(PIE_CENTRE_X, PIE_CENTRE_Y, PIE_RADIUS, 180)
+    return `M ${top.x} ${top.y} A ${PIE_RADIUS} ${PIE_RADIUS} 0 1 0 ${bottom.x} ${bottom.y} A ${PIE_RADIUS} ${PIE_RADIUS} 0 1 0 ${top.x} ${top.y} Z`
+  }
+  const from = polar(PIE_CENTRE_X, PIE_CENTRE_Y, PIE_RADIUS, end)
+  const to = polar(PIE_CENTRE_X, PIE_CENTRE_Y, PIE_RADIUS, start)
+  return `M ${PIE_CENTRE_X} ${PIE_CENTRE_Y} L ${from.x} ${from.y} A ${PIE_RADIUS} ${PIE_RADIUS} 0 ${sweep > 180 ? 1 : 0} 0 ${to.x} ${to.y} Z`
 }
 
 // The improved allocation drawn as shares of one circle, with a leader line per slice.
@@ -259,16 +327,16 @@ function PieChart(state, destinations, allocation, totalKg) {
   const paths = slices.map(slice => `<path d="${slicePath(slice.start, slice.end)}" fill="${slice.colour}"><title>${escapeHtml(slice.destination.name)} — ${formatNumber(slice.share, 1)}%</title></path>`).join('')
   const labels = slices.map(slice => {
     const middle = (slice.start + slice.end) / 2
-    const edge = polar(260, 210, 116, middle)
-    const elbow = polar(260, 210, 142, middle)
-    const right = elbow.x >= 260
+    const edge = polar(PIE_CENTRE_X, PIE_CENTRE_Y, PIE_RADIUS + 4, middle)
+    const elbow = polar(PIE_CENTRE_X, PIE_CENTRE_Y, PIE_RADIUS + 30, middle)
+    const right = elbow.x >= PIE_CENTRE_X
     const endX = right ? 438 : 82
     const textX = right ? 446 : 74
     const anchor = right ? 'start' : 'end'
     return `<g class="improvement-pie-label"><polyline points="${edge.x},${edge.y} ${elbow.x},${elbow.y} ${endX},${elbow.y}" stroke="${slice.colour}"/><circle cx="${edge.x}" cy="${edge.y}" r="3" fill="${slice.colour}"/><text x="${textX}" y="${elbow.y + 4}" text-anchor="${anchor}">${formatNumber(slice.share, 1)}%</text></g>`
   }).join('')
   const legend = slices.map(slice => `<div><i style="background:${slice.colour}"></i><span>${escapeHtml(slice.destination.name)}</span></div>`).join('')
-  return `<svg class="improvement-pie-chart" viewBox="0 0 520 420" role="img" aria-label="${escapeHtml(t('Total allocation'))}">${paths}<circle class="improvement-pie-centre" cx="260" cy="210" r="48" fill="#fff"/><text class="improvement-pie-total" x="260" y="205" text-anchor="middle"><tspan>${formatNumber(totalKg, 2)}</tspan><tspan x="260" dy="20">kg</tspan></text>${labels}</svg><div class="improvement-pie-key">${legend}</div>`
+  return `<svg class="improvement-pie-chart" viewBox="0 0 520 420" role="img" aria-label="${escapeHtml(t('Total allocation'))}">${paths}<circle class="improvement-pie-centre" cx="${PIE_CENTRE_X}" cy="${PIE_CENTRE_Y}" r="48" fill="#fff"/><text class="improvement-pie-total" x="${PIE_CENTRE_X}" y="${PIE_CENTRE_Y - 5}" text-anchor="middle"><tspan>${formatNumber(totalKg, 2)}</tspan><tspan x="${PIE_CENTRE_X}" dy="20">kg</tspan></text>${labels}</svg><div class="improvement-pie-key">${legend}</div>`
 }
 
 export function openImprovement(state) {

@@ -4855,6 +4855,13 @@ def test_the_floating_explanation_paints_above_what_it_covers(page_at, width):
     one row, the panel hangs over `#breakdown-section` whose content is not
     positioned, and it wins there either way.
 
+    **1 is the smallest number that does it**, and the stylesheet's own stack
+    was checked rather than guessed: `.allocation-summary` 2,
+    `.result-explanation__body` 3, `.step-nav` 3, `.term > .tip` 5,
+    `.results-floating-nav` 30, `.site-drawer` 40, `.skip-link` 100, both
+    dialogs 1000. Every one is an overlay that must stay above this panel or a
+    surface it cannot reach.
+
     **The occlusion is deliberate and is the measured cost of the decision.** An
     open panel covers the next card's `?` at the single-column widths, the way
     any menu covers what is under it; the `?` is behind `blur(14px)` so it is not

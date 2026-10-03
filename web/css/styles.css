@@ -1294,9 +1294,16 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
      content is not positioned, so it wins there either way -- which is exactly
      why reasoning from the desktop case would have missed this.
 
-     It is **1 and not 30**: the floating results nav is `position: fixed;
-     z-index: 30` and the site header is above that, and both must stay above a
-     panel inside the page's own content. */
+     **It is 1, which is the smallest number that does the job, and the rest of
+     this stylesheet's stack is why it must not be larger.** Checked rather than
+     guessed: `.allocation-summary` 2, `.result-explanation__body` 3,
+     `.step-nav` 3, `.term > .tip` 5, `.results-floating-nav` 30 (fixed),
+     `.site-drawer` 40, `.skip-link` 100, and the improvement-chart and period
+     dialogs 1000. Every one of those is either an overlay that must stay above
+     this panel or a surface this panel cannot reach, and 1 clears only what it
+     has to: the other cards' disclosures, at level 0. (`.site-header` is in the
+     list of things people assume are above and is not — it declares no
+     `position` and no `z-index` at all.) */
   z-index: 1;
   margin-block-start: 8px;
   padding-block: 12px;

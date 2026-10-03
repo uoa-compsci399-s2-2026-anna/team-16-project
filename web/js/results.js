@@ -1930,7 +1930,10 @@ function bindNavGestures() {
   }, { passive: true })
 }
 
-/** The selector `equivalenceBasis` writes, in one place, because three listeners read it. */
+/**
+ * The selector `equivalenceBasis` writes, in one place, because both of the listeners
+ * below and the closer between them read it.
+ */
 const EQUIVALENCE_DISCLOSURE = 'details.equivalent-basis'
 
 /** Installed once, on `document`, and never by a render. See `bindEquivalenceOverlay`. */
@@ -2018,7 +2021,7 @@ function closeEquivalencePanels(keep = null) {
  *   `<details>` does not render its non-summary children at all, so there is nothing to
  *   remove, and the panel holds no focusable descendant when open either. The summary is
  *   the one tab stop in both states. Measured, not assumed, in
- *   `test_the_closed_panel_is_not_in_the_tab_order_and_the_open_one_adds_nothing`.
+ *   `test_the_closed_panel_is_out_of_the_tab_order_and_the_open_one_adds_nothing`.
  *
  * **The nav and a panel cannot both be open, so Escape closing both is not a case.**
  * Opening a `?` is a trusted click in the page's content, which is outside the nav, and

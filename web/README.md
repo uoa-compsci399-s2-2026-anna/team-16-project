@@ -54,7 +54,7 @@ web/
   js/i18n.js                Catalogues, negotiation and the language chooser
   js/news.js                WordPress post normalisation - RETIRED with home.html
   js/home.js                Home/news page entry point - RETIRED with home.html
-  js/charts.js              Chart.js adapters for bar and doughnut charts
+  js/charts.js              Chart.js adapters for doughnut, pie, bar and line charts
   js/stats.js               Statistics page entry point
   js/methodology.js         Documentation page entry point
   js/main.js                Calculator entry point
@@ -113,7 +113,9 @@ Mock calculator error states can be exercised with `mockError`, for example
 - Only `api.js` performs network requests.
 - Apart from conversion of user-entered mass in `units.js`, impact values come from the API.
 - Taxonomy, metrics and equivalences are data-driven rather than hard-coded in views.
-- Negative impact values retain their sign in text and charts.
+- Negative impact values retain their sign in text and signed Bar/Line charts; Pie rejects finite negative values before chart creation.
+- Each non-empty statistics breakdown defaults to Pie and has its own Pie/Bar/Line selector. Line compares the service's count-ranked categories, with any combined Other bucket last; it is not a time trend. The page uses API-provided shares without reordering or re-suppression, and type/language changes use the cached response rather than another statistics request.
+- Statistics chart tooltips and Bar/Line y-axis ticks use the same share `formatValue` callback as the share text list. The 16 brand `{fill, ink}` pairs give distinct keys collision-free colours up to 16; additional buckets remain visible but may reuse a brand colour. Long on-canvas legend labels are fitted while full labels remain in tooltip and text, and reduced-motion preferences are respected.
 - A mock factor set produces a persistent, conditional warning in every results view.
 - The returned anonymous session token is stored in `sessionStorage` and reused.
 - Layouts are checked at 320px, 375px, the 481–849px tablet band and desktop widths.

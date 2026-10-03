@@ -2401,6 +2401,9 @@ _CHART_STATE = """
   const chart = window.Chart.getChart(canvas);
   return {
     id: chart?.id,
+    type: chart?.config.type,
+    labels: [...(chart?.data.labels || [])],
+    data: [...(chart?.data.datasets[0].data || [])],
     title: chart?.titleBlock?.options?.text,
     titleHeight: chart?.titleBlock?.height,
     legendShown: chart?.options?.plugins?.legend?.display !== false,
@@ -2456,12 +2459,62 @@ def test_the_charts_are_rebuilt_in_the_new_language(browser):
     """
     zh = i18n_keys.catalogue("zh")["strings"]
     ar = i18n_keys.catalogue("ar")["strings"]
+    line_key = "Categories follow the service's count-ranked order, with any combined Other bucket shown last. This compares categories, not a time trend."
+    time_key = "%(local)s (source timestamp %(iso)s, UTC)"
+
+    def assert_locale_ui(page, strings, current, english, original_date, visible_time):
+        assert [c["type"] for c in current] == ["bar", "line", "pie"]
+        assert [(c["labels"], c["data"]) for c in current] == [
+            (c["labels"], c["data"]) for c in english
+        ]
+        assert [c["title"] for c in current] == [strings[title] for title in _CHART_TITLES]
+        selects = page.locator(".stats-chart-controls select")
+        assert selects.evaluate_all("nodes => nodes.map(n => n.value)") == ["bar", "line", "pie"]
+        for index, title in enumerate(_BREAKDOWN_TITLES):
+            assert page.locator(".stats-chart-controls label").nth(index).inner_text() == strings["%(title)s chart type"].replace("%(title)s", strings[title])
+            assert selects.nth(index).locator("option").all_text_contents() == [strings[key] for key in ("Pie chart", "Bar chart", "Line graph")]
+            listed = page.locator(".stats-breakdown-list").nth(index).inner_text()
+            key = ("by_destination", "by_sector", "by_food_category")[index]
+            for row in _STATS_FIXTURE[key]:
+                assert row["label"] in listed and row["total_kg"] + " kg" in listed
+        assert strings[line_key] in page.locator(".stats-breakdown-note").nth(1).inner_text()
+        assert original_date == page.locator("#stats-summary time").get_attribute("datetime")
+        assert page.locator("#stats-summary time").inner_text() == visible_time
+        assert "37.9%" in page.locator(".stats-breakdown-list").nth(1).inner_text()
+
     context, page = open_page(
         browser, ["en-NZ"], path="/stats.html", stats_fixture=True
     )
     try:
         _wait_for_charts(page)
+        page.locator(".stats-chart-controls select").nth(0).select_option("bar")
+        page.locator(".stats-chart-controls select").nth(1).select_option("line")
         english = page.evaluate(_CHART_STATE)
+        assert [chart["type"] for chart in english] == ["bar", "line", "pie"]
+        original_date = page.locator("#stats-summary time").get_attribute("datetime")
+        assert original_date == _STATS_FIXTURE["generated_at"]
+        # The expected date is explicitly en-NZ even when the page changes
+        # language. Build it from the fixture timestamp, not from <time> text.
+        date_parts = page.evaluate(
+            """value => {
+                const date = new Date(value);
+                return {
+                    local: new Intl.DateTimeFormat('en-NZ', {
+                        year: 'numeric', month: 'short', day: 'numeric',
+                        hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+                    }).format(date),
+                    iso: date.toISOString(),
+                };
+            }""",
+            _STATS_FIXTURE["generated_at"],
+        )
+
+        def visible_time(template):
+            return template.replace("%(local)s", date_parts["local"]).replace(
+                "%(iso)s", date_parts["iso"]
+            )
+
+        assert page.locator("#stats-summary time").inner_text() == visible_time(time_key)
         assert [chart["title"] for chart in english] == list(_CHART_TITLES), english
         assert all(chart["titleHeight"] > 0 for chart in english), english
 
@@ -2474,6 +2527,7 @@ def test_the_charts_are_rebuilt_in_the_new_language(browser):
         _choose(page, "zh")
         _wait_for_charts(page)
         chinese = page.evaluate(_CHART_STATE)
+        assert [chart["type"] for chart in chinese] == ["bar", "line", "pie"]
         assert [chart["title"] for chart in chinese] == [
             zh[title] for title in _CHART_TITLES
         ], chinese
@@ -2491,13 +2545,25 @@ def test_the_charts_are_rebuilt_in_the_new_language(browser):
             "(canvas) => window.Chart.getChart(canvas) === undefined)",
             first_canvases,
         ), "the first charts were never destroyed"
+        assert_locale_ui(page, zh, chinese, english, original_date, visible_time(zh[time_key]))
 
+        chinese_canvases = page.evaluate_handle(
+            "() => [...document.querySelectorAll('.stats-chart-region canvas')]"
+        )
         _choose(page, "ar")
         _wait_for_charts(page)
         arabic = page.evaluate(_CHART_STATE)
+        assert [chart["type"] for chart in arabic] == ["bar", "line", "pie"]
+        assert all(new["id"] != old["id"] for new, old in zip(arabic, chinese))
+        assert page.evaluate(
+            "canvases => canvases.every(canvas => Chart.getChart(canvas) === undefined)",
+            chinese_canvases,
+        )
         assert [chart["title"] for chart in arabic] == [
             ar[title] for title in _CHART_TITLES
         ], arabic
+        assert_locale_ui(page, ar, arabic, english, original_date, visible_time(ar[time_key]))
+        assert page.evaluate("performance.getEntriesByType('resource').filter(r => new URL(r.name).pathname === '/api/v1/stats').length") == 1
     finally:
         context.close()
 
@@ -2510,14 +2576,14 @@ def _taxonomy(charts):
     holding the *dataset* label, which is this page's own translated chart
     title and is supposed to change. Comparing those would fail on correct
     behaviour and teach the next reader to delete the assertion. What carries a
-    staff-typed name is the doughnut's visible legend and the bar's x-axis
+    staff-typed name is the Pie's visible legend and the bar's x-axis
     ticks.
 
-    **All three breakdowns are doughnuts as of the shares-as-shares change**,
+    **All three breakdowns default to Pies**,
     so `xTicks` is `[]` for every chart here today - there is no bar on this
     page to carry one. It stays in the tuple rather than being dropped: a
     future breakdown of impact *values* (which can be negative, so it would
-    need `renderBar`, not `renderDonut` - see the note above `BREAKDOWNS`)
+    need `renderBar`, not `renderPie` - see the note above `BREAKDOWNS`)
     would put a category axis back on this page, and this comparison should
     hold it to the same rule without anyone having to remember to re-add it.
     """
@@ -2548,7 +2614,7 @@ def test_the_bucket_labels_stay_in_the_language_staff_typed_them(browser):
             "no chart drew a legend, so this measures nothing"
         )
         # Not `assert any(chart["xTicks"] ...)`: all three breakdowns are
-        # doughnuts today (see `_taxonomy`'s note), so no chart on this page
+        # Pies by default (see `_taxonomy`'s note), so no chart on this page
         # has a category axis to draw one, and `_taxonomy` compares `[]` to
         # `[]` for that half until a bar returns to this page.
         assert listed, "the text list is empty, so this measures nothing"
@@ -2611,12 +2677,12 @@ def test_the_figures_take_no_locale_aware_separator(browser):
         tooltips = page.evaluate(
             """() => [...document.querySelectorAll('.stats-chart-region canvas')]
                  .map((canvas) => window.Chart.getChart(canvas))
-                 .filter((chart) => chart && chart.config.type === 'doughnut')
+                 .filter((chart) => chart && chart.config.type === 'pie')
                  .map((chart) => chart.options.plugins.tooltip.callbacks.label({
                    label: 'Example', parsed: 0.379,
                  }))"""
         )
-        assert tooltips, "no doughnut drew a tooltip, so this measures nothing"
+        assert len(tooltips) == 3, "three default Pies must draw tooltips"
         for tooltip in tooltips:
             match = en_nz_percent.search(tooltip)
             assert match and match.group(0) == "37.9%", (

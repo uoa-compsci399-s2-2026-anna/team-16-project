@@ -1,10 +1,7 @@
 {
-  "language": "ja",
   "endonym": "日本語",
+  "language": "ja",
   "machine_translated": true,
-  "tags": [
-    "ja"
-  ],
   "strings": {
     "%(amount)s combined": "合計 %(amount)s",
     "%(caption)s, horizontally scrollable": "%(caption)s、横スクロールできます",
@@ -23,6 +20,7 @@
     "%(share)s share": "割合 %(share)s",
     "%(tab)s data": "%(tab)s のデータ",
     "%(tab)s data — %(entry)s": "%(tab)s のデータ — %(entry)s",
+    "%(title)s chart type": "%(title)s のグラフの種類",
     "%(title)s data": "%(title)s のデータ",
     "%(title)s, charted using the API-provided share for every published bucket. The full values follow in a text list.": "%(title)s。公開されている各区分について、API が提供した割合でグラフ化しています。すべての値は下のテキスト一覧に示します。",
     "(optional)": "（任意）",
@@ -50,6 +48,7 @@
     "Back": "戻る",
     "Back to calculator": "計算ツールに戻る",
     "Background reading": "参考資料",
+    "Bar chart": "棒グラフ",
     "Breakdown by category": "カテゴリー別の内訳",
     "Breakdowns of entries contributed to this tool": "このツールに提供された入力の内訳",
     "By food type": "食品の種類別",
@@ -64,6 +63,7 @@
     "Calculator options have changed. The latest options are being loaded; please review your selections and try again.": "計算ツールの選択肢が変更されました。最新の選択肢を読み込んでいます。選択内容を確認してから、もう一度お試しください。",
     "Calculator unavailable": "計算ツールを利用できません",
     "Cancel": "キャンセル",
+    "Categories follow the service's count-ranked order, with any combined Other bucket shown last. This compares categories, not a time trend.": "カテゴリはサービスが件数順に並べた順序に従い、統合された「その他」の項目がある場合は最後に表示されます。これはカテゴリ間の比較であり、時系列の傾向ではありません。",
     "Category": "カテゴリー",
     "Check the highlighted fields and try again.": "強調表示された項目を確認して、もう一度お試しください。",
     "Check this entry, or add another supply-chain entry before viewing the combined results.": "この入力を確認するか、まとめた結果を見る前にサプライチェーンの入力をもう一件追加してください。",
@@ -226,6 +226,7 @@
     "Language": "言語",
     "Latest news": "最新のお知らせ",
     "Latest news is temporarily unavailable. You can still use the calculator and explore the documentation.": "最新のお知らせを一時的に表示できません。計算ツールとドキュメントは引き続きご利用いただけます。",
+    "Line graph": "折れ線グラフ",
     "Loading aggregate statistics…": "集計統計を読み込んでいます…",
     "Loading calculator options…": "計算ツールの選択肢を読み込んでいます…",
     "Loading calculator…": "計算ツールを読み込んでいます…",
@@ -281,6 +282,7 @@
     "Percentage waste": "廃棄の割合",
     "Period end": "期間の終了",
     "Period start": "期間の開始",
+    "Pie chart": "円グラフ",
     "Placeholder data": "仮のデータ",
     "Plain-language comparisons appear when supplied by the calculation service.": "分かりやすい換算例は、計算サービスから提供された場合に表示されます。",
     "Potential Improvement": "改善の余地",
@@ -461,5 +463,8 @@
     "no impact figures were returned": "影響の数値が返されませんでした",
     "saved": "削減",
     "tonnes": "トン"
-  }
+  },
+  "tags": [
+    "ja"
+  ]
 }

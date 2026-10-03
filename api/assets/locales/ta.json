@@ -1,10 +1,7 @@
 {
-  "language": "ta",
   "endonym": "தமிழ்",
+  "language": "ta",
   "machine_translated": true,
-  "tags": [
-    "ta"
-  ],
   "strings": {
     "%(amount)s combined": "மொத்தமாக %(amount)s",
     "%(caption)s, horizontally scrollable": "%(caption)s, கிடைமட்டமாக உருட்டக்கூடியது",
@@ -23,6 +20,7 @@
     "%(share)s share": "%(share)s பங்கு",
     "%(tab)s data": "%(tab)s தரவு",
     "%(tab)s data — %(entry)s": "%(tab)s தரவு — %(entry)s",
+    "%(title)s chart type": "%(title)s-க்கான விளக்கப்பட வகை",
     "%(title)s data": "%(title)s தரவு",
     "%(title)s, charted using the API-provided share for every published bucket. The full values follow in a text list.": "%(title)s — வெளியிடப்பட்ட ஒவ்வொரு பிரிவுக்கும் API அளித்த பங்கைப் பயன்படுத்தி வரையப்பட்டது. முழு மதிப்புகள் கீழே உரைப் பட்டியலாக உள்ளன.",
     "(optional)": "(விருப்பத்தேர்வு)",
@@ -50,6 +48,7 @@
     "Back": "பின்செல்",
     "Back to calculator": "கால்குலேட்டருக்குத் திரும்பு",
     "Background reading": "பின்னணி வாசிப்பு",
+    "Bar chart": "பட்டை விளக்கப்படம்",
     "Breakdown by category": "வகை வாரியான விவரம்",
     "Breakdowns of entries contributed to this tool": "இந்தக் கருவிக்குப் பங்களிக்கப்பட்ட பதிவுகளின் விவரங்கள்",
     "By food type": "உணவு வகை வாரியாக",
@@ -64,6 +63,7 @@
     "Calculator options have changed. The latest options are being loaded; please review your selections and try again.": "கால்குலேட்டர் விருப்பங்கள் மாறியுள்ளன. சமீபத்திய விருப்பங்கள் ஏற்றப்படுகின்றன; உங்கள் தேர்வுகளைச் சரிபார்த்து மீண்டும் முயற்சிக்கவும்.",
     "Calculator unavailable": "கால்குலேட்டர் கிடைக்கவில்லை",
     "Cancel": "ரத்துசெய்",
+    "Categories follow the service's count-ranked order, with any combined Other bucket shown last. This compares categories, not a time trend.": "வகைகள் சேவை எண்ணிக்கையின்படி வரிசைப்படுத்திய அதே வரிசையில் உள்ளன; ஒருங்கிணைக்கப்பட்ட ‘மற்றவை’ வகை இருந்தால் அது கடைசியில் காட்டப்படும். இது காலப்போக்கு அல்ல, வகைகளுக்கிடையிலான ஒப்பீடு.",
     "Category": "வகை",
     "Check the highlighted fields and try again.": "குறிக்கப்பட்ட புலங்களைச் சரிபார்த்து மீண்டும் முயற்சிக்கவும்.",
     "Check this entry, or add another supply-chain entry before viewing the combined results.": "ஒருங்கிணைந்த முடிவுகளைப் பார்ப்பதற்கு முன், இந்தப் பதிவைச் சரிபார்க்கவும் அல்லது மற்றொரு விநியோகச் சங்கிலி பதிவைச் சேர்க்கவும்.",
@@ -226,6 +226,7 @@
     "Language": "மொழி",
     "Latest news": "சமீபச் செய்திகள்",
     "Latest news is temporarily unavailable. You can still use the calculator and explore the documentation.": "சமீபச் செய்திகள் தற்காலிகமாகக் கிடைக்கவில்லை. நீங்கள் இன்னும் கால்குலேட்டரைப் பயன்படுத்தலாம், ஆவணங்களையும் பார்க்கலாம்.",
+    "Line graph": "கோட்டு வரைபடம்",
     "Loading aggregate statistics…": "ஒட்டுமொத்தப் புள்ளிவிவரங்கள் ஏற்றப்படுகின்றன…",
     "Loading calculator options…": "கால்குலேட்டர் விருப்பங்கள் ஏற்றப்படுகின்றன…",
     "Loading calculator…": "கால்குலேட்டர் ஏற்றப்படுகிறது…",
@@ -281,6 +282,7 @@
     "Percentage waste": "கழிவு சதவீதம்",
     "Period end": "காலத்தின் முடிவு",
     "Period start": "காலத்தின் தொடக்கம்",
+    "Pie chart": "வட்ட விளக்கப்படம்",
     "Placeholder data": "இடைநிலை மாதிரித் தரவு",
     "Plain-language comparisons appear when supplied by the calculation service.": "கணக்கீட்டு சேவை வழங்கும்போது எளிய மொழியிலான ஒப்பீடுகள் தோன்றும்.",
     "Potential Improvement": "சாத்தியமான முன்னேற்றம்",
@@ -461,5 +463,8 @@
     "no impact figures were returned": "தாக்க எண்கள் எதுவும் வரவில்லை",
     "saved": "சேமிக்கப்பட்டது",
     "tonnes": "டன்"
-  }
+  },
+  "tags": [
+    "ta"
+  ]
 }

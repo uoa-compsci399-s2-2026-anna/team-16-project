@@ -1,10 +1,7 @@
 {
-  "language": "af",
   "endonym": "Afrikaans",
+  "language": "af",
   "machine_translated": true,
-  "tags": [
-    "af"
-  ],
   "strings": {
     "%(amount)s combined": "%(amount)s in totaal",
     "%(caption)s, horizontally scrollable": "%(caption)s, horisontaal rolbaar",
@@ -23,6 +20,7 @@
     "%(share)s share": "%(share)s aandeel",
     "%(tab)s data": "%(tab)s-gegewens",
     "%(tab)s data — %(entry)s": "%(tab)s-gegewens — %(entry)s",
+    "%(title)s chart type": "Grafiektipe vir %(title)s",
     "%(title)s data": "%(title)s-gegewens",
     "%(title)s, charted using the API-provided share for every published bucket. The full values follow in a text list.": "%(title)s, gekarteer met die aandeel wat die API vir elke gepubliseerde groep verskaf. Die volledige waardes volg in 'n tekslys.",
     "(optional)": "(opsioneel)",
@@ -50,6 +48,7 @@
     "Back": "Terug",
     "Back to calculator": "Terug na die berekener",
     "Background reading": "Agtergrondleesstof",
+    "Bar chart": "Staafdiagram",
     "Breakdown by category": "Uiteensetting per kategorie",
     "Breakdowns of entries contributed to this tool": "Uiteensettings van inskrywings wat tot hierdie hulpmiddel bygedra is",
     "By food type": "Volgens voedselsoort",
@@ -64,6 +63,7 @@
     "Calculator options have changed. The latest options are being loaded; please review your selections and try again.": "Die berekener se opsies het verander. Die jongste opsies word gelaai; gaan asseblief jou keuses na en probeer weer.",
     "Calculator unavailable": "Berekener nie beskikbaar nie",
     "Cancel": "Kanselleer",
+    "Categories follow the service's count-ranked order, with any combined Other bucket shown last. This compares categories, not a time trend.": "Kategorieë volg die diens se rangorde volgens telling, met enige saamgevoegde Ander-kategorie laaste. Dit vergelyk kategorieë, nie 'n tydsverloop nie.",
     "Category": "Kategorie",
     "Check the highlighted fields and try again.": "Gaan die gemerkte velde na en probeer weer.",
     "Check this entry, or add another supply-chain entry before viewing the combined results.": "Gaan hierdie inskrywing na, of voeg nog 'n voorsieningsketting-inskrywing by voordat jy die gesamentlike resultate bekyk.",
@@ -226,6 +226,7 @@
     "Language": "Taal",
     "Latest news": "Jongste nuus",
     "Latest news is temporarily unavailable. You can still use the calculator and explore the documentation.": "Die jongste nuus is tydelik nie beskikbaar nie. Jy kan steeds die berekener gebruik en die dokumentasie verken.",
+    "Line graph": "Lyngrafiek",
     "Loading aggregate statistics…": "Besig om saamgevoegde statistiek te laai…",
     "Loading calculator options…": "Besig om die berekener se opsies te laai…",
     "Loading calculator…": "Besig om die berekener te laai…",
@@ -281,6 +282,7 @@
     "Percentage waste": "Persentasie afval",
     "Period end": "Einde van tydperk",
     "Period start": "Begin van tydperk",
+    "Pie chart": "Sirkeldiagram",
     "Placeholder data": "Plaasvervangergegewens",
     "Plain-language comparisons appear when supplied by the calculation service.": "Vergelykings in eenvoudige taal verskyn sodra die berekeningsdiens hulle verskaf.",
     "Potential Improvement": "Moontlike verbetering",
@@ -461,5 +463,8 @@
     "no impact figures were returned": "geen impaksyfers is teruggegee nie",
     "saved": "gestoor",
     "tonnes": "ton"
-  }
+  },
+  "tags": [
+    "af"
+  ]
 }

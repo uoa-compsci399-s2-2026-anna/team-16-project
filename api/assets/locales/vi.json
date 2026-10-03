@@ -1,10 +1,7 @@
 {
-  "language": "vi",
   "endonym": "Tiếng Việt",
+  "language": "vi",
   "machine_translated": true,
-  "tags": [
-    "vi"
-  ],
   "strings": {
     "%(amount)s combined": "tổng cộng %(amount)s",
     "%(caption)s, horizontally scrollable": "%(caption)s, cuộn ngang được",
@@ -23,6 +20,7 @@
     "%(share)s share": "tỷ lệ %(share)s",
     "%(tab)s data": "Dữ liệu %(tab)s",
     "%(tab)s data — %(entry)s": "Dữ liệu %(tab)s — %(entry)s",
+    "%(title)s chart type": "Loại biểu đồ cho %(title)s",
     "%(title)s data": "Dữ liệu %(title)s",
     "%(title)s, charted using the API-provided share for every published bucket. The full values follow in a text list.": "%(title)s, được vẽ theo tỷ lệ do API cung cấp cho từng nhóm đã công bố. Các giá trị đầy đủ được liệt kê bên dưới.",
     "(optional)": "(tùy chọn)",
@@ -50,6 +48,7 @@
     "Back": "Quay lại",
     "Back to calculator": "Quay lại công cụ tính",
     "Background reading": "Tài liệu tham khảo",
+    "Bar chart": "Biểu đồ cột",
     "Breakdown by category": "Phân tích theo nhóm",
     "Breakdowns of entries contributed to this tool": "Phân tích các mục đã được đóng góp cho công cụ này",
     "By food type": "Theo loại thực phẩm",
@@ -64,6 +63,7 @@
     "Calculator options have changed. The latest options are being loaded; please review your selections and try again.": "Các tùy chọn của công cụ tính đã thay đổi. Hệ thống đang tải các tùy chọn mới nhất; vui lòng xem lại lựa chọn của bạn và thử lại.",
     "Calculator unavailable": "Không dùng được công cụ tính",
     "Cancel": "Hủy",
+    "Categories follow the service's count-ranked order, with any combined Other bucket shown last. This compares categories, not a time trend.": "Các nhóm giữ nguyên thứ tự theo số lượng do dịch vụ sắp xếp; nhóm Khác được gộp, nếu có, nằm cuối. Đây là so sánh giữa các nhóm, không phải xu hướng theo thời gian.",
     "Category": "Danh mục",
     "Check the highlighted fields and try again.": "Hãy kiểm tra các ô được đánh dấu rồi thử lại.",
     "Check this entry, or add another supply-chain entry before viewing the combined results.": "Hãy kiểm tra mục này, hoặc thêm một mục chuỗi cung ứng khác trước khi xem kết quả tổng hợp.",
@@ -226,6 +226,7 @@
     "Language": "Ngôn ngữ",
     "Latest news": "Tin mới nhất",
     "Latest news is temporarily unavailable. You can still use the calculator and explore the documentation.": "Tạm thời không xem được tin mới nhất. Bạn vẫn có thể dùng công cụ tính và xem tài liệu.",
+    "Line graph": "Biểu đồ đường",
     "Loading aggregate statistics…": "Đang tải thống kê tổng hợp…",
     "Loading calculator options…": "Đang tải các tùy chọn của công cụ tính…",
     "Loading calculator…": "Đang tải công cụ tính…",
@@ -281,6 +282,7 @@
     "Percentage waste": "Tỷ lệ bỏ đi",
     "Period end": "Kết thúc kỳ",
     "Period start": "Bắt đầu kỳ",
+    "Pie chart": "Biểu đồ tròn",
     "Placeholder data": "Dữ liệu tạm",
     "Plain-language comparisons appear when supplied by the calculation service.": "Các phép so sánh dễ hình dung sẽ xuất hiện khi dịch vụ tính toán cung cấp.",
     "Potential Improvement": "Mức cải thiện tiềm năng",
@@ -461,5 +463,8 @@
     "no impact figures were returned": "không có số liệu tác động nào được trả về",
     "saved": "đã lưu",
     "tonnes": "tấn"
-  }
+  },
+  "tags": [
+    "vi"
+  ]
 }

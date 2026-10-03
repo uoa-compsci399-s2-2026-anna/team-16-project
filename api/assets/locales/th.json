@@ -1,10 +1,7 @@
 {
-  "language": "th",
   "endonym": "ไทย",
+  "language": "th",
   "machine_translated": true,
-  "tags": [
-    "th"
-  ],
   "strings": {
     "%(amount)s combined": "รวม %(amount)s",
     "%(caption)s, horizontally scrollable": "%(caption)s เลื่อนตามแนวนอนได้",
@@ -23,6 +20,7 @@
     "%(share)s share": "สัดส่วน %(share)s",
     "%(tab)s data": "ข้อมูล %(tab)s",
     "%(tab)s data — %(entry)s": "ข้อมูล %(tab)s — %(entry)s",
+    "%(title)s chart type": "ประเภทแผนภูมิสำหรับ %(title)s",
     "%(title)s data": "ข้อมูล %(title)s",
     "%(title)s, charted using the API-provided share for every published bucket. The full values follow in a text list.": "%(title)s แสดงเป็นแผนภูมิโดยใช้สัดส่วนที่ API ส่งมาสำหรับทุกกลุ่มที่เผยแพร่ ค่าทั้งหมดแสดงเป็นรายการข้อความถัดไป",
     "(optional)": "(ไม่บังคับ)",
@@ -50,6 +48,7 @@
     "Back": "ย้อนกลับ",
     "Back to calculator": "กลับไปที่เครื่องคำนวณ",
     "Background reading": "เอกสารอ่านประกอบ",
+    "Bar chart": "แผนภูมิแท่ง",
     "Breakdown by category": "รายละเอียดแยกตามหมวดหมู่",
     "Breakdowns of entries contributed to this tool": "รายละเอียดแยกตามรายการที่ผู้ใช้เลือกแบ่งปันในเครื่องมือนี้",
     "By food type": "ตามประเภทอาหาร",
@@ -64,6 +63,7 @@
     "Calculator options have changed. The latest options are being loaded; please review your selections and try again.": "ตัวเลือกของเครื่องคำนวณมีการเปลี่ยนแปลง ระบบกำลังโหลดตัวเลือกล่าสุด กรุณาตรวจสอบสิ่งที่คุณเลือกไว้แล้วลองใหม่อีกครั้ง",
     "Calculator unavailable": "ใช้เครื่องคำนวณไม่ได้",
     "Cancel": "ยกเลิก",
+    "Categories follow the service's count-ranked order, with any combined Other bucket shown last. This compares categories, not a time trend.": "หมวดหมู่เรียงตามจำนวนที่บริการจัดไว้ โดยหมวด «อื่น ๆ» ที่รวมข้อมูลจะแสดงท้ายสุดหากมี นี่คือการเปรียบเทียบหมวดหมู่ ไม่ใช่แนวโน้มตามเวลา",
     "Category": "หมวดหมู่",
     "Check the highlighted fields and try again.": "ตรวจสอบช่องที่ทำเครื่องหมายไว้แล้วลองใหม่อีกครั้ง",
     "Check this entry, or add another supply-chain entry before viewing the combined results.": "ตรวจสอบรายการนี้ หรือเพิ่มรายการห่วงโซ่อุปทานอีกรายการ ก่อนดูผลลัพธ์รวม",
@@ -226,6 +226,7 @@
     "Language": "ภาษา",
     "Latest news": "ข่าวล่าสุด",
     "Latest news is temporarily unavailable. You can still use the calculator and explore the documentation.": "ขณะนี้ยังแสดงข่าวล่าสุดไม่ได้ชั่วคราว คุณยังใช้เครื่องคำนวณและดูเอกสารประกอบได้ตามปกติ",
+    "Line graph": "กราฟเส้น",
     "Loading aggregate statistics…": "กำลังโหลดสถิติรวม…",
     "Loading calculator options…": "กำลังโหลดตัวเลือกของเครื่องคำนวณ…",
     "Loading calculator…": "กำลังโหลดเครื่องคำนวณ…",
@@ -281,6 +282,7 @@
     "Percentage waste": "สัดส่วนขยะ",
     "Period end": "สิ้นสุดช่วงเวลา",
     "Period start": "เริ่มต้นช่วงเวลา",
+    "Pie chart": "แผนภูมิวงกลม",
     "Placeholder data": "ข้อมูลชั่วคราว",
     "Plain-language comparisons appear when supplied by the calculation service.": "การเปรียบเทียบแบบเข้าใจง่ายจะปรากฏเมื่อบริการคำนวณส่งข้อมูลมาให้",
     "Potential Improvement": "โอกาสในการปรับปรุง",
@@ -461,5 +463,8 @@
     "no impact figures were returned": "ไม่มีตัวเลขผลกระทบส่งกลับมา",
     "saved": "บันทึกแล้ว",
     "tonnes": "ตัน"
-  }
+  },
+  "tags": [
+    "th"
+  ]
 }

@@ -39,30 +39,32 @@
  */
 
 import { ApiError, getStats } from './api.js'
-import { renderBar, renderDonut } from './charts.js'
+import { renderBar, renderLine, renderPie } from './charts.js'
 import { applyDocumentLanguage, applyToDocument, installLanguageChooser, t } from './i18n.js'
 // The site drawer's `Escape` handler and `aria-expanded`. Side-effect import: the
 // drawer is a `<details>` in the markup and works without this; see web/js/drawer.js.
 import './drawer.js'
 
 const chartInstances = new Map()
+const chartSelections = new Map()
+let chartRenderGeneration = 0
+const CHART_TYPES = [
+  { value: 'pie', label: () => t('Pie chart'), render: renderPie },
+  { value: 'bar', label: () => t('Bar chart'), render: renderBar },
+  { value: 'line', label: () => t('Line graph'), render: renderLine },
+]
 let latestRequestGeneration = 0
 
 /**
  * The three breakdowns §6.4 publishes.
  *
- * **All three are drawn as doughnuts, and that is only honest because of what
- * they count.** Every value a breakdown here charts is `share`, derived in
+ * Every value a breakdown here charts is `share`, derived in
  * `db/repository.py::_bucketise` from `func.count()` — destination entries,
  * supply-chain points, food categories selected. A count cannot be negative,
  * and any bucket the suppression threshold would otherwise expose is merged
  * into `other` before a share is computed, so the shares that remain still
- * sum to 1: the slices are the whole. **A doughnut cannot draw a negative
- * slice** — there is no such thing as a negative share of a whole — which is
- * exactly why `renderBar`'s `allowNegative` exists at all: `factor_downstream`
- * may be negative (an offset, such as the waste levy), so a future breakdown
- * of impact *values* rather than counts needs a bar, not a doughnut. Do not
- * switch that one on the strength of this comment; recheck what it sums.
+ * sum to 1: the default Pie slices are the whole. Bar and Line show the same
+ * shares for readers who prefer category comparisons. Line is not a time axis.
  *
  * **Every string is a function, not a value**, the same shape
  * `methodology.js::METADATA_FIELDS` uses. A constant would be read once at module
@@ -82,7 +84,6 @@ const BREAKDOWNS = [
     key: 'by_destination',
     title: () => t('Destinations entered'),
     description: () => t('Share of destination entries across calculations contributed to this tool.'),
-    chart: 'donut',
     chartTitle: () => t('Destinations entered (share)'),
     count: (count) => t('%(count)s destination entries', { count }),
   },
@@ -90,7 +91,6 @@ const BREAKDOWNS = [
     key: 'by_sector',
     title: () => t('Sectors selected'),
     description: () => t('Share of supply-chain points by the sector selected across calculations contributed to this tool.'),
-    chart: 'donut',
     chartTitle: () => t('Sectors selected (share)'),
     count: (count) => t('%(count)s supply-chain points', { count }),
   },
@@ -98,7 +98,6 @@ const BREAKDOWNS = [
     key: 'by_food_category',
     title: () => t('Food categories selected'),
     description: () => t('Share of supply-chain points by the food category entered across calculations contributed to this tool.'),
-    chart: 'donut',
     chartTitle: () => t('Food categories selected (share)'),
     count: (count) => t('%(count)s supply-chain points', { count }),
   },
@@ -178,6 +177,7 @@ function destroyChart(key) {
 }
 
 export function destroyCharts() {
+  chartRenderGeneration += 1
   for (const key of [...chartInstances.keys()]) destroyChart(key)
 }
 
@@ -275,10 +275,18 @@ function createChart(key, canvas, rows, definition) {
     // beside a list reading `37.9% share`.
     formatValue: sharePercent,
   }
-  const chart = definition.chart === 'donut'
-    ? renderDonut(canvas, rows, options)
-    : renderBar(canvas, rows, { ...options, allowNegative: false })
+  const selected = CHART_TYPES.find((type) => type.value === chartSelections.get(key)) || CHART_TYPES[0]
+  const chart = selected.render(canvas, rows, selected.value === 'bar'
+    ? { ...options, allowNegative: false }
+    : options)
   chartInstances.set(key, chart)
+}
+
+function updateBreakdownNote(note, definition) {
+  note.textContent = definition.description()
+  if (chartSelections.get(definition.key) === 'line') {
+    note.append(` ${t("Categories follow the service's count-ranked order, with any combined Other bucket shown last. This compares categories, not a time trend.")}`)
+  }
 }
 
 function renderBreakdown(stats, definition) {
@@ -286,9 +294,12 @@ function renderBreakdown(stats, definition) {
     className: 'stats-breakdown',
     attributes: { 'aria-labelledby': `${definition.key}-heading` },
   })
+  const noteId = `${definition.key}-note`
+  const note = element('p', { className: 'stats-breakdown-note', attributes: { id: noteId } })
+  updateBreakdownNote(note, definition)
   section.append(
     element('h3', { text: definition.title(), attributes: { id: `${definition.key}-heading` } }),
-    element('p', { className: 'stats-breakdown-note', text: definition.description() }),
+    note,
   )
 
   const rows = Array.isArray(stats[definition.key]) ? stats[definition.key] : []
@@ -302,6 +313,25 @@ function renderBreakdown(stats, definition) {
     return section
   }
 
+  const controls = element('div', { className: 'stats-chart-controls' })
+  const selectId = `${definition.key}-chart-type`
+  const select = element('select', { attributes: {
+    id: selectId,
+    'aria-describedby': noteId,
+  } })
+  for (const type of CHART_TYPES) {
+    select.append(element('option', { text: type.label(), attributes: { value: type.value } }))
+  }
+  select.value = chartSelections.get(definition.key) || 'pie'
+  controls.append(
+    element('label', {
+      text: t('%(title)s chart type', { title: definition.title() }),
+      attributes: { for: selectId },
+    }),
+    select,
+  )
+  section.append(controls)
+
   const chartRegion = element('div', { className: 'stats-chart-region' })
   // The canvas is a picture to a screen reader, so this attribute is the chart.
   // It is set at build time like the title, and for the same reason is rebuilt
@@ -309,6 +339,7 @@ function renderBreakdown(stats, definition) {
   const canvas = element('canvas', {
     attributes: {
       role: 'img',
+      'aria-describedby': noteId,
       'aria-label': t(
         '%(title)s, charted using the API-provided share for every published bucket. The full values follow in a text list.',
         { title: definition.title() },
@@ -317,6 +348,14 @@ function renderBreakdown(stats, definition) {
   })
   chartRegion.append(canvas)
   section.append(chartRegion, renderEquivalentList(rows, definition))
+  const generation = chartRenderGeneration
+  select.addEventListener('change', () => {
+    if (generation !== chartRenderGeneration || !section.isConnected ||
+        !CHART_TYPES.some((type) => type.value === select.value)) return
+    chartSelections.set(definition.key, select.value)
+    updateBreakdownNote(note, definition)
+    createChart(definition.key, canvas, rows, definition)
+  })
   createChart(definition.key, canvas, rows, definition)
   return section
 }

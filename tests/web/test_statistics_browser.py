@@ -51,6 +51,7 @@ if str(ROOT) not in sys.path:  # pragma: no cover - import path guard
     sys.path.insert(0, str(ROOT))
 
 from tests.support import red_line  # noqa: E402
+from tests.web import i18n_keys  # noqa: E402
 
 BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080")
 STATS = json.loads((ROOT / "tests" / "fixtures" / "stats.json").read_text(encoding="utf-8"))
@@ -113,7 +114,7 @@ def stats_page(browser):
     """The statistics page at a viewport, rendered from the canonical fixture."""
     contexts = []
 
-    def open_page(width, height, dpr=1.0):
+    def open_page(width, height, dpr=1.0, *, language="en", payload=None):
         # `bypass_csp` for the mutation hook only - see the note in
         # test_step_navigation.py. `test_csp.py` measures the policy itself
         # with no bypass, which is where a directive that breaks a page fails.
@@ -125,10 +126,17 @@ def stats_page(browser):
         )
         contexts.append(context)
         page = context.new_page()
+        page.add_init_script(_LANGUAGES_SHIM.format(
+            languages=json.dumps([language]), first=json.dumps(language)
+        ))
+        requests = []
+        page.on("request", lambda request: requests.append(request.url)
+                if request.url.endswith("/api/v1/stats") else None)
+        page.stats_requests = requests
         page.route(
             "**/api/v1/stats",
             lambda route: route.fulfill(
-                status=200, content_type="application/json", body=json.dumps(STATS)
+                status=200, content_type="application/json", body=json.dumps(STATS if payload is None else payload)
             ),
         )
         page.goto(f"{BASE}/stats.html", wait_until="networkidle", timeout=20000)
@@ -170,7 +178,7 @@ def test_every_legend_entry_is_drawn_inside_its_canvas(stats_page, width, height
     assert legended, "no chart on this page draws a legend, so this measures nothing"
 
     # One assertion over the whole set, not one per chart: since all three
-    # breakdowns became doughnuts, all three are legended, and the fixture only
+    # breakdowns default to Pies, all three are legended, and the fixture only
     # gives one of them (`by_destination`) ten buckets - `by_sector` and
     # `by_food_category` are five and seven. Requiring *every* legended chart
     # to individually reach ten would fail on a fixture shape that has nothing
@@ -260,21 +268,16 @@ def test_the_axis_and_the_list_state_the_same_number_in_the_same_unit(stats_page
     """Defect 4. The bar chart's y axis read `0`, `0.05` … `0.40` immediately
     above a text list reading `37.9% share`: one number, two units, one card.
 
-    All three breakdowns are doughnuts as of the shares-as-shares change, so no
-    bar chart is rendered on this page any more and a y axis - the surface
-    defect 4 was found on - does not exist here to regress. The bar branch is
-    kept and asserted in case a future breakdown (of impact *values*, which can
-    be negative - see the note above `BREAKDOWNS`) puts one back.
-
-    What still applies to every chart on this page, bar or doughnut, is the
-    half of defect 4 that is not about axes at all: the tooltip and the text
-    list must state the same figure in the same unit. Formatting one and not
-    the other only moves the contradiction into the hover.
+    The page now defaults to three Pies, so this test selects Bar and Line to
+    make both cartesian axes observable. Their tooltips and the remaining Pie
+    tooltip must agree with the text list's percentage unit.
     """
     page = stats_page(1278, 983, 1.25)
+    page.locator(".stats-chart-controls select").nth(0).select_option("bar")
+    page.locator(".stats-chart-controls select").nth(1).select_option("line")
     axes = page.evaluate(
         """() => Object.values(Chart.instances)
-             .filter((chart) => chart.config.type === 'bar')
+             .filter((chart) => ['bar', 'line'].includes(chart.config.type))
              .map((chart) => ({
                ticks: chart.scales.y.ticks.map((tick) => tick.label),
                tooltip: chart.options.plugins.tooltip.callbacks.label({
@@ -282,30 +285,32 @@ def test_the_axis_and_the_list_state_the_same_number_in_the_same_unit(stats_page
                }),
              }))"""
     )
+    assert len(axes) == 2, "both selected cartesian charts must draw an axis"
     for axis in axes:
         assert axis["ticks"], "the y axis drew no ticks"
         assert all("%" in str(label) for label in axis["ticks"]), (
             f"the y axis reads a raw fraction for a share: {axis['ticks']}"
         )
-        assert "%" in axis["tooltip"], (
+        assert "37.9%" in axis["tooltip"], (
             f"the axis is a percentage and the tooltip is not: {axis['tooltip']!r}"
         )
 
-    donuts = page.evaluate(
+    pies = page.evaluate(
         """() => Object.values(Chart.instances)
-             .filter((chart) => chart.config.type === 'doughnut')
+             .filter((chart) => chart.config.type === 'pie')
              .map((chart) => chart.options.plugins.tooltip.callbacks.label({
                label: 'Example', parsed: 0.379,
              }))"""
     )
-    assert donuts, "no doughnut was rendered, so the tooltip cannot be checked"
-    for tooltip in donuts:
-        assert "%" in tooltip, (
+    assert len(pies) == 1, "the remaining Pie must draw a tooltip"
+    for tooltip in pies:
+        assert "37.9%" in tooltip, (
             f"the text list states a percentage share and a doughnut's tooltip is not: {tooltip!r}"
         )
 
     listed = page.inner_text("#stats-breakdown-content")
     assert "% share" in listed, "the text list no longer states a share, so nothing is being compared"
+    assert "37.9% share" in listed
 
 
 def test_a_mass_is_printed_as_the_service_sent_it(stats_page):
@@ -417,9 +422,10 @@ def test_every_statistics_breakdown_is_drawn_as_a_share(browser):
     """**Item ⑫, and it is two words in a config - but the reason it is safe
     is worth writing down.**
 
-    A doughnut can only express a part of a whole. This project's charts must
-    render negative values, because `factor_downstream` may be negative (an
-    offset) - which is why `renderBar` carries `allowNegative`. A negative
+    The current Statistics default, `renderPie`, can only express a part of a
+    whole. This project's charts must render negative values, because
+    `factor_downstream` may be negative (an offset) - which is why `renderBar`
+    carries `allowNegative`. A negative
     slice does not exist.
 
     These three buckets are safe because they are COUNTS of what visitors
@@ -442,7 +448,7 @@ def test_every_statistics_breakdown_is_drawn_as_a_share(browser):
         )
         assert charted, "no charts were drawn"
         kinds = [chart["type"] for chart in charted]
-        assert set(kinds) == {"doughnut"}, (
+        assert kinds == ["pie", "pie", "pie"], (
             f"not every breakdown is a share chart: {kinds}"
         )
 
@@ -473,11 +479,262 @@ def test_every_statistics_breakdown_is_drawn_as_a_share(browser):
         context.close()
 
 
+LINE_NOTE = "Categories follow the service's count-ranked order, with any combined Other bucket shown last. This compares categories, not a time trend."
+BREAKDOWN_KEYS = ("by_destination", "by_sector", "by_food_category")
+CHART_DATA = """() => [...document.querySelectorAll('.stats-chart-region canvas')].map(canvas => {
+  const chart = Chart.getChart(canvas);
+  return {id: chart.id, type: chart.config.type, labels: [...chart.data.labels],
+          data: [...chart.data.datasets[0].data]};
+})"""
+
+
+def test_empty_error_and_recovery_keep_chart_choices_without_orphans(stats_page):
+    page = stats_page(1278, 983)
+    result = page.evaluate("""async stats => {
+      const module = await import('/js/stats.js');
+      const { ApiError } = await import('/js/api.js');
+      const selections = () => [...document.querySelectorAll('.stats-breakdown')].map(
+        section => section.querySelector('select')?.value ?? null);
+      const ids = () => [...document.querySelectorAll('.stats-chart-region canvas')].map(
+        canvas => Chart.getChart(canvas)?.id);
+      document.querySelectorAll('.stats-chart-controls select')[0].value = 'bar';
+      document.querySelectorAll('.stats-chart-controls select')[0].dispatchEvent(new Event('change'));
+      document.querySelectorAll('.stats-chart-controls select')[1].value = 'line';
+      document.querySelectorAll('.stats-chart-controls select')[1].dispatchEvent(new Event('change'));
+      const empty = structuredClone(stats);
+      empty.by_sector = [];
+      module.renderStats(empty);
+      const duringEmpty = {selections: selections(), active: Object.keys(Chart.instances).length,
+        sectorCanvas: !!document.querySelectorAll('.stats-breakdown')[1].querySelector('canvas')};
+      module.renderStatsError(new ApiError('TEST', 'Temporary failure'));
+      const duringError = {active: Object.keys(Chart.instances).length,
+        controls: document.querySelectorAll('.stats-chart-controls select').length,
+        canvases: document.querySelectorAll('.stats-chart-region canvas').length};
+      await module.loadStats({getStats: async () => stats});
+      const recovered = {selections: selections(), active: Object.keys(Chart.instances).length,
+        ids: ids()};
+      module.renderStats(stats);
+      const repeated = {selections: selections(), active: Object.keys(Chart.instances).length,
+        ids: ids()};
+      const select = document.querySelector('.stats-chart-controls select');
+      select.value = 'pie';
+      select.dispatchEvent(new Event('change'));
+      const afterChange = {active: Object.keys(Chart.instances).length, ids: ids()};
+      return {duringEmpty, duringError, recovered, repeated, afterChange};
+    }""", STATS)
+    assert result["duringEmpty"] == {"selections": ["bar", None, "pie"], "active": 2,
+                                     "sectorCanvas": False}
+    assert result["duringError"] == {"active": 0, "controls": 0, "canvases": 0}
+    assert result["recovered"]["selections"] == ["bar", "line", "pie"]
+    assert result["recovered"]["active"] == result["repeated"]["active"] == 3
+    assert len(set(result["repeated"]["ids"])) == 3
+    assert result["afterChange"]["active"] == 3
+    assert result["afterChange"]["ids"][0] == result["repeated"]["ids"][0] + 3
+    assert result["afterChange"]["ids"][1:] == result["repeated"]["ids"][1:]
+    assert len(page.stats_requests) == 1
+
+
+def test_stale_stats_success_and_failure_do_not_replace_the_latest_view(stats_page):
+    page = stats_page(1278, 983)
+    result = page.evaluate("""async stats => {
+      const module = await import('/js/stats.js');
+      const { ApiError } = await import('/js/api.js');
+      const target = document.querySelector('#stats-breakdown-content');
+      const deferred = () => {let resolve, reject; const promise = new Promise((yes, no) => {
+        resolve = yes; reject = no;
+      }); return {promise, resolve, reject};};
+      let calls = 0;
+      const getDeferred = pending => () => { calls += 1; return pending.promise; };
+      const snapshot = () => ({busy: target.getAttribute('aria-busy'),
+        summary: document.querySelector('#stats-summary').textContent,
+        ids: [...document.querySelectorAll('.stats-chart-region canvas')].map(c => Chart.getChart(c).id)});
+      const older = deferred(), newer = deferred();
+      const oldCall = module.loadStats({getStats: getDeferred(older)});
+      const busyAfterOld = target.getAttribute('aria-busy');
+      const newCall = module.loadStats({getStats: getDeferred(newer)});
+      const busyAfterNew = target.getAttribute('aria-busy');
+      newer.resolve({...stats, total_calculations: 222});
+      await newCall;
+      const latestSuccess = snapshot();
+      older.resolve({...stats, total_calculations: 111});
+      const staleSuccessResult = await oldCall;
+      const afterStaleSuccess = snapshot();
+      const olderFailure = deferred(), newerSuccess = deferred();
+      const oldFailureCall = module.loadStats({getStats: getDeferred(olderFailure)});
+      const busyAfterOldFailure = target.getAttribute('aria-busy');
+      const newSuccessCall = module.loadStats({getStats: getDeferred(newerSuccess)});
+      newerSuccess.resolve({...stats, total_calculations: 333});
+      await newSuccessCall;
+      const latestAfterFailureRace = snapshot();
+      olderFailure.reject(new ApiError('TEST', 'Obsolete failure'));
+      const staleFailureResult = await oldFailureCall;
+      const afterStaleFailure = snapshot();
+      let unexpectedError = null;
+      try {
+        await module.loadStats({getStats: async () => { throw new RangeError('Renderer error'); }});
+      } catch (error) {
+        unexpectedError = {name: error.name, message: error.message};
+      }
+      return {busyAfterOld, busyAfterNew, busyAfterOldFailure, latestSuccess,
+        staleSuccessResult, afterStaleSuccess, latestAfterFailureRace,
+        staleFailureResult, afterStaleFailure, unexpectedError, calls,
+        afterUnexpectedError: snapshot()};
+    }""", STATS)
+    assert result["busyAfterOld"] == result["busyAfterNew"] == result["busyAfterOldFailure"] == "true"
+    assert result["staleSuccessResult"] is None and result["staleFailureResult"] is None
+    assert result["latestSuccess"] == result["afterStaleSuccess"]
+    assert result["latestAfterFailureRace"] == result["afterStaleFailure"]
+    assert result["afterStaleFailure"] == result["afterUnexpectedError"]
+    assert result["unexpectedError"] == {"name": "RangeError", "message": "Renderer error"}
+    assert result["calls"] == 4
+    assert "222" in result["latestSuccess"]["summary"]
+    assert "333" in result["latestAfterFailureRace"]["summary"]
+    assert result["latestSuccess"]["busy"] == result["latestAfterFailureRace"]["busy"] == "false"
+    assert len(page.stats_requests) == 1
+
+
+def test_detached_selector_cannot_recreate_a_destroyed_chart(stats_page):
+    page = stats_page(1278, 983)
+    result = page.evaluate("""async stats => {
+      const module = await import('/js/stats.js');
+      const { ApiError } = await import('/js/api.js');
+      const ids = () => Object.keys(Chart.instances).map(Number).sort((a, b) => a - b);
+      const staleChange = select => {
+        const before = ids();
+        select.value = 'bar';
+        select.dispatchEvent(new Event('change'));
+        return {before, after: ids()};
+      };
+      const oldRerender = document.querySelector('.stats-chart-controls select');
+      module.rerenderInActiveLanguage();
+      const afterRerender = staleChange(oldRerender);
+      const oldError = document.querySelector('.stats-chart-controls select');
+      module.renderStatsError(new ApiError('TEST', 'Temporary failure'));
+      const afterError = staleChange(oldError);
+      module.renderStats(stats);
+      const oldDestroy = document.querySelector('.stats-chart-controls select');
+      module.destroyCharts();
+      const afterDestroy = staleChange(oldDestroy);
+      module.renderStats(stats);
+      const oldPagehide = document.querySelector('.stats-chart-controls select');
+      window.dispatchEvent(new Event('pagehide'));
+      const afterPagehide = staleChange(oldPagehide);
+      module.renderStats(stats);
+      const current = document.querySelector('.stats-chart-controls select');
+      const normalBefore = ids();
+      current.value = 'bar';
+      current.dispatchEvent(new Event('change'));
+      return {afterRerender, afterError, afterDestroy, afterPagehide,
+        normalBefore, normalAfter: ids(), currentValue: current.value};
+    }""", STATS)
+    for name in ("afterRerender", "afterError", "afterDestroy", "afterPagehide"):
+        assert result[name]["after"] == result[name]["before"], name
+    assert result["currentValue"] == "bar"
+    assert len(result["normalBefore"]) == len(result["normalAfter"]) == 3
+    assert len(set(result["normalBefore"]) & set(result["normalAfter"])) == 2
+    assert len(page.stats_requests) == 1
+
+
+def test_each_breakdown_selects_a_chart_without_refetching_or_replacing_its_list(stats_page):
+    page = stats_page(1278, 983)
+    before = page.evaluate(CHART_DATA)
+    assert [chart["type"] for chart in before] == ["pie"] * 3
+    for chart, key in zip(before, BREAKDOWN_KEYS):
+        assert chart["labels"] == [row["label"] for row in STATS[key]]
+        assert chart["data"] == pytest.approx([float(row["share"]) for row in STATS[key]])
+    handles = page.evaluate_handle("""() => ({
+        canvases: [...document.querySelectorAll('.stats-chart-region canvas')],
+        lists: [...document.querySelectorAll('.stats-breakdown-list')],
+        charts: [...document.querySelectorAll('.stats-chart-region canvas')].map(c => Chart.getChart(c))
+    })""")
+    selects = page.locator(".stats-chart-controls select")
+    assert selects.count() == 3
+    for index, kind in ((0, "bar"), (1, "line")):
+        previous = page.evaluate(CHART_DATA)
+        selects.nth(index).select_option(kind)
+        after = page.evaluate(CHART_DATA)
+        assert [(a["id"] != b["id"]) for a, b in zip(after, previous)] == [i == index for i in range(3)]
+        assert [(c["labels"], c["data"]) for c in after] == [(c["labels"], c["data"]) for c in before]
+        assert page.evaluate("""saved => saved.lists.every((list, i) => list.isConnected &&
+            list === document.querySelectorAll('.stats-breakdown-list')[i]) &&
+            saved.canvases.every((canvas, i) => canvas.isConnected &&
+            canvas === document.querySelectorAll('.stats-chart-region canvas')[i])""", handles)
+    assert page.evaluate("saved => saved.charts[0].canvas === null && saved.charts[1].canvas === null && saved.charts[2].canvas !== null", handles)
+    assert selects.evaluate_all("nodes => nodes.map(n => n.value)") == ["bar", "line", "pie"]
+    assert len(page.stats_requests) == 1
+
+
+def test_line_explains_count_ranked_categories_not_time(stats_page):
+    payload = json.loads(json.dumps(STATS))
+    payload["by_destination"] = [
+        {"code": "a", "label": "A", "count": 20, "share": "0.2", "total_kg": "2.000"},
+        {"code": "b", "label": "B", "count": 10, "share": "0.1", "total_kg": "1.000"},
+        {"code": "other", "label": "Other", "count": 70, "share": "0.7", "total_kg": "7.000"},
+    ]
+    page = stats_page(390, 700, payload=payload)
+    section = page.locator(".stats-breakdown").first
+    section.locator("select").select_option("line")
+    assert LINE_NOTE in section.locator(".stats-breakdown-note").inner_text()
+    assert section.locator(".stats-breakdown-note").is_visible()
+    note_id = section.locator(".stats-breakdown-note").get_attribute("id")
+    assert note_id and section.locator("select").get_attribute("aria-describedby") == note_id
+    assert section.locator("canvas").get_attribute("aria-describedby") == note_id
+    chart = page.evaluate(CHART_DATA)[0]
+    assert chart["labels"] == ["A", "B", "Other"]
+    assert chart["data"] == [0.2, 0.1, 0.7]
+    assert section.locator("canvas").evaluate("canvas => Chart.getChart(canvas).scales.x.type") == "category"
+    section.locator("select").select_option("pie")
+    assert LINE_NOTE not in section.locator(".stats-breakdown-note").inner_text()
+
+
+@pytest.mark.parametrize("width,height,dpr", VIEWPORTS)
+@pytest.mark.parametrize("language", ["en", "zh", "ar"])
+def test_chart_selector_is_labelled_keyboard_usable_and_fits_the_viewport(stats_page, width, height, dpr, language):
+    page = stats_page(width, height, dpr, language=language)
+    assert page.locator("html").get_attribute("dir") == ("rtl" if language == "ar" else "ltr")
+    charts = page.evaluate(LEGENDS)
+    assert len(charts) == 3
+    for chart in charts:
+        assert chart["type"] == "pie" and chart["entries"] == chart["buckets"] > 0
+        assert max(chart["bottoms"]) <= chart["canvasHeight"]
+        assert max(chart["rights"]) <= chart["canvasWidth"] + 1
+    for index in range(3):
+        section = page.locator(".stats-breakdown").nth(index)
+        control = section.locator("select")
+        label = section.locator(".stats-chart-controls label")
+        assert label.is_visible() and label.inner_text().strip()
+        assert label.get_attribute("for") == control.get_attribute("id")
+        assert control.bounding_box()["height"] >= 54
+        assert control.evaluate("node => getComputedStyle(node).boxSizing") == "border-box"
+        assert control.bounding_box()["width"] == section.locator(".stats-chart-controls").bounding_box()["width"]
+        control.focus()
+        control.press("ArrowDown")
+        control.press("Enter")
+        assert control.input_value() == "bar"
+        assert control.evaluate("node => document.activeElement === node")
+        control.press("ArrowDown")
+        control.press("Enter")
+        assert control.input_value() == "line"
+        assert control.evaluate("node => document.activeElement === node")
+        note = section.locator(".stats-breakdown-note")
+        assert note.is_visible()
+        assert control.get_attribute("aria-describedby") == note.get_attribute("id")
+        assert section.locator("canvas").get_attribute("aria-describedby") == note.get_attribute("id")
+        expected = LINE_NOTE if language == "en" else i18n_keys.catalogue(language)["strings"][LINE_NOTE]
+        assert expected in note.inner_text()
+    assert page.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
+    long_label = STATS["by_food_category"][1]["label"]
+    assert long_label in page.locator(".stats-breakdown-list").nth(2).inner_text()
+    assert long_label in page.locator("canvas").nth(2).evaluate("""(canvas, label) => Chart.getChart(canvas).options.plugins.tooltip.callbacks.label({label, parsed: {y: 0.1312}})""", long_label)
+
+
 def test_render_bar_draws_a_negative_value_below_the_axis(browser):
-    """`renderBar`'s `allowNegative` has no caller on this page today - item ⑫
-    put every statistics breakdown on `renderDonut` instead, and a donut cannot
-    express a negative slice - so nothing in `stats.js` reaches the branch this
-    exercises. It is retained capability rather than dead code: §7.3a's "charts
+    """Statistics defaults to `renderPie`, whose slices cannot express negative
+    values. The page's Bar option calls `renderBar` with `allowNegative: false`
+    because these breakdowns are non-negative counts, so the negative-axis
+    branch this test exercises is not reached from `stats.js`. `renderDonut`
+    remains a compatible adapter with no Statistics caller. Negative Bar support
+    is retained capability rather than dead code: §7.3a's "charts
     must render negative values" still stands, because `factor_downstream` may
     be negative (an offset) - `animal_feed` is `-0.15` in
     `tests/fixtures/factors.json` - and this is D's own library for whatever

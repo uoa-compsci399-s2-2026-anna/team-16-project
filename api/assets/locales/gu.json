@@ -1,10 +1,7 @@
 {
-  "language": "gu",
   "endonym": "ગુજરાતી",
+  "language": "gu",
   "machine_translated": true,
-  "tags": [
-    "gu"
-  ],
   "strings": {
     "%(amount)s combined": "કુલ મળીને %(amount)s",
     "%(caption)s, horizontally scrollable": "%(caption)s, આડી દિશામાં સ્ક્રોલ કરી શકાય તેવું",
@@ -23,6 +20,7 @@
     "%(share)s share": "%(share)s હિસ્સો",
     "%(tab)s data": "%(tab)s ડેટા",
     "%(tab)s data — %(entry)s": "%(tab)s ડેટા — %(entry)s",
+    "%(title)s chart type": "%(title)s માટે આલેખનો પ્રકાર",
     "%(title)s data": "%(title)s ડેટા",
     "%(title)s, charted using the API-provided share for every published bucket. The full values follow in a text list.": "%(title)s, દરેક પ્રકાશિત વર્ગ માટે API એ આપેલા હિસ્સાથી આલેખિત. પૂરાં મૂલ્યો નીચે લખાણ યાદીમાં આપ્યાં છે.",
     "(optional)": "(વૈકલ્પિક)",
@@ -50,6 +48,7 @@
     "Back": "પાછળ",
     "Back to calculator": "કેલ્ક્યુલેટર પર પાછા જાઓ",
     "Background reading": "પૂર્વભૂમિકા વાચન",
+    "Bar chart": "સ્તંભ આલેખ",
     "Breakdown by category": "શ્રેણી પ્રમાણે વિગત",
     "Breakdowns of entries contributed to this tool": "આ ટૂલમાં યોગદાન આપેલી નોંધોની વિગતો",
     "By food type": "ખોરાકના પ્રકાર પ્રમાણે",
@@ -64,6 +63,7 @@
     "Calculator options have changed. The latest options are being loaded; please review your selections and try again.": "કેલ્ક્યુલેટરના વિકલ્પો બદલાયા છે. નવીનતમ વિકલ્પો લોડ થઈ રહ્યા છે; કૃપા કરીને તમારી પસંદગીઓ તપાસો અને ફરી પ્રયાસ કરો.",
     "Calculator unavailable": "કેલ્ક્યુલેટર ઉપલબ્ધ નથી",
     "Cancel": "રદ કરો",
+    "Categories follow the service's count-ranked order, with any combined Other bucket shown last. This compares categories, not a time trend.": "શ્રેણીઓ સેવાની ગણતરી પ્રમાણેના ક્રમમાં છે અને સંયુક્ત ‘અન્ય’ શ્રેણી હોય તો તે છેલ્લે આવે છે. આ શ્રેણીઓની સરખામણી છે, સમયનો વલણ નથી.",
     "Category": "શ્રેણી",
     "Check the highlighted fields and try again.": "ચિહ્નિત ખાનાં તપાસો અને ફરી પ્રયાસ કરો.",
     "Check this entry, or add another supply-chain entry before viewing the combined results.": "સંયુક્ત પરિણામો જોતાં પહેલાં આ નોંધ તપાસો, અથવા બીજી પુરવઠા-શૃંખલા નોંધ ઉમેરો.",
@@ -226,6 +226,7 @@
     "Language": "ભાષા",
     "Latest news": "તાજા સમાચાર",
     "Latest news is temporarily unavailable. You can still use the calculator and explore the documentation.": "તાજા સમાચાર થોડા સમય માટે ઉપલબ્ધ નથી. તેમ છતાં તમે કેલ્ક્યુલેટર વાપરી શકો છો અને દસ્તાવેજો જોઈ શકો છો.",
+    "Line graph": "રેખા આલેખ",
     "Loading aggregate statistics…": "સામૂહિક આંકડા લોડ થઈ રહ્યા છે…",
     "Loading calculator options…": "કેલ્ક્યુલેટરના વિકલ્પો લોડ થઈ રહ્યા છે…",
     "Loading calculator…": "કેલ્ક્યુલેટર લોડ થઈ રહ્યું છે…",
@@ -281,6 +282,7 @@
     "Percentage waste": "કચરાની ટકાવારી",
     "Period end": "સમયગાળાનો અંત",
     "Period start": "સમયગાળાની શરૂઆત",
+    "Pie chart": "વર્તુળ આલેખ",
     "Placeholder data": "કામચલાઉ નમૂનારૂપ ડેટા",
     "Plain-language comparisons appear when supplied by the calculation service.": "ગણતરી સેવા પૂરી પાડે ત્યારે સરળ ભાષામાં સરખામણીઓ દેખાય છે.",
     "Potential Improvement": "સંભવિત સુધારો",
@@ -461,5 +463,8 @@
     "no impact figures were returned": "કોઈ અસરના આંકડા મળ્યા નથી",
     "saved": "સાચવેલું",
     "tonnes": "ટન"
-  }
+  },
+  "tags": [
+    "gu"
+  ]
 }

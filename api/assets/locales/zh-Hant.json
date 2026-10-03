@@ -1,13 +1,7 @@
 {
-  "language": "zh-Hant",
   "endonym": "中文（繁體）",
+  "language": "zh-Hant",
   "machine_translated": true,
-  "tags": [
-    "zh-Hant",
-    "zh-TW",
-    "zh-HK",
-    "zh-MO"
-  ],
   "strings": {
     "%(amount)s combined": "合計 %(amount)s",
     "%(caption)s, horizontally scrollable": "%(caption)s，可橫向捲動",
@@ -26,6 +20,7 @@
     "%(share)s share": "佔比 %(share)s",
     "%(tab)s data": "%(tab)s 資料",
     "%(tab)s data — %(entry)s": "%(tab)s 資料 — %(entry)s",
+    "%(title)s chart type": "%(title)s 圖表類型",
     "%(title)s data": "%(title)s 資料",
     "%(title)s, charted using the API-provided share for every published bucket. The full values follow in a text list.": "%(title)s，圖表依 API 提供的各個已發布分組的佔比繪製。完整數值請見下方的文字清單。",
     "(optional)": "（選填）",
@@ -53,6 +48,7 @@
     "Back": "返回",
     "Back to calculator": "返回計算機",
     "Background reading": "延伸閱讀",
+    "Bar chart": "長條圖",
     "Breakdown by category": "依類別細分",
     "Breakdowns of entries contributed to this tool": "本工具中所貢獻記錄的細分情形",
     "By food type": "依食物類型",
@@ -67,6 +63,7 @@
     "Calculator options have changed. The latest options are being loaded; please review your selections and try again.": "計算機的選項已更新。正在載入最新選項，請檢查您的選擇後再試一次。",
     "Calculator unavailable": "計算機暫時無法使用",
     "Cancel": "取消",
+    "Categories follow the service's count-ranked order, with any combined Other bucket shown last. This compares categories, not a time trend.": "類別依服務按筆數排序的順序呈現；如有合併的「其他」類別，會顯示在最後。此圖比較的是類別，不是時間趨勢。",
     "Category": "類別",
     "Check the highlighted fields and try again.": "請檢查標示出來的欄位後再試一次。",
     "Check this entry, or add another supply-chain entry before viewing the combined results.": "請檢查這筆記錄，或在檢視彙總結果前再新增一筆供應鏈記錄。",
@@ -229,6 +226,7 @@
     "Language": "語言",
     "Latest news": "最新消息",
     "Latest news is temporarily unavailable. You can still use the calculator and explore the documentation.": "最新消息暫時無法顯示。您仍然可以使用計算機並查閱說明文件。",
+    "Line graph": "折線圖",
     "Loading aggregate statistics…": "正在載入彙總統計…",
     "Loading calculator options…": "正在載入計算機選項…",
     "Loading calculator…": "正在載入計算機…",
@@ -284,6 +282,7 @@
     "Percentage waste": "浪費百分比",
     "Period end": "期間結束",
     "Period start": "期間開始",
+    "Pie chart": "圓餅圖",
     "Placeholder data": "暫定資料",
     "Plain-language comparisons appear when supplied by the calculation service.": "當計算服務提供時，會顯示淺白易懂的對照說明。",
     "Potential Improvement": "潛在改善空間",
@@ -464,5 +463,11 @@
     "no impact figures were returned": "未回傳任何影響數據",
     "saved": "減少",
     "tonnes": "公噸"
-  }
+  },
+  "tags": [
+    "zh-Hant",
+    "zh-TW",
+    "zh-HK",
+    "zh-MO"
+  ]
 }

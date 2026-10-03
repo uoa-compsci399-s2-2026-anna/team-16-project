@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-10-03 (v1.88)"
+date: "2026-10-03 (v1.89)"
 ---
 
 # 0. How to Use This Document
@@ -25,7 +25,15 @@ This document defines **what every person's code receives and what it returns.**
 
 ## 0.1 Change Log
 
+### v1.89 — 2026-10-03 (Statistics integration with the current main contract; affects C and D)
 
+This integration preserves v1.79's Statistics presentation contract and full §7.4 alongside main's v1.83 equivalence-panel glass contract, v1.84 card-folding contract, v1.85 money-hint contract, v1.86 one-unit improvement panel, v1.87 step-3 field index and v1.88 results-nav actions, and their current §7.3a/§7.6 material. The twenty locale pairs retain the five Statistics strings while preserving main's current values, deletions and sorted catalogue metadata; the public and embedded copies remain byte-identical. The Statistics chart selector continues to inherit the global 54px select height, and main's calculator, CSS and browser-test changes are retained. No additional REST/wire or fixture change is introduced by this integration; the existing revisions' fixtures remain authoritative. The §0 team-notification process still applies before merge, and this entry does not claim that notification has been sent. The branch-status notes in the preceding revisions describe their state when written, before this integration.
+
+
+
+> **This entry was written as v1.86 and is v1.89, and the skip is the week's own lesson.** v1.86 was free when this branch claimed it and was taken by `main` three hours before this branch's last push (#155, the improvement panel's one unit). v1.87 and v1.88 were then claimed by PR #154 and PR #150 — v1.87 on a branch nobody had pushed, v1.88 in prose inside #154's own entry — and both have since merged. **The rule that the highest version wherever it lives is the effective contract only holds while a claim is visible**: a number claimed on an unpushed branch cannot be scanned for, and one taken by a commit that opened no pull request cannot be reviewed at all. Settling this one took a scan of 303 refs, all history through `git log --all -S`, and the uncommitted working copy of all nineteen checkouts. **`### v1.79` below is untouched and stays**: every entry from v1.80 to v1.88 records that v1.79 is held by this branch, and renumbering only the integration entry keeps all of them true.
+
+> **Merging this without renumbering would not have conflicted.** Both entries insert at the top of this change log, so git keeps both and reports nothing; the duplicate is caught one step later by this revision's own `len(versions) == len(set(versions))` guard. That guard, and the `header == max(entries)` assertion added beside it, are this revision's answer to four branches that raised a change log without its header while nothing in the suite reported it.
 
 ### v1.88 — 2026-10-03 (the results nav offers the page's two actions as controls, dismisses on a click away and on Escape; affects C and D)
 
@@ -258,6 +266,12 @@ That is `equivalence.source_note`, which exists for whoever audits a conversion 
 > **Nothing is published and nothing is republished.** `is_mock` stays `true` on every set in every database, **O-1 remains the hard blocker**, and the placeholder banner stays mandatory and non-dismissible on every results view and every export. No Alembic revision was run against a live database by this work.
 
 > **The adjacent numbers are held by branches in flight.** **v1.79** is claimed by `feat/d-statistics-content` (PR #110, open) in its pushed `docs/interfaces.md`, and **v1.81** is being claimed by the collapsible-card branch out of the same 1 October meeting. Neither is merged; the effective contract is the highest version wherever it lives, merged or not, so this took the next free number above #110's. **Whichever of the three lands second resolves the change-log conflict** — the same situation v1.78 recorded about v1.74–v1.77 and `feat/session-restore`. The owner notifies the team.
+
+### v1.79 — 2026-09-30 (statistics chart selection and presentation; affects C and D)
+
+The statistics page now offers Pie, Bar and Line for each non-empty breakdown, defaulting independently to Pie. This is a front-end presentation contract, not a new statistics endpoint or calculation. §7.4 records the five `charts.js` exports (four renderer functions plus `PALETTE`), the compatible Donut renderer, shared `formatValue` option, negative-value rules, palette and motion behaviour, and the selector/cache/language lifecycle. Line compares categories in the service's count-ranked order, with a combined Other bucket last; it is not a time trend. The API-provided shares and privacy/suppression rules remain those of §6.4, and the translation and `en-NZ` number/date rules remain those of §7.7.7.
+
+**REST/wire and fixture step:** no REST endpoint, payload, wire field or `tests/fixtures/*.json` value changes in this revision. After checking those boundaries, the §0 fixture update is a **no-op**; existing fixtures remain authoritative. The contract-change team notification belongs in the existing PR before merge, where C, D and the rest of the team can review this version. Recording a PR notice does not itself mean every team member has been notified; merge still requires the team to know about the changed front-end contract.
 
 ### v1.78 — 2026-09-29 (the response fixtures carry the sixth metric, because the published set prices it; affects A, B, C, D and E)
 
@@ -6078,24 +6092,25 @@ export function exportPayload(state, locale);
 
 ## 7.4 `charts.js` (written by D)
 
-```js
-/**
- * @param {HTMLCanvasElement} el
- * @param {Array<{code,label,count,share}>} buckets
- * @param {{title?: string}} [opts]
- * @returns {Chart}  Chart.js instance; the caller is responsible for destroy()
- */
-export function renderDonut(el, buckets, opts);
+The public module namespace has **exactly five exports, of which four are functions**. Every renderer takes `(el: HTMLCanvasElement, rows: Array<Record<string, unknown>>, opts = {}) => Chart`; the caller must `destroy()` the returned instance. `renderDonut` stays a real `doughnut` renderer for compatible callers, not an alias of Pie. `PALETTE` is a constant, not a fifth renderer.
 
-/**
- * @param {HTMLCanvasElement} el
- * @param {Array<{label, value, unit}>} rows
- * @param {{allowNegative?: boolean}} [opts]  Downstream factors may be
- *        negative, so the bar chart must render negative values
- * @returns {Chart}
- */
-export function renderBar(el, rows, opts);
+```js
+export const PALETTE = [/* 16 brand { fill, ink } pairs */];
+export function renderDonut(el, rows, opts = {}); // Chart.js doughnut
+export function renderPie(el, rows, opts = {});   // Chart.js pie
+export function renderBar(el, rows, opts = {});   // Chart.js bar
+export function renderLine(el, rows, opts = {});  // Chart.js line
 ```
+
+Shared `opts`: `title?: string`, `labelKey?: string`, `valueKey?: string`, compatibility aliases `label?: string` and `value?: string`, and `formatValue?: (value: number) => string`. The aliases are used only when their `*Key` counterpart is absent. Labels default to the row's `label`. Donut/Pie default `valueKey` to `share`; Bar/Line default it to `value`. `formatValue` formats Donut/Pie tooltip values and Bar/Line tooltip values **and y-axis ticks**; without it those labels use `String(value)`. Do not create a separate `valueFormat` API. Bar alone also accepts `allowNegative?: boolean`, which changes the suggested scale minimum, never the signed data.
+
+Pie converts values using the shared nullable numeric conversion before constructing `Chart`. A **finite negative** value, mixed with positive buckets or alone, throws `RangeError('Pie charts require non-negative values')` before any chart is created; `-0` and `0` are allowed. Null, empty, non-numeric and non-finite values stay null, not zero or an absolute value. Bar and Line keep negative signs; Line uses a categorical x-axis with `fill: false`, `tension: 0` and `spanGaps: false` and must never imply a time series.
+
+Donut preserves its existing 16-entry brand `PALETTE` and configuration. Pie uses those same `{fill, ink}` pairs, keyed by `code` when present and otherwise `label`: sorted distinct keys use hash plus linear probing to claim unused slots. For the same key set, row reordering keeps a key's colour, and a renamed label does not change a coded key's colour. Up to **16 distinct keys have no colour collision**; further buckets still render and may reuse brand colours, never arbitrary generated colours. Duplicate keys may share a colour. Tooltip fill and ink use the actual assigned entry, while `fitLegend` measures available space and shortens only the painted long legend label; the full API label remains in tooltip and the text list. Bar and Line use brand Blueberry `#005AE6` with Kale/White contrast. All four renderers honour the exact `(prefers-reduced-motion: reduce)` media query: a matching preference sets `animation: false`; a non-match or missing API leaves Chart.js animation defaults alone.
+
+`stats.js` retains `renderStats(stats, {summary, breakdowns} = {})`, `renderStatsError(error, targets = {})`, `loadStats(options = {})`, `destroyCharts()` and `rerenderInActiveLanguage()` as its public functions. For each non-empty `by_destination`, `by_sector` and `by_food_category` section it builds a native, labelled select with `pie`/`bar`/`line` values, an independent selected type and an associated description on both select and canvas. Pie is the initial selection; changing type destroys and rebuilds only that section's Chart while keeping its equivalent text list. Empty sections show their own empty state rather than a selector. The page passes `valueKey: 'share'` and `formatValue: sharePercent` to all three choices, using the API's share without recalculation; Bar additionally passes `allowNegative: false` only as a scale hint.
+
+The service §6.4 supplies buckets ordered by **entry count**, descending with code tie-break, then any combined **Other** bucket last even when its count is largest. The browser preserves that order: Line is **count-ranked** category comparison, **not a time trend**, and neither `total_kg` nor a timestamp becomes its x-axis. The server alone suppresses/combines buckets; the browser does not filter or re-sort them. Selector labels and the Line explanation are translated lazily. `latestStats`, `latestFailure` and request-generation guards preserve the most recent result/error and prevent stale requests or detached controls from reviving charts. A type change makes no request. A language change destroys and rebuilds charts, lists, titles and accessibility text from that cached result/error through `rerenderInActiveLanguage()`, without another `GET /stats`; it keeps each section's selected type. Per §7.7.7, API staff-authored labels are never translated; counts, shares and dates retain `en-NZ` formatting across languages, while mass decimal strings retain the API's exact precision without locale reformatting.
 
 ## 7.5 `news.js` (written by D)
 

@@ -1,10 +1,7 @@
 {
-  "language": "es",
   "endonym": "Español",
+  "language": "es",
   "machine_translated": true,
-  "tags": [
-    "es"
-  ],
   "strings": {
     "%(amount)s combined": "%(amount)s en total",
     "%(caption)s, horizontally scrollable": "%(caption)s, con desplazamiento horizontal",
@@ -23,6 +20,7 @@
     "%(share)s share": "proporción de %(share)s",
     "%(tab)s data": "Datos: %(tab)s",
     "%(tab)s data — %(entry)s": "Datos: %(tab)s — %(entry)s",
+    "%(title)s chart type": "Tipo de gráfico de %(title)s",
     "%(title)s data": "Datos: %(title)s",
     "%(title)s, charted using the API-provided share for every published bucket. The full values follow in a text list.": "%(title)s, representado con la proporción facilitada por la API para cada categoría publicada. Los valores completos aparecen a continuación en una lista de texto.",
     "(optional)": "(opcional)",
@@ -50,6 +48,7 @@
     "Back": "Atrás",
     "Back to calculator": "Volver a la calculadora",
     "Background reading": "Lecturas complementarias",
+    "Bar chart": "Gráfico de barras",
     "Breakdown by category": "Desglose por categoría",
     "Breakdowns of entries contributed to this tool": "Desgloses de los registros aportados a esta herramienta",
     "By food type": "Por tipo de alimento",
@@ -64,6 +63,7 @@
     "Calculator options have changed. The latest options are being loaded; please review your selections and try again.": "Las opciones de la calculadora han cambiado. Se están cargando las más recientes; revisa tus selecciones e inténtalo de nuevo.",
     "Calculator unavailable": "Calculadora no disponible",
     "Cancel": "Cancelar",
+    "Categories follow the service's count-ranked order, with any combined Other bucket shown last. This compares categories, not a time trend.": "Las categorías siguen el orden por recuento del servicio; cualquier grupo «Otros» combinado aparece al final. Se comparan categorías, no una tendencia temporal.",
     "Category": "Categoría",
     "Check the highlighted fields and try again.": "Revisa los campos marcados e inténtalo de nuevo.",
     "Check this entry, or add another supply-chain entry before viewing the combined results.": "Revisa este registro o añade otro registro de la cadena de suministro antes de ver los resultados combinados.",
@@ -226,6 +226,7 @@
     "Language": "Idioma",
     "Latest news": "Últimas noticias",
     "Latest news is temporarily unavailable. You can still use the calculator and explore the documentation.": "Las últimas noticias no están disponibles temporalmente. Puedes seguir usando la calculadora y consultar la documentación.",
+    "Line graph": "Gráfico de líneas",
     "Loading aggregate statistics…": "Cargando las estadísticas agregadas…",
     "Loading calculator options…": "Cargando las opciones de la calculadora…",
     "Loading calculator…": "Cargando la calculadora…",
@@ -281,6 +282,7 @@
     "Percentage waste": "Porcentaje de residuos",
     "Period end": "Fin del período",
     "Period start": "Inicio del período",
+    "Pie chart": "Gráfico circular",
     "Placeholder data": "Datos provisionales",
     "Plain-language comparisons appear when supplied by the calculation service.": "Las comparaciones en lenguaje sencillo aparecen cuando las facilita el servicio de cálculo.",
     "Potential Improvement": "Mejora potencial",
@@ -461,5 +463,8 @@
     "no impact figures were returned": "no se devolvieron cifras de impacto",
     "saved": "ahorrado",
     "tonnes": "toneladas"
-  }
+  },
+  "tags": [
+    "es"
+  ]
 }

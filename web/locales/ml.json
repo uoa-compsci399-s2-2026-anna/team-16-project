@@ -1,10 +1,7 @@
 {
-  "language": "ml",
   "endonym": "മലയാളം",
+  "language": "ml",
   "machine_translated": true,
-  "tags": [
-    "ml"
-  ],
   "strings": {
     "%(amount)s combined": "ആകെ %(amount)s",
     "%(caption)s, horizontally scrollable": "%(caption)s, തിരശ്ചീനമായി സ്ക്രോൾ ചെയ്യാവുന്നത്",
@@ -23,6 +20,7 @@
     "%(share)s share": "%(share)s വിഹിതം",
     "%(tab)s data": "%(tab)s ഡാറ്റ",
     "%(tab)s data — %(entry)s": "%(tab)s ഡാറ്റ — %(entry)s",
+    "%(title)s chart type": "%(title)s എന്നതിനുള്ള ചാർട്ട് തരം",
     "%(title)s data": "%(title)s ഡാറ്റ",
     "%(title)s, charted using the API-provided share for every published bucket. The full values follow in a text list.": "%(title)s, പ്രസിദ്ധീകരിച്ച ഓരോ ഗണത്തിനും API നൽകിയ വിഹിതം ഉപയോഗിച്ച് വരച്ചത്. പൂർണ്ണ മൂല്യങ്ങൾ താഴെ ഒരു എഴുത്തുപട്ടികയിലുണ്ട്.",
     "(optional)": "(ഐച്ഛികം)",
@@ -50,6 +48,7 @@
     "Back": "പിന്നോട്ട്",
     "Back to calculator": "കാൽക്കുലേറ്ററിലേക്ക് മടങ്ങുക",
     "Background reading": "പശ്ചാത്തല വായന",
+    "Bar chart": "ബാർ ചാർട്ട്",
     "Breakdown by category": "വിഭാഗം അനുസരിച്ചുള്ള വിശദാംശം",
     "Breakdowns of entries contributed to this tool": "ഈ ഉപകരണത്തിന് സംഭാവന ചെയ്ത എൻട്രികളുടെ വിശദാംശങ്ങൾ",
     "By food type": "ഭക്ഷ്യ ഇനം അനുസരിച്ച്",
@@ -64,6 +63,7 @@
     "Calculator options have changed. The latest options are being loaded; please review your selections and try again.": "കാൽക്കുലേറ്റർ ഓപ്ഷനുകൾ മാറിയിട്ടുണ്ട്. പുതിയ ഓപ്ഷനുകൾ ലോഡ് ചെയ്യുന്നു; നിങ്ങളുടെ തിരഞ്ഞെടുപ്പുകൾ പരിശോധിച്ച് വീണ്ടും ശ്രമിക്കുക.",
     "Calculator unavailable": "കാൽക്കുലേറ്റർ ലഭ്യമല്ല",
     "Cancel": "റദ്ദാക്കുക",
+    "Categories follow the service's count-ranked order, with any combined Other bucket shown last. This compares categories, not a time trend.": "വിഭാഗങ്ങൾ സേവനം എണ്ണം അനുസരിച്ച് ക്രമപ്പെടുത്തിയതുപോലെയാണ്; സംയോജിപ്പിച്ച ‘മറ്റുള്ളവ’ വിഭാഗമുണ്ടെങ്കിൽ അത് അവസാനമായി കാണിക്കും. ഇത് സമയ പ്രവണതയല്ല, വിഭാഗങ്ങളുടെ താരതമ്യമാണ്.",
     "Category": "വിഭാഗം",
     "Check the highlighted fields and try again.": "അടയാളപ്പെടുത്തിയ ഫീൽഡുകൾ പരിശോധിച്ച് വീണ്ടും ശ്രമിക്കുക.",
     "Check this entry, or add another supply-chain entry before viewing the combined results.": "സംയോജിത ഫലങ്ങൾ കാണുന്നതിന് മുമ്പ് ഈ എൻട്രി പരിശോധിക്കുക, അല്ലെങ്കിൽ മറ്റൊരു വിതരണ ശൃംഖല എൻട്രി ചേർക്കുക.",
@@ -226,6 +226,7 @@
     "Language": "ഭാഷ",
     "Latest news": "ഏറ്റവും പുതിയ വാർത്തകൾ",
     "Latest news is temporarily unavailable. You can still use the calculator and explore the documentation.": "ഏറ്റവും പുതിയ വാർത്തകൾ താൽക്കാലികമായി ലഭ്യമല്ല. നിങ്ങൾക്ക് ഇപ്പോഴും കാൽക്കുലേറ്റർ ഉപയോഗിക്കാനും രേഖകൾ പരിശോധിക്കാനും കഴിയും.",
+    "Line graph": "രേഖാ ഗ്രാഫ്",
     "Loading aggregate statistics…": "സമഗ്ര സ്ഥിതിവിവരക്കണക്കുകൾ ലോഡ് ചെയ്യുന്നു…",
     "Loading calculator options…": "കാൽക്കുലേറ്റർ ഓപ്ഷനുകൾ ലോഡ് ചെയ്യുന്നു…",
     "Loading calculator…": "കാൽക്കുലേറ്റർ ലോഡ് ചെയ്യുന്നു…",
@@ -281,6 +282,7 @@
     "Percentage waste": "മാലിന്യ ശതമാനം",
     "Period end": "കാലയളവിന്റെ അവസാനം",
     "Period start": "കാലയളവിന്റെ ആരംഭം",
+    "Pie chart": "വൃത്ത ചാർട്ട്",
     "Placeholder data": "താൽക്കാലിക മാതൃകാ ഡാറ്റ",
     "Plain-language comparisons appear when supplied by the calculation service.": "കണക്കുകൂട്ടൽ സേവനം നൽകുമ്പോൾ ലളിതമായ ഭാഷയിലുള്ള താരതമ്യങ്ങൾ കാണാം.",
     "Potential Improvement": "സാധ്യമായ മെച്ചപ്പെടുത്തൽ",
@@ -461,5 +463,8 @@
     "no impact figures were returned": "ആഘാത കണക്കുകളൊന്നും ലഭിച്ചില്ല",
     "saved": "സംരക്ഷിച്ചു",
     "tonnes": "ടൺ"
-  }
+  },
+  "tags": [
+    "ml"
+  ]
 }

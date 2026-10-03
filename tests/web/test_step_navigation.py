@@ -47,6 +47,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.web.base_url import CALCULATOR
 from tests.web.steps import press_continue
 
 
@@ -62,7 +63,7 @@ FIXTURE = json.loads((ROOT / "tests" / "fixtures" / "calculate_response_single.j
 #: `/index.html` rather than `/`, and they are now the same document: nginx says
 #: `index index.html` again. Named explicitly so this file measures the calculator
 #: whatever the `index` directive says next.
-BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080/index.html")
+BASE = CALCULATOR
 
 
 def _english(url: str) -> str:
@@ -1879,11 +1880,18 @@ def test_the_allocation_rows_stacking_breakpoint_is_the_width_these_tests_name()
     )
 
 
-def test_step_three_asks_what_the_stage_put_through(page_at):
+def test_step_three_asks_what_each_food_type_produced(page_at):
     """Item ④. Without it the results page can never state waste as a share
     of production, which is the figure the client asked for - and the reason
     the old percentage was removed rather than fixed: `results.js` carries a
     note saying it was "a number the engine never produced".
+
+    **Named for the card and not for the stage, since #158.** This box is
+    `EntryInput.total_input_kg`, which is per leaf, and §4.6 sums it across
+    entries - so "what the stage put through", which is what this test used to
+    be called and what its hint used to ask for, is a figure about the whole
+    chain being collected once per food type. `tests/web/test_step_three_copy
+    _truth.py` carries the three-card measurement and the sentence itself.
 
     Optional, and the label says so. A visitor who does not know their
     production total still gets every other figure, so this must not become a
@@ -2262,6 +2270,17 @@ def test_the_production_total_names_its_unit_and_is_cleared_when_the_unit_change
     assert "same period" in hint and "waste included" in hint, (
         f"the production-total hint does not explain what to include: {hint!r}"
     )
+    #: **#158: and it has to say which food the figure is for.** Both halves of
+    #: the assertion above were satisfied by the sentence #158 is about -
+    #: "Everything that went through this stage over the same period, waste
+    #: included" - which asked for the whole chain on a box §4.6 sums per leaf.
+    #: `this stage` is named in the negative because that is the word that was
+    #: wrong; the full sentence, and the three-card case this one screen cannot
+    #: reach, are pinned in `tests/web/test_step_three_copy_truth.py`.
+    assert "this food type" in hint and "this stage" not in hint, (
+        "the production-total hint is scoped to the supply-chain stage rather "
+        f"than to the card, and §4.6 sums one box per leaf: {hint!r}"
+    )
     #: `text_content`, not `inner_text`: the tooltip is hidden until the term is
     #: hovered or focused, and `inner_text` reports what is *rendered*, which for
     #: a `visibility: hidden` panel is the empty string. What is being asserted
@@ -2606,7 +2625,7 @@ def test_step_three_asks_for_the_two_money_figures(page_at):
     figure is only ever NZD.
     """
     #: `2`, not the UI's own "Step 3" label - see the comment on
-    #: `test_step_three_asks_what_the_stage_put_through` above, which is the
+    #: `test_step_three_asks_what_each_food_type_produced` above, which is the
     #: same amount screen these two fields join.
     page = advance_to(page_at(1278, 983, 1.25), 2)
 

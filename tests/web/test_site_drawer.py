@@ -21,16 +21,18 @@ Skipped, never failed, when it is not up.
 from __future__ import annotations
 
 import json
-import os
 import re
 import urllib.error
 import urllib.request
 
 import pytest
 
-pytestmark = pytest.mark.browser
+from tests.web.base_url import ORIGIN
 
-BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rstrip("/")
+# The `browser` marker is applied by `conftest.py`, by location: every module
+# here is a browser suite unless it is named in its `NOT_A_BROWSER_SUITE`.
+
+BASE = ORIGIN
 
 #: All three reachable pages. The drawer is one markup block repeated, and "repeated"
 #: is a claim about three files that only three measurements can hold.

@@ -1167,11 +1167,26 @@ function leafPanel(leaf, leaves, index) {
   //: something the visible `.field-hint` does not — a hint that a tooltip repeats is a
   //: hint the visitor has been made to hover for twice.
   //:
-  //: **Nothing here may say the money figures become a cost.** Open item O-2 is exactly
-  //: that question and it is the client's to answer: what these two do today is join the
-  //: anonymous statistics, and the copy says that and stops. The sentence is shared by
-  //: both money terms because it is the same fact about both — one key, said twice.
-  const statisticsOnly = t('It joins the anonymous statistics only. No figure on the results page is calculated from it.')
+  //: **Nothing here may say the money figures become a cost.** O-2 is decided
+  //: (v1.48): `cost` is the waste levy plus disposal cost, `const_FOOD_VALUE_PER_KG`
+  //: stays at zero permanently, and the value of the food never enters a metric. So the
+  //: limit this sentence states is about the **emissions and cost figures**, which is
+  //: the claim the client actually ruled on.
+  //:
+  //: **It may not say no results figure is computed from these two, which is what it
+  //: said until #159.** The results page prints *Share of value wasted*, and §4.5
+  //: computes it as `wasted_value_nzd ÷ total_value_nzd × 100` — from exactly these
+  //: two boxes. `moneySummary` also echoes both sums back (*Total value of food
+  //: handled*, *Value of food wasted*) and `savingLines` prints `saving_nzd`, which
+  //: §4.5 derives from `wasted_value_nzd`. "Statistics only" is true in the sense that
+  //: changes no impact number and false as a claim about the whole page; the sentence
+  //: now names the one derived ratio and states the real limit.
+  //:
+  //: The sentence is shared by both money terms because it is the same fact about both
+  //: — one key, said twice. *"the two"* reads for either box: the production term's
+  //: first paragraph already says "both money figures" and the waste term's says "the
+  //: figure above".
+  const statisticsOnly = t('It joins the anonymous statistics, and the two together give the share of value wasted on the results page. No emissions or cost figure is calculated from it.')
   const amountTip = container
     ? [t('Count the containers you filled with waste over the period you are reporting, not the food inside them.'),
        t('The calculator turns the count into a weight using the container chosen above.')]
@@ -1215,6 +1230,19 @@ function leafPanel(leaf, leaves, index) {
   //: the constraint has to be in the always-visible hint.
   const amountField = `<div class="form-field ${amountFieldError ? 'has-error' : ''}"><label for="${amountId}">${term(amountLabel, amountTipId, amountTip)} <span class="required">${escapeHtml(t('(required)'))}</span></label><p class="field-hint">${escapeHtml(amountHint)}</p><input id="${amountId}" ${data(container ? 'count' : 'amount')} type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(amountValue)}" ${amountFieldError ? `aria-invalid="true" aria-describedby="${errorId}"` : ''}>${amountFieldError ? `<p class="field-error" id="${errorId}" role="alert">${escapeHtml(amountFieldError)}</p>` : ''}${container ? `<p class="container-total" id="${totalId}" aria-live="polite">${escapeHtml(containerTotalText(figures))}</p>` : ''}</div>`
   const unitField = `<div class="form-field unit-field"><label for="${unitId}">${escapeHtml(t('Unit'))} <span class="required">${escapeHtml(t('(required)'))}</span></label><p class="field-hint">${escapeHtml(t('Choose a weight, or the container you fill.'))}</p><select id="${unitId}" ${data('unit')} title="${escapeHtml(rowUnitLabel(unitSelectValue(figures)))}">${unitOptionsHtml(unitSelectValue(figures), presets)}</select></div>`
+  //: **This hint is scoped to the card, and the word "stage" is why it had to change.**
+  //: Until #158 it read "Everything that went through this stage over the same period,
+  //: waste included" — a **stage**, which is the supply chain, not this card.
+  //: `total_input_kg` is a per-leaf field: each panel's box becomes that leaf's own
+  //: `EntryInput.total_input_kg`, and `engine/calculate.py` sums them for
+  //: `totals.production_share_percent` (§4.6). So a visitor with three food types who
+  //: read it literally typed the whole stage's throughput three times, making the
+  //: denominator three times too large and the waste share three times too small — and
+  //: that share is printed on the results page, not confined to the statistics. Scoped
+  //: in the shape v1.85 settled for the two money hints ("for this food type"), one
+  //: sentence, keeping the "waste included" clarification: the denominator has to
+  //: contain the wasted mass or the share it carries is not a share of production.
+  //:
   //: **The two sentences sit in two places, and neither repeats the other.** Issue #65
   //: is the client saying this field is not explained; the explanation existed from
   //: 2026-09-19 but only behind the term tooltip, which a reader has to know is there
@@ -1223,7 +1251,7 @@ function leafPanel(leaf, leaves, index) {
   //: both in both places was tried first: `aria-describedby` makes the tooltip the
   //: label's description, so a screen reader read the same two sentences twice in a
   //: row - once after the label, once as the hint.
-  const totalInputHint = t('Everything that went through this stage over the same period, waste included.')
+  const totalInputHint = t('Enter the total amount you produced for this food type over the same period, waste included.')
   const totalInputField = `<div class="form-field ${totalInputError ? 'has-error' : ''}"><label for="${inputId}">${term(t('Total amount produced'), inputTipId, [t('It lets the results show the waste as a share of production. Leaving it empty changes no emissions figure.')])} (${escapeHtml(unitLabel(figures.totalUnit))}) <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(totalInputHint)}</p><input id="${inputId}" ${data('totalInput')} type="number" inputmode="decimal" min="0" step="0.001" value="${escapeHtml(figures.totalInputKg)}" ${totalInputError ? `aria-invalid="true" aria-describedby="${inputId}-error"` : ''}>${totalInputError ? `<p class="field-error" id="${inputId}-error" role="alert">${escapeHtml(totalInputError)}</p>` : ''}</div>`
   //: **An example value, and it carries NO thousands separator.** Both boxes are
   //: `type="number"`, which refuses `50,000` outright — a placeholder showing one would
@@ -1509,7 +1537,7 @@ function amountErrorItems(leaves) {
     // Keyed by (leaf, field) so the two halves cannot list one box twice: a money
     // contradiction refused by Continue and a `wasted_value_nzd` the server also named
     // are one box and therefore one item.
-    items.set(`${key} ${field}`, {
+    items.set(`${key}\u0000${field}`, {
       leaf: key,
       field,
       food: single ? '' : leafName(leaf),

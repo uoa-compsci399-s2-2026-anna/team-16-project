@@ -41,11 +41,11 @@ from __future__ import annotations
 
 import datetime as dt
 import json
-import os
 import re
 
 import pytest
 
+from tests.web.base_url import CALCULATOR
 from tests.web.steps import press_continue
 
 pytest.importorskip(
@@ -53,7 +53,7 @@ pytest.importorskip(
     reason="the request body is captured from a real browser; the payload is unverified without it",
 )
 
-BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080/index.html")
+BASE = CALCULATOR
 
 CALCULATE = '.step-nav [data-action="calculate"]'
 

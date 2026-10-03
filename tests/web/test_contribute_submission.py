@@ -70,6 +70,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.web.base_url import CALCULATOR
 from tests.web.steps import press_continue
 
 
@@ -79,7 +80,7 @@ playwright_api = pytest.importorskip(
 )
 
 ROOT = Path(__file__).resolve().parents[2]
-BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080/index.html")
+BASE = CALCULATOR
 
 #: The compose container name, not the service name - see `test_improvement_
 #: submission.py`'s identical note.

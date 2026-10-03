@@ -23,20 +23,21 @@ Run against an isolated stack rather than the developer's own::
 from __future__ import annotations
 
 import json
-import os
 
 import pytest
 
+from tests.web.base_url import ORIGIN
 from tests.web.steps import expand_step_cards
 
-pytestmark = pytest.mark.browser
+# The `browser` marker is applied by `conftest.py`, by location: every module
+# here is a browser suite unless it is named in its `NOT_A_BROWSER_SUITE`.
 
 pytest.importorskip(
     "playwright.sync_api",
     reason="playwright is required to drive step 2.5",
 )
 
-ROOT = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rstrip("/")
+ROOT = ORIGIN
 BASE = ROOT + "/index.html"
 
 

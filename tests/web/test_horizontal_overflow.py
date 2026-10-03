@@ -60,9 +60,12 @@ import urllib.request
 
 import pytest
 
-pytestmark = pytest.mark.browser
+from tests.web.base_url import ORIGIN
 
-BASE = "http://localhost:18080"
+# The `browser` marker is applied by `conftest.py`, by location: every module
+# here is a browser suite unless it is named in its `NOT_A_BROWSER_SUITE`.
+
+BASE = ORIGIN
 
 #: The width in the report. A 390px viewport is an iPhone 12/13/14, which is
 #: the single most common phone width in New Zealand traffic; 320px is kept

@@ -9,7 +9,8 @@ one of them reaches a screen, because the calculator renders from template
 literals and a literal that was never wrapped in `t()` looks exactly like one
 that was.
 
-So this file drives Chromium against http://localhost:18080, sets
+So this file drives Chromium against the origin `tests/web/base_url.py` names -
+http://localhost:18080 unless `KAICALC_WEB_URL` says otherwise - sets
 `navigator.languages` and `Accept-Language` to what a real visitor would send,
 and asserts **a specific string inside the specific element that carries it**.
 "The page contains Chinese characters" would pass against a page with one
@@ -22,7 +23,6 @@ Requires the stack rebuilt: `docker compose -f docker/compose.yaml up -d
 from __future__ import annotations
 
 import json
-import os
 import re
 import urllib.error
 import urllib.request
@@ -33,8 +33,10 @@ import pytest
 from tests.web.steps import press_continue
 
 from tests.web import i18n_keys
+from tests.web.base_url import ORIGIN
 
-pytestmark = pytest.mark.browser
+# The `browser` marker is applied by `conftest.py`, by location: every module
+# here is a browser suite unless it is named in its `NOT_A_BROWSER_SUITE`.
 
 #: `KAICALC_WEB_URL` like every other browser module here, which this one alone
 #: did not read. It hard-coded :18080, so it measured the stack on that port
@@ -44,7 +46,7 @@ pytestmark = pytest.mark.browser
 #: built from some earlier one. A stale image is exactly what that test exists to
 #: report, so it did report it; but it reported it about the wrong stack, and it
 #: could not be pointed at the right one.
-BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rstrip("/")
+BASE = ORIGIN
 
 #: Set through `Page.add_init_script` before any of the page's own scripts run,
 #: because `web/js/i18n.js` reads `navigator.languages` at module evaluation.

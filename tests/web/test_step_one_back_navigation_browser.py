@@ -67,10 +67,10 @@ taxonomy rate limit.
 from __future__ import annotations
 
 import json
-import os
 
 import pytest
 
+from tests.web.base_url import CALCULATOR
 from tests.web.steps import press_continue
 
 
@@ -79,7 +79,7 @@ playwright_api = pytest.importorskip(
     reason="playwright is required to drive the wizard the way the owner drove it",
 )
 
-BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rstrip("/") + "/index.html"
+BASE = CALCULATOR
 
 #: Each screen, and a selector only that screen renders. Used by `_screen` below so a
 #: failure names the screen the visitor actually landed on. Asserting "the review step

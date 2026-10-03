@@ -324,19 +324,20 @@ export const state = {
   // the panel forks, so there is one chart per food, and leaf 0 is a real answer that a
   // boolean would read as closed.
   improvementChartExpanded: null,
-  // Item ⑧'s toggle. `improvedAllocations` stays percentages in every mode — see the note
-  // on `updateImprovementInput` in `improvement.js` — so this only ever decides which unit
-  // the sliders and boxes *display*, never what they store. `'percentage'` or `'unit'`;
-  // renamed from `'kilograms'` when the second mode grew a per-row unit choice instead of
-  // being kilograms specifically.
+  // **The improvement panel's one display unit** (item ⑧'s toggle, widened by #74).
+  // `improvedAllocations` stays percentages whatever this holds — see the note on
+  // `updateImprovementInput` in `improvement.js` — so this only ever decides which unit
+  // the sliders and boxes *display*, never what they store.
+  //
+  // `'percentage'`, `'kilograms'`, `'tonnes'`, or `preset:<unit_preset.code>`: the value
+  // space a step-3 row's own unit uses, plus `'percentage'` for the one option that is a
+  // share rather than a unit. The name has outlived two of its own value spaces —
+  // `'kilograms'` until 2026-09-05, then `'percentage' | 'unit'` beside a per-destination
+  // `improvementRowUnits` map until #74 (17 September) asked for one unit throughout, at
+  // which point the map went and its values moved in here. It is still called "mode"
+  // because one key with one audit trail is easier to follow than a rename that leaves the
+  // earlier entries describing a key that no longer exists.
   improvementMode: 'percentage',
-  // Item ⑧'s per-row unit, in unit mode only: destination `code` -> `'kilograms'`,
-  // `'tonnes'`, or `preset:<unit_preset.code>` — the same value space a step-4 row's own
-  // unit uses. A destination with no entry here falls back to kilograms (`rowUnitFor` in
-  // `improvement.js`), so this only ever needs a key once a visitor changes a row away
-  // from the default. Nothing here changes what `improvedAllocations` means; it decides
-  // only how one row's own share is *displayed*.
-  improvementRowUnits: {},
   improvementResult: null,
   improvementLoading: false,
   improvementError: null,
@@ -671,6 +672,9 @@ export function resetCalculator() {
     entries: [],
     result: null,
     resultTaxonomy: null,
+    // A new calculation starts with the viewport's own nav default rather than
+    // carrying an open/closed choice from the result that was just cleared.
+    resultsNavOpen: undefined,
     error: null,
     errorAt: null,
     errorCode: null,
@@ -690,7 +694,6 @@ export function resetCalculator() {
     improvedAllocations: [],
     improvementChartExpanded: null,
     improvementMode: 'percentage',
-    improvementRowUnits: {},
     improvementResult: null,
     improvementLoading: false,
     improvementError: null,

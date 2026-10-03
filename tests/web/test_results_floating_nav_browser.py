@@ -182,11 +182,34 @@ BAND_BOTTOM = 360
 
 #: Every section's box, so an assertion about which one the spy picked can print the
 #: geometry that made that the right or the wrong answer.
+#:
+#: **Read out of the nav's own link list, not named here.** It used to carry the four
+#: ids as literals, which was a second copy of `RESULTS_NAV_SECTIONS` -- the thing
+#: that list's docstring exists to prevent ("the order is the whole of this nav's
+#: correctness"). A fifth entry added there and not here is not a failure, it is a
+#: silent loss of coverage: in `fills_the_band`, the last of the hard-coded four has
+#: `successor is None`, so `assert successor is None or successor_top > BAND_BOTTOM`
+#: passes **vacuously** about a successor the nav does in fact claim.
+#:
+#: Reading the page instead means the one list is still the one list. What stops this
+#: from being circular -- a nav that drops a section agreeing with itself -- is
+#: `test_the_results_sections_are_in_the_order_the_floating_nav_claims` in
+#: `test_results_export.py`, which names the four and fails on a fifth or a fourth
+#: missing. That is the right place for the roster: it is a contract assertion and it
+#: needs no browser. Here, what matters is that the geometry measured is the geometry
+#: of whatever the nav actually offers.
+#:
+#: A link whose target is not on the page returns `null` for its box rather than
+#: throwing, so the caller can say *which* id went missing.
 SECTION_BOXES = """
-() => ['impact-summary','tangible-equivalents','breakdown-section','improvement-section'].map(id => {
-  const r = document.getElementById(id).getBoundingClientRect();
-  return {id, top: Math.round(r.top), bottom: Math.round(r.bottom), height: Math.round(r.height)};
-})
+() => [...document.querySelectorAll('.results-floating-nav__links a[href^="#"]')]
+  .map(a => a.getAttribute('href').slice(1))
+  .map(id => {
+    const el = document.getElementById(id);
+    if (!el) return {id, top: null, bottom: null, height: null};
+    const r = el.getBoundingClientRect();
+    return {id, top: Math.round(r.top), bottom: Math.round(r.bottom), height: Math.round(r.height)};
+  })
 """
 
 
@@ -501,6 +524,314 @@ def test_the_first_press_of_the_handle_opens_the_list_it_is_the_only_way_into(br
     assert after["ariaExpanded"] == "true", after["ariaExpanded"]
 
 
+#: Where focus actually is. The `id` is what `main.js` restores focus *by*, so an
+#: empty one is the whole of the defect below; the tag name is what says where it
+#: ended up instead.
+FOCUS_NOW = """
+() => {
+  const node = document.activeElement
+  return {id: node ? node.id : null, tag: node ? node.tagName : null}
+}
+"""
+
+#: The one id-less focusable control on this page that is reliably clear of the open
+#: panel. The panel is 252px wide in the gutter and vertically centred -- at 1280 it
+#: covers x 878-1130 of a 131-1131 column -- and `<summary>` is a block, so Playwright
+#: clicks its centre at x ~631, well inside the column and well clear of the panel.
+#: **Id-less is the point**: `main.js` restores focus by `id`, and for a control
+#: without one `document.activeElement.id` is `''`, `getElementById('')` is `null`,
+#: and `main.focus()` wins. The improvement panel's number box and all three action
+#: buttons are in the same position, and clicking into the number box is how the
+#: regression was found.
+ID_LESS_CONTROL = "#results-methodology summary"
+
+
+def test_clicking_outside_the_open_nav_closes_it_and_does_not_take_the_focus(browser):
+    """**Click-away, and the re-render it must not cost.**
+
+    The overlay covers the text in this regime, so a click on the page is the
+    reader saying they are done with the menu, and it closes. That much is the
+    feature. The three things around it are why this test is longer than it:
+
+    **A click inside the nav keeps it open.** This is the `closest('.results-
+    floating-nav')` guard, and it is asserted here rather than left to read
+    correctly, because the panel's own padding is the only place a click can land
+    that is inside the nav and not on a control. Mutation: delete
+    `!event.target?.closest?.('.results-floating-nav') &&` from the document click
+    listener in `results.js`. It fails here, on the click inside -- and it also
+    fails `test_the_first_press_of_the_handle_opens_the_list_it_is_the_only_way_
+    into`, because the handle's own click would then close what it had just
+    opened. The guard was unasserted while *that* test was the only thing holding
+    it, and the test about the dismissal is the one that should report it.
+
+    **Closing must not move the reader's focus**, which is what makes this a
+    dismissal rather than a re-render. `setState` rebuilds `main.innerHTML` and
+    `main.js` then restores focus by `id`; `document.activeElement.id` is `''` for
+    an id-less control, `document.getElementById('')` is `null`, and `main.focus()`
+    takes it. The results page is full of id-less focusable controls -- the
+    improvement panel's number box, the methodology `<summary>`, all three action
+    buttons -- so a `setState` here means that opening the menu and then clicking
+    into the number box throws the reader to the top of the page. Before the
+    dismissal existed, those clicks caused no `setState` at all. Mutation:
+    `setState({ resultsNavOpen: false })` in place of `closeResultsNav()` fails the
+    focus assertion with `main-content/MAIN`.
+
+    **The docked regime is untouched.** From 1600px up the panel *is* the nav and
+    `data-open` must stay absent, because its absence is what lets the stylesheet
+    decide and the stylesheet's decision there is "open". Mutation: dropping the
+    `resultsNavIsDocked()` / `resultsNavPanelIsOpen` guards from `closeResultsNav`
+    stamps `data-open="false"` on a nav nobody touched, and this fails on it while
+    `panelVisible` stays true -- which is exactly how that defect would reach a
+    visitor, invisibly, until their window got smaller.
+    """
+    context, page = _open(browser, 1280)
+    try:
+        _to_results(page)
+
+        #: **The docked regime first, while nothing has been pressed**, because
+        #: what is asserted there is the *untouched* state and the narrow phases
+        #: below leave `data-open` behind them. A resize is not a re-render, so
+        #: this is the same page in its other regime.
+        docked_before = _at(page, 1600)
+        page.click(ID_LESS_CONTROL)
+        page.wait_for_timeout(250)
+        docked_after = page.evaluate(GEOMETRY)
+
+        _at(page, 1280)
+        page.click(".results-floating-nav__handle")
+        page.wait_for_timeout(250)
+        opened = page.evaluate(GEOMETRY)
+
+        #: Inside the nav, on the panel's own 8px of padding rather than on a link
+        #: (a link takes the first branch of the listener and never reaches the
+        #: guard) and rather than on the handle (which would legitimately toggle).
+        #:
+        #: `mouse.click` at a coordinate rather than `page.click` on the selector,
+        #: so that a mutation which closes the panel early fails on an *assertion*
+        #: instead of on a 30-second actionability timeout: the panel keeps its box
+        #: when it is hidden, so the coordinate stays valid and the click simply
+        #: lands on the column underneath -- which is the outside case, and reported
+        #: as one.
+        at = page.evaluate(
+            """() => {
+                 const r = document.querySelector('.results-floating-nav__panel')
+                   .getBoundingClientRect()
+                 return {x: r.left + 4, y: r.top + 4}
+               }""")
+        page.mouse.click(at["x"], at["y"])
+        page.wait_for_timeout(250)
+        after_inside = page.evaluate(GEOMETRY)
+
+        page.click(ID_LESS_CONTROL)
+        page.wait_for_timeout(250)
+        after_outside = page.evaluate(GEOMETRY)
+        focus = page.evaluate(FOCUS_NOW)
+    finally:
+        context.close()
+
+    assert docked_before["panelVisible"] and docked_before["dataOpen"] is None, docked_before
+    assert docked_after["panelVisible"], (
+        "a click on the page closed the DOCKED panel. Docked, the panel is not open: it "
+        "IS the nav, and there is no handle left to bring it back"
+    )
+    assert docked_after["dataOpen"] is None, (
+        f"the dismissal stamped data-open={docked_after['dataOpen']!r} on a docked nav "
+        f"nobody had touched. Its absence is what lets the stylesheet decide, and the "
+        f"docked default is open -- so this collapses the nav the moment the window shrinks"
+    )
+
+    assert opened["panelVisible"], "the handle did not open the panel, so there is nothing to dismiss"
+    assert after_inside["panelVisible"], (
+        f"a click on the panel's own padding closed it: {after_inside['dataOpen']}. The "
+        f"listener's `closest('.results-floating-nav')` guard is what keeps the nav's own "
+        f"clicks out of the dismissal, and without it the handle closes what it just opened"
+    )
+    assert not after_outside["panelVisible"], after_outside
+    assert after_outside["dataOpen"] == "false", after_outside["dataOpen"]
+    assert after_outside["ariaExpanded"] == "false", after_outside["ariaExpanded"]
+    assert focus == {"id": "", "tag": "SUMMARY"}, (
+        f"after the click that closed the nav, focus is on {focus}. It belongs on the "
+        f"control the reader clicked. This control has no `id`, so a `setState` here sends "
+        f"focus to `<main>` -- the dismissal writes the DOM instead, for exactly that reason"
+    )
+
+
+def test_escape_closes_the_overlay_and_hands_focus_back_to_the_handle(browser):
+    """**The keyboard's way out, which did not exist** (`grep Escape web/js/*.js`
+    found `drawer.js` and `period.js` and nothing for this nav).
+
+    A pointer user has click-away. A keyboard user had only the handle -- and
+    `:focus-within` means they can be *inside* the list with the handle behind
+    them, so "press the handle again" is not a way out so much as a way back.
+
+    **Both open states are exercised, because they are different states.** Pressing
+    the handle writes `data-open="true"`; tabbing to it writes nothing at all and
+    the panel is open purely on `:focus-within`, which is the only reason a
+    `visibility: hidden` list is reachable from a keyboard. Escape has to close
+    both, and in the second case it is what *first* puts `data-open` on the
+    element.
+
+    **Focus goes to the handle, and the panel stays shut with it there.** That is
+    the `:not([data-open="false"])` guard on the `:focus-within` rule doing its
+    job: without it, the focus that performs the close reopens the panel, which is
+    the defect a mouse cannot reproduce. `closeResultsNav` writes the attribute
+    before it calls `focus()` for that reason.
+
+    Mutations: `closeResultsNav()` without the `focusHandle` argument leaves focus
+    on the link and fails the second assertion pair; removing the `:not([data-
+    open="false"])` guard from the stylesheet leaves `panelVisible` true in both
+    phases.
+    """
+    context, page = _open(browser, 1280)
+    try:
+        _to_results(page)
+
+        page.click(".results-floating-nav__handle")
+        page.wait_for_timeout(250)
+        pressed_open = page.evaluate(GEOMETRY)
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(250)
+        pressed_closed = page.evaluate(GEOMETRY)
+        pressed_focus = page.evaluate(FOCUS_NOW)
+
+        #: Phase two: open on `:focus-within` alone, with focus down in the list
+        #: rather than on the handle, and `data-open` back to absent.
+        page.evaluate("""() => {
+          const nav = document.querySelector('.results-floating-nav')
+          nav.removeAttribute('data-open')
+          nav.querySelector('.results-floating-nav__handle').removeAttribute('aria-expanded')
+        }""")
+        page.wait_for_timeout(250)
+        page.focus(".results-floating-nav__handle")
+        page.wait_for_timeout(250)
+        #: The links are `visibility: hidden` until the panel is open, and a hidden
+        #: link is not in the tab order -- so this Tab has to come after the panel
+        #: has actually opened, or it steps straight out of the nav and takes
+        #: `:focus-within` with it.
+        assert page.evaluate(GEOMETRY)["panelVisible"], "focusing the handle did not reopen the panel"
+        page.keyboard.press("Tab")
+        page.wait_for_timeout(250)
+        in_the_list = page.evaluate(GEOMETRY)
+        reached = page.evaluate("() => document.activeElement.getAttribute('href')")
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(250)
+        list_closed = page.evaluate(GEOMETRY)
+        list_focus = page.evaluate(FOCUS_NOW)
+    finally:
+        context.close()
+
+    assert pressed_open["panelVisible"], "the handle did not open the panel"
+    assert not pressed_closed["panelVisible"], (
+        f"Escape left the panel open: {pressed_closed}. A pointer user can click away; "
+        f"this is the keyboard's equivalent and the nav had none"
+    )
+    assert pressed_closed["dataOpen"] == "false", pressed_closed["dataOpen"]
+    assert pressed_closed["ariaExpanded"] == "false", pressed_closed["ariaExpanded"]
+    assert pressed_focus["id"] == "results-floating-nav-handle", (
+        f"after Escape focus is on {pressed_focus}. It belongs on the handle, which is "
+        f"where the handle's own close path puts it and the reason that button has an id"
+    )
+
+    assert in_the_list["panelVisible"] and in_the_list["dataOpen"] is None, in_the_list
+    assert reached == "#impact-summary", f"Tab from the handle reached {reached}"
+    assert not list_closed["panelVisible"], (
+        f"Escape from inside the list left the panel open: {list_closed}. Focus is on the "
+        f"handle now, so `:focus-within` still matches -- the `:not([data-open=\"false\"])` "
+        f"guard is what has to hold here, and `data-open` is written before the focus moves"
+    )
+    assert list_closed["dataOpen"] == "false", list_closed["dataOpen"]
+    assert list_focus["id"] == "results-floating-nav-handle", list_focus
+
+
+def test_the_navs_two_actions_download_and_start_over_for_real(browser):
+    """**#126's criteria 2 and 3, asserted as the issue words them.**
+
+    *"Download produces the expected results file/output"* and *"Start a new
+    calculator clearly begins a fresh calculation"* are not satisfied by a link
+    that scrolls to a button, which is what these two entries were. They are
+    buttons that press the action row's own buttons, so what is asserted here is
+    that pressing them in the panel does what pressing them in the row does: a
+    file arrives, and the confirm-then-reset path runs. **That is the whole point
+    of measuring it in a browser**: the forwarding is a `querySelector` and a
+    synthesised `.click()`, and the only way to know the event reaches
+    `calculator.js`'s delegated listener on `main` is to watch the action happen.
+
+    The `window.confirm` is accepted rather than suppressed, and its message is
+    read, because "clearly begins a fresh calculation" includes being asked
+    first -- the action is destructive and the dialog is the fourth criterion
+    ("does not accidentally overwrite the current results") being met.
+
+    **The panel surviving its own download is asserted, and it is the one thing
+    here that was found rather than written.** `downloadResults` appends an
+    `<a download>` to `document.body` and calls `.click()` on it; that event
+    bubbles to the document listener with a target outside the nav, so the first
+    run of this test closed the panel on the download and could not reach the
+    second button at all ("element is not visible", 30s). The listener now takes
+    `event.isTrusted` as well -- a dismissal is a reader's gesture, and any
+    programmatic `.click()` on the page would otherwise perform one.
+
+    Mutations: changing either button's `data-nav-action` to anything else leaves
+    the forwarding `querySelector` with nothing to find -- it is `?.click()`, so it
+    fails silently -- and this test reports it, the download timing out or no dialog
+    being raised and `[data-action="start"]` never appearing. Rendering the two as
+    `<a href="#...">` again fails for the same reason, which is the point: the
+    anchors could not have passed this test. Dropping `event.isTrusted` fails the
+    panel-survives-its-own-download assertion.
+    """
+    context, page = _open(browser, 1280)
+    asked = []
+    try:
+        _to_results(page)
+        page.click(".results-floating-nav__handle")
+        page.wait_for_timeout(250)
+        assert page.evaluate(GEOMETRY)["panelVisible"], "the panel did not open"
+
+        with page.expect_download(timeout=8000) as download:
+            page.click('.results-floating-nav__actions [data-nav-action="download-results"]')
+        filename = download.value.suggested_filename
+        body = download.value.path().read_text(encoding="utf-8")
+
+        #: Pressing an action inside the panel is a click inside the nav, so the
+        #: dismissal leaves it alone and the second action is still reachable.
+        #: Asserted here rather than after the `finally`, so that the mutation which
+        #: breaks it reports this sentence instead of a 30-second timeout waiting
+        #: for the second button to become visible. The wait is not optional:
+        #: `transition: visibility 140ms` keeps the computed `visibility` at
+        #: `visible` for the whole of the closing transition, so a reading taken
+        #: straight after the click says "open" about a panel on its way out.
+        page.wait_for_timeout(250)
+        assert page.evaluate(GEOMETRY)["panelVisible"], (
+            "the panel closed on its own download, and its second action is now "
+            "unreachable. `downloadResults` appends a synthesised `<a download>` to "
+            "`document.body` and clicks it; that event bubbles to the document listener "
+            "with a target outside the nav, so `event.isTrusted` is what keeps the "
+            "dismissal to gestures the reader actually made"
+        )
+
+        page.once("dialog", lambda dialog: (asked.append(dialog.message), dialog.accept()))
+        page.click('.results-floating-nav__actions [data-nav-action="start-over"]')
+        page.wait_for_selector('[data-action="start"]', timeout=15000)
+        after = page.evaluate(
+            "() => ({intro: !!document.querySelector('[data-action=\\\"start\\\"]'),"
+            "        results: !!document.querySelector('#results-title'),"
+            "        nav: !!document.querySelector('.results-floating-nav')})")
+    finally:
+        context.close()
+
+    assert filename.startswith("food-waste-impact-results-") and filename.endswith(".txt"), filename
+    assert "Food Waste Impact" in body or "Impact" in body, body[:200]
+
+    assert asked and "Clear all calculator data" in asked[0], (
+        f"pressing *Start a new calculation* in the nav raised {asked!r}. A destructive "
+        f"action has to ask, and #126's fourth criterion is that starting a new "
+        f"calculation does not accidentally overwrite the current results"
+    )
+    assert after["intro"] and not after["results"] and not after["nav"], (
+        f"after the confirm the page is {after}: *Start a new calculation* has to actually "
+        f"start one, which is #126's third criterion and is not something an anchor could do"
+    )
+
+
 @pytest.mark.parametrize("width", [w for w in WIDTHS if w >= DOCKED_FROM])
 def test_the_docked_nav_is_simply_there_and_has_no_handle_to_press(browser, width):
     """**Docked, the panel is not "open": it IS the nav.**
@@ -704,7 +1035,20 @@ def _band_cases(page):
     Returned in page order, so a caller taking `[0]` gets the same case run after
     run rather than whichever the dict happened to yield.
     """
-    order = [entry["id"] for entry in page.evaluate(SECTION_BOXES)]
+    boxes_now = page.evaluate(SECTION_BOXES)
+    #: Every target the nav offers has to be on the page, said here rather than left
+    #: to `SCROLL_TO_REST` throwing a `TypeError` about `null` four frames away.
+    missing = [entry["id"] for entry in boxes_now if entry["top"] is None]
+    assert not missing, (
+        f"the floating nav links to {missing}, which is not on the rendered results page. "
+        f"Every entry in `RESULTS_NAV_SECTIONS` is both a link and an observed element, so "
+        f"a target that is not there is a link that goes nowhere and a spy watching nothing"
+    )
+    assert len(boxes_now) >= 4, (
+        f"the nav offers {len(boxes_now)} section links, and every measurement in this "
+        f"file was taken against the four it is documented to index: {boxes_now}"
+    )
+    order = [entry["id"] for entry in boxes_now]
     shares, fills = [], []
     for index, section in enumerate(order):
         page.evaluate(SCROLL_TO_REST, section)

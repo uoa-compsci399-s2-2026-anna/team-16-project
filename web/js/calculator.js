@@ -1532,7 +1532,7 @@ function amountErrorItems(leaves) {
     // Keyed by (leaf, field) so the two halves cannot list one box twice: a money
     // contradiction refused by Continue and a `wasted_value_nzd` the server also named
     // are one box and therefore one item.
-    items.set(`${key} ${field}`, {
+    items.set(`${key}\u0000${field}`, {
       leaf: key,
       field,
       food: single ? '' : leafName(leaf),

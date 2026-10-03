@@ -2003,6 +2003,91 @@ tbody th { font-weight: 700; }
   border-inline-start-color: var(--green-rule);
   box-shadow: 0 5px 16px rgba(40, 200, 130, 0.45), 0 1px 3px rgba(0, 50, 35, 0.16);
 }
+
+/* Steps 2.5, 3 and 4 use the results page's expanded-card treatment without its
+   disclosure handle. This panel owns its open state, independent of the results
+   overlay's closed-by-default rules. */
+.step-floating-nav { display: none; }
+.step-floating-nav__panel {
+  min-inline-size: 0;
+  max-block-size: calc(100vh - 48px);
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--glass-edge);
+  border-radius: 16px;
+  color: var(--kai-kale);
+  background: var(--glass-ground);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: 0 14px 36px rgba(0, 50, 35, 0.18);
+}
+.step-floating-nav__links { display: grid; gap: 3px; margin: 0; padding: 0; list-style: none; }
+.step-floating-nav__links button {
+  display: flex;
+  align-items: center;
+  inline-size: 100%;
+  min-block-size: 44px;
+  padding-inline: 12px;
+  border: 0;
+  border-inline-start: 3px solid transparent;
+  border-radius: 10px;
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  font-weight: 400;
+  line-height: 1.3;
+  text-align: start;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.step-floating-nav__links button:hover { color: var(--kai-kale); background: rgba(40, 200, 130, 0.32); }
+.step-floating-nav__links button[aria-current="location"] {
+  color: var(--kai-kale);
+  font-weight: 700;
+  background: var(--kai-white);
+  border-inline-start-color: var(--green-rule);
+  box-shadow: 0 5px 16px rgba(40, 200, 130, 0.45), 0 1px 3px rgba(0, 50, 35, 0.16);
+}
+
+@media (min-width: 768px) {
+  .main-content:has(.step-floating-nav) { max-width: 1240px; }
+  .amount-step.wide, .destination-step.wide { max-width: none; margin-inline: 0; }
+  .item-step:has(.item-floating-nav),
+  .amount-step:has(.amount-floating-nav),
+  .destination-step:has(.destination-floating-nav) {
+    display: grid;
+    column-gap: 24px;
+    align-items: start;
+  }
+  .item-step:has(.item-floating-nav) { grid-template-columns: minmax(0, 1fr) clamp(180px, 20vw, 252px); }
+  .amount-step:has(.amount-floating-nav),
+  .destination-step:has(.destination-floating-nav) { grid-template-columns: minmax(0, 1fr) clamp(180px, 18vw, 216px); column-gap: 24px; }
+  .item-step__content, .amount-step__content, .destination-step__content { min-inline-size: 0; }
+  .item-step:has(.item-floating-nav) .item-step__content,
+  .amount-step:has(.amount-floating-nav) .amount-step__content,
+  .destination-step:has(.destination-floating-nav) .destination-step__content { grid-column: 1; }
+  .step-floating-nav {
+    display: block;
+    grid-column: 2;
+    grid-row: 1;
+    position: sticky;
+    /* Keep the always-open category index on the reader's natural sight line.
+       The translation accounts for the panel's own height, so its centre—not
+       its top edge—starts and remains at the viewport midpoint while the form
+       scrolls. The containing step still limits sticky at the section end. */
+    top: 50vh;
+    transform: translateY(-50%);
+    align-self: start;
+    min-inline-size: 0;
+  }
+  .item-step:has(.item-floating-nav) > .step-nav,
+  .amount-step:has(.amount-floating-nav) > .step-nav,
+  .destination-step:has(.destination-floating-nav) > .step-nav { grid-column: 1; }
+}
+
+.item-group { scroll-margin-top: 24px; }
+.amount-step .leaf-panel { scroll-margin-top: 24px; }
+.destination-step .leaf-panel { scroll-margin-top: 24px; }
 /* **THE PANEL'S TWO ACTIONS, AND WHY THEY ARE NOT MORE LINKS** (#126/#150).
    *Start a new calculation* and *Download results* were asked for in this nav and
    first arrived as two `#` links onto `.result-actions` - one `display: flex` row,

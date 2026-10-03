@@ -35,7 +35,8 @@ from tests.web.steps import press_continue
 from tests.web import i18n_keys
 from tests.web.base_url import ORIGIN
 
-pytestmark = pytest.mark.browser
+# The `browser` marker is applied by `conftest.py`, by location: every module
+# here is a browser suite unless it is named in its `NOT_A_BROWSER_SUITE`.
 
 #: `KAICALC_WEB_URL` like every other browser module here, which this one alone
 #: did not read. It hard-coded :18080, so it measured the stack on that port

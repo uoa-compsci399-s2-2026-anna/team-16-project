@@ -30,14 +30,14 @@ Requires the stack, with the published set releasing the item level::
 
 from __future__ import annotations
 
-
 import pytest
 
 from tests.web.base_url import ORIGIN
 from tests.web.steps import CONTINUE, expand_step_cards, press_continue
 
 
-pytestmark = pytest.mark.browser
+# The `browser` marker is applied by `conftest.py`, by location: every module
+# here is a browser suite unless it is named in its `NOT_A_BROWSER_SUITE`.
 
 playwright_api = pytest.importorskip(
     "playwright.sync_api",

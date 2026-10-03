@@ -62,7 +62,8 @@ import pytest
 
 from tests.web.base_url import ORIGIN
 
-pytestmark = pytest.mark.browser
+# The `browser` marker is applied by `conftest.py`, by location: every module
+# here is a browser suite unless it is named in its `NOT_A_BROWSER_SUITE`.
 
 BASE = ORIGIN
 

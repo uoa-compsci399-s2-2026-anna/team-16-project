@@ -43,7 +43,6 @@ run here.
 
 from __future__ import annotations
 
-
 import pytest
 
 from tests.web.base_url import CALCULATOR

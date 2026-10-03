@@ -267,7 +267,12 @@ def test_the_form_bounds_the_submissions_leaf_count_at_max_entries(page):
         page.fill(f"#{field}", str(100 + index))
         page.wait_for_timeout(35)
     press_continue(page)
-    page.wait_for_selector('[data-line-field="amount"]')
+    #: Step 4 draws one collapsible card per food type since #142, and a shut
+    #: card's body carries `hidden` - so its rows are in the document, not
+    #: visible, and not fillable. Same two lines as step 3 above, same helper,
+    #: and the same reason it exists (`tests/web/steps.py`).
+    page.wait_for_selector('[data-line-field="amount"]', state="attached")
+    expand_step_cards(page)
     rows = _first_rows(page)
     for index, field in enumerate(rows):
         page.fill(f"#{field}", str(100 + index))
@@ -324,7 +329,12 @@ def test_an_allocation_is_measured_against_its_own_leafs_amount(page):
     page.fill(f"#{fields[1]}", "200")
     page.wait_for_timeout(80)
     press_continue(page)
-    page.wait_for_selector('[data-line-field="amount"]')
+    #: Step 4 draws one collapsible card per food type since #142, and a shut
+    #: card's body carries `hidden` - so its rows are in the document, not
+    #: visible, and not fillable. Same two lines as step 3 above, same helper,
+    #: and the same reason it exists (`tests/web/steps.py`).
+    page.wait_for_selector('[data-line-field="amount"]', state="attached")
+    expand_step_cards(page)
     rows = _first_rows(page)
     # The second leaf is allocated in full first, so the only thing left to be wrong
     # is the first leaf's own over-allocation - a message about the OTHER leaf having

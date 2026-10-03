@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-10-03 (v1.90)"
+date: "2026-10-03 (v1.92)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,34 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.92 — 2026-10-03 (step 3's two false sentences, and the model each was false about; affects C)
+
+**Two statements on step 3 were wrong about the model behind them, and v1.85 recorded both rather than fixing either.** This is the follow-through, as issues #158 and #159. They land as one revision because they are the same operation on the same screen: a source string retired and a source string added, across twenty catalogues in two trees, with the arithmetic that makes each sentence true written down beside it.
+
+**#158 — the production total asked for the whole chain on a per-leaf box.** *Total amount produced*'s hint read *"Everything that went through this stage over the same period, waste included."* A **stage** is the supply-chain stage. `total_input_kg` is **per leaf**: `leafPanel` draws one panel per leaf, each panel's box becomes that leaf's own `EntryInput.total_input_kg`, and `engine/calculate.py` sums them for `totals.production_share_percent` (§4.6). So a visitor with three food types who read the sentence literally entered the whole stage's throughput three times — the denominator came out **three times too large** and the waste share **three times too small**. Measured on the real render at a leaf count of three: all three cards carried that one sentence, character for character, with nothing on the screen distinguishing the figure it asked for from the figure the box collects. **It is worse than the two money hints v1.85 corrected**, because `production_share_percent` is printed on the results page rather than confined to the statistics — and §4.6 already records that it is the one figure on that page O-1's placeholder warning does not describe, being arithmetic on two masses the visitor typed with no factor anywhere in it. A visitor who could trust that figure more than the others was being given a worse one.
+
+**#159 — the statistics-only tooltip denied something the page does.** The sentence shared by both NZ$ term tooltips ended *"No figure on the results page is calculated from it."* The results page prints **Share of value wasted**, and §4.5 computes it as `wasted_value_nzd ÷ total_value_nzd × 100` — from exactly the two boxes the tooltip sits on. It is not even the only one: `moneySummary` echoes both sums back as *Total value of food handled* and *Value of food wasted*, and `savingLines` prints `saving_nzd`, which §4.5 derives from `wasted_value_nzd`. **Four figures, where the sentence claimed none.** The true claim, and the one the client ruled on, is **O-2**: these figures do not enter the **emissions** calculation and they are not the cost metric. `cost` is the waste levy plus disposal cost, `const_FOOD_VALUE_PER_KG` is `0.0000000000` in every bundle in the tree and stays there permanently (v1.48), and no field of `MoneyResult` is read by any formula. *"Statistics only"* is true of the impact numbers and false as a claim about the page; the tempting wrong version is tempting precisely because the money fields **are** optional and **do** change no impact number — what they change is one derived ratio the page prints beside them.
+
+**Nothing on the wire moves, and no fixture moves.** `POST /api/v1/calculate` sends the byte-identical body before and after, from the same inputs under the same `id`s; nothing in §2, §3, §4, §6 or §9 is touched; `git diff` over `engine/`, `api/`, `db/` and `admin/` is empty and all thirteen golden cases are byte-identical. **This revision is therefore steps one and two of the contract change process, not step three**: `tests/fixtures/*.json` is unchanged because there is nothing in it to change. The owner notifies the team. It is recorded here for the reason v1.61, v1.62, v1.81 item 5 and v1.85 were: **the English source string is the key (§7.7.1), so rewording a hint or a tooltip orphans every translation of it silently.**
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **The production-total hint is a statement about the card, in the shape v1.85 settled.** It reads *"Enter the total amount you produced for this food type over the same period, waste included."* — one sentence, 92 characters against the old 76. *"for this food type"* is the scoping the two money hints already carry and the same scoping `Waste amount for %(food)s` carries one zone above; it still reads correctly at a leaf count of one, which is the case that draws no card at all (v1.81 decision 2). **The "waste included" clarification is kept and is not decoration**: `production_share_percent` is `Σ current mass ÷ Σ total_input_kg`, so a denominator with the wasted mass left out is not a production total and the share it carries is not a share of production. *"the total amount"* answers the same question #147 answered for the money boxes — a total, not a rate — and the field's `(kilograms)` / `(tonnes)` marker already says in what. The label `Total amount produced` is **unchanged**, so v1.87's `AMOUNT_STEP_FIELD_LABELS` and the step-3 field index that reads it are untouched | §7.3a, §4.6 |
+| 2 | **The shared statistics-only tooltip names the figure the page derives and states the limit the client set.** It reads *"It joins the anonymous statistics, and the two together give the share of value wasted on the results page. No emissions or cost figure is calculated from it."* — 158 characters against 91. *"the two"* reads for either of the two boxes the sentence appears on: the production term's first paragraph already says *"both money figures"* and the waste term's says *"the figure above"*. **It is still one key, said twice**, because it is still the same fact about both. **Nothing in it may imply the money boxes feed `cost`** and nothing does: the sentence says the opposite, which is O-2's ruling rather than a hedge around it. The zone's own sub-line (*"Optional. They never enter the emissions calculation."*) keeps saying the category over the pair, and the tooltip keeps saying the limit — neither is now the other's wording | §7.3a, §4.5 |
+| 3 | **Two source strings out, two in; each catalogue stays at 460 strings, in all twenty files and in both trees.** `web/locales/` was written and `api/assets/locales/` **copied byte for byte** from it — never re-serialised — and the twenty pairs compare equal by SHA-256. The serialisation was proved to round-trip byte for byte on all twenty before anything was rewritten (`json.dumps(…, ensure_ascii=False, indent=2)` plus a trailing newline reproduces every file on `main` exactly), which is what makes "copy, never re-serialise" checkable rather than hoped for. **No new code point, in any catalogue, in any script**: the union of characters across all twenty is identical before and after, measured against `origin/main`'s blobs, so `recut_cjk_subsets.py` did not run, the four `.woff2` faces and `PROVENANCE.md` are untouched, and `test_no_character_in_any_catalogue_would_print_as_a_box` is unmoved. **That was a near miss and is worth the line**: the first Japanese draft used 費用 for *cost* and the first Korean *만듭니다*, which put 費 (U+8CBB) into `ja` and 듭 (U+B4ED) into `ko` — each face is cut from **its own** catalogue, so both would have printed as a box or fallen to a neighbour's face. コスト and *됩니다* say the same thing out of characters the two catalogues already carry | §7.7, §7.7.1 |
+| 4 | **The catalogues stay fully key-sorted, in all forty files, and the two new keys land where they sort rather than where the old ones sat.** That is v1.85 item 4's correction held: #147 inserted its keys in the retired keys' positions and left every file unsorted from index 142 on, silently, because **no test guards the order**. `Enter the total amount you produced…` sorts before `Enter the total amount. You will allocate…` (space before full stop) and the tooltip's replacement keeps its place between `Incomplete` and `It lets the results show…`; the order was re-measured on all twenty after writing, not assumed from the insertion. **A test asserting the order would still be worth having and is still not in this revision** | §7.7.1 |
+| 5 | **Both strings are plain quoted `t('…')` literals, which is the only form the extractor can see.** `tests/web/i18n_keys.py` is a regex over the source, not an AST: a template literal, a `+` concatenation or an unlisted indirect constant ships English in all twenty catalogues with nothing failing (§7.7.1). The production hint keeps its own `const totalInputHint = t('…')` binding and the tooltip keeps `const statisticsOnly = t('…')`; neither interpolates anything, so neither reaches for the one construct that would make it invisible. All twenty catalogues carry both keys, which `api.i18n.Catalogue.gettext` requires rather than falls back on — a string missing from one catalogue answers 500 to every non-English PDF download, not English text | §7.7.1 |
+
+> **The assertions on these sentences are equalities, because v1.85's round proved substrings are not enough.** `"total value" in hint` was satisfied by **both** money hints, so swapping the two left the test green — each was bound to the right element and neither pinned *which* field's sentence it had read. *"for this food type"* is now in **three** of the five hints on this card, which widens that hole rather than closing it, so each of the three is pinned twice: by equality on its own sentence, and by a phrase only that sentence carries (`waste included` for the production total, `per unit` for the production value, `production above` for the waste value). Measured against the real render under Node — `render()` is exported, so a stub `main` whose `innerHTML` is a string plus `tests/fixtures/taxonomy.json` evaluates `label[for=…] + .field-hint` on the tree `leafPanel` actually emits, at a leaf count of **three** as well as of one. The three-card case is the whole of #158 and no single-leaf screen can reach it.
+>
+> **The equality is asserted last, and that is a finding rather than a preference.** Both mandatory mutations killed on the first round and both killed on the *wrong* assertion: restoring the "this stage" wording and restoring the old tooltip each failed the equality with a two-line diff, which says the sentence is not the expected one and leaves the reader to work out which property of it mattered. The three named words now come first on the hint — `this stage` absent, `this food type` present, `waste included` present — and the results-page tie comes first on the tooltip; re-measured, the stage mutation fails `assert "this stage" not in hint` naming the box §4.6 sums once per leaf. A mutation that kills is not the same as a mutation that kills on the assertion the test exists for, and only reading the failure tells them apart.
+
+> **#159's assertion is tied to what the results page prints, not to the tooltip's own text.** A test that greps the sentence passes whatever the sentence says, which is how the false claim survived from before #147 until now. So `buildResultsReport` is run over the canonical fixture in the **same** Node process, `Share of value wasted` is read out of the report it produces, and only then is the tooltip required to name it. The tie runs both ways: if the results page stopped deriving a figure from these two boxes the test fails and says the tooltip's claim needs re-deciding, and if the tooltip goes back to denying it the test fails naming the field. The grep for the old denial is kept as the weaker half, for the one shape the positive tie cannot catch — a sentence that names the figure and denies it in the same breath.
+
+> **Nothing is published and nothing is republished by this revision.** `is_mock` stays `true`, **O-1 remains the hard blocker**, and the placeholder banner stays mandatory on every results view and export. **O-2 stays decided**: `cost` is the waste levy plus disposal cost, the food's own value stays an optional constant at zero, and item 2 above states that rather than softening it.
+
+> **This entry is v1.92, and the number was taken after a scan rather than off `main`.** Every local and remote ref, every tag and every worktree's **uncommitted working copy** was read: 314 refs exist (no tags), 300 of them carry a `docs/interfaces.md` with a change log, the highest `### v1.x` written anywhere is **v1.90** — on ten refs, among them `main`, `origin/main` and `feat/issue-83-floating-panel` — and 23 on-disk working copies were read for the numbers no commit holds yet, the highest of those also v1.90. No ref and no working copy carries v1.91, v1.92 or v1.93. The two concurrent branches have been given **v1.91** and **v1.93** by the owner, which is why this is 1.92 and not 1.91: a number claimed on an unpushed branch cannot be scanned for, so the claim has to be made by the person holding all three. The front matter is raised with the entry because `test_documented_statistics_visual_contract_matches_the_public_modules` asserts `header == max(entries)` and that every entry is distinct (v1.89).
 
 ### v1.90 — 2026-10-03 (the equivalence explanation becomes a floating platform, and takes on an overlay's obligations; affects C and D)
 
@@ -5444,16 +5472,33 @@ export function stepNav({step, back, backLabel = 'Back', label = 'Continue',
 > added to this panel later**; nothing in the suite derives a hint's scope from the field
 > it sits under.
 >
-> **One hint on this panel still has that defect and is deliberately not changed here.**
-> *Total amount produced* reads "Everything that went through this stage over the same
-> period, waste included" — a **stage**, which is the chain, not the card. `total_input_kg`
-> is a per-leaf field and `engine/calculate.py` sums it across entries for
-> `production_share_percent` (§4.6), so three cards each given the whole stage's throughput
-> produce a denominator three times too large and a waste share three times too small.
-> That is worse than the money case, because the share is a headline figure rather than a
-> statistics-only one. It predates #147, it is a third source string in twenty catalogues
-> and a contract row of its own, and it wants its own issue rather than a quiet enlargement
-> of a copy-clarification PR.
+> **The production total is scoped the same way, since #158 (v1.92).** It read
+> "Everything that went through this stage over the same period, waste included" — a
+> **stage**, which is the chain, not the card. `total_input_kg` is a per-leaf field and
+> `engine/calculate.py` sums it across entries for `production_share_percent` (§4.6), so
+> three cards each given the whole stage's throughput produced a denominator three times
+> too large and a waste share three times too small. That was worse than the money case,
+> because the share is a headline figure rather than a statistics-only one. It now reads
+> **"Enter the total amount you produced for this food type over the same period, waste
+> included."** — one sentence, the card's own scoping, and the "waste included"
+> clarification kept, because a denominator that excluded the wasted mass is not a
+> production total. **All five hints on this panel are now statements about this card**,
+> and the rule above is the one to apply to the sixth.
+>
+> **The shared statistics-only tooltip states a limit, not a universal (#159, v1.92).** It
+> ended "No figure on the results page is calculated from it", and the results page prints
+> **Share of value wasted**, which §4.5 computes as
+> `wasted_value_nzd ÷ total_value_nzd × 100` from exactly the two boxes the tooltip sits
+> on. `moneySummary` also echoes both sums back (*Total value of food handled*, *Value of
+> food wasted*) and `savingLines` prints `saving_nzd`, which §4.5 derives from
+> `wasted_value_nzd` — four figures on the page, not one. It now reads **"It joins the
+> anonymous statistics, and the two together give the share of value wasted on the results
+> page. No emissions or cost figure is calculated from it."** The second sentence is the
+> claim the client actually ruled on (**O-2**, v1.48): `cost` is the waste levy plus
+> disposal cost, `const_FOOD_VALUE_PER_KG` stays at zero permanently, and these two
+> figures never enter a metric. **"Statistics only" may be said of the impact numbers and
+> not of the page**: these boxes change no emissions and no cost figure, and they do change
+> one ratio printed beside them.
 
 
 ```js

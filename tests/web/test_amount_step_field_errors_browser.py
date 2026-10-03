@@ -19,6 +19,14 @@ that gets past the browser is rejected by the real backend with a genuine 400.
 same reasoning applied to a different defect: a test that answers its own POST proves
 only that the front end can parse a response it wrote itself.
 
+**One test below is the exception, and its own docstring says why.**
+``test_a_detail_with_no_box_on_this_screen_keeps_its_banner`` fulfils the route,
+because the response it needs — one detail bound to a field on screen and one naming
+an ``alternative[…]`` path — is §9-legal and emittable by the real API, while no
+control on any screen can make the form *send* a request that produces it. What is
+measured there is this module's rendering rule, not the server's refusal, so the
+response is the fixture and the renderer is the subject.
+
 **The paste itself.** `field.press_sequentially` types one keystroke at a time and
 *is* the keystroke guard's own path — it would prove nothing about a paste. Real
 clipboard access is unavailable to a sandboxed headless Chromium without OS-level

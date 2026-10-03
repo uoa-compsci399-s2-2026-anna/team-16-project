@@ -1983,12 +1983,29 @@ function closeEquivalencePanels(keep = null) {
  * * **`event.isTrusted`**, for v1.88's measured reason: `downloadResults` appends an
  *   `<a download>` to `document.body` and calls `.click()` on it, and the nav's two
  *   action buttons forward a press to `.result-actions [data-action=…]` the same way.
- *   Both bubble to this listener with a target outside every `.equivalent-basis`. On
- *   this page every such synthesised click is preceded by a real one that is also
- *   outside the panel, so **dropping this guard was measured to change nothing visible
- *   here** — it is kept because what it states is an invariant and not a workaround: a
- *   dismissal is a reader's gesture, and the next synthesised `.click()` added anywhere
- *   on this page need not be preceded by one.
+ *   Both bubble to this listener with a target outside every `.equivalent-basis`.
+ *
+ *   **Dropping this guard was mutation-tested and SURVIVED — 179 tests still passed —
+ *   and the measurement says it is an equivalent mutation rather than a weak test.**
+ *   Every synthesised click on this page was logged with the panel state at the moment
+ *   it arrived, and all three paths are masked, each by something different:
+ *     - *the text download.* The `<a>`'s click is a NESTED dispatch raised from
+ *       `calculator.js`'s listener on `main`, so it reaches this listener with a panel
+ *       still open — before the outer trusted click has got here. Ungated, this closes
+ *       the panel; gated, the outer click closes it one step later. Same end state.
+ *     - *the nav's forwarded action.* The press that opened the nav had already
+ *       dismissed the panel, so there is nothing open by then (measured: 0).
+ *     - *the PDF.* Its synthesised click lands a round trip later, so a panel opened in
+ *       between IS open when it arrives — and `setState({ pdfExporting: false })` one
+ *       line after `link.click()` re-renders `main` and closes it anyway. Measured 0
+ *       panels open afterwards with the guard and without it.
+ *
+ *   **It is kept, and the mask is the reason to keep it rather than to drop it.** What
+ *   it states is an invariant — a dismissal is a reader's gesture — and the three things
+ *   standing in for it are accidents of other code: a listener's position in the tree,
+ *   an unrelated press, and a `setState` that could stop being needed the day
+ *   `pdfExporting` is rendered without a full re-render. None of them is a decision
+ *   anybody made about this panel.
  * * **Escape closes it and returns focus to the `?` that opened it**, which is the
  *   keyboard's half of the click-away. Unlike the nav there is only ONE open state to
  *   handle: a `<details>` opens on activation of its summary and nothing else, where the

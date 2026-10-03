@@ -4337,6 +4337,16 @@ def test_the_open_explanation_is_a_translucent_light_layer(page_at, width):
     #: its own Banana card. What is asserted here instead is the inverse of the
     #: fallback test next door: change what is behind the panel and the painted
     #: pixel MOVES. An opaque ground would not.
+    #:
+    #: **This one is REDUNDANT today and is kept as the statement rather than as
+    #: the guard, which is the honest description of it.** Mutation-tested: the
+    #: ground taken to `rgba(255, 255, 255, 0.995)` - translucent enough to keep
+    #: the alpha check above happy, opaque enough that swapping the backdrop for
+    #: Beetroot moves no pixel - is killed by `!= (255, 255, 255)` three lines up
+    #: before this is reached, because the panel's top pixel is still over Banana.
+    #: There is no alpha that passes that one and fails this one. It earns its
+    #: place the day the panel stops overlapping its own card, which is one
+    #: `top` value away.
     page.evaluate(
         """() => {
              document.querySelectorAll('.equivalent-grid article').forEach(card => {
@@ -5004,6 +5014,14 @@ def test_a_click_away_closes_the_explanation_and_a_click_in_it_does_not(page_at)
         "the figures the panel exists to show them"
     )
 
+    #: **A mark a render would wipe, rather than a look at where focus went.**
+    #: Tried the focus way first and it measures nothing: an `<h2>` is not
+    #: focusable, so clicking one moves focus to the nearest focusable ancestor,
+    #: which is `<main id="main-content" tabindex="-1">` - the same
+    #: `activeElement` a `setState` would have produced, for an unrelated reason.
+    #: `setState` replaces `main.innerHTML` wholesale, so an attribute written
+    #: onto a node inside `<main>` cannot survive one.
+    page.evaluate("() => { document.querySelector('.equivalent-grid').dataset.kai83 = 'here' }")
     page.locator("#tangible-equivalents h2").first.click()
     page.wait_for_timeout(120)
     assert page.evaluate(is_open) is False, (
@@ -5011,13 +5029,12 @@ def test_a_click_away_closes_the_explanation_and_a_click_in_it_does_not(page_at)
         "cards below it and the section beneath the grid, so it has to go when the reader "
         "looks away"
     )
-
-    #: And no render happened on either click: `main.js` restores focus by `id`,
-    #: and a `<summary>` has none. A `setState` would be visible here as focus
-    #: on `<main>` rather than on the heading the reader actually clicked.
-    assert page.evaluate("() => document.activeElement.id") != "main-content", (
-        "focus is on <main> after the dismissal, which is what a `setState` here does: "
-        "`main.js` restores focus by `id` and the control the reader clicked has none"
+    assert page.evaluate(
+        "() => document.querySelector('.equivalent-grid').dataset.kai83 || 'gone'"
+    ) == "here", (
+        "the dismissal re-rendered <main>: the mark written onto the grid is gone. "
+        "`main.js` restores focus by `id` after a render and a `<summary>` has none, so a "
+        "reader who dismissed this panel would be thrown to the top of the page"
     )
 
 

@@ -3515,23 +3515,24 @@ export function bindCalculator(main, retryTaxonomy) {
     // by the element would be erased by the next unrelated update — a keystroke in the
     // improvement panel silently unticking a consent box.
     if (target.id === 'contribute') setState({ contributeTicked: target.checked, contributeError: null })
-    // Item ⑧'s percentage/unit toggle. A discrete choice like every other `<select>`
-    // on this page, so it goes through `setState` and a full re-render rather than the
-    // keystroke-preserving patch `updateImprovementInput` uses — there is no caret in a
-    // `<select>` to lose. `improvement.js` reads `state.improvementMode` to decide what
-    // each row displays; the allocation itself, in `improvedAllocations`, is untouched.
+    // **The improvement panel's one unit control** (#74). A discrete choice like every
+    // other `<select>` on this page, so it goes through `setState` and a full re-render
+    // rather than the keystroke-preserving patch `updateImprovementInput` uses — there is
+    // no caret in a `<select>` to lose, and a full re-render is exactly what is wanted
+    // here: every row of every leaf's card has to be redrawn in the new unit together.
+    //
+    // `improvement.js` reads `state.improvementMode` — `'percentage'`, `'kilograms'`,
+    // `'tonnes'` or `preset:<code>` — to decide what every row displays; the allocation
+    // itself, in `improvedAllocations`, stays the percentage it always was (see the note
+    // on `updateImprovementInput`), so changing what the panel is SHOWN in can never
+    // change what it MEANS.
+    //
+    // **The companion `[data-improvement-unit-code]` branch is gone**, with
+    // `state.improvementRowUnits`: between 2026-09-05 and #74 each row carried a unit of
+    // its own and this handler patched one key of that map. The client asked on
+    // 17 September for one unit throughout, so there is one key and one control; see the
+    // note in `ImprovementScenario`, which keeps both asks with their dates.
     if (target.id === 'improvement-mode') setState({ improvementMode: target.value })
-    // One destination row's own DISPLAY unit in unit mode — kilograms, tonnes, or a
-    // container — changed without touching any other row's, the same discipline
-    // `data-line-field="unit"` above follows and for the same reason: a shared value
-    // read by several `<select>`s is how one CSS selector ends up describing all of
-    // them. `state.improvementRowUnits` holds nothing the allocation depends on;
-    // `improvedAllocations` stays the percentage it always was (see the note on
-    // `updateImprovementInput`), so changing what a row is SHOWN in can never change
-    // what it MEANS.
-    if (target.matches('[data-improvement-unit-code]')) {
-      setState({ improvementRowUnits: { ...state.improvementRowUnits, [target.dataset.improvementUnitCode]: target.value } })
-    }
   })
 
   /**

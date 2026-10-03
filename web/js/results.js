@@ -1930,6 +1930,126 @@ function bindNavGestures() {
   }, { passive: true })
 }
 
+/** The selector `equivalenceBasis` writes, in one place, because three listeners read it. */
+const EQUIVALENCE_DISCLOSURE = 'details.equivalent-basis'
+
+/** Installed once, on `document`, and never by a render. See `bindEquivalenceOverlay`. */
+let equivalenceOverlayBound = false
+
+/**
+ * Close every open equivalence panel except `keep`, **writing the DOM and not `state`**.
+ *
+ * `<details open>` is the whole of this overlay's state and it lives nowhere else: nothing
+ * in `state` records which `?` is expanded, and `equivalenceBasis` renders every one of
+ * them closed. So there is no flag to move, which is one fewer thing than
+ * `closeResultsNav` has to do — but the reason for not reaching for `setState` is the
+ * same one, and it is worth writing down because the convenient version is wrong in
+ * exactly the way the nav's was. `setState` rebuilds `main.innerHTML`, and `main.js`
+ * restores focus **by `id`**; `<summary>` has no `id` (it is one of three per results
+ * page and an id would have to be minted per equivalence `code`), so
+ * `document.activeElement.id` is `''`, `document.getElementById('')` is `null`, and focus
+ * falls through to `main.focus()`. A reader who pressed Escape to close a panel would be
+ * thrown to the top of the page by the keystroke that was meant to put them back on the
+ * `?` they came from.
+ *
+ * @param {Element|null} [keep] A disclosure to leave alone — the one just clicked.
+ * @returns {Element|null} The `<summary>` of the panel closed, for focus to return to.
+ */
+function closeEquivalencePanels(keep = null) {
+  let returnTo = null
+  for (const details of document.querySelectorAll(`${EQUIVALENCE_DISCLOSURE}[open]`)) {
+    if (details === keep) continue
+    details.open = false
+    returnTo = details.querySelector('summary') || returnTo
+  }
+  return returnTo
+}
+
+/**
+ * The two listeners the floating equivalence panel needs (#83), installed **once on
+ * `document`** for the life of the page.
+ *
+ * Until #83 this panel was an in-flow block and owed none of this: it pushed the page
+ * down, stayed inside its own card, and a reader who had finished with it could leave it
+ * open at no cost to anything else. Floating, it is the same kind of object as
+ * `.results-floating-nav__panel` — it covers the cards below it and the section beneath
+ * the grid — so it acquires that object's obligations, and #150 (v1.88) had just built
+ * them. **What is reused here is the reasoning and the two guards, not the code**: the
+ * nav's own path cannot be called, because it closes a nav.
+ *
+ * * **A click elsewhere closes it**, delegated on `document` rather than on `main`
+ *   because the click may land in the header, the language chooser or the footer. The
+ *   same click expression does the exclusivity, below.
+ * * **`event.isTrusted`**, for v1.88's measured reason: `downloadResults` appends an
+ *   `<a download>` to `document.body` and calls `.click()` on it, and the nav's two
+ *   action buttons forward a press to `.result-actions [data-action=…]` the same way.
+ *   Both bubble to this listener with a target outside every `.equivalent-basis`. On
+ *   this page every such synthesised click is preceded by a real one that is also
+ *   outside the panel, so **dropping this guard was measured to change nothing visible
+ *   here** — it is kept because what it states is an invariant and not a workaround: a
+ *   dismissal is a reader's gesture, and the next synthesised `.click()` added anywhere
+ *   on this page need not be preceded by one.
+ * * **Escape closes it and returns focus to the `?` that opened it**, which is the
+ *   keyboard's half of the click-away. Unlike the nav there is only ONE open state to
+ *   handle: a `<details>` opens on activation of its summary and nothing else, where the
+ *   nav's panel is also opened by `:focus-within` and so has an open state carrying no
+ *   `data-open` at all. Nothing inside this panel is focusable — a `<dl>` and a `<p>` —
+ *   so there is no second phase and no "focus is inside the panel" case to unwind.
+ * * **The tab order needs no rule here, and that is `<details>`'s doing.** The nav's
+ *   stylesheet had to use `visibility: hidden` to take its links out of the tab order
+ *   and `:focus-within` to put the closed panel back within keyboard reach; a closed
+ *   `<details>` does not render its non-summary children at all, so there is nothing to
+ *   remove, and the panel holds no focusable descendant when open either. The summary is
+ *   the one tab stop in both states. Measured, not assumed, in
+ *   `test_the_closed_panel_is_not_in_the_tab_order_and_the_open_one_adds_nothing`.
+ *
+ * **The nav and a panel cannot both be open, so Escape closing both is not a case.**
+ * Opening a `?` is a trusted click in the page's content, which is outside the nav, and
+ * `bindNavGestures`'s own click listener dismisses the nav on exactly that. Measured
+ * rather than reasoned about in
+ * `test_opening_an_equivalence_panel_dismisses_the_floating_nav`, which is why these are
+ * two independent listeners rather than one ordered handler.
+ */
+function bindEquivalenceOverlay() {
+  if (equivalenceOverlayBound || typeof document === 'undefined') return
+  equivalenceOverlayBound = true
+  document.addEventListener('click', event => {
+    if (!event.isTrusted) return
+    //: **One expression for the dismissal AND the exclusivity**, because they are the
+    //: same question asked of the same click: which disclosure, if any, did the reader
+    //: just press? `closest` returns the pressed one and `closeEquivalencePanels` closes
+    //: every other open one; a click outside all of them returns `null` and closes the
+    //: lot. A click INSIDE an open panel — selecting a figure to copy — finds that
+    //: panel's own `<details>` and is therefore not a dismissal, which is the behaviour
+    //: a reader expects of a thing they are reading.
+    //:
+    //: **Only one panel open at a time is a decision, and the measurement behind it is
+    //: that two of these overlap.** At 320px the first card's open panel is 250px tall
+    //: over a 97px card, and the next card starts 14px below it: two open panels put
+    //: translucent glass over translucent glass, and the ground every contrast figure
+    //: on this surface was measured against stops being the one that is there.
+    //:
+    //: The native route is `<details name="…">`, which makes an exclusive accordion
+    //: with no JavaScript at all and would be the first choice in this project if it
+    //: were the only thing needed. It is not taken because it is NEWER than the
+    //: `backdrop-filter` this panel already carries an `@supports` fallback for, so it
+    //: would be a second mechanism that silently does nothing in the browsers that
+    //: fallback exists for — while Escape and the click-away need this listener anyway.
+    closeEquivalencePanels(event.target?.closest?.(EQUIVALENCE_DISCLOSURE) || null)
+  })
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Escape') return
+    //: Focus LAST, and to the summary rather than by `id`: see `closeEquivalencePanels`
+    //: for why there is no `id` to restore by and why no render may happen here.
+    //: `preventDefault` only when something was actually closed, so Escape keeps
+    //: whatever other meaning it has on this page when no panel is open.
+    const returnTo = closeEquivalencePanels()
+    if (!returnTo) return
+    returnTo.focus()
+    event.preventDefault()
+  })
+}
+
 /**
  * Point the section spy at whatever `render()` has just written into `<main>`.
  *
@@ -1946,6 +2066,15 @@ function bindNavGestures() {
  * @param {Element} root The container `render()` wrote into.
  */
 export function bindResultsSectionSpy(root) {
+  //: **Before the early return, and deliberately not behind the nav's existence**
+  //: (#83). This function is the one hook `render()` calls on every exit, in a
+  //: browser, which is what the equivalence overlay's two document listeners need:
+  //: one install, outliving every render. It must NOT be moved below the
+  //: `!sections.length` return — the nav is `display: none` under 1100px but is
+  //: still in the markup, so that return happens off the results page, and the
+  //: panel it guards is drawn at every width down to 320px. Guarded by its own
+  //: flag, so being called on every render installs nothing twice.
+  bindEquivalenceOverlay()
   const nav = root?.querySelector?.('.results-floating-nav')
   const sections = nav
     ? RESULTS_NAV_SECTIONS.map(([id]) => root.querySelector(`#${id}`)).filter(Boolean)

@@ -168,6 +168,16 @@ button:disabled { cursor: not-allowed; color: rgba(0, 50, 35, 0.56); background:
    radius, the padding, and the drop shadow. `0 14px 36px` of elevation says "this is over
    the page", which is true of the nav's overlay and false of a panel inside a card.
 
+   **#83 TOOK THAT SENTENCE'S SECOND CASE AWAY FROM THE EQUIVALENCE PANEL, AND THE SENTENCE
+   DID NOT CHANGE.** That panel was the "inside a card" example when this note was written;
+   it is now an absolutely-positioned overlay hanging out of its card, so the elevation is
+   the TRUE statement about it and it takes the nav's own `0 14px 36px rgba(0, 50, 35, 0.18)`
+   — reused, not reinvented, because these are now the same kind of object. The shadow still
+   does not belong in the token, for the half of the reason that did not move: #138's and
+   #142's step cards are next to join this list, and a card must not be handed an elevation
+   that claims it floats. **Two of the three consumers now happen to be overlays, which is
+   not an argument for promoting the shadow — it is a coincidence of which two landed first.**
+
    Consumers add their own selector to the list below. A consumer whose element already
    carries a `background` from another rule needs enough specificity to beat it — hence
    `.form-panel.step-card` rather than `.form-panel` when the step cards land.
@@ -1088,12 +1098,27 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 
    Closed, the "?" sits at the card's lower INLINE END via the flex column's
    auto margin and `text-align: end` -- logical properties put it on the right in
-   English and the left in Arabic without a direction-specific rule. Open, the body is a normal IN-FLOW block,
-   never absolutely positioned: an earlier version of this same affordance
-   (the admin panel's help marker) was floated over the page and measured
-   overflowing the viewport by about 27px at 320px wide. A block box can never be
-   wider than its own containing block, so this cannot repeat that failure. */
-.equivalent-basis { display: block; margin-block-start: 8px; text-align: end; }
+   English and the left in Arabic without a direction-specific rule.
+
+   **`position: relative` here is the containing block the open panel hangs from**
+   (#83). It is on the `<details>` rather than on `.equivalent-grid article`
+   deliberately: the details' padding box is already the card's own content width
+   AND its block end is exactly where the "?" ends, so `inset-inline: 0` plus
+   `top: 100%` needs no offset that names the card's 20px padding twice. The card
+   would have worked too and is the weaker choice for that reason.
+
+   **The old note here said the body is "a normal IN-FLOW block, never absolutely
+   positioned", citing the admin panel's help marker, which was floated over the
+   page and measured overflowing a 320px viewport by about 27px. That hazard is
+   real and it is not what "absolutely positioned" causes** -- it is what a box
+   sized by its own content and hung off a 1.4rem icon causes. The panel below is
+   pinned to BOTH inline edges of its containing block, so its width is that
+   block's width and nothing else; `max-inline-size: 100%` used to be the cap that
+   said so and `inset-inline: 0` is strictly stronger than a cap, because it fixes
+   the edges instead of bounding one of them. Measured at 320px and 390px in
+   `("ar", "de", "en")` by `test_horizontal_overflow.py` and
+   `test_the_equivalence_explanation_does_not_overflow`. */
+.equivalent-basis { display: block; position: relative; margin-block-start: 8px; text-align: end; }
 .equivalent-basis summary {
   display: inline-flex;
   align-items: center;
@@ -1140,16 +1165,144 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
      * that it is a containing block for nothing. The token creates one, and this
        panel holds a `<dl>` and a `<p>` and must keep holding nothing positioned.
 
-   **The box is unchanged**, deliberately: same margin, same padding, same
-   radius, same in-flow block. #143 asks for the surface to be lighter and for
+   **#83 ADDS A FOURTH, AND IT IS THE ONE AN OVERLAY OWES THAT AN IN-FLOW PANEL
+   DID NOT.** In flow, the panel had ONE backdrop — its own card — so one pixel
+   described it. Floating, its backdrop is whatever it happens to hang over, and
+   that varies down its own height: the Banana card at the top, then the next
+   card, then `#breakdown-section`. So the ratio is taken against the **darkest
+   pixel in the whole panel**, scanned with the panel's own glyphs set
+   transparent so a letter cannot be mistaken for a ground. Measured, worst over
+   the entire panel, both the first card's and the last card's:
+
+                 glass path                  fallback path
+       320px     rgb(225, 233, 230)          rgb(255, 255, 255)
+                 Kale 11.48:1  muted 5.61:1  Kale 14.18:1  muted 6.93:1
+       390px     rgb(226, 234, 231)          rgb(255, 255, 255)
+                 Kale 11.59:1  muted 5.66:1  Kale 14.18:1  muted 6.93:1
+      1278px     rgb(227, 234, 232)          rgb(255, 255, 255)
+                 Kale 11.62:1  muted 5.67:1  Kale 14.18:1  muted 6.93:1
+
+   The single-pixel figures above (13.9:1 / 6.8:1) are the panel's FIRST padding
+   pixel and still hold — the panel's top edge still overlaps its own card, by
+   13px at 1278px, so that pixel is still glass over Banana. The worst-pixel
+   figures are the ones that bound the panel, and `--muted`'s 5.61:1 at 320px is
+   the floor. Both are above the 4.5:1 body-text bar. **The arithmetic cannot
+   predict either**: 72% white over anything floors every channel at 183, which
+   is how the one pixel that came back rgb(0, 49, 34) during this round was
+   identified as a corner outside the 14px radius rather than a contrast
+   failure.
+
+   **v1.83 left the box alone on purpose and #83 is the other half of that
+   decision.** v1.83's own words: "#143 asks for the surface to be lighter and for
    the card not to jump when it opens, and changing the geometry at the same time
-   as the paint is how one of those gets traded for the other. */
+   as the paint is how one of those gets traded for the other." The paint landed;
+   the card still jumped, because the panel was in flow. The client's reading of
+   the result, at the 17:09 meeting, is both halves in one sentence:
+
+     客户那边对于颜色没有意见，主要是看着都觉得暖黄色里套个白框再把整个卡片拉长
+     有点不太美观。
+     *No objection to the colour. What everyone finds unattractive is a white box
+     inside the warm yellow, and the whole card being stretched.*
+
+   So **the Banana stays** -- #83's title asks for a colour change and its body is
+   the meeting's note, not its conclusion -- and the two complaints are the panel
+   being INSIDE the card and the card GROWING. One change answers both: the panel
+   leaves the flow.
+
+   **THE STRETCH, MEASURED BEFORE AND AFTER.** Three cards, the middle one's label
+   two lines and the last one's four, opening the first:
+
+                                    in flow (v1.83)        floating (#83)
+     1278px  card 1's own "?"       1960 -> 1840           1960 -> 1960
+             cards 2 and 3's "?"    1960 -> 2048           1960 -> 1960
+             #breakdown-section     2066 -> 2154           2066 -> 2066
+      320px  card 2's top           2811 -> 3067           2811 -> 2811
+             #breakdown-section     3267 -> 3524           3267 -> 3267
+             document height        5929 -> 6186           5929 -> 5929
+
+   v1.83 recorded the first column as pre-existing and deliberately did not assert
+   against it. The second column is what `test_opening_the_explanation_moves_
+   nothing` now asserts, as a RELATION -- nothing moves -- and not as six pixel
+   constants, for v1.78's reason: a pixel constant is a measurement with an expiry
+   date, and one of v1.78's broke the day a sixth metric made a section taller.
+
+   **It overlays at EVERY width, including 320 and 390, and that is a decision with
+   a measurement behind it.** The alternative was to stay in flow below the
+   three-column breakpoint, where the card is nearly the viewport's width and an
+   overlay has nowhere sideways to go. It is rejected because the stretch is WORST
+   exactly there: +256px of card displacement and +257px below the grid at 320px,
+   against +88px at 1278px. A fix that skipped the narrow widths would skip the
+   widths the complaint is largest at. Nothing is given up for it, because the
+   panel never needed to go sideways: it is as wide as the card and hangs DOWN,
+   over the cards and the section beneath, the way a menu does.
+
+   **THE ELEVATION, AND WHY v1.83'S NOTE FLIPS FOR THIS CASE RATHER THAN BEING
+   CONTRADICTED.** The glass token at the top of this file deliberately excludes
+   `0 14px 36px rgba(0, 50, 35, 0.18)`, with the reason written beside it: "that
+   elevation says 'this is over the page', which is true of the nav's overlay and
+   false of a panel inside a card." Every word of that still holds. What has
+   changed is which of its two cases this panel is in. It IS over the page now, so
+   the shadow is the true statement about it -- and it is load-bearing rather than
+   decorative: a translucent ground over the white page below the grid paints
+   near-white, and with no shadow a near-white rectangle over a white page has
+   nothing left saying it is above anything. The shadow is `.results-floating-nav__
+   panel`'s own value, reused rather than reinvented, because these are now the
+   same kind of thing. The token still does not carry it: a card consumer still
+   must not get it, which is the half of the note that did not flip.
+
+   **The radius grows 10px -> 14px and the hairline stays.** A platform at the
+   nav panel's elevation reads as the nav panel's kind of object, and the nav's is
+   16px at 8px of padding; 14px is that proportion at this panel's 12/14px. This
+   is the only measurement on this panel that is taste rather than arithmetic, and
+   it is called out as such.
+
+   **Nothing in here may be positioned**, and that is rule 11 rather than an
+   observation -- see the token. The panel holds a `<dl>`, three `<div>`s, three
+   `<dt>`/`<dd>` pairs and a `<p>`, all `static`, and
+   `test_the_glass_is_a_containing_block_for_nothing_positioned` measures it.
+   **Note the direction, because #83 changes it:** the panel is now itself a
+   positioned element, and it is a DESCENDANT of `.equivalent-grid article`. The
+   card is not a consumer of the token, so rule 11 does not bite today -- but
+   #83's own title asks about this card's colour and #138/#142 put the glass on
+   cards, so the day anyone adds `.equivalent-grid article` to the consumer list,
+   that test fails naming this panel. That is the correct outcome and not a
+   nuisance: a glass card would be the containing block for the panel hanging out
+   of it, and `top: 100%` would then resolve against the glass. */
 .equivalent-basis__body {
+  /* `top`, not `inset-block-start`: the panel hangs below the "?" in every
+     writing mode this project ships, all twenty of which are horizontal-tb. A
+     logical property here would be a claim about vertical text that nothing
+     tests. `inset-inline` IS logical, and has to be: it is what mirrors the
+     panel in Arabic with no direction-specific rule, the same reason
+     `text-align: end` puts the "?" itself on the correct side. */
+  position: absolute;
+  inset-inline: 0;
+  top: 100%;
+  /* **`z-index: 1` IS LOAD-BEARING, AND IT IS THE ONE THING MAKING THE PANEL
+     ABSOLUTE COST THAT ARGUING FROM THE SPEC GOT WRONG.** `position: relative`
+     on `.equivalent-basis` promotes ALL THREE cards' disclosures into the
+     positioned paint layer. The open panel and the other cards' `.equivalent-
+     basis` are then all at effective level 0, where **tree order decides** --
+     so a card LATER in the document paints its own "?" over an earlier card's
+     open panel. Measured with `elementsFromPoint` at the centre of the summary
+     the panel covers, at 320px and 390px:
+
+         z-index: 1        topmost = div.equivalent-basis__body
+         z-index dropped   topmost = summary
+
+     At 1278px the panel hangs below the grid over `#breakdown-section`, whose
+     content is not positioned, so it wins there either way -- which is exactly
+     why reasoning from the desktop case would have missed this.
+
+     It is **1 and not 30**: the floating results nav is `position: fixed;
+     z-index: 30` and the site header is above that, and both must stay above a
+     panel inside the page's own content. */
+  z-index: 1;
   margin-block-start: 8px;
-  max-inline-size: 100%;
   padding-block: 12px;
   padding-inline: 14px;
-  border-radius: 10px;
+  border-radius: 14px;
+  box-shadow: 0 14px 36px rgba(0, 50, 35, 0.18);
   text-align: start;
   font-size: 0.85rem;
   line-height: 1.45;
@@ -2481,7 +2634,29 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
      but `display: flex` stops `h3`'s 7px bottom margin collapsing with the 8px above the
      icon, so applying it there added 7px to every card for no benefit: measured 193->200,
      97->104, 145->152 at 320px. Three cards' worth of extra scrolling on a phone to
-     solve a problem phones do not have. */
+     solve a problem phones do not have.
+
+     **#83 ASKED WHETHER A FLOATING PANEL MAKES THIS RULE UNNECESSARY. IT DOES NOT, AND
+     THE MEASUREMENT SAYS WHY.** This rule is about the CLOSED "?", whose position is
+     decided by its own card's text and the row's stretch — and a panel that has left the
+     flow changes neither. Re-measured with the panel floating, three cards whose labels
+     run one line / two lines / four lines, as a gap from each card's own bottom:
+
+         700px   with these two lines   21 / 21 / 21     reverted to 8px   213 / 117 / 21
+        1278px   with these two lines   21 / 21 / 21     reverted to 8px   141 /  93 / 21
+
+     exactly the three-different-lines defect this rule was written against. (The
+     21 / 165 / 93 in the paragraph above is the same measurement taken with the long
+     label in the middle; which card is tallest decides which number is 21.)
+
+     **What the floating panel does change is that the baseline now SURVIVES opening**,
+     which it did not before. In flow, opening a card consumed the auto margin's slack and
+     the three "?"s went to three heights again — the opened card's own rose 1960 -> 1840
+     while its two row-mates' fell 1960 -> 2048 (v1.83's own figures, recorded there as
+     pre-existing and not asserted against). They now all stay at 1960, and the three gaps
+     stay 21 / 21 / 21 with a panel open — measured above.
+     `test_opening_the_explanation_moves_nothing` is what holds that. So the rule is not
+     merely still needed; it is the rule #83 finally made true in both states. */
   .equivalent-grid article { display: flex; flex-direction: column; }
   .equivalent-basis { margin-block-start: auto; padding-block-start: 1px; }
   .impact-comparison-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

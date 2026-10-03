@@ -454,18 +454,27 @@ def test_the_navs_two_actions_are_controls_and_not_two_more_jumps(tmp_path):
     fresh calculation") were answered by scrolling the reader to a button and
     stopping there.
 
-    They are buttons now, carrying the action row's own `data-action` values, so the
-    one delegated listener in `calculator.js` runs the same code for both doors. Four
-    separable things are asserted, and each fails on its own:
+    They are buttons now, each a remote control for the action row's own button:
+    `results.js` forwards the press to `.result-actions [data-action="..."]`, whose
+    click reaches the one delegated listener in `calculator.js` exactly as the row's
+    own press does. Five separable things are asserted, and each fails on its own:
 
     * the panel holds exactly the two actions, as `<button>`s;
     * neither of them is a link -- the thing this test exists to stop coming back is
       an `href` in this group;
+    * each names the `data-action` of a control that is actually on the page, since
+      the forwarding is a `querySelector` and a typo in it is a silent no-op;
     * the section link list is untouched by them, because a section index with
       actions in it is what made the pin unreleasable;
     * the labels are the action row's own strings, which is what keeps this at zero
       new catalogue entries -- and legitimate, because the two controls that share a
       name now do the same thing.
+
+    **`data-nav-action`, not `data-action`**, and that is asserted too, below.
+    `[data-action="download-results"]` is how this whole suite names *the* download
+    button -- eighteen selectors in five files -- so a second element answering to it
+    made nine of them resolve to this hidden panel instead. Measured: this file went
+    from 135 passed to 9 failed on actionability timeouts.
     """
     screen = screen_for(tmp_path, build_state())
 
@@ -485,13 +494,35 @@ def test_the_navs_two_actions_are_controls_and_not_two_more_jumps(tmp_path):
         f"place, and neither able to release the `aria-current` mark a press puts on it, "
         f"because the row never reaches the 24px rest line a release latches on"
     )
-    offered = _re.findall(r'data-action="([a-z-]+)"', body)
+    offered = _re.findall(r'data-nav-action="([a-z-]+)"', body)
     assert offered == ["start-over", "download-results"], (
-        f"the nav's actions are {offered}; they have to be the action row's own "
-        f"`data-action` values, or `calculator.js`'s delegated listener does not serve "
-        f"them and a second code path exists for the same two actions"
+        f"the nav's actions are {offered}; each has to name the `data-action` of the "
+        f"action row's own button, because the press is forwarded to it by "
+        f"`querySelector` -- and `data-nav-action` is the attribute, because a second "
+        f"element answering to `data-action` makes this panel's hidden copy the one "
+        f"every unscoped selector in the suite finds"
+    )
+    assert 'data-action=' not in body, (
+        f"the nav's action group carries a `data-action`: {body!r}. Eighteen selectors "
+        f"across five test files name the real controls that way, and this panel is "
+        f"hidden -- so they resolve here and wait thirty seconds for a button that will "
+        f"never become visible"
     )
     assert body.count("<button") == 2, f"the action group holds {body.count('<button')} buttons: {body!r}"
+
+    #: The forwarding target has to exist, **inside `.result-actions`**, which is the
+    #: selector `results.js` forwards through. `querySelector(...)?.click()` is a
+    #: silent no-op against a typo, and the non-browser render is the cheapest place
+    #: to see that both ends of the pair are spelled the same way.
+    row = _re.search(r'<div class="result-actions">(.*?)\Z', screen, _re.S)
+    assert row, "the results page renders no `.result-actions` row for the nav to forward to"
+    in_the_row = _re.findall(r'data-action="([a-z-]+)"', row.group(1))
+    for action in offered:
+        assert action in in_the_row, (
+            f"the nav forwards to `.result-actions [data-action=\"{action}\"]` and the row "
+            f"offers {in_the_row}. `querySelector(...)?.click()` fails silently, so a nav "
+            f"item pointed at a control that is not there simply does nothing"
+        )
 
     #: The strings, so that a redesign which coins new labels here is reported --
     #: a new string reaching the PDF raises 500 on every non-English download until

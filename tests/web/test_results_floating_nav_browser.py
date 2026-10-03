@@ -749,9 +749,12 @@ def test_the_navs_two_actions_download_and_start_over_for_real(browser):
     *"Download produces the expected results file/output"* and *"Start a new
     calculator clearly begins a fresh calculation"* are not satisfied by a link
     that scrolls to a button, which is what these two entries were. They are
-    buttons carrying the action row's own `data-action` values, so what is
-    asserted here is that pressing them in the panel does what pressing them in
-    the row does: a file arrives, and the confirm-then-reset path runs.
+    buttons that press the action row's own buttons, so what is asserted here is
+    that pressing them in the panel does what pressing them in the row does: a
+    file arrives, and the confirm-then-reset path runs. **That is the whole point
+    of measuring it in a browser**: the forwarding is a `querySelector` and a
+    synthesised `.click()`, and the only way to know the event reaches
+    `calculator.js`'s delegated listener on `main` is to watch the action happen.
 
     The `window.confirm` is accepted rather than suppressed, and its message is
     read, because "clearly begins a fresh calculation" includes being asked
@@ -767,12 +770,13 @@ def test_the_navs_two_actions_download_and_start_over_for_real(browser):
     `event.isTrusted` as well -- a dismissal is a reader's gesture, and any
     programmatic `.click()` on the page would otherwise perform one.
 
-    Mutations: changing either button's `data-action` to anything else leaves the
-    delegated listener in `calculator.js` with nothing to match and fails here --
-    the download times out, or no dialog is raised and `[data-action="start"]` never
-    appears. Rendering the two as `<a href="#...">` again fails for the same
-    reason, which is the point: the anchors could not have passed this test.
-    Dropping `event.isTrusted` fails the `still_open` assertion.
+    Mutations: changing either button's `data-nav-action` to anything else leaves
+    the forwarding `querySelector` with nothing to find -- it is `?.click()`, so it
+    fails silently -- and this test reports it, the download timing out or no dialog
+    being raised and `[data-action="start"]` never appearing. Rendering the two as
+    `<a href="#...">` again fails for the same reason, which is the point: the
+    anchors could not have passed this test. Dropping `event.isTrusted` fails the
+    panel-survives-its-own-download assertion.
     """
     context, page = _open(browser, 1280)
     asked = []
@@ -783,7 +787,7 @@ def test_the_navs_two_actions_download_and_start_over_for_real(browser):
         assert page.evaluate(GEOMETRY)["panelVisible"], "the panel did not open"
 
         with page.expect_download(timeout=8000) as download:
-            page.click('.results-floating-nav__actions [data-action="download-results"]')
+            page.click('.results-floating-nav__actions [data-nav-action="download-results"]')
         filename = download.value.suggested_filename
         body = download.value.path().read_text(encoding="utf-8")
 
@@ -805,7 +809,7 @@ def test_the_navs_two_actions_download_and_start_over_for_real(browser):
         )
 
         page.once("dialog", lambda dialog: (asked.append(dialog.message), dialog.accept()))
-        page.click('.results-floating-nav__actions [data-action="start-over"]')
+        page.click('.results-floating-nav__actions [data-nav-action="start-over"]')
         page.wait_for_selector('[data-action="start"]', timeout=15000)
         after = page.evaluate(
             "() => ({intro: !!document.querySelector('[data-action=\\\"start\\\"]'),"

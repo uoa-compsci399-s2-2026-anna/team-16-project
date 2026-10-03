@@ -1498,12 +1498,24 @@ const RESULTS_NAV_SECTIONS = [
  * and *Start a new calculation* starts one -- from wherever the reader has got to,
  * without scrolling anywhere at all.
  *
- * **The `data-action` values are the action row's own**, so `calculator.js`'s one
- * delegated `main` click listener already serves them and nothing had to be added
- * there. That is also what makes the shared accessible name correct rather than the
- * defect it would be on a link: the panel's *Download results* and the action row's
+ * **Each one presses the action row's own button, and that is the whole of its
+ * behaviour**: `bindNavGestures` forwards the press to
+ * `.result-actions [data-action="..."]`, whose click reaches `calculator.js`'s one
+ * delegated `main` listener exactly as the row's own press does. So there is one
+ * implementation of each action and no second code path, and `calculator.js` needed
+ * nothing. It is also what makes the shared accessible name correct rather than the
+ * defect it would be on a link: the panel's *Download results* and the row's
  * *Download results* are two doors onto one action, not a link and a button that
  * happen to read alike while doing different things.
+ *
+ * **The attribute is `data-nav-action`, not `data-action`, and the difference is not
+ * cosmetic.** `[data-action="download-results"]` is how the whole browser suite names
+ * *the* download button -- eighteen selectors across five files -- and a second
+ * element answering to it made nine of them resolve to this panel's copy instead,
+ * which is hidden. Measured: `test_results_export.py` went from 135 passed to 9
+ * failed on actionability timeouts the moment these two carried `data-action`. A
+ * remote control for a button is not a second button, and it should not answer to
+ * the same name.
  *
  * Labels are functions for the same reason `RESULTS_NAV_SECTIONS`' are, and they are
  * the two strings the action row already uses, so twenty catalogues needed nothing.
@@ -1842,6 +1854,21 @@ function bindNavGestures() {
       pinSection(link.getAttribute('href').slice(1))
       return
     }
+    //: **The panel's two actions are remote controls for the action row's own
+    //: buttons** (#126), and this is the whole of the forwarding. Pressing the real
+    //: control rather than re-implementing it is what keeps one implementation of
+    //: each action: the synthesised click bubbles to `calculator.js`'s delegated
+    //: listener on `main` and runs the confirm, the reset, the export -- all of it
+    //: in the one place it already lived, which is why that file is untouched.
+    //:
+    //: The forwarded click is `isTrusted: false`, so the dismissal below does not
+    //: fire on it and the panel survives its own action. See `RESULTS_NAV_ACTIONS`
+    //: for why the attribute is `data-nav-action` and not `data-action`.
+    const remote = event.target?.closest?.('.results-floating-nav__actions [data-nav-action]')
+    if (remote) {
+      document.querySelector(`.result-actions [data-action="${remote.dataset.navAction}"]`)?.click()
+      return
+    }
     //: **The overlay closes when the reader's attention goes elsewhere**, which is
     //: what a floating menu over the text has to do. Delegated on `document`
     //: rather than on `main` because the click may land in the header, the
@@ -1993,14 +2020,14 @@ function resultsFloatingNavigation(state) {
   //: focus on the Escape path, for the same reason.
   //:
   //: **The two actions below are buttons, and that is the answer to #126 rather than
-  //: a shortcut past it** -- see `RESULTS_NAV_ACTIONS`. They carry the action row's
-  //: own `data-action` values, so the delegated listener in `calculator.js` runs the
-  //: same code the row's own buttons run; there is nothing nav-specific behind them.
+  //: a shortcut past it** -- see `RESULTS_NAV_ACTIONS`. Each one presses the action
+  //: row's own button, so the delegated listener in `calculator.js` runs the same
+  //: code the row's own press runs and there is nothing nav-specific behind them.
   //: They are outside the `<ul>` because that list is the section index and these are
   //: not sections, and `role="group"` is what says "these belong together" without
   //: claiming they are a second list of places to go.
   const actions = RESULTS_NAV_ACTIONS
-    .map(([action, text]) => `<button class="results-floating-nav__action" type="button" data-action="${action}">${escapeHtml(text())}</button>`)
+    .map(([action, text]) => `<button class="results-floating-nav__action" type="button" data-nav-action="${action}">${escapeHtml(text())}</button>`)
     .join('')
   return `<nav class="results-floating-nav"${openAttribute} aria-label="${escapeHtml(label)}"><button class="results-floating-nav__handle" id="results-floating-nav-handle" type="button" data-action="toggle-results-nav" aria-controls="results-floating-nav-menu"${expanded} aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"><span aria-hidden="true">⋮</span></button><div class="results-floating-nav__panel" id="results-floating-nav-menu"><ul class="results-floating-nav__links">${links}</ul><div class="results-floating-nav__actions" role="group">${actions}</div></div></nav>`
 }

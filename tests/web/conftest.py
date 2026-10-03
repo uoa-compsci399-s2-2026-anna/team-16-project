@@ -1,4 +1,14 @@
-"""Shared Playwright driver for every `tests/web` browser test.
+"""Shared Playwright driver for every `tests/web` browser test, and the
+`browser` marker itself.
+
+**Three things live here, and the second two arrived with contract v1.91.** The
+one Playwright driver (below, and the rest of this docstring is about why it is
+one); `NOT_A_BROWSER_SUITE` and `MIXED_BY_DESIGN`, which are what decides which
+cases carry the `browser` marker, applied by location rather than by each
+author remembering to type a line; and a `-v` report-header line naming the
+origin the run is pointed at. `tests/web/base_url.py` holds the origin itself
+and `tests/web/test_suite_isolation.py` is what fails when either rule is worked
+around.
 
 Each file used to open its own `sync_playwright()` context through a
 locally-defined `browser` fixture: five at `scope="module"`

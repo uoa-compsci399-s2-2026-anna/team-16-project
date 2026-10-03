@@ -25,17 +25,36 @@ at a container of your own prevents it. So:
         -e KAICALC_API_ORIGIN=http://localhost:18094 -p 18094:18080 kaicalc-web:wt-149
     KAICALC_WEB_URL=http://localhost:18094 pytest tests/web/test_period_picker_browser.py
 
-**One module rather than a constant per file, because a constant per file is
-exactly how this happened.** Thirty-seven files under ``tests/web`` carried
-their own ``BASE``/``ROOT``/``ORIGIN``/``WEB_BASE``/``CALCULATOR_URL`` line, and
-they did not agree with each other: twenty-odd spelled the variable as an
-*origin* (``http://localhost:18080``) and nine spelled it as a *page*
-(``http://localhost:18080/index.html``), so one environment variable meant two
-different things depending on which file read it. Setting it to a bare origin
-happened to work for the second group only because ``docker/nginx.conf`` says
-``index index.html`` -- the page they asked for was not the page they named.
+**One module rather than a constant per file, and the defect was inconsistency
+rather than absence.** Counted on ``origin/main`` at v1.91 rather than taken on
+trust (``git grep -l "localhost:18080" origin/main``): **49** tracked files held
+the literal, **40** of them Python, **37** of those under ``tests/web`` -- and
+**36 of the 37 already honoured** ``KAICALC_WEB_URL``. So an override pattern
+existed and nearly every file used it. What it did not have was one meaning or
+one home:
+
+* **26** files spelled the variable as an *origin*
+  (``os.environ.get("KAICALC_WEB_URL", "http://localhost:18080")``, some then
+  appending ``/index.html`` themselves);
+* **10** spelled it as a *page*
+  (``os.environ.get("KAICALC_WEB_URL", "http://localhost:18080/index.html")``),
+  so pointing the variable at a bare origin sent them to ``/`` -- which lands on
+  the calculator only because ``docker/nginx.conf`` says ``index index.html``.
+  The page they asked for was not the page they named;
+* and **one**, ``test_horizontal_overflow.py``, had no override at all and could
+  only ever be run against whatever was on :18080. It was reachable without
+  surgery -- one agent pointed it at a private image with a throwaway ``-p``
+  plugin that rewrote its ``BASE`` at collection time -- which is the argument
+  for an environment variable rather than against one.
+
 Both spellings are now derived here from one origin, so the variable has one
-meaning.
+meaning and one place to read it from. Three files outside ``tests/web`` still
+hold the literal with no override and are deliberately out of scope here:
+``tests/admin/test_button_hint_browser.py`` and
+``tests/admin/test_import_dialog_browser.py`` (correctly marked ``browser``, so
+#149's first half does not reach them, and a one-line import each away from
+this module), and ``tests/test_web_https_redirect.py``, whose literal is an
+item in a list of hosts the redirect must handle rather than a base URL.
 
 **The default is the compatibility story.** With no environment variable set,
 ``ORIGIN`` is ``http://localhost:18080`` and ``CALCULATOR`` is
@@ -52,6 +71,18 @@ own nginx log showed exactly 30 ``429``\\ s on ``GET /api/v1/taxonomy`` for 30
 failures. Run ``tests/web`` in a few large batches with
 ``docker compose restart api`` between them, and keep the batches few rather
 than frequent, because restarting ``api`` is itself a shared-container action.
+
+**Two more things a private container does not isolate, both observed while this
+module was being written.** ``kaicalc-api`` is shared, so a restart anybody
+performs lands inside whoever is mid-batch: four ``502``\\ s on ``GET
+/api/v1/taxonomy`` arrived during three batches here and each one cost exactly
+one test, failing as a timeout on ``[data-action="start"]`` rather than as
+anything that names the cause -- so a lone timeout on a page-load selector is
+worth re-running before it is believed. And ``tests/api``, ``tests/db`` and
+``tests/admin`` take a host-wide lock file through
+``tests/support/mysql_lock.py`` (``$TMPDIR/kaicalc-pytest-mysql-<host>-<port>
+.lock``), which a backgrounded run of your own can hold against your next batch
+and a killed run can leave stale.
 """
 
 from __future__ import annotations

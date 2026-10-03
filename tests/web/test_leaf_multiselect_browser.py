@@ -585,14 +585,18 @@ def scrollbar_browser(_playwright):
     test."* The previous version of this measurement took the shared `browser` fixture
     and was blind in exactly that way.
 
-    **It is here rather than in that file for one reason**: that file was the last
-    one to hardcode `http://localhost:18080` with no environment override, so it
+    **It is here rather than in that file for two reasons, and only the second
+    one still holds.** That file was the *only* module under `tests/web` with no
+    environment override at all - 36 of the 37 that named `http://localhost:18080`
+    already read `KAICALC_WEB_URL`, measured on `origin/main` at v1.91 - so it
     could not be pointed at a worktree's own container, and a test that can only
     ever be run against the shared stack is a test nobody runs before they push.
-    Both files now take their origin from `tests/web/base_url.py` and this case
-    could move; it stays because the scrollbar-visible `browser` override it needs
-    is local to this module, and moving the measurement would mean exporting that
-    override as well. Built on the package-scoped
+    That is fixed: both files take their origin from `tests/web/base_url.py` now.
+    What has not changed is that **`test_horizontal_overflow.py` does not reach
+    step 3**: its `/index.html` case presses Start and waits for `#stage-title`,
+    which is step *one*, so the step-3 measurement has to live somewhere that
+    drives a forked chain - here. The scrollbar-visible `browser` override is
+    local to this module for the same reason. Built on the package-scoped
     `_playwright` driver rather than a second `sync_playwright()`, for the reason
     `tests/web/conftest.py` gives.
     """

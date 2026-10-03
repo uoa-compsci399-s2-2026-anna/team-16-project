@@ -195,18 +195,17 @@ def _day_grid(page):
     """One read of the day grid: what it offers, and what it drew unreachable.
 
     `offered` are the cells carrying `data-day` - the ones a pointer, the roving
-    `tabindex` and `aria-selected` all work through. `unreachable` are every
-    other cell in the grid: the days past the ceiling (`is-disabled`) and the
-    neighbouring month's blanks (`is-outside`). Read in one `evaluate` so the two
-    cannot be observed a re-render apart.
+    `tabindex` and `aria-selected` all work through. `reachable_without_a_day`
+    is every *other* cell that a pointer, the tab order or a selection could
+    still land on: the days past the ceiling (`is-disabled`) and the
+    neighbouring month's blanks (`is-outside`), which must both be inert. Read in
+    one `evaluate` so the counts cannot be observed a re-render apart.
     """
     return page.evaluate("""() => {
-      const cells = [...document.querySelectorAll('.period-grid td')];
-      const day = cells.filter(c => !c.matches('th'));
+      const day = [...document.querySelectorAll('.period-grid td')];
       return {
         offered: day.filter(c => c.dataset.day).map(c => c.dataset.day),
         disabled: day.filter(c => c.classList.contains('is-disabled')).length,
-        outside: day.filter(c => c.classList.contains('is-outside')).length,
         reachable_without_a_day: day
           .filter(c => !c.dataset.day)
           .filter(c => c.hasAttribute('data-action') || c.hasAttribute('tabindex')
@@ -412,10 +411,13 @@ def test_opening_the_calendar_moves_focus_into_it_and_leaves_one_tab_stop(review
     offered = _assert_the_grid_offers_exactly_what_the_ceiling_allows(
         grid, opened_at, read_at
     )
-    assert page.locator('.period-grid td[data-day][tabindex="-1"]').count() == len(offered) - 1, (
-        f"{len(offered)} days are offered and "
-        f"{page.locator('.period-grid td[data-day][tabindex=\"-1\"]').count()} carry "
-        f"tabindex=-1; every offered day but the cursor must be out of the tab order"
+    # Bound to a name rather than inlined into the f-string: a backslash inside
+    # an f-string expression is a SyntaxError before Python 3.12 and this project
+    # supports 3.11, which CI runs.
+    out_of_order = page.locator('.period-grid td[data-day][tabindex="-1"]').count()
+    assert out_of_order == len(offered) - 1, (
+        f"{len(offered)} days are offered and {out_of_order} carry tabindex=-1; "
+        f"every offered day but the cursor must be out of the tab order"
     )
 
     # A click inside the dialog must not dismiss it. The dialog is a child of

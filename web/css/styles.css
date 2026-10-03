@@ -2131,6 +2131,65 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
    650px two-column split, the block-flow stacking below it - applies unchanged per card. */
 .leaf-panel-list { display: grid; gap: 16px; }
 .leaf-panel { margin: 0; }
+
+/* #133: the error index sits beside Step 3's title on a wide screen and above the form
+   on a narrow one. Its ground is the Banana tint the tangible-equivalent cards use
+   (`.equivalent-grid article`, the same brand colour and the same alpha) rather than a
+   near-yellow introduced only for validation: Kale on the painted result `#FFF7E2`
+   measures 13.28:1.
+   **The border is `--error` and the ground is not, and the pair is deliberate.** The
+   Banana hairline this started with measured 1.267:1 against the page and the ground
+   1.068:1 - at which the whole surface is very nearly invisible, and it is carrying a
+   `role="alert"`. Beetroot on the same ground is 9.02:1, so the border is what says
+   "alert" and the ground is what keeps the panel readable and on-brand. The field
+   borders and the inline messages are Beetroot too, which is the point: one error
+   colour, used where it has the contrast to mean something.
+   `.amount-heading-copy` is a grid item and nothing else, so `min-width: 0` is the whole
+   of what it owns - without it a long unbreakable title in any of the twenty catalogues
+   refuses to shrink below its min-content width and pushes the row sideways. */
+.amount-heading-row { margin-bottom: 18px; display: grid; gap: 18px 28px; align-items: end; }
+.amount-heading-row h1 { margin-bottom: 0; }
+.amount-heading-copy { min-width: 0; }
+.amount-validation-summary {
+  min-width: 0;
+  padding: 18px 20px;
+  border: 1px solid var(--error);
+  border-radius: 13px;
+  color: var(--ink);
+  background: rgba(255, 215, 110, 0.2);
+}
+/* `overflow-wrap: anywhere` on the title as well as on the items. The longest
+   whitespace-free token across the twenty catalogues is 49 characters (Thai; Japanese is
+   27), against a content box of about 246px at a 320px viewport - so the title is as
+   able to widen this panel as an item is, and only the items were guarded. */
+.amount-validation-summary p { margin: 0 0 8px; font-family: var(--font-heading); font-weight: 700; line-height: 1.35; overflow-wrap: anywhere; }
+.amount-validation-summary ul { margin: 0; padding-inline-start: 20px; }
+/* 44px, which is this project's stated minimum touch target and is what every input on
+   this step is already held to (`min-height: 54px`). The items were ~26px at the default
+   line height, in a panel that stacks above the form on a phone - the one place they are
+   most likely to be tapped rather than clicked. `padding-block` is what buys the height,
+   with `min-height` as the floor under a smaller computed font.
+   **`inline-block` and NOT `inline-flex`.** A flex container blockifies its children, so
+   the three spans inside the item each became a flex item: the separator's own leading
+   and trailing spaces are trimmed off a flex item, which printed "Fruit—Waste amount"
+   with the em dash jammed against both words, and `innerText` read the one line as three.
+   The item is a line of text and is laid out as one. */
+.amount-validation-summary li + li { margin-top: 4px; }
+.amount-validation-summary__link {
+  min-height: 44px;
+  padding: 10px 0;
+  display: inline-block;
+  border: 0;
+  color: var(--ink);
+  font: inherit;
+  text-align: start;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  background: none;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.amount-validation-summary__link:hover { text-decoration-thickness: 2px; }
 /* `.leaf-panel > legend` and its four declarations are gone with #134. The legend is
    `.sr-only` now - it is what gives the `<fieldset>` its accessible name and nothing
    else - and the name a sighted reader sees is `.step-card__name` in the header button
@@ -2337,6 +2396,10 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
      text - see `leafPanel()`). Applies inside a leaf card too: one leaf and
      five are the same layout, so the unit is the same width in both. */
   .unit-field select { inline-size: 50%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+}
+
+@media (min-width: 850px) {
+  .amount-heading-row { grid-template-columns: minmax(0, 1fr) minmax(250px, 320px); }
 }
 
 /* No per-zone margin override here, and there should not be one. The money pair

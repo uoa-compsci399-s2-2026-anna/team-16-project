@@ -1260,7 +1260,7 @@ function leafPanel(leaf, leaves, index) {
   //: routed back to.
   const errored = Boolean(amountFieldError || totalInputError || totalValueError || wastedValueError)
   return collapsibleCard({
-    step: 2,
+    step: AMOUNT_CARD_STEP,
     key,
     anchor: leafSlug(leaf),
     name: leafName(leaf),
@@ -1421,22 +1421,200 @@ function itemStep() {
   return `<section class="content-section" aria-labelledby="item-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 2 }))} &middot; ${escapeHtml(t('Optional'))}</p><h1 id="item-title">${escapeHtml(t('Do you know which foods these were?'))}</h1><p class="section-intro">${escapeHtml(t('Choose the specific foods you measured, or continue without choosing any. A category with no food chosen is counted as that category.'))}</p><p class="choice-count" aria-live="polite">${escapeHtml(t('%(count)s selected', { count: chosen }))}</p>${state.foodCategories.map(group).join('')}${atCeiling ? `<p class="field-hint choice-ceiling" role="status">${escapeHtml(t('You can enter at most %(limit)s food types in one calculation. Untick one, or calculate what you have.', { limit: MAX_LEAVES }))}</p>` : ''}${chosen ? `<button type="button" class="text-button" data-action="clear-items">${escapeHtml(t('Clear all selections'))}</button>` : ''}${stepNav({ step: 1, back: 1, backAction: 'back-to-categories' })}</section>`
 }
 
+/**
+ * **The step 3 card, as a step number, in one place** — `leafProblem`'s rule block,
+ * `collapsibleCard`'s card ids and the summary's own `focus-field` all mean this step,
+ * and all three used to spell it `2` at their own call site. `ITEM_CARD_STEP` above is
+ * the same idea for step 2.5.
+ */
+const AMOUNT_CARD_STEP = 2
+
+/**
+ * **The step 3 fields a message can be attached to, and the one place that names them.**
+ *
+ * Four readers want the same list: `leafProblem` returns one of these names as the
+ * `field` it refused, `leafPanel` draws the box, `focusLeafField` moves focus to it by
+ * name, and `amountErrorItems` below prints its label. A second list of field names for
+ * one of those readers is the defect `destinationStep`'s own comment records — and the
+ * list this replaces was already a second one, and already wrong: it knew `amount` and
+ * `wastedValue` and answered **nothing at all** for `totalInput`, `totalValue`,
+ * `allocation` or any name added later, so a refusal naming one of those left the page
+ * silent.
+ *
+ * **The label is the label `leafPanel` puts on the box, by key, not a second wording.**
+ * A summary reading *Waste value* over a field labelled *Value of the waste* is a
+ * summary the visitor has to translate. `amount` is a function of the figures because it
+ * is one question asked in two modes — a mass in `#total-waste`, a count in
+ * `#unit-count` — which is exactly how `leafPanel` and `focusLeafField` both treat it.
+ *
+ * **Step 4's `allocation` is deliberately absent.** This is step 3's list, and
+ * `leafProblem(AMOUNT_CARD_STEP, …)` cannot return it. A name this map does not carry is
+ * handled rather than assumed impossible — see `amountErrorItems`' `unbound`.
+ */
+const AMOUNT_STEP_FIELD_LABELS = {
+  amount: figures => (figures.measureMode === 'container' ? t('How many containers?') : t('Waste amount')),
+  totalInput: () => t('Total amount produced'),
+  totalValue: () => t('Value of production'),
+  wastedValue: () => t('Value of the waste'),
+}
+
+/**
+ * Every step 3 field the refusal on screen is about, in card order, plus a count of the
+ * ones that could not be named.
+ *
+ * This is the index beside the step title (#133). The detailed message still belongs
+ * beside its own input; what this adds is *which cards* — a forked step 3 folds its
+ * cards, so without it a visitor is told something is wrong and has to open each card to
+ * find out which.
+ *
+ * **Two halves, because step 3 is refused in two ways.**
+ *
+ * * **Continue's own rules.** `leafProblem` is the only copy of them (v1.81) and already
+ *   answers per leaf, so this walks the leaves and asks it rather than re-deriving
+ *   anything. It must not go through `stepProblemAt`, which stops at the **first**
+ *   problem because that is all Continue needs: a summary built on it is a one-item list
+ *   naming the one card `focusLeafField` has already expanded and focused, which is a
+ *   second surface restating a single fact. #133's criterion (b) is that *each* missing
+ *   or invalid field is identified, and three blank cards are three faults.
+ * * **The server's `VALIDATION_ERROR`.** One item per scalar path `state.fieldErrors`
+ *   carries, read through `ENTRY_SCALAR_FIELDS` — the map whose own note says one place
+ *   rather than a per-call-site guess — and rooted at each leaf's own request index, the
+ *   same arithmetic `leafPanel`'s `scalarError` does.
+ *
+ * **`unbound` is what the banner needs.** It counts the refusals in play that this list
+ * could not put a name and a destination against: a detail naming a saved entry, an
+ * `alternative[…]` path or a field this form has no box for (`validationMessage` spells
+ * those out in the banner for exactly that reason), and a `leafProblem` field
+ * `AMOUNT_STEP_FIELD_LABELS` does not know. Either way the text has nowhere else to go,
+ * so `amountStep` keeps the banner. Suppressing it unconditionally loses it.
+ */
+function amountErrorItems(leaves) {
+  const single = leaves.length === 1
+  const isApiError = state.errorCode === 'VALIDATION_ERROR'
+  const isClientError = !isApiError && Boolean(state.error)
+  const items = new Map()
+  let unbound = 0
+  const add = (leaf, field) => {
+    const label = AMOUNT_STEP_FIELD_LABELS[field]
+    if (!label) {
+      unbound += 1
+      return
+    }
+    const key = leafKey(leaf)
+    // Keyed by (leaf, field) so the two halves cannot list one box twice: a money
+    // contradiction refused by Continue and a `wasted_value_nzd` the server also named
+    // are one box and therefore one item.
+    items.set(`${key} ${field}`, {
+      leaf: key,
+      field,
+      food: single ? '' : leafName(leaf),
+      fieldName: label(draftLeafFigures(leaf)),
+    })
+  }
+
+  // `state.errorAt` is the gate rather than `state.error` alone, and it is the same gate
+  // `leafPanel`'s `mine()` uses: it says this message came from THIS step's Continue and
+  // named a leaf. A `BLOCKED` banner (§9.2) survives a step change by design and carries
+  // no `errorAt`, so it must not be turned into a list of blank amount boxes.
+  if (isClientError && state.errorAt?.leaf) {
+    for (const leaf of leaves) {
+      const problem = leafProblem(AMOUNT_CARD_STEP, leaf, single ? null : leafName(leaf))
+      if (problem.message) add(leaf, problem.field)
+    }
+  }
+
+  if (isApiError) {
+    const base = savedLeafCount()
+    leaves.forEach((leaf, index) => {
+      for (const [path, scalar] of Object.entries(ENTRY_SCALAR_FIELDS)) {
+        if (state.fieldErrors[`entries[${base + index}].${path}`]) add(leaf, scalar.field)
+      }
+    })
+    unbound += unboundFieldErrors().length
+  }
+  return { items: [...items.values()], unbound }
+}
+
+/**
+ * The index itself.
+ *
+ * **Each item is a `button`, not an `<a href="#id">`, and that is a privacy decision
+ * rather than a style one.** The ids on this step are `fieldId`'s —
+ * `total-waste--bakery-grains`, a slug of a food category the visitor chose — and a
+ * fragment link writes that into the address bar, where §7.2b's own note says the
+ * answers must not go: *"a URL is pasted into chats and written into intermediaries'
+ * logs."* `?step=` and `#step-3` were refused on exactly that ground, and a food is a
+ * more specific answer than a step number. It also pushed a session-history entry
+ * `history.js`'s `traverse` ignores, which made the first Back after a click a dead
+ * press. So the item navigates the way this project navigates — `data-action`, then
+ * `openedCard` and `focusLeafField`, the pair decision 3 of #134 already uses for a
+ * refused Continue.
+ *
+ * **`role="alert"`, with `--error` on the border.** The ground is the Banana tint the
+ * tangible-equivalent cards use, which is brand-correct and gives Kale text 13.28:1 on
+ * it — but against the page that surface is 1.07:1, which is an information card wearing
+ * an assertive live region's semantics. The border carries `--error` (Beetroot) instead,
+ * 9.02:1 on the painted ground, so the surface reads as the alert it declares itself to
+ * be. It keeps the announcement, because it is the only thing that tells a screen-reader
+ * visitor there are three faults rather than the one the focus was moved to. The
+ * `aria-labelledby` it used to carry pointed at its own first child, which made the title
+ * both the region's name and its content and had it read out twice.
+ */
+function amountErrorSummary(items) {
+  if (!items.length) return ''
+  const links = items.map(item => `<li><button type="button" class="amount-validation-summary__link" data-action="focus-field" data-leaf="${keyAttr(item.leaf)}" data-field="${escapeHtml(item.field)}">${item.food ? `<span>${escapeHtml(item.food)}</span><span aria-hidden="true"> &mdash; </span>` : ''}<span>${escapeHtml(item.fieldName)}</span></button></li>`).join('')
+  return `<aside class="amount-validation-summary" role="alert"><p>${escapeHtml(t('Check the highlighted fields and try again.'))}</p><ul>${links}</ul></aside>`
+}
+
 function amountStep() {
   const leaves = draftLeaves()
   const single = leaves.length === 1
   const isApiError = state.errorCode === 'VALIDATION_ERROR'
   const isClientError = !isApiError && Boolean(state.error)
+  const errors = amountErrorItems(leaves)
+  const errorSummary = amountErrorSummary(errors.items)
   // **The classification's own `else`.** A `state.error` that belongs to no leaf field on
   // this screen - `BLOCKED` (§9.2), which `clearedError` deliberately keeps across a step
   // change - matched nothing before this line and rendered nothing at all.
-  const bannerError = isApiError ? state.error : (isClientError && !state.errorAt ? state.error : null)
+  //
+  // **The summary suppresses the banner only where it says the same sentence.** With
+  // every refusal in play carrying an item of its own, `validationMessage` returns
+  // exactly `Check the highlighted fields and try again.`, which is the summary's own
+  // title printed a second time. With anything unbound it returns the long form instead,
+  // naming details no box on this page can show, and that text has nowhere else to go.
+  // Suppressing the banner unconditionally loses it: a 400 whose first detail is
+  // `entries[0].total_value_nzd` and whose second is `entries[0].alternative[0].qty_kg`
+  // lands here (`errorStep` is the first detail with a locatable step), lists one item,
+  // and would drop the second detail from the page entirely.
+  const coveredBySummary = errors.items.length > 0 && errors.unbound === 0
+  const bannerError = coveredBySummary
+    ? null
+    : isApiError
+      ? state.error
+      // **`errors.unbound` is the new clause on the client side, and it closes a hole
+      // that predates the summary.** `leafPanel` draws an inline message for `amount`
+      // and `wastedValue` only, and the `!state.errorAt` test here is false for every
+      // refusal this step produces - so a `leafProblem` rule returning any other field
+      // name rendered NOTHING: no inline message, no banner, and no summary item either.
+      : (isClientError && (!state.errorAt || errors.unbound) ? state.error : null)
   const combined = leaves.reduce((sum, leaf) => sum + (totalKilograms(draftLeafFigures(leaf)) || 0), 0)
   const combinedText = state.totalUnit === 'tonnes' ? kgToTonnes(combined) : combined
   const heading = single ? t('How much food waste are you measuring?') : t('How much of each did you waste?')
   const intro = single
     ? t('Enter the total amount. You will allocate this total across destinations in the next step.')
     : t('Enter an amount for every food type you chose. You will allocate the combined total across destinations in the next step.')
-  return `<section class="content-section ${single ? '' : 'wide'}" aria-labelledby="amount-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 3 }))}</p><h1 id="amount-title">${escapeHtml(heading)}</h1><p class="section-intro">${escapeHtml(intro)}</p>${bannerError ? `<p class="field-error api-error ${state.errorCode ? `error-${slug(state.errorCode)}` : ''}" role="alert">${escapeHtml(bannerError)}</p>` : ''}<div class="leaf-panel-list">${leaves.map((leaf, index) => leafPanel(leaf, leaves, index)).join('')}</div>${single ? '' : `<p class="combined-total" aria-live="polite"><span>${escapeHtml(t('Combined waste amount'))}</span> <strong data-combined-total>${formatNumber(combinedText, 2)} ${escapeHtml(unitLabel(state.totalUnit))}</strong></p>`}${stepNav({ step: 2, back: backTarget(2) })}</section>`
+  // **Both wrappers exist only when there is a summary to put beside the title, so a
+  // step 3 with nothing wrong with it renders byte for byte what it rendered before
+  // #133.** `.amount-heading-row` is the two-column grid and `.amount-heading-copy` is
+  // its first cell; neither has a job without a second cell, and an empty second cell
+  // beside a step title is 28px of gap with nothing in it. Emitting the inner wrapper
+  // unconditionally would also put a `<div>` into every step-3 render for the sake of
+  // the refused ones, which is a diff twenty browser tests walk through for no reason.
+  const headingMarkup = `<p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 3 }))}</p><h1 id="amount-title">${escapeHtml(heading)}</h1>`
+  const headingBlock = errorSummary
+    ? `<div class="amount-heading-row"><div class="amount-heading-copy">${headingMarkup}</div>${errorSummary}</div>`
+    : headingMarkup
+  return `<section class="content-section ${single ? '' : 'wide'}" aria-labelledby="amount-title">${headingBlock}<p class="section-intro">${escapeHtml(intro)}</p>${bannerError ? `<p class="field-error api-error ${state.errorCode ? `error-${slug(state.errorCode)}` : ''}" role="alert">${escapeHtml(bannerError)}</p>` : ''}<div class="leaf-panel-list">${leaves.map((leaf, index) => leafPanel(leaf, leaves, index)).join('')}</div>${single ? '' : `<p class="combined-total" aria-live="polite"><span>${escapeHtml(t('Combined waste amount'))}</span> <strong data-combined-total>${formatNumber(combinedText, 2)} ${escapeHtml(unitLabel(state.totalUnit))}</strong></p>`}${stepNav({ step: 2, back: backTarget(2) })}</section>`
 }
 
 /**
@@ -2179,17 +2357,26 @@ function publicError(error) {
   }
 }
 
-// **The three round-two scalar fields, and the step whose markup owns each.** `entries[N].
-// total_input_kg` (and its two money neighbours) are answered on step 2 (`amountStep`) —
-// a fact about that function's HTML, not something derivable from the field name itself.
-// One map, in one place, rather than a per-call-site guess; `entryDestinations`'s and
+// **The three round-two scalar fields, the step whose markup owns each, and the name
+// that markup calls it.** `entries[N].total_input_kg` (and its two money neighbours) are
+// answered on step 2 (`amountStep`) — a fact about that function's HTML, not something
+// derivable from the field name itself — and the box it is answered in is
+// `data-leaf-field="totalInput"`, which is equally a fact about that HTML. One map, in
+// one place, rather than a per-call-site guess; `entryDestinations`'s and
 // `draftFieldPaths`'s own paths cover the one other kind of field this form has a box
 // for, `entries[N].current[M].qty_kg`, and that one is derived from `state.current`
 // because there is one row per destination and the row is what the path counts.
-const ENTRY_SCALAR_FIELD_STEP = {
-  total_input_kg: 2,
-  total_value_nzd: 2,
-  wasted_value_nzd: 2,
+//
+// **`field` is new (v1.87) and it is here rather than beside its one reader** because
+// the request path and the control's own name are the same correspondence stated twice
+// the moment they live apart: `amountErrorItems` had written the triple out a fourth
+// time to get at it, alongside this map, `scalarFieldPaths()` and `leafPanel`'s three
+// `scalarError(...)` calls. It was `ENTRY_SCALAR_FIELD_STEP` while the step was all it
+// carried.
+const ENTRY_SCALAR_FIELDS = {
+  total_input_kg: { step: 2, field: 'totalInput' },
+  total_value_nzd: { step: 2, field: 'totalValue' },
+  wasted_value_nzd: { step: 2, field: 'wastedValue' },
 }
 
 /**
@@ -2225,7 +2412,36 @@ const draftLeafIndices = () => {
 // of request indices. Shared by `detailStep`, which routes a rejected visitor, and
 // `validationMessage`, which must not also describe in the banner a field already
 // highlighted at its own input.
-const scalarFieldPaths = () => draftLeafIndices().flatMap(index => Object.keys(ENTRY_SCALAR_FIELD_STEP).map(key => `entries[${index}].${key}`))
+const scalarFieldPaths = () => draftLeafIndices().flatMap(index => Object.keys(ENTRY_SCALAR_FIELDS).map(key => `entries[${index}].${key}`))
+
+/**
+ * **The §9 `field` paths this screen has a box for**, as one set.
+ *
+ * `validationMessage` asks it of the response's `details[]` to decide what the banner
+ * still owes, and `unboundFieldErrors` asks it of `state.fieldErrors` to decide the same
+ * thing at render time, one step later. Two readers of one definition: a second spelling
+ * of "bound" would let the banner and the field index disagree about whether a detail had
+ * been shown anywhere, which is precisely the state in which text goes missing.
+ */
+const boundFieldPaths = () => new Set([...draftFieldPaths().filter(Boolean), ...scalarFieldPaths()])
+
+/**
+ * The live `VALIDATION_ERROR`'s fields that no box on this form can display.
+ *
+ * Read off `state.fieldErrors`, whose keys are `details[].field` verbatim
+ * (`fieldErrorMap`), because `details[]` itself is not kept on `state` — only the copy
+ * made at the moment of the response. A detail with no `field` keys as `"undefined"`,
+ * which is in no bound set and is therefore counted, which is the right answer: it has
+ * no box either.
+ *
+ * `amountStep` is the caller. It is what keeps the banner on screen for a 400 that names
+ * both a field this step draws and one it does not — the summary beside the title can
+ * only ever index the first kind.
+ */
+const unboundFieldErrors = () => {
+  const bound = boundFieldPaths()
+  return Object.keys(state.fieldErrors || {}).filter(field => !bound.has(field))
+}
 
 /**
  * The step that owns one API validation detail, or `undefined` when this form has no
@@ -2236,7 +2452,7 @@ function detailStep(detail) {
   const field = detail.field || ''
   if (scalarFieldPaths().includes(field)) {
     const key = /\.(\w+)$/.exec(field)?.[1]
-    if (key && ENTRY_SCALAR_FIELD_STEP[key] !== undefined) return ENTRY_SCALAR_FIELD_STEP[key]
+    if (key && ENTRY_SCALAR_FIELDS[key] !== undefined) return ENTRY_SCALAR_FIELDS[key].step
   }
   // A detail naming a *saved* entry has no input to highlight, which is why this
   // function used to answer `undefined` for one and let `submitCalculation` fall
@@ -2305,9 +2521,15 @@ function duplicateOf(leafIndex) {
  * banner only has to point at what is left. A detail that names anything else — a saved
  * entry, an `alternative`, a field this form has no input for — has no box to attach to
  * and would otherwise vanish entirely, so it is spelled out here instead.
+ *
+ * **Which makes the short form, and only the short form, safe to suppress on screen.**
+ * `amountStep`'s field index beside the step title says the same sentence, so printing
+ * both is printing it twice; it asks `unboundFieldErrors` — the same `boundFieldPaths`
+ * set this function uses, over the copy of the details held on `state` — so the two
+ * cannot disagree about which branch was taken.
  */
 function validationMessage(error) {
-  const bound = new Set([...draftFieldPaths().filter(Boolean), ...scalarFieldPaths()])
+  const bound = boundFieldPaths()
   const unbound = (error.details || []).filter(detail => !bound.has(detail.field))
   if (!unbound.length) return t('Check the highlighted fields and try again.')
   // The envelope's `message` is the API's own English and never varies ("Request
@@ -3212,6 +3434,27 @@ export function bindCalculator(main, retryTaxonomy) {
       const id = cardId(Number(control.dataset.cardStep), decodeURIComponent(control.dataset.card || ''))
       const open = state.openCards || []
       setState({ openCards: open.includes(id) ? open.filter(one => one !== id) : [...open, id] })
+    }
+    // **#133's field index beside the step 3 title, and it navigates the way this project
+    // navigates.** `openedCard` then `focusLeafField` — the identical pair decision 3 of
+    // #134 uses for a refused Continue, and the reason the index emits a `<button>`
+    // rather than an `<a href="#total-waste--bakery-grains">`: that id is a slug of a food
+    // category the visitor chose, and a fragment link puts it in the address bar, which
+    // is the one thing §7.2b's privacy note refuses. See `amountErrorSummary`.
+    //
+    // **Not in the scroll-to-top list at the foot of this listener**, for `toggle-card`'s
+    // reason and one more: `focusLeafField` has already brought the box into view, so a
+    // smooth scroll to the top would animate the page away from the field the visitor
+    // just asked for.
+    //
+    // Synchronously after the `setState`, exactly as the `continue` branch is: `main.js`'s
+    // subscriber runs inside `setState`, so the opened card is already in the document by
+    // the time this line runs. Inside a `requestAnimationFrame` it would never fire in a
+    // background tab.
+    if (action === 'focus-field') {
+      const at = { leaf: leafOf(control), field: control.dataset.field }
+      setState({ openCards: openedCard(AMOUNT_CARD_STEP, at.leaf) })
+      focusLeafField(at)
     }
     // Clearing the category takes any category-specific container with it, for the same
     // reason choosing a different one does: the preset is no longer on the list step 3

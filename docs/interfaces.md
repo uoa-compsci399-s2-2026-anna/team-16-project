@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-10-03 (v1.86)"
+date: "2026-10-03 (v1.87)"
 ---
 
 # 0. How to Use This Document
@@ -25,6 +25,34 @@ This document defines **what every person's code receives and what it returns.**
 
 ## 0.1 Change Log
 
+
+### v1.87 — 2026-10-03 (step 3 gets a field index beside its title, and #133's "modal and/or top-right notification" is superseded by it; affects C)
+
+Issue #133, raised from the client's own words: *"Step 3 报错后返回弹窗，右上角提示哪个地方没写报错."* After a refusal the visitor is returned to step 3 and told **which** field is missing or invalid — criterion (b) of the issue is that *each* missing or invalid field is identified by name. Step 3 folds its cards (v1.81), so "something is wrong" with nothing saying which card is a visitor opening three cards to find out.
+
+**The issue asked for a modal and/or a top-right notification. What landed is a panel beside the step title, and the owner has chosen the panel.** This document said *"#133's countdown notice must read the same predicate"* in two places and now says so about the panel instead; **both statements are superseded in place rather than removed** (§0.1's v1.81 entry and §7.3a), because the ask and what was built are two different records and the trail is the useful half. The requirement underneath them is unchanged and is the reason the supersession is a note and not a deletion: the index, the per-card badge and Continue read **one** rule set, `leafProblem`.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **New surface: `aside.amount-validation-summary`, inside `div.amount-heading-row` beside `h1#amount-title`.** `role="alert"`, a `<p>` title carrying `Check the highlighted fields and try again.`, and a `<ul>` of one `<li>` per faulty field. It is rendered **only** when there is a refusal in play, and the `.amount-heading-row` grid exists only when the panel does — an empty second cell beside a step title is 28px of gap with nothing in it. Placement: beside the title from **850px** up (`grid-template-columns: minmax(0, 1fr) minmax(250px, 320px)`), stacked above the form below it. The breakpoint is now pinned from one pixel either side of itself; `min-width: 500px` and `min-width: 1200px` both satisfied every other assertion in the file | §7.3a, §7.6 |
+| 2 | **The index lists every faulty card, which is what makes it a summary.** It walks the leaves asking `leafProblem` — the only copy of the per-leaf rules (v1.81 item 1) — rather than inheriting `stepProblemAt`'s stop-at-the-first semantics, which Continue needs and an index does not. Measured before: three food types with three blank amounts produced **one** item, naming the one card `focusLeafField` had already expanded and focused, while two cards kept a `hidden` body | §7.3a |
+| 3 | **New `data-action="focus-field"`, with `data-leaf` and `data-field`**, handled with `openedCard` then `focusLeafField` — decision 3 of #134's own pair, reused rather than re-implemented. Deliberately absent from the click delegate's scroll-to-top list, for `toggle-card`'s reason and one more: focus has already brought the box into view. **An `<a href="#…">` is not available here and the reason is §7.2b's, not a style preference**: step 3's ids are `fieldId`'s, so the fragment is `total-waste--bakery-grains` — a slug of a food category the visitor chose — and §7.2b refused `?step=` and `#step-3` on the ground that *"a URL is pasted into chats and written into intermediaries' logs."* A food is a more specific answer than a step number. The link also pushed a session-history entry whose state is not an integer, which `history.js`'s `traverse` ignores, so the first Back after a click was a dead press | §7.3a, §7.2b |
+| 4 | **`AMOUNT_STEP_FIELD_LABELS`: one map from `leafProblem`'s field name to the label `leafPanel` puts on that box.** The index's first implementation carried its own pair of names and knew `amount` and `wastedValue` only, so `totalInput`, `totalValue`, `allocation` and any name added later produced no item — and, because `leafPanel` draws an inline message for the same two names and the banner's client branch is gated on `!state.errorAt`, **no banner either**. A client-side refusal naming any other field rendered nothing at all. That hole predates the index (it is `main`'s behaviour too) and is closed here: an unknown name is counted rather than dropped, and the banner stays | §7.3a |
+| 5 | **`ENTRY_SCALAR_FIELD_STEP` becomes `ENTRY_SCALAR_FIELDS`**, its value `{step, field}` instead of a bare step number. The request path and the control's own `data-leaf-field` name are one correspondence, and the index had written the scalar triple out a **fourth** time to get at it — beside that map, `scalarFieldPaths()` and `leafPanel`'s three `scalarError(...)` calls. The map's own note already said one place rather than a per-call-site guess. `detailStep` reads `.step`; nothing else moves | §7.3a |
+| 6 | **The error-surface split, restated: the banner says what no box on screen can, and the index says where the boxes are.** `validationMessage` returns the short form (`Check the highlighted fields and try again.`) when **every** detail is bound to a field this form draws, and the long form — `The calculation could not be completed.` plus a `describeDetail` per unbound detail — when any is not, *"so it is spelled out here instead."* The index says the short form's sentence as its own title, so the banner is suppressed **only where it would have been the short form**. New `boundFieldPaths()` is the one definition of "bound" and new `unboundFieldErrors()` asks the same question at render time off `state.fieldErrors`, whose keys are `details[].field` verbatim. Suppressing on the mere presence of an index loses text: `errorStep` is the first detail with a locatable step, so a 400 whose first detail is `entries[0].total_value_nzd` and whose second is `entries[0].alternative[0].qty_kg` lands on step 3, lists one item, and dropped the second detail from the page entirely | §7.3a, §9 |
+| 7 | **The panel's border is `--error`; its ground is the Banana information tint and stays.** Measured on the painted result (`#FFF7E2` over white): Kale text **13.28:1**, the Banana hairline it started with **1.267:1 against the page** and the ground **1.068:1** — a near-invisible surface carrying an assertive live region. Beetroot on the same ground is **9.02:1**. The alternative was dropping `role="alert"`, and it was declined: the index is the only thing that tells a screen-reader visitor there are three faults rather than the one focus moved to, and a freshly-inserted polite region is not reliably announced at all. The `aria-labelledby` pointing at its own first child is removed — it made the title both the region's name and its content | §7.3a, §7.6 |
+| 8 | **The items are held at 44px**, this project's stated minimum touch target, against the ~26px a default line height gave them in a panel that stacks above the form on a phone. They are `inline-block` and **not** `inline-flex`: a flex container blockifies its children, so the three spans became flex items, the separator's own leading and trailing spaces were trimmed off it, and the item printed `Fruit—Waste amount` with the em dash jammed against both words | §7.6 |
+| 9 | **`.amount-heading-copy` gains the only declaration it owns, `min-width: 0`, and is emitted only when the panel is.** It was emitted on every step-3 render with no rule anywhere — the footgun `leafPanel`'s own JSDoc records — and it now exists only as the grid's first cell, which is also what keeps a step 3 with nothing wrong with it byte-identical to what it rendered before #133. As a grid item it needs that declaration anyway: without it a long unbreakable title refuses to shrink below its min-content width. The title also gains the `overflow-wrap: anywhere` only the items had; the longest whitespace-free token across the twenty catalogues is 49 characters (Thai), 27 (Japanese), against a ~246px content box at 320px | §7.6 |
+
+> **No catalogue key is added, and that was verified rather than assumed.** All six strings the new code renders already exist and are already translated: `Check the highlighted fields and try again.`, `Waste amount`, `How many containers?`, `Total amount produced`, `Value of production` and `Value of the waste` — **20 locales × 2 trees, 0 missing, 0 SHA-256 mismatches**, and the diff touches no file under `web/locales/` or `api/assets/locales/`. The labels are read from `AMOUNT_STEP_FIELD_LABELS` as plain quoted `t('…')` literals, which is what `tests/web/i18n_keys.py` can see; the food name and the separator are interpolated into the **markup**, never into a `t()` argument, so no template literal reaches the extractor. `recut_cjk_subsets.py` did not run and `PROVENANCE.md` is untouched. This is the convention v1.81 item 5 and v1.84 item 5 follow.
+
+> **Nothing on the wire moves.** No endpoint, no field, no key, no schema, no scale. All thirteen golden cases are byte-identical and no fixture moves — nothing here reaches the engine or the request body. So this is **step one and step two of §0's change process and not step three** — this document, then the team — and the owner is the one who notifies the team, as B owns the contract.
+
+> **Nothing is published and nothing is republished.** `is_mock` stays `true`, **O-1 remains the hard blocker**, and the placeholder banner stays mandatory on every results view and export.
+
+> **One thing is reported here rather than fixed, because it is older and wider than #133.** "Bound" means *bound to a box this form draws somewhere*, not *on the screen the visitor is standing on*. A 400 naming both `entries[0].total_value_nzd` (step 3) and `entries[0].current[1].qty_kg` (step 4) lands on step 3 with the row detail counted as bound, so the index cannot list it and the banner does not spell it out — it is visible only once the visitor reaches step 4. That predates this revision in `validationMessage` and is unchanged by it; closing it means a per-step notion of boundness and an answer to what step 3 should say about a step 4 row, which is its own issue.
+
+> **v1.88 is being taken concurrently by the remediation of PR #150, and v1.79 is still held by PR #110.** v1.87 was verified free across every local and remote ref, every history (`git log --all -S'### v1.87'` is empty) and every other worktree's working copy — the highest anywhere else is v1.86 — because scanning `main` alone has given the wrong answer here twice.
 
 ### v1.86 — 2026-10-03 (the improvement panel gets one unit, which is what this document already claimed; affects C and D)
 
@@ -155,6 +183,8 @@ The client's report on step 3 was not that the page is long. It is that **a card
 | 6 | **Decision 2: one card is never shut.** On step 3 one leaf draws no card at all and renders the panel it always has; `cardIsOpen` carries the rule for the consumers that do draw a card at a count of one, so #138 and #142 inherit it rather than restating it | §7.3a |
 | 7 | **Decision 3: a refused Continue expands the offending card and focuses the field at fault**, by the place `leafProblem` returns and never by comparing prose. The scroll-to-top stands aside when it does. A card holding any message is forced open at render time as well, which covers the route Continue does not own — a server `VALIDATION_ERROR` naming a scalar field on a step the visitor was routed back to | §7.3a, §9 |
 | 8 | **The `data-action` vocabulary in §7.3a was two entries short before this revision** and is corrected with the new one: `clear-items` and `back-to-categories` have been handled by the click delegate since v1.60 and were never listed. Recorded rather than quietly fixed, because the list is read as complete | §7.3a |
+
+> **Item 2's "#133's countdown notice" is superseded by v1.87, and the row is left standing.** #133's text asked for the field to be identified *"in a modal and/or top-right notification"*, and that is what this row was written against — a toast with a countdown. **What landed is a panel beside the step 3 title** (`aside.amount-validation-summary`), and the owner took that decision rather than having the work rewritten as a toast. There is no countdown and no toast anywhere in the tree. **The requirement this row is actually about is unchanged and still binds**: the surface that names a faulty card and the badge on that card must read the same predicate, or the page says one thing and the panel another. v1.87's index reads `leafProblem` per leaf, which is `leafSettled`'s own function. The row is not edited away because the ask and the thing built are two different records.
 
 > **`tests/web/steps.py` gains `expand_step_cards(page)`**, and that is where the collapsing meets every suite that drives a forked step 3. A shut card's body is `hidden`, so its inputs are not visible, not focusable and not fillable — `page.fill` refuses them and a default `wait_for_selector` waits out its timeout against a screen that is working correctly. Twelve tests across two files failed that way and now open the cards through the control a visitor would press, rather than by writing `state.openCards` from a test, which would measure the renderer against a state no press can produce. `test_step_three_zones_browser.py`'s panel probe also moved: a leaf card's padding now belongs to its header and its body, so a content box derived from the panel sits 20px outside the fields.
 
@@ -5195,6 +5225,16 @@ export function stepNav({step, back, backLabel = 'Back', label = 'Continue',
 > would be a tick over a card the next press rejects. **#133's countdown notice must
 > share this predicate**, or the page will say one thing and the toast another.
 >
+> **Superseded by v1.87, and left standing because the ask is a record of its own.**
+> #133 asked for the field to be identified *"in a modal and/or top-right notification"*,
+> and the sentence above was written against that — a toast, with a countdown. **There is
+> no toast, no modal and no countdown in the tree; what landed is a panel beside this
+> step's title**, and the owner took that decision rather than having the work rewritten.
+> So read "the toast" as `aside.amount-validation-summary`, described below. **The
+> requirement itself is untouched and still binds**: the surface that names a faulty card
+> and the badge on that card read one predicate, because `amountErrorItems` walks the
+> leaves asking `leafProblem` — the same function `leafSettled` is.
+>
 > **A refused Continue expands the card it is about and focuses the field at fault**
 > (decision 3), by the `field` `leafProblem` returns rather than by comparing the
 > message's prose — two leaves produce the byte-identical sentence, which is what
@@ -5210,6 +5250,72 @@ export function stepNav({step, back, backLabel = 'Back', label = 'Continue',
 > two consumers that DO draw a card at a count of one — one chosen category on step 2.5,
 > one food type on step 4 — where it means the card is open **and has no toggle at all**
 > (v1.84 item 4), because a control that changes nothing is worse than no control.
+
+> **Step 3's field index, beside the step title (#133, v1.87).** The markup, exactly:
+>
+> ```html
+> <div class="amount-heading-row">
+>   <div class="amount-heading-copy"><p class="eyebrow">…</p><h1 id="amount-title">…</h1></div>
+>   <aside class="amount-validation-summary" role="alert">
+>     <p>Check the highlighted fields and try again.</p>
+>     <ul><li><button type="button" class="amount-validation-summary__link"
+>                     data-action="focus-field" data-leaf="…" data-field="amount">
+>       <span>Fruit</span><span aria-hidden="true"> — </span><span>Waste amount</span>
+>     </button></li></ul>
+>   </aside>
+> </div>
+> ```
+>
+> **Both wrappers exist only when the panel does**, so a step 3 with nothing wrong with
+> it renders byte for byte what it rendered before #133: `amountStep` emits the eyebrow
+> and the `<h1>` as direct children of the `<section>`, exactly as it always did. An empty
+> second grid cell beside a step title is 28px of gap with nothing in it, and a `<div>`
+> added to every step-3 render for the sake of the refused ones is a diff twenty browser
+> tests walk through for no reason. `.amount-heading-copy` carries `min-width: 0` and
+> nothing else — it is a grid item, and that declaration is what stops a long unbreakable
+> title in any of the twenty catalogues widening the row.
+>
+> **Placement rule: beside the title from 850px up, stacked above the form below it.**
+> One media query, `grid-template-columns: minmax(0, 1fr) minmax(250px, 320px)`. The
+> number is pinned from one pixel either side of itself, because the narrow assertions
+> only require a stack above 390 and the wide one only a shared row at or below 1278 —
+> `min-width: 500px` and `min-width: 1200px` passed every other assertion in the file.
+>
+> **It lists every faulty card.** `amountErrorItems` walks the leaves asking `leafProblem`
+> and never goes through `stepProblemAt`, which stops at the first problem because that is
+> all Continue needs. #133's criterion (b) is that *each* missing or invalid field is
+> named; three blank cards are three faults, and an index that names one of them is a
+> second surface restating the one fact `focusLeafField` has already acted on. The field's
+> own label comes from `AMOUNT_STEP_FIELD_LABELS`, keyed by the name `leafProblem` returns
+> — one map, read by four things, and the reason `amount` is a function of the figures is
+> that it is one question asked in two modes (`Waste amount` / `How many containers?`).
+>
+> **`data-action="focus-field"` and never a fragment link.** `openedCard` then
+> `focusLeafField`, synchronously, exactly as a refused Continue does. §7.2b's privacy
+> note is the binding reason and not a preference: step 3's ids are `fieldId`'s, so the
+> fragment would be `total-waste--bakery-grains` — the slug of a food category the visitor
+> chose — in the address bar, and that note refused `?step=` and `#step-3` on the ground
+> that a URL is pasted into chats and written into intermediaries' logs. The link also
+> pushed a history entry whose state is not an integer, which `traverse` ignores, so the
+> first Back after a click did nothing.
+>
+> **`role="alert"` with `--error` on the border, and the pair is the decision.** The ground
+> is the Banana information tint `.equivalent-grid article` uses; Kale on the painted
+> result is 13.28:1, but the surface itself was **1.068:1 against the page** and its
+> Banana hairline 1.267:1 — an information card carrying an assertive live region.
+> Beetroot on the same ground is 9.02:1, so the border says "alert" and the ground keeps
+> the panel readable and on-brand. Dropping the role instead was declined: the index is
+> the only thing that tells a screen-reader visitor there are three faults rather than the
+> one focus moved to, and a freshly-inserted polite region is not reliably announced at
+> all. **The page does render two assertive regions per client-side refusal** — this panel
+> and the inline `.field-error` on the card at fault — and that is the recorded cost of
+> the surface rather than an oversight; the `aria-labelledby` at its own first child is
+> gone, which is one duplication fewer.
+>
+> **The items are 44px**, the project's stated minimum touch target, and `inline-block`
+> rather than `inline-flex`: a flex container blockifies its children, so the three spans
+> became flex items and the separator's own spaces were trimmed off it — `Fruit—Waste
+> amount`, with the em dash against both words.
 
 > **Step 4 is one vertical card per food type, at every width, and the matrix is gone
 > (v1.84).** The client used the grid and rejected it on 1 October 2026. Each card's
@@ -5338,11 +5444,19 @@ const hasData = ();
 const loadingGivesBackTheDraft = entry;
 ```
 
-`data-action` vocabulary handled by the click delegate: `start`, `go-step`, `toggle-sector`, `toggle-card`, `clear-food`, `clear-items`, `back-to-categories`, `continue`, `add-entry`, `edit-entry`, `remove-entry`, `calculate`, `start-over`, `download-results`, `download-pdf`, `breakdown-tab`, `explore-improvements`, `reset-improvement`, `cancel-improvement`, `compare-improvement`, `expand-improvement-chart`, `close-improvement-chart`, `retry`, `view-methodology`.
+`data-action` vocabulary handled by the click delegate: `start`, `go-step`, `toggle-sector`, `toggle-card`, `focus-field`, `clear-food`, `clear-items`, `back-to-categories`, `continue`, `add-entry`, `edit-entry`, `remove-entry`, `calculate`, `start-over`, `download-results`, `download-pdf`, `breakdown-tab`, `explore-improvements`, `reset-improvement`, `cancel-improvement`, `compare-improvement`, `expand-improvement-chart`, `close-improvement-chart`, `retry`, `view-methodology`.
 
-> **`toggle-card` (v1.81) is the only action that is deliberately NOT in the scroll-to-top list** at the foot of the click delegate. Opening a card is a disclosure and not a navigation; throwing the page to the top would take the card the visitor just pressed out from under their eyes. It carries `data-card-step` and `data-card` (the key, `encodeURIComponent`-ed, because a `leafKey`'s NUL survives a round trip through an attribute only encoded), so the card pressed and the id written are the same pair by construction rather than by the handler knowing which step it is on. The toggle carries a stable `id`, which is load-bearing rather than decoration: `main.js`'s subscriber restores focus by id across the re-render, and that is what makes the `aria-expanded` change *announced* rather than merely applied.
+> **`focus-field` (v1.87) carries `data-leaf` and `data-field`** and is emitted only by
+> step 3's field index. `data-leaf` is the leaf key `encodeURIComponent`-ed, read back
+> through `leafOf` — the same attribute and the same reader every input on the step
+> already uses — and `data-field` is a key of `AMOUNT_STEP_FIELD_LABELS`. The handler is
+> `openedCard` then `focusLeafField`, in that order and synchronously, and it is **not** in
+> the scroll-to-top list: `focus()` has already brought the box into view, so a smooth
+> scroll to the top would animate the page away from the field just asked for.
 
-Module-private and worth knowing: `leafProblem(step, leaf, food)` is **the only copy of the per-leaf rules** and returns `{message, field?}`; `stepProblem(step)` returns a display string or `''` for one step's own rules, parameterised on the step so a caller may ask about a step the visitor is not standing on, and `validateCurrentStep()` is `stepProblem(state.step)`; `leafSettled(step, leaf, food)` is the per-leaf reader the collapsible cards' badge prints and `collapsibleCard`, `cardId`, `cardIsOpen`, `cardIsFixedOpen`, `cardStatus`, `itemStatus`, `updateCardBadges(step)` and `focusLeafField` are that chrome (v1.81; `cardIsFixedOpen`, `itemStatus` and `updateCardBadges`' parameter v1.84); `buildLines(entry)` produces `[{destination, qty_kg}]` filtered to `qty_kg > 0`; `draftLinePaths()` produces the §9 `field` path for each destination row of the draft, **keyed by the row's own line `id`** and rooted at that row's leaf's position in the submission, and `draftFieldPaths()` is its values; `publicError(error)` maps a §9 code to user copy; `validationMessage(error)` and `describeDetail(detail)` build the 400 banner from the details that no row on screen can display; `fieldErrorMap(error)` turns `details[]` into `{fieldPath: message}`; `blocked()` and `clearedError()` implement §9.2's rule that `BLOCKED` is terminal; `submitCalculation()` issues the request.
+> **`toggle-card` (v1.81) is the second action that is deliberately NOT in the scroll-to-top list** at the foot of the click delegate. Opening a card is a disclosure and not a navigation; throwing the page to the top would take the card the visitor just pressed out from under their eyes. It carries `data-card-step` and `data-card` (the key, `encodeURIComponent`-ed, because a `leafKey`'s NUL survives a round trip through an attribute only encoded), so the card pressed and the id written are the same pair by construction rather than by the handler knowing which step it is on. The toggle carries a stable `id`, which is load-bearing rather than decoration: `main.js`'s subscriber restores focus by id across the re-render, and that is what makes the `aria-expanded` change *announced* rather than merely applied.
+
+Module-private and worth knowing: `leafProblem(step, leaf, food)` is **the only copy of the per-leaf rules** and returns `{message, field?}`; `stepProblem(step)` returns a display string or `''` for one step's own rules, parameterised on the step so a caller may ask about a step the visitor is not standing on, and `validateCurrentStep()` is `stepProblem(state.step)`; `leafSettled(step, leaf, food)` is the per-leaf reader the collapsible cards' badge prints and `collapsibleCard`, `cardId`, `cardIsOpen`, `cardIsFixedOpen`, `cardStatus`, `itemStatus`, `updateCardBadges(step)` and `focusLeafField` are that chrome (v1.81; `cardIsFixedOpen`, `itemStatus` and `updateCardBadges`' parameter v1.84); `buildLines(entry)` produces `[{destination, qty_kg}]` filtered to `qty_kg > 0`; `draftLinePaths()` produces the §9 `field` path for each destination row of the draft, **keyed by the row's own line `id`** and rooted at that row's leaf's position in the submission, and `draftFieldPaths()` is its values; `publicError(error)` maps a §9 code to user copy; `validationMessage(error)` and `describeDetail(detail)` build the 400 banner from the details that no row on screen can display, `boundFieldPaths()` is the one definition of which `field` paths this form has a box for and `unboundFieldErrors()` asks the same question of `state.fieldErrors` one step later, which is what decides whether step 3's index may suppress the banner (v1.87); `amountErrorItems(leaves)` returns `{items, unbound}` for that index and `amountErrorSummary(items)` renders it, keyed off `AMOUNT_STEP_FIELD_LABELS` and `AMOUNT_CARD_STEP`; `fieldErrorMap(error)` turns `details[]` into `{fieldPath: message}`; `blocked()` and `clearedError()` implement §9.2's rule that `BLOCKED` is terminal; `submitCalculation()` issues the request.
 
 > **The Back confirmation (v1.53), and the one test that decides whether it appears.** Backing out of a jump restores §7.2's snapshot, and the marker survives a forward walk — so a visitor may press *Add another supply-chain entry*, build a whole second chain across four screens, walk Back to step 1 and press Back there, at which point the restore would throw all four screens away. `goToStep` therefore calls `window.confirm` first, following `start-over`'s precedent, and declining returns without a `setState` at all: same step, same draft, same entries, marker still live.
 >
@@ -6004,6 +6118,8 @@ Two locations because `[tool.setuptools.package-data]` cannot reach outside its 
 **A `data-i18n` element may not contain element children.** `applyToDocument` assigns `element.textContent`, so a child element inside a marked one is deleted the first time the language changes — silently, and in every language except English. Write the sentence in its own `<span data-i18n>` beside the link, never a marker on the paragraph holding both. The keys are extracted with `html.parser`, not a regex: the regex that preceded it matched the *outermost* element whose attributes began `data-i18n` — which `data-i18n-attr` satisfies — and consumed everything to its closing tag, so the four `<a data-i18n>` links inside a marked `<nav>` were invisible to the whole suite.
 
 **A translatable literal must be an argument to `t()`, never to something that calls `t()` for it.** `sentenceAround('Across %(count)s calculations run in this tool.', …)` reads as translated code and is not: the literal is an argument to a local helper, so the key extractor never sees it, no catalogue is required to carry it, and the string renders in English in every language with the whole suite green. That shipped on the statistics page's headline and was found by looking at a screenshot of the Arabic page, not by a test. Pass `t('…')` in and let the helper work on the translated string.
+
+**A new *surface* is not automatically a new key, and v1.87 is the worked example.** Step 3's field index renders six strings and adds **none**: `Check the highlighted fields and try again.` was already `validationMessage`'s short form, and the five field labels are the labels `leafPanel` already puts on the boxes, read out of one map by key. 20 locales × 2 trees, 0 missing, 0 SHA-256 mismatches, no file under `web/locales/` or `api/assets/locales/` touched, `recut_cjk_subsets.py` not run. **Two things made that possible and both are rules rather than luck:** the labels are plain quoted `t('…')` literals inside an object, which is what `tests/web/i18n_keys.py` can see; and the food name and the ` — ` separator are interpolated into the **markup** rather than into a `t()` argument, because an item naming a food and a field is precisely where a template literal gets reached for — and a template literal ships English in all twenty catalogues with nothing failing. v1.81 item 5 and v1.84 item 5 are the same convention stated for the cases that *did* add keys.
 
 **An entry may be character-identical to its English source only when it is declared.** `Code` in French, `Name` in German, `Sector` in Dutch and `No` in Spanish are the natural words; forcing a synonym to satisfy the test that forbids an untranslated entry would make the interface worse to read. A per-language allowlist carries them, and a second test fails on any allowlisted entry that is **not** in fact identical, so the list can only grow deliberately and cannot outlive its reason.
 
@@ -6895,6 +7011,8 @@ On the field shape's three keys: `field` is §9's bracket path, `issue` is a sta
 > **Two refusals moved off `UNKNOWN_CODE` in v1.58, and the `UNKNOWN_CODE` row above is why.** A `food_item` the published set's vocabulary does not carry, and a `food_item` whose parent is not the category it arrived with, were both raised by the engine as `UnknownCodeError` and reached the wire as `UNKNOWN_CODE` with `details: []` — telling a front end to *re-fetch the taxonomy and prompt a refresh* for a request whose taxonomy is perfectly current and whose one wrong field this envelope declines to name. They are now `VALIDATION_ERROR` carrying `field` = `entries[i].food_item` and the slugs §6.2 lists, so the offending control is the one highlighted. **The mismatch case is what makes this more than tidiness:** in `(vegetables, cheese)` both codes exist, so no re-fetch can ever resolve it, and pointing at the field is the only instruction a visitor could act on.
 >
 > **What is *not* here is also a rule:** the API does not invent codes beyond this table. §4.4's four engine exceptions map onto rows above; anything else the engine raises is an engine bug, not a documented condition, and lands on `INTERNAL_ERROR` deliberately — a code minted at the point of failure is a code no consumer could have branched on.
+>
+> **A `VALIDATION_ERROR`'s `details[]` reaches the visitor on three surfaces, and the split between them is a rule rather than an arrangement** (v1.87; §7.3a is where the code lives). **(1)** A detail bound to a control the current screen draws is shown *against that control* — `fieldErrorMap` keys on the `field` path verbatim, and a step 3 scalar field or a step 4 destination row renders its own `.field-error`. **(2)** Step 3 also draws an **index** beside its title naming every bound field, because its cards fold and "something is wrong" does not say which card. **(3)** The banner carries what neither of the first two can: a detail naming a saved entry, an `alternative[…]` path, or any field this form has no input for. `validationMessage` returns the short form, `Check the highlighted fields and try again.`, when **every** detail is bound, and the long form — `The calculation could not be completed.` plus a `describeDetail` per unbound detail — the moment one is not. **The index may suppress the banner only in the first of those two cases**, where it is printing the index's own title a second time. Suppressing it on the mere presence of an index loses text that has no other surface, and `errorStep` is the *first* detail with a locatable step, so a response can perfectly well land on step 3 carrying a detail step 3 cannot show. Both questions are asked through one set of bound paths (`boundFieldPaths`), so the banner and the index cannot disagree about whether a detail has been shown anywhere.
 
 ## 9.1 `FORMULA_ERROR` Has Two Presentations
 

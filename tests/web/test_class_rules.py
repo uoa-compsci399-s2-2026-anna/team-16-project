@@ -158,16 +158,6 @@ CLASSES_WITH_NO_RULE_OF_THEIR_OWN: dict[str, str] = {
         "count flagged entries. Binds if an entry's problem must look unlike a "
         "field's."
     ),
-    "item-group": (
-        "HOOK on `.form-panel.step-card`, reached through `collapsibleCard`'s "
-        "`extraClass`. Step 2.5 draws one card per chosen food category and the "
-        "card is already styled; the class is how three of "
-        "test_step_two_point_five_browser.py's assertions address a food group -- "
-        "`.item-group legend` for the category's name, `.item-group "
-        ".simple-choice strong` for the foods inside it -- and `calculator.js`'s "
-        "own note beside `itemStep` says so. Binds if a food group needs a box "
-        "unlike step 3's and step 4's cards."
-    ),
     "introduction-main": (
         "STATE on `.main-content`. `render()` sets it from `state.step === -1`, "
         "and the full-bleed Kale panel the introduction needs is served by "

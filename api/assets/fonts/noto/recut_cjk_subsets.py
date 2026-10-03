@@ -25,11 +25,14 @@ the collection already on disk, one face per language, with the exact flags
     py -3.12 api/assets/fonts/noto/recut_cjk_subsets.py
 
 Writes the four `.woff2` files in place, in this same directory. Nothing here
-touches `web/locales/*.json` — it only reads them.
+touches `web/locales/*.json` — it only reads them. Use
+`--source-collection PATH` when the verified TTC was extracted outside the
+container's default font directory.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import subprocess
 import sys
@@ -117,15 +120,24 @@ def subset_one(source: Path, face_number: int, characters: set[str], output: Pat
 
 
 def main() -> None:
-    if not SOURCE_COLLECTION.is_file():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--source-collection",
+        type=Path,
+        default=SOURCE_COLLECTION,
+        help="path to the verified NotoSansCJK-Regular.ttc collection",
+    )
+    args = parser.parse_args()
+    source = args.source_collection
+    if not source.is_file():
         raise SystemExit(
-            f"{SOURCE_COLLECTION} not found — install fonts-noto-cjk first "
+            f"{source} not found — install fonts-noto-cjk first "
             "(see this file's own module docstring)"
         )
     for locale_file, face_number, output_name in FACES:
         characters = text_file_for(locale_file)
         output = HERE / output_name
-        subset_one(SOURCE_COLLECTION, face_number, characters, output)
+        subset_one(source, face_number, characters, output)
         print(f"{output_name}: {len(characters)} characters, {output.stat().st_size:,} B")
 
 

@@ -40,12 +40,14 @@ commit that added this file.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 from pathlib import Path
 
 import pytest
 
+from tests.web.base_url import CALCULATOR
 from tests.web.steps import press_continue
 
 
@@ -61,7 +63,7 @@ FIXTURE = json.loads((ROOT / "tests" / "fixtures" / "calculate_response_single.j
 #: `/index.html` rather than `/`, and they are now the same document: nginx says
 #: `index index.html` again. Named explicitly so this file measures the calculator
 #: whatever the `index` directive says next.
-BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080/index.html")
+BASE = CALCULATOR
 
 
 def _english(url: str) -> str:
@@ -174,11 +176,21 @@ def page_at(browser):
 #: "en")` and `page_at(w, h, dpr)` are then the same page: `en-NZ` is the locale
 #: `page_at` pins, and `?lang=en` is the override `_english` appends.
 #:
-#: `ru` is here because it holds the **longest** label of the twenty catalogues
+#: `ru` is here because it held the **longest** label of the twenty catalogues
 #: on the one control measured by `_SELECT_ARROW_PX`'s test below - "Единица
 #: измерения" for `Unit`, seventeen characters against German's eleven - so a
-#: control-width assertion that stopped at German would stop one language short
-#: of its own worst case.
+#: control-width assertion that stopped at German would have stopped one language
+#: short of its own worst case.
+#:
+#: **Since #74 that control's worst case is not in any catalogue**, and `ru` is
+#: kept for a different reason. The one unit control offers every `unit_preset`
+#: container, and a container's label is staff text printed verbatim (§7.7.7), so
+#: the widest option - "23 L kerbside food scraps bin (full)", 254px of text - is
+#: the same width in all twenty. What still varies by language is the *label*
+#: beside the control, which is what decides whether the flex line wraps, and
+#: Russian's 144px label is still the one that forces the wrap at 320px. So the
+#: three-language matrix measures the wrap in the language where it happens and
+#: the clip where it is deepest, which is everywhere.
 #:
 #: Adding rows does not reach any existing test: every one of them names its
 #: languages explicitly in its own `parametrize`, so the reason the two fixtures
@@ -228,9 +240,17 @@ def page_at_locale(browser):
         ctx.close()
 
 
-def walk(page):
+def walk(page, mass="1000"):
     """Drive the wizard as a visitor would, yielding the step index *on arrival*
     at each screen — intro, 0..4, then results (5), plus `1.5` for step 2.5.
+
+    `mass` is the kilogram figure typed at step 3 and at the one destination row
+    on step 4, and it defaults to the `"1000"` every caller here was calibrated
+    on. It is a parameter because one test below needs a *different* mass rather
+    than a different screen: `fixedRowMax`'s `toFixed` rounding is what puts a
+    unit-mode row's own maximum inside the donut's dead band, and whether it
+    does depends only on the leaf's mass (1,000 kg converts to tonnes exactly
+    and so cannot show it). Nothing else passes it.
 
     **`1.5` is a screen, not a `state.step` value.** Step 2.5 is step 2's second
     panel and the step number does not move for it (`docs/interfaces.md` §7.3a), so
@@ -323,11 +343,11 @@ def walk(page):
     page.wait_for_timeout(150)
     page.wait_for_selector("#total-waste")
     yield 2
-    page.fill("#total-waste", "1000")
+    page.fill("#total-waste", mass)
     press_continue(page)
     page.wait_for_selector('[data-line-field="amount"]')
     yield 3
-    page.fill('[data-line-field="amount"] >> nth=0', "1000")
+    page.fill('[data-line-field="amount"] >> nth=0', mass)
     page.wait_for_timeout(60)
     press_continue(page)
     page.wait_for_selector('[data-action="calculate"]')
@@ -338,9 +358,9 @@ def walk(page):
     yield 5
 
 
-def advance_to(page, step):
+def advance_to(page, step, mass="1000"):
     """The single-screen form of `walk`, for the tests that measure one step."""
-    for arrived in walk(page):
+    for arrived in walk(page, mass):
         if arrived == step:
             return page
     raise AssertionError(f"step {step} was never reached")
@@ -920,14 +940,17 @@ def test_the_step_position_moved_into_the_bar_and_left_no_band_behind(page_at):
     assert measured["bands"] == 0, f"a progress band is still costing height at the top: {measured}"
 
 
-def _improvement_panel(page_at):
+def _improvement_panel(page_at, mass="1000"):
     """A page at step 5 (results) with the improvement panel open.
 
     Shared by every test in this module that needs the destination-allocation
     sliders — factored out rather than repeated so the wizard walk that reaches
     them is written once.
+
+    `mass` is passed through to `walk`; see its docstring for the one test that
+    needs anything other than the default 1,000 kg.
     """
-    page = advance_to(page_at(1278, 983, 1.25), 5)
+    page = advance_to(page_at(1278, 983, 1.25), 5, mass)
     page.click('[data-action="explore-improvements"]')
     return page
 
@@ -1081,6 +1104,216 @@ def test_the_improvement_donut_draws_the_share_the_slider_holds(page_at):
     assert page.locator(".improvement-chart-modal").count() == 0
 
 
+#: The circle `web/js/improvement.js` draws a full allocation as, in the SVG user
+#: space of its own `viewBox="0 0 520 420"`: `PIE_CENTRE_X` / `PIE_CENTRE_Y` and
+#: `PIE_RADIUS`. Restated here rather than measured loosely on purpose — "big
+#: enough" is exactly what the assertion below must not settle for, because a
+#: circle drawn at the wrong origin is 224x224 too. If those constants move, this
+#: is *meant* to fail and be moved with them; nothing else in the repository
+#: notices a donut drawn half outside its own viewBox.
+DONUT_CENTRE = (260, 210)
+DONUT_RADIUS = 112
+
+#: Enough of the rendered path to say *which* shape was drawn, not merely that
+#: something was. `x` and `y` are read and asserted, which the first version of
+#: this measurement discarded.
+MEASURE_SLICE = """
+path => {
+  const box = path.getBBox();
+  return {
+    x: box.x, y: box.y, width: box.width, height: box.height,
+    length: path.getTotalLength(),
+  };
+}
+"""
+
+
+def _measure_first_slice(page, scope=".improvement-pie-chart"):
+    """The rendered geometry of the chart's first `<path>`, in SVG user units.
+
+    **The count assertion in front of the read is not decoration.** `PieChart`
+    filters `slice.share > 0`, so a chart whose rows are all still at zero has
+    no `<path>` at all — and `.first.evaluate` on an empty locator raises a
+    Playwright *timeout*, which reads as the harness being broken rather than as
+    the panel having drawn nothing. Counting first makes that failure say what it
+    is.
+    """
+    paths = page.locator(f"{scope} path")
+    assert paths.count() >= 1, (
+        "the donut drew no <path> at all, so there was nothing to measure - "
+        "every allocation row is still at zero"
+    )
+    return paths.first.evaluate(MEASURE_SLICE)
+
+
+def _assert_is_the_full_donut(measured, what):
+    """Assert a measured path is the module's own circle, and not merely large.
+
+    **Two measurements, because neither alone says "a full circle".**
+
+    *The bounding box* pins position and size: `x`, `y`, `width`, `height`
+    against `PIE_CENTRE` +/- `PIE_RADIUS`. This is what rejects a circle drawn
+    at the wrong origin — `M 0 0 A 112 112 ...` measures 224x224 and renders
+    half outside the viewBox, and measured here it comes back at `x=-112`. It
+    also rejects the 205% allocation this file's sibling test types, which
+    measured 224 x 330.518 and passed a `width > 200 and height > 200` check
+    before this one. What it cannot do on its own is tell a full circle from a
+    wedge: a plain 75% slice is 224x224 at exactly (148, 98) as well, and so are
+    80%, 90%, 99% and 99.99%.
+
+    *The perimeter* is what separates them. A closed circle measures `2*pi*r` =
+    703.72 (Chrome's polyline approximation reads 703.816); a wedge is two radii
+    plus an arc, `2r + r*theta`. For a wedge's bounding box to reach the full
+    224x224 it has to contain all four cardinal points of the circle, so its
+    sweep is at least 270 degrees — and the shortest such wedge measured 750.37,
+    some 46 units clear of the circle. So no wedge `slicePath` can emit satisfies
+    both of these, which is the claim the test's name makes. (A ~245-degree wedge
+    does measure 703.3, which is why the length is not asserted alone either: its
+    box is 213.6 wide and the bbox check refuses it.)
+
+    The tolerances are the measurement's own noise, not slack: 0.01 user units on
+    the box (Chrome returned `147.997` for a 99.99% wedge's left edge) and 1.0 on
+    the perimeter, against a 46-unit gap to the nearest wedge.
+    """
+    centre_x, centre_y = DONUT_CENTRE
+    expected = {
+        "x": centre_x - DONUT_RADIUS,
+        "y": centre_y - DONUT_RADIUS,
+        "width": 2 * DONUT_RADIUS,
+        "height": 2 * DONUT_RADIUS,
+    }
+    for key, want in expected.items():
+        assert abs(measured[key] - want) < 0.01, (
+            f"{what}: the donut's {key} is {measured[key]}, not {want} - the path "
+            f"is empty, the wrong size, or drawn somewhere other than the centre "
+            f"the rest of the chart uses. Measured {measured}"
+        )
+    circumference = 2 * math.pi * DONUT_RADIUS
+    assert abs(measured["length"] - circumference) < 1.0, (
+        f"{what}: the donut's perimeter is {measured['length']:.3f}, not the "
+        f"{circumference:.3f} of a closed circle of radius {DONUT_RADIUS} - this "
+        f"is a wedge with two straight radii in it, not a full allocation. "
+        f"Measured {measured}"
+    )
+
+
+def test_the_improvement_donut_draws_a_full_circle_for_a_single_hundred_percent_share(page_at):
+    """A full SVG arc needs two half-arcs, because a zero-length arc is empty.
+
+    The single-destination case is the ordinary way to reach 100%: its slice
+    starts and ends at the same point, SVG 1.1 §8.3.8 makes such an arc
+    equivalent to omitting the segment, and the path used to come back `0 x 112`
+    — a pair of coincident radii — leaving only the centre label and the callout
+    on screen. So the path must occupy the whole donut, at the centre and radius
+    the rest of the chart is drawn to; `_assert_is_the_full_donut` carries why
+    that takes two measurements rather than one.
+
+    The centre label and the callout are checked too, because the remedy's own
+    risk is the opposite defect: a full disc painted *over* the figures that were
+    the only thing still visible before it.
+    """
+    page = _improvement_panel(page_at)
+    boxes = page.locator('.percentage-input input[type="number"]')
+    boxes.first.fill("100")
+
+    _assert_is_the_full_donut(_measure_first_slice(page), "a typed 100%")
+
+    #: `text_content`, not `inner_text`: an SVG element has no `innerText`, which
+    #: is the same trap the sibling test above records against the callouts.
+    centre = page.locator(".improvement-pie-total").text_content() or ""
+    assert "kg" in centre and re.sub(r"[^\d.]", "", centre) == "1000.00", (
+        f"the centre label stopped reporting the mass being redistributed: {centre!r}"
+    )
+    assert "100.0%" in page.locator(".improvement-pie-label text").all_text_contents(), (
+        "the callout beside the full slice is gone or no longer reads the share"
+    )
+    #: One slice, not two: the remedy must not leave the old degenerate wedge
+    #: behind beside the circle it replaced.
+    assert page.locator(".improvement-pie-chart path").count() == 1
+
+
+def test_the_improvement_donut_still_draws_a_share_a_hair_under_a_hundred(page_at):
+    """**The residual the two-arc remedy does not reach on its own**, and the
+    reason `slicePath`'s gate is a tolerance rather than `>= 360`.
+
+    Chrome holds SVG path geometry in single precision, so the arc collapses for
+    a *range* of sweeps below a full turn, not only at it: bisected in this
+    Chromium, a share of 99.99999783009287 still paints a 224x224 box and
+    99.99999783009288 paints nothing at all. An exact gate therefore leaves the
+    original defect reachable with the fix applied.
+
+    `99.999999` is inside that band and the panel accepts it on every other
+    count. The number box is `step="0.01"` but a typed figure is never snapped or
+    clamped — the sibling test above proves it by typing `205` and watching the
+    value survive — and `improvementValidation` passes it too, so the visitor is
+    offered Compare Impact on an allocation whose chart is blank while its own
+    callout reads 100.0%. That pairing is the assertion: a drawn donut *and* an
+    enabled button.
+    """
+    page = _improvement_panel(page_at)
+    page.locator('.percentage-input input[type="number"]').first.fill("99.999999")
+    page.wait_for_timeout(80)
+
+    _assert_is_the_full_donut(_measure_first_slice(page), "a typed 99.999999%")
+    assert page.locator('[data-action="compare-improvement"]').is_enabled(), (
+        "the premise is gone: this share is no longer offered as a valid "
+        "allocation, so an invisible chart beside it would be a different bug"
+    )
+
+
+def test_the_improvement_donut_draws_a_unit_mode_row_typed_to_its_own_maximum(page_at):
+    """**Unit mode is where the residual above is reached without typing
+    anything unusual at all** — the maximum the control itself advertises is
+    enough.
+
+    `fixedRowMax` gives a row a `max` of `kgToUnitAmount(totalKg, rowUnit)`
+    rounded to that unit's own display precision, five places for tonnes, and
+    `updateImprovementInput` converts a keystroke straight back through
+    `kgToPercentage(unitAmountToKg(raw, rowUnit), totalKg)`. The round trip does
+    not have to land on 100: for 37,461 of the 299,901 masses from 1.00 to
+    3000.00 kg at a 0.01 kg step — 12.49% — typing a tonnes row to its own
+    declared maximum lands inside the dead band instead. Nothing cleans it,
+    because the only clamp on this path is the range's ceiling and it rewrites a
+    figure that *overshoots* (`Math.round(clamped * 100) / 100` is exactly 100)
+    while leaving one that *undershoots* alone.
+
+    **1.04 kg is why this test walks a different mass.** The 1,000 kg every other
+    test here uses converts to `"1.00000"` tonnes exactly and lands on 100, so it
+    cannot show this at all; 1.04 kg gives a max of `"0.00104"`, which converts
+    back to 99.99999999999997% — a sweep of 359.9999999999999 degrees, inside the
+    band, and measured `0 x 112` before the tolerance went in.
+
+    The row's `max` is read off the control rather than written in, because the
+    claim is about the figure the panel offers the visitor, not about a number
+    this file believes it offers.
+    """
+    page = _improvement_panel(page_at, mass="1.04")
+    # One control, not two. This test was written against the per-row unit
+    # selector and the `unit` mode that preceded it; v1.86 (#74) collapsed both
+    # into one panel-wide `<select>` whose values ARE the units, so `tonnes` is
+    # now a single choice rather than a mode plus a row. The two landed on `main`
+    # from branches that could not see each other: each was green alone and the
+    # merge was red, with no textual conflict to warn anybody.
+    page.select_option("#improvement-mode", "tonnes")
+    page.wait_for_timeout(80)
+
+    box = page.locator('.percentage-input input[type="number"]').first
+    ceiling = box.get_attribute("max")
+    assert ceiling == "0.00104", (
+        f"the premise moved: a 1.04 kg leaf's tonnes row now offers a maximum of "
+        f"{ceiling!r}, so it may no longer be the figure that misses 100%"
+    )
+    box.fill(ceiling)
+    page.wait_for_timeout(80)
+
+    _assert_is_the_full_donut(
+        _measure_first_slice(page), f"a tonnes row typed to its own max of {ceiling}"
+    )
+    assert page.locator('[data-action="compare-improvement"]').is_enabled(), (
+        "a row at its own advertised maximum is no longer a valid allocation"
+    )
+
+
 def test_the_improvement_chart_follows_both_scroll_directions_on_desktop(page_at):
     """The chart card stays beside the long allocation list while it is being edited.
 
@@ -1178,8 +1411,8 @@ def test_the_improvement_copy_uses_the_visuals_left_edges(page_at):
 #: integer where the text measurement is fractional, not for the arrow.
 _SELECT_ARROW_PX = 20
 
-#: How much width `#improvement-mode` needs to draw its own longest option, and
-#: how much it has.
+#: How much width `#improvement-mode` needs to draw its own longest option, how
+#: much it has, and how much the panel could possibly give it.
 #:
 #: **`scrollWidth` cannot answer this question.** A closed `<select>` paints an
 #: ellipsis or simply cuts its label at the content edge; it does not lay the
@@ -1192,7 +1425,20 @@ _SELECT_ARROW_PX = 20
 #: `_SELECT_ARROW_PX` added to it.
 #:
 #: The options are read off the live element rather than named here, so this
-#: measures whichever of the twenty catalogues is in force.
+#: measures whichever of the twenty catalogues is in force - and, since #74,
+#: whichever containers the published taxonomy carries.
+#:
+#: **`room` is new with #74 and it is what keeps the assertion honest at 320px.**
+#: The control's options now include every `unit_preset` label, which is staff
+#: text printed verbatim (§7.7.7) and so the same width in all twenty
+#: catalogues: "23 L kerbside food scraps bin (full)" needs 300px, and the panel
+#: leaves 242px at a 320px viewport. `max-width: 100%` is what stops that
+#: becoming 58px of page overflow, and the result is a label clipped because
+#: there is no room - which is a different fact from a label clipped because the
+#: control took its width from a layout column, and the helper below has to be
+#: able to tell them apart. `room` is the widest `clientWidth` this control could
+#: have inside its own flex container, borders discounted the same way
+#: `clientWidth` discounts them.
 MODE_SELECT_FIT = """
 async () => {
   await document.fonts.ready;
@@ -1206,6 +1452,8 @@ async () => {
     if (width > textWidth) { textWidth = width; longest = option.textContent; }
   }
   const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+  const border = parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth);
+  const field = select.closest('.improvement-mode-field');
   return {
     longest,
     textWidth,
@@ -1213,13 +1461,18 @@ async () => {
     text: textWidth + padding,
     clientWidth: select.clientWidth,
     scrollWidth: select.scrollWidth,
+    room: field.clientWidth - border,
+    options: select.options.length,
+    title: select.getAttribute('title'),
+    selectedLabel: select.options[select.selectedIndex].textContent,
   };
 }
 """
 
 
 def assert_the_mode_select_is_sized_to_its_own_longest_option(page, where):
-    """`#improvement-mode` is as wide as the widest option it offers, and no wider.
+    """`#improvement-mode` is as wide as the widest option it offers, or as wide as
+    the panel leaves it - whichever is smaller - and no wider.
 
     Two assertions, because the two directions are two different mistakes and one
     message should not have to describe both. Too narrow is the measured defect: the
@@ -1227,12 +1480,33 @@ def assert_the_mode_select_is_sized_to_its_own_longest_option(page, where):
     what "sized to its content" rules out - a control stretched across the whole
     panel by the site-wide ``input, select { width: 100% }`` - and is the only thing
     standing in for the end-edge pin this control deliberately no longer has.
+
+    **The ``min`` against ``room`` is #74's own arithmetic and it is not a
+    relaxation.** The control's longest option is now a staff-typed container label
+    - 300px with padding and arrow, identical in all twenty catalogues because staff
+    text is never translated - and a 320px viewport leaves the panel 242px. There is
+    no width to take from anywhere: the only choices at that viewport are to clip or
+    to push the control out of the page, and `max-width: 100%` chooses the first
+    (the full name stays reachable through the native dropdown, which draws options
+    at their own width, and through the select's own `title`, asserted separately by
+    `test_the_one_unit_control_names_its_own_selection_in_full`).
+
+    What the ``min`` does **not** admit is the v1.82 defect: a control that is
+    narrower than both its longest option and the room it was given still fails
+    here, at every width and in every script, which is what the mutation
+    ``.improvement-mode-field select { width: 79px !important }`` is for.
     """
     fit = page.evaluate(MODE_SELECT_FIT)
     needs = fit["text"] + _SELECT_ARROW_PX
-    assert fit["clientWidth"] + 1 >= needs, (
+    target = min(needs, fit["room"])
+    capped = "" if needs <= fit["room"] else (
+        f" (capped at the {fit['room']}px the panel leaves it, 'max-width: 100%'; "
+        f"the option itself needs {needs:.1f}px and is clipped by "
+        f"{needs - fit['room']:.1f}px there with the full name on the select's own title)"
+    )
+    assert fit["clientWidth"] + 1 >= target, (
         f"[{where}] the unit-mode select is {fit['clientWidth']}px wide inside its padding "
-        f"but needs {needs:.1f}px to draw {fit['longest']!r} "
+        f"but needs {target:.1f}px to draw {fit['longest']!r}{capped} "
         f"({fit['textWidth']:.1f}px of text + {fit['padding']:.1f}px padding + "
         f"{_SELECT_ARROW_PX}px for the dropdown arrow) - the option is being clipped, "
         f"silently: scrollWidth is {fit['scrollWidth']}, the same as clientWidth, because "
@@ -1242,10 +1516,19 @@ def assert_the_mode_select_is_sized_to_its_own_longest_option(page, where):
     #: measurement. The two agreed to 0.0px in English, German, Russian and Arabic
     #: at 320/390/700/768/803/1278, so this is rounding slack and nothing else -
     #: it is three hundred-odd pixels short of admitting a full-width control.
-    assert fit["clientWidth"] <= needs + 2, (
+    too_wide = (
+        "it is taking its width from its container rather than from its own content"
+        if needs <= fit["room"]
+        else (
+            "it is wider than the room the panel leaves it, so it is pushing the page "
+            "sideways rather than clipping - `max-width: 100%` is what chooses between "
+            "those two and only one of them is a layout"
+        )
+    )
+    assert fit["clientWidth"] <= target + 2, (
         f"[{where}] the unit-mode select is {fit['clientWidth']}px wide inside its padding "
-        f"where {needs:.1f}px draws its longest option {fit['longest']!r} - it is taking "
-        "its width from its container rather than from its own content"
+        f"where {target:.1f}px draws its longest option {fit['longest']!r}{capped} - "
+        f"{too_wide}"
     )
     return fit
 
@@ -1324,6 +1607,18 @@ def test_the_unit_mode_select_can_draw_its_own_longest_option(page_at_locale, wi
     own.  Wrapping rather than a breakpoint is deliberate: what has to fit is a
     translated string, and no viewport width predicts which catalogue is in force.
 
+    **#74 made 320px the one width where the control cannot hold its own longest option
+    at all, and that is measured rather than conceded.** Collapsing the per-row unit
+    selectors into this one control puts every `unit_preset` container among its options,
+    and a container label is staff text printed verbatim (§7.7.7), so the widest option
+    is the same in every catalogue: "23 L kerbside food scraps bin (full)", 254px of text
+    and 300px with padding and arrow, against the 242px the panel leaves at 320px. It
+    fits from 390px (312px) up and is clipped by 60px at 320px, where `max-width: 100%`
+    is the only alternative to 58px of page overflow. `MODE_SELECT_FIT`'s `room` is what
+    lets the helper say which of those two happened; the full name is still reachable,
+    from the native dropdown (which draws options at their own width, not the closed
+    control's) and from the select's `title`.
+
     **What `flex-wrap: wrap` guards there is the overflow, not the clipping, and that
     was measured rather than assumed.** A flex item's automatic minimum size stops this
     `<select>` shrinking below its own longest option at all, so making the line
@@ -1337,9 +1632,9 @@ def test_the_unit_mode_select_can_draw_its_own_longest_option(page_at_locale, wi
     reason).
 
     German rather than English alone because German is where the measured shortfall in
-    the band was largest; Russian because it holds the widest label of the twenty
-    catalogues on this control (190px against German's 134px), which makes it both the
-    worst case in the band and the only one that wraps at 320px; and Arabic because the
+    the band was largest; Russian because it held the widest *translated* label on this
+    control (190px against German's 134px), which made it the worst case in the band and
+    is still the only one that wraps the flex line at 320px; and Arabic because the
     start edge it aligns to is the opposite one, and a start-edge assertion that has
     only ever run LTR is half a test.
     """
@@ -1585,11 +1880,18 @@ def test_the_allocation_rows_stacking_breakpoint_is_the_width_these_tests_name()
     )
 
 
-def test_step_three_asks_what_the_stage_put_through(page_at):
+def test_step_three_asks_what_each_food_type_produced(page_at):
     """Item ④. Without it the results page can never state waste as a share
     of production, which is the figure the client asked for - and the reason
     the old percentage was removed rather than fixed: `results.js` carries a
     note saying it was "a number the engine never produced".
+
+    **Named for the card and not for the stage, since #158.** This box is
+    `EntryInput.total_input_kg`, which is per leaf, and §4.6 sums it across
+    entries - so "what the stage put through", which is what this test used to
+    be called and what its hint used to ask for, is a figure about the whole
+    chain being collected once per food type. `tests/web/test_step_three_copy
+    _truth.py` carries the three-card measurement and the sentence itself.
 
     Optional, and the label says so. A visitor who does not know their
     production total still gets every other figure, so this must not become a
@@ -1968,6 +2270,17 @@ def test_the_production_total_names_its_unit_and_is_cleared_when_the_unit_change
     assert "same period" in hint and "waste included" in hint, (
         f"the production-total hint does not explain what to include: {hint!r}"
     )
+    #: **#158: and it has to say which food the figure is for.** Both halves of
+    #: the assertion above were satisfied by the sentence #158 is about -
+    #: "Everything that went through this stage over the same period, waste
+    #: included" - which asked for the whole chain on a box §4.6 sums per leaf.
+    #: `this stage` is named in the negative because that is the word that was
+    #: wrong; the full sentence, and the three-card case this one screen cannot
+    #: reach, are pinned in `tests/web/test_step_three_copy_truth.py`.
+    assert "this food type" in hint and "this stage" not in hint, (
+        "the production-total hint is scoped to the supply-chain stage rather "
+        f"than to the card, and §4.6 sums one box per leaf: {hint!r}"
+    )
     #: `text_content`, not `inner_text`: the tooltip is hidden until the term is
     #: hovered or focused, and `inner_text` reports what is *rendered*, which for
     #: a `visibility: hidden` panel is the empty string. What is being asserted
@@ -2312,7 +2625,7 @@ def test_step_three_asks_for_the_two_money_figures(page_at):
     figure is only ever NZD.
     """
     #: `2`, not the UI's own "Step 3" label - see the comment on
-    #: `test_step_three_asks_what_the_stage_put_through` above, which is the
+    #: `test_step_three_asks_what_each_food_type_produced` above, which is the
     #: same amount screen these two fields join.
     page = advance_to(page_at(1278, 983, 1.25), 2)
 
@@ -3238,48 +3551,59 @@ _STACKING_BREAKPOINT = 560
 
 @pytest.mark.parametrize("lang", ["de", "ar"])
 @pytest.mark.parametrize("width,height,dpr", _FIVE_WIDTHS)
-def test_the_range_gets_more_room_than_the_select_in_unit_mode(page_at_locale, width, height, dpr, lang):
-    """**Item ⑨'s layout half, now measured in German and Arabic at all five
-    of this file's own breakpoints, not only in English at three of them.**
+def test_the_range_gets_more_room_than_the_number_box_in_unit_mode(page_at_locale, width, height, dpr, lang):
+    """**Item ⑨'s layout half, rewritten by #74 rather than retired.**
 
-    The client's screenshot showed the unit select wide enough to truncate a
-    container's name while the slider - the control actually manipulated -
-    was squeezed to a stub. The select is a choice made once and does not
-    need to out-compete the range for room, at any of the widths where the
-    row does not simply stack (below `_STACKING_BREAKPOINT` every control is
-    full-width and this specific comparison does not apply, though the
-    containing-block check below still runs there).
+    This was `test_the_range_gets_more_room_than_the_select_in_unit_mode` and it
+    measured three tracks: range, number box and the row's own unit `<select>`.
+    The select is gone - the client asked on 17 September for one unit throughout
+    the Improvement section, so the choice moved out of the row and up to
+    `#improvement-mode` - and with it `.improvement-control-unit`, the three-track
+    template this test was calibrated against.
+
+    **What it was protecting, and what of that survives.** Half of it was the
+    competition between the range and the select, and that half has no subject any
+    more; the request it came from ("the slider the visitor drags should get the
+    room") is now satisfied by construction, because the row has two controls
+    instead of three and the range's track is `minmax(90px, 1fr)` against the
+    box's fixed 108px. The other half is a **containment** check - the row's last,
+    narrowest track must stay inside `.improvement-allocation-list`'s own box,
+    which has `overflow: hidden` and so clips without raising a scrollbar - and
+    that is still live and still worth five widths in two scripts. The number box
+    inherits the role the select had: it is now the row's inline-end track, so it
+    is what runs out of room first and what gets clipped first.
+
+    Keeping the locale x width matrix rather than trimming it to English is the
+    point of the test. The defect it was written against was found in German at
+    700px and in Arabic off the opposite edge, and neither was visible in English.
 
     **Round three found this assertion checked only the left edge, in an
-    LTR locale** (`select_box["x"] >= list_box["x"] - 1`) - which passes at
-    700px even when 65% of the select is cut off the *right* edge, because
+    LTR locale** (`box["x"] >= list_box["x"] - 1`) - which passes at
+    700px even when 65% of the control is cut off the *right* edge, because
     nothing here ever looked at the right edge or ran in a locale where the
     left edge is the one that stays clean. Checking full containment - both
     edges, against the list's own box - catches a clip off either edge, in
-    either direction: the same one assertion now does for Arabic's RTL clip
-    (off the left) what it always did for a left-edge overflow, and would
-    have caught German's own right-edge clip at 700px, which the old,
-    left-only, LTR-only version could not.
+    either direction.
     """
     page = advance_to(page_at_locale(width, height, dpr, lang), 5)
     page.click('[data-action="explore-improvements"]')
-    page.select_option("#improvement-mode", "unit")
+    page.select_option("#improvement-mode", "kilograms")
     page.wait_for_timeout(120)
 
     row = page.locator(".improvement-allocation-row").first
     range_box = row.locator('input[type="range"]').bounding_box()
-    select_box = row.locator("select.improvement-row-unit").bounding_box()
     box_box = row.locator('.percentage-input input[type="number"]').bounding_box()
 
+    assert row.locator("select").count() == 0, (
+        f"[{lang}@{width}px] a destination row still carries a `<select>` - #74 removed "
+        "the per-row unit choice, so the only unit control on this panel is #improvement-mode"
+    )
+
     if width >= _STACKING_BREAKPOINT:
-        assert range_box["width"] > select_box["width"], (
-            f"[{lang}@{width}px] the range ({range_box['width']}px) is not wider than the "
-            f"select ({select_box['width']}px) - the control the visitor drags should get "
-            "the room"
-        )
         assert range_box["width"] >= box_box["width"], (
             f"[{lang}@{width}px] the range ({range_box['width']}px) is narrower than the "
-            f"number box ({box_box['width']}px)"
+            f"number box ({box_box['width']}px) - the control the visitor drags should get "
+            "the room"
         )
 
     #: The panel must not silently clip past its own list container
@@ -3290,14 +3614,14 @@ def test_the_range_gets_more_room_than_the_select_in_unit_mode(page_at_locale, w
     #: 700px, and would equally have missed a right-edge-only check catching
     #: Arabic's left-edge clip at the same width.
     list_box = page.locator(".improvement-allocation-list").bounding_box()
-    assert select_box["x"] >= list_box["x"] - 1, (
-        f"[{lang}@{width}px] the select's own left/start edge ({select_box['x']}) sits "
+    assert box_box["x"] >= list_box["x"] - 1, (
+        f"[{lang}@{width}px] the number box's own left/start edge ({box_box['x']}) sits "
         f"outside its list container's own left edge ({list_box['x']}) - it is being "
         "clipped, not merely narrow"
     )
-    assert select_box["x"] + select_box["width"] <= list_box["x"] + list_box["width"] + 1, (
-        f"[{lang}@{width}px] the select's own right/end edge "
-        f"({select_box['x'] + select_box['width']}) sits outside its list container's own "
+    assert box_box["x"] + box_box["width"] <= list_box["x"] + list_box["width"] + 1, (
+        f"[{lang}@{width}px] the number box's own right/end edge "
+        f"({box_box['x'] + box_box['width']}) sits outside its list container's own "
         f"right edge ({list_box['x'] + list_box['width']}) - it is being clipped, not "
         "merely narrow"
     )
@@ -3392,36 +3716,90 @@ def test_the_compare_button_is_still_gated_on_exactly_one_hundred(page_at):
 
 
 def test_the_improvement_panel_can_be_driven_in_unit_mode(page_at):
-    """Item ⑧. A toggle, and kilograms are the quantity the panel already
+    """Item ⑧. One control, and kilograms are the quantity the panel already
     works in underneath: `improvedLines` computes
     `totalKg * percentage / 100` before it sends anything.
 
     So this is a display and entry mode, not a second calculation - which is
-    also why the toggle cannot change what is sent. The second mode is named
-    "Unit" rather than "kilograms" because it no longer only offers kilograms:
-    each row has its own `<select>` (kilograms, tonnes, or a container), so the
-    assertion is on that per-row control rather than on a static suffix span.
+    also why the control cannot change what is sent.
+
+    **#74 collapsed two controls into this one.** Between 2026-09-05 and
+    17 September the panel had a percentage/unit toggle *and* a `<select>` on every
+    destination row; the client then asked for one consistent unit throughout the
+    section, so `#improvement-mode` now offers the units themselves - percentage,
+    the two weights, and every container the taxonomy carries - and there is no
+    second control anywhere on the panel. Both halves are asserted: the options are
+    on `#improvement-mode`, and no row has a `<select>` at all.
     """
     page = _improvement_panel(page_at)
 
-    toggle = page.locator("#improvement-mode")
-    assert toggle.count() == 1, "no percentage/unit toggle"
+    control = page.locator("#improvement-mode")
+    assert control.count() == 1, "no unit control"
 
-    page.select_option("#improvement-mode", "unit")
+    values = control.locator("option").evaluate_all("els => els.map(el => el.value)")
+    assert values[:3] == ["percentage", "kilograms", "tonnes"], (
+        f"the one unit control does not open with percentage and the two weights: {values!r}"
+    )
+    presets = [value for value in values if value.startswith("preset:")]
+    assert presets, (
+        f"the one unit control offers no container at all: {values!r} - #74 asks for every "
+        "unit the taxonomy carries on this control, not only the weights"
+    )
+
+    page.select_option("#improvement-mode", "kilograms")
     page.wait_for_timeout(80)
 
-    row_unit = page.locator("select.improvement-row-unit").nth(0)
-    assert row_unit.count() == 1, "no per-row unit selector in unit mode"
-    assert row_unit.input_value() == "kilograms", (
-        "a row with no choice made yet should default to kilograms"
+    assert page.locator("#improvement-mode").input_value() == "kilograms"
+    assert page.locator(".improvement-allocation-row select").count() == 0, (
+        "a destination row still carries a unit `<select>` of its own - #74 removed the "
+        "per-row choice, and a second control is what it asked to be rid of"
     )
-    options = row_unit.locator("option").all_inner_texts()
-    assert "kilograms" in options and "tonnes" in options, (
-        f"the row's own unit selector is missing a weight option: {options!r}"
+    #: The `%` suffix is the one thing that stays per row, and only where the
+    #: figure already is the unit (`improvement.js`'s `unitSuffix`).
+    suffixes = page.locator(".percentage-input span").all_inner_texts()
+    assert suffixes == [], (
+        f"a row still prints a unit suffix in unit mode: {suffixes!r} - a container label is "
+        "254px of staff text and the suffix track is 100px, which is the clip the client "
+        "complained about"
     )
 
 
-def test_the_accessible_names_switch_to_the_row_s_own_unit(page_at):
+def test_the_one_unit_control_names_its_own_selection_in_full(page_at):
+    """A container's label is staff text printed verbatim (§7.7.7) and can be wider
+    than the closed control at a phone width, so the full name has to be reachable
+    from somewhere other than the pixels.
+
+    `title` is that somewhere, and it is the same reasoning the per-row select
+    carried before #74 moved the choice up here: `text-overflow: ellipsis` is not
+    reliable on a closed `<select>` across browsers, so there is no in-band signal
+    that a name was cut, and the native dropdown - which does draw each option at
+    its own width - is only open while the visitor holds it open.
+
+    Asserted against the *selected* option's own text rather than a hard-coded
+    string, so this measures whatever the published taxonomy named the container.
+    """
+    page = _improvement_panel(page_at)
+    options = page.locator("#improvement-mode option").evaluate_all(
+        "els => els.map(el => ({value: el.value, label: el.textContent}))"
+    )
+    containers = [option for option in options if option["value"].startswith("preset:")]
+    assert containers, "no container option to select"
+    #: The longest one, because it is the one whose name is actually at risk.
+    widest = max(containers, key=lambda option: len(option["label"]))
+
+    page.select_option("#improvement-mode", widest["value"])
+    page.wait_for_timeout(120)
+
+    fit = page.evaluate(MODE_SELECT_FIT)
+    assert fit["selectedLabel"] == widest["label"], fit
+    assert fit["title"] == widest["label"], (
+        f"the unit control's title is {fit['title']!r} where its selected option reads "
+        f"{widest['label']!r} - a closed select that cannot show the whole name and does "
+        "not carry it on a tooltip either leaves the visitor guessing from what fits"
+    )
+
+
+def test_the_accessible_names_name_the_panel_s_own_unit(page_at):
     """The follow-up the coordinator raised on fix round 1.
 
     An `aria-label` is the only message a screen-reader visitor gets for a
@@ -3431,10 +3809,17 @@ def test_the_accessible_names_switch_to_the_row_s_own_unit(page_at):
     mode was told, on the one channel they could hear it, that the field
     wanted a percentage. Same defect as the validation message fixed
     alongside it, one layer further from what a sighted visitor notices.
+
+    **Since #74 this is the only per-control statement of the unit on the panel**,
+    which makes it load-bearing rather than a nicety. The row's visible suffix is
+    gone - a container's staff-typed label does not fit a row-sized track, which is
+    the clip the client complained about - so the unit is stated once, visibly, by
+    the control above the cards, and once per control here, where there is no
+    control above to glance at.
     """
     page = _improvement_panel(page_at)
 
-    page.select_option("#improvement-mode", "unit")
+    page.select_option("#improvement-mode", "kilograms")
     page.wait_for_timeout(80)
 
     range_label = page.locator('input[type="range"][data-improvement-code]').nth(0).get_attribute("aria-label")
@@ -3446,8 +3831,8 @@ def test_the_accessible_names_switch_to_the_row_s_own_unit(page_at):
             f"the {name}'s accessible name still says percentage in unit mode: {label!r}"
         )
         assert "kilogram" in label.lower(), (
-            f"the {name}'s accessible name does not name the row's own unit (kilograms, "
-            f"the default) in unit mode: {label!r}"
+            f"the {name}'s accessible name does not name the panel's own unit (kilograms): "
+            f"{label!r}"
         )
 
 
@@ -3468,7 +3853,7 @@ def test_switching_mode_preserves_the_allocation(page_at):
 
     total_kg = float(page.locator("#improvement-total-kg").inner_text().replace(",", ""))
 
-    page.select_option("#improvement-mode", "unit")
+    page.select_option("#improvement-mode", "kilograms")
     page.wait_for_timeout(80)
 
     boxes = page.locator('.percentage-input input[type="number"]').evaluate_all(
@@ -3480,11 +3865,18 @@ def test_switching_mode_preserves_the_allocation(page_at):
 
 
 def test_the_request_is_unchanged_by_the_mode(page_at):
-    """The mode is a way of typing, and the wire never learns which was used.
+    """The unit is a way of typing, and the wire never learns which was used.
 
-    Asserted by driving the same allocation twice and comparing the bodies:
-    a mode that changed what is sent would be a second calculation path, and
-    the two would drift.
+    Asserted by driving the same allocation once per unit and comparing the
+    bodies: a unit that changed what is sent would be a second calculation path,
+    and they would drift.
+
+    **Every unit the one control offers, not two of them** (#74). Percentage and
+    kilograms were the two the toggle had; `tonnes` is the unit whose conversion
+    divides by a thousand, and a container is the only one that multiplies by a
+    figure read out of the taxonomy (`kg_per_unit`) rather than by a constant - so
+    it is the one a stored display value would show up in first, and it is the unit
+    this panel never offered panel-wide before.
     """
     page = _improvement_panel(page_at)
     bodies = []
@@ -3500,13 +3892,23 @@ def test_the_request_is_unchanged_by_the_mode(page_at):
     page.click('[data-action="compare-improvement"]')
     page.wait_for_timeout(400)
 
-    page.select_option("#improvement-mode", "unit")
-    page.wait_for_timeout(80)
-    page.click('[data-action="compare-improvement"]')
-    page.wait_for_timeout(400)
+    container = page.locator("#improvement-mode option").evaluate_all(
+        "els => els.map(el => el.value).filter(value => value.startsWith('preset:'))"
+    )
+    assert container, "the one unit control offers no container to drive"
+    for unit in ("kilograms", "tonnes", container[0]):
+        page.select_option("#improvement-mode", unit)
+        page.wait_for_timeout(120)
+        page.click('[data-action="compare-improvement"]')
+        page.wait_for_timeout(400)
 
-    assert len(bodies) == 2
-    assert bodies[0]["entries"][0]["alternative"] == bodies[1]["entries"][0]["alternative"]
+    assert len(bodies) == 4, bodies
+    for index, body in enumerate(bodies[1:], start=1):
+        assert body["entries"][0]["alternative"] == bodies[0]["entries"][0]["alternative"], (
+            f"request {index} differs from the percentage one: the display unit reached the "
+            f"wire. {body['entries'][0]['alternative']!r} against "
+            f"{bodies[0]['entries'][0]['alternative']!r}"
+        )
 
 
 def test_a_kilogram_split_that_loses_a_digit_still_totals_exactly_100(page_at):
@@ -3527,11 +3929,12 @@ def test_a_kilogram_split_that_loses_a_digit_still_totals_exactly_100(page_at):
     percentage point in the same direction on every one of the four, which
     is comfortably past `improvementValidation`'s own 0.01 tolerance.
 
-    Every row defaults to kilograms in unit mode, so this still exercises the
-    kilogram path exactly as it did before the mode grew a per-row choice.
+    The one unit control is set to kilograms, so this exercises the kilogram path
+    exactly as it did before the panel's unit was a per-row choice (2026-09-05) and
+    after it stopped being one (#74).
     """
     page = _improvement_panel(page_at)
-    page.select_option("#improvement-mode", "unit")
+    page.select_option("#improvement-mode", "kilograms")
     page.wait_for_timeout(80)
 
     boxes = page.locator('.percentage-input input[type="number"]')
@@ -3562,10 +3965,22 @@ def test_a_kilogram_split_that_loses_a_digit_still_totals_exactly_100(page_at):
     )
 
 
-def test_changing_one_row_s_unit_converts_the_figure_rather_than_reinterpreting_it(page_at):
-    """**The one rule item 1 must not get wrong.** Switching a row from
-    kilograms to tonnes must restate the same mass, not multiply it by a
-    thousand: a row holding 5.90 kg becomes 0.00590 t, never `5.90` t.
+def test_changing_the_unit_converts_the_figure_rather_than_reinterpreting_it(page_at):
+    """**The one rule item 1 must not get wrong, and the one property #74 could
+    not be allowed to lose.** Switching the panel from kilograms to tonnes must
+    restate the same mass, not multiply it by a thousand: a row holding 5.90 kg
+    becomes 0.00590 t, never `5.90` t.
+
+    This was `test_changing_one_row_s_unit_...` and drove a `<select>` inside the
+    row; #74 moved the choice to `#improvement-mode` and the property is unchanged
+    by that, because the conversion was never per row - `kgToUnitAmount` /
+    `unitAmountToKg` do it and read a unit, not a destination.
+
+    **Its own history is a defect of exactly this kind.** `lineKg` once seeded the
+    sliders through `massToKg(qtyInput, entry.totalUnit)`, which reinterpreted a
+    tonnes row as kilograms and applied no container preset at all, so two rows of
+    equal mass seeded at 99.88% and 0.12% (`web/js/improvement.js`'s note on
+    `lineKg`).
 
     Mutation to confirm this test would catch a reinterpretation: change
     `kgToUnitAmount`'s `unit === 'tonnes'` branch in `web/js/units.js` from
@@ -3573,52 +3988,130 @@ def test_changing_one_row_s_unit_converts_the_figure_rather_than_reinterpreting_
     box reading `5.90` instead of `0.00590`.
     """
     page = _improvement_panel(page_at)
-    page.select_option("#improvement-mode", "unit")
+    page.select_option("#improvement-mode", "kilograms")
     page.wait_for_timeout(80)
 
     box = page.locator('.percentage-input input[type="number"]').nth(0)
     box.fill("5.90")
     page.wait_for_timeout(60)
 
-    row_unit = page.locator("select.improvement-row-unit").nth(0)
-    row_unit.select_option("tonnes")
+    page.select_option("#improvement-mode", "tonnes")
     page.wait_for_timeout(120)
 
-    converted = float(box.input_value())
+    converted = float(page.locator('.percentage-input input[type="number"]').nth(0).input_value())
     assert abs(converted - 0.0059) < 0.0001, (
-        f"5.90 kg switched to tonnes should read about 0.0059, not {box.input_value()!r} - "
+        f"5.90 kg switched to tonnes should read about 0.0059, not {converted!r} - "
         "a value near 5.90 would mean the figure was reinterpreted rather than converted"
     )
 
 
-def test_changing_one_row_s_unit_does_not_change_another_row_s(page_at):
-    """The unit selector is per row - `data-improvement-unit-code` on each
-    `<select>`, read by its own `code` in the `change` handler - so switching
-    one destination's display unit must leave every other destination's own
-    unit, and its own figure, exactly where they were.
+#: The share each donut slice claims, read off the `<title>` `PieChart` writes
+#: as `"<destination> — <share>%"` from `state.improvedAllocations` directly.
+#:
+#: **Read with `textContent`, because an SVG `<title>` has no rendered box.**
+#: Playwright's `all_inner_texts()` answers `None` for one, so a list of them
+#: compares equal to any other list of them - measured `[None, None]` against a
+#: donut whose slices read "6.0%" and "4.0%". That is the shape of assertion
+#: this file calls passing for the wrong reason, and it is why this is a script
+#: rather than a locator call.
+SLICE_SHARES = """
+() => [...document.querySelectorAll('.improvement-pie-chart path title')]
+        .map(title => title.textContent)
+"""
+
+
+def test_changing_the_unit_changes_every_row_s_figure_and_no_row_s_allocation(page_at):
+    """**The reversal.** This test is the opposite of the one it replaces, and
+    deliberately keeps its shape so the diff reads as a reversal and not a deletion.
+
+    What stood here was `test_changing_one_row_s_unit_does_not_change_another_row_s`:
+    *"The unit selector is per row - `data-improvement-unit-code` on each `<select>`,
+    read by its own `code` in the `change` handler - so switching one destination's
+    display unit must leave every other destination's own unit, and its own figure,
+    exactly where they were."* That was a real client ask, made on 2026-09-05, and it
+    was correct until 17 September, when the client asked for the opposite: one
+    consistent unit throughout the Improvement section (#74). **Both asks are real and
+    the later one wins**, so the invariant is now its own inverse - one control, every
+    row.
+
+    Two properties, because "every row moved" and "no allocation moved" are the two
+    halves that make this a display change rather than a second calculation:
+
+    * every row's *displayed* figure is restated in the new unit, including rows the
+      visitor never touched. A per-row unit surviving anywhere - a stray
+      `improvementRowUnits` lookup, a row drawn from a different key - leaves one row
+      reading kilograms while the control says tonnes, which is #74 arriving again.
+    * `state.improvedAllocations` does not move at all. There is no global holding the
+      state, so it is read through the two things that are derived from it and from
+      nothing else: the running total (`allocationTotal`, summed over the stored
+      percentages) and the donut's own slice titles, which `PieChart` writes as
+      `"<destination> - <share>%"` straight off the stored figure. A unit that reached
+      the state would show in both at once. `test_the_request_is_unchanged_by_the_mode`
+      closes the same question from the wire's end.
     """
     page = _improvement_panel(page_at)
-    page.select_option("#improvement-mode", "unit")
+    page.select_option("#improvement-mode", "kilograms")
     page.wait_for_timeout(80)
 
     boxes = page.locator('.percentage-input input[type="number"]')
-    row_units = page.locator("select.improvement-row-unit")
-    assert boxes.count() >= 2 and row_units.count() >= 2
+    assert boxes.count() >= 2, "need two destinations to test this"
 
-    boxes.nth(1).fill("12.00")
-    page.wait_for_timeout(60)
-    before_other_value = boxes.nth(1).input_value()
-    before_other_unit = row_units.nth(1).input_value()
+    #: 60/40 rather than one row, so the "every row" half has an untouched row with a
+    #: non-zero figure in it - a zero converts to a zero in any unit and would prove
+    #: nothing.
+    sliders = page.locator('input[type="range"][data-improvement-code]')
+    sliders.nth(0).evaluate("el => { el.value = '60'; el.dispatchEvent(new Event('input', {bubbles: true})) }")
+    sliders.nth(1).evaluate("el => { el.value = '40'; el.dispatchEvent(new Event('input', {bubbles: true})) }")
+    page.wait_for_timeout(80)
 
-    row_units.nth(0).select_option("tonnes")
-    page.wait_for_timeout(120)
-
-    assert row_units.nth(1).input_value() == before_other_unit == "kilograms", (
-        "changing one row's unit selector changed a sibling row's own unit"
+    before = boxes.evaluate_all("els => els.map(el => el.value)")
+    total_before = page.locator("#improvement-total-value").inner_text().strip()
+    #: **`textContent`, through `evaluate`, and not `all_inner_texts()`.** An SVG
+    #: `<title>` has no rendered box, so Playwright's inner-text reader answers
+    #: `None` for every one of them - measured `[None, None]` against a donut whose
+    #: two slices really did read "Prevented — waste avoided — 6.0%" and "Food
+    #: redistribution — 4.0%". Comparing two lists of `None` is an assertion that
+    #: cannot fail, and this one was written that way first.
+    shares_before = page.evaluate(SLICE_SHARES)
+    assert shares_before, (
+        "the donut drew no slice with a share in it, so the allocation half of this test "
+        "would compare two empty lists"
     )
-    assert boxes.nth(1).input_value() == before_other_value, (
-        f"an untouched row's figure changed from {before_other_value!r} to "
-        f"{boxes.nth(1).input_value()!r} when a DIFFERENT row's unit was switched"
+
+    page.select_option("#improvement-mode", "tonnes")
+    page.wait_for_timeout(150)
+
+    after = page.locator('.percentage-input input[type="number"]').evaluate_all(
+        "els => els.map(el => el.value)"
+    )
+    assert len(after) == len(before)
+    #: Every row that held a figure now holds it a thousand times smaller, and that is
+    #: asserted row by row rather than on the first one: one row left behind in
+    #: kilograms is exactly the defect.
+    moved = 0
+    for index, (was, now) in enumerate(zip(before, after)):
+        if float(was or 0) == 0:
+            continue
+        moved += 1
+        assert abs(float(now) - float(was) / 1000) < 1e-6, (
+            f"row {index} read {was!r} in kilograms and {now!r} in tonnes - one control "
+            "governs every row since #74, so every row with a figure in it had to be "
+            f"restated (all rows before: {before!r}, after: {after!r})"
+        )
+    assert moved >= 2, (
+        f"only {moved} row(s) held a figure, so 'every row moved' was not actually tested: "
+        f"{before!r}"
+    )
+
+    shares_after = page.evaluate(SLICE_SHARES)
+    assert shares_after == shares_before, (
+        "the donut's slice shares moved when only the display unit changed; "
+        "state.improvedAllocations holds percentages in every unit (§7.3a) and the chart "
+        f"reads it directly (before: {shares_before!r}, after: {shares_after!r})"
+    )
+    assert page.locator("#improvement-total-value").inner_text().strip() == total_before, (
+        "the running total moved when only the display unit changed - it is computed from "
+        "state.improvedAllocations, so this says a unit reached the stored allocation"
     )
 
 

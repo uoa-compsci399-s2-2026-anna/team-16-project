@@ -1,10 +1,7 @@
 {
-  "language": "nl",
   "endonym": "Nederlands",
+  "language": "nl",
   "machine_translated": true,
-  "tags": [
-    "nl"
-  ],
   "strings": {
     "%(amount)s combined": "%(amount)s in totaal",
     "%(caption)s, horizontally scrollable": "%(caption)s, horizontaal scrollbaar",
@@ -23,6 +20,7 @@
     "%(share)s share": "%(share)s aandeel",
     "%(tab)s data": "Gegevens: %(tab)s",
     "%(tab)s data — %(entry)s": "Gegevens: %(tab)s — %(entry)s",
+    "%(title)s chart type": "Grafiektype voor %(title)s",
     "%(title)s data": "Gegevens: %(title)s",
     "%(title)s, charted using the API-provided share for every published bucket. The full values follow in a text list.": "%(title)s, weergegeven met het door de API geleverde aandeel voor elke gepubliceerde groep. De volledige waarden volgen in een tekstlijst.",
     "(optional)": "(optioneel)",
@@ -50,6 +48,7 @@
     "Back": "Terug",
     "Back to calculator": "Terug naar de rekentool",
     "Background reading": "Achtergrondinformatie",
+    "Bar chart": "Staafdiagram",
     "Breakdown by category": "Uitsplitsing per categorie",
     "Breakdowns of entries contributed to this tool": "Uitsplitsingen van de invoer die aan deze rekentool is bijgedragen",
     "By food type": "Per voedselsoort",
@@ -64,6 +63,7 @@
     "Calculator options have changed. The latest options are being loaded; please review your selections and try again.": "De opties van de rekentool zijn gewijzigd. De nieuwste opties worden geladen; controleer uw keuzes en probeer het opnieuw.",
     "Calculator unavailable": "Rekentool niet beschikbaar",
     "Cancel": "Annuleren",
+    "Categories follow the service's count-ranked order, with any combined Other bucket shown last. This compares categories, not a time trend.": "De categorieën volgen de door de dienst op aantal gerangschikte volgorde; een samengevoegde categorie ‘Overig’ staat als laatste. Dit vergelijkt categorieën en toont geen ontwikkeling in de tijd.",
     "Category": "Categorie",
     "Check the highlighted fields and try again.": "Controleer de gemarkeerde velden en probeer het opnieuw.",
     "Check this entry, or add another supply-chain entry before viewing the combined results.": "Controleer deze invoerregel of voeg nog een invoerregel voor de toeleveringsketen toe voordat u de gecombineerde resultaten bekijkt.",
@@ -147,6 +147,7 @@
     "Enter the date as dd/mm/yyyy.": "Voer de datum in als dd/mm/yyyy.",
     "Enter the time as hh:mm on the 24-hour clock.": "Voer de tijd in als hh:mm op de 24-uursklok.",
     "Enter the time on a keyboard": "De tijd met een toetsenbord invoeren",
+    "Enter the total amount you produced for this food type over the same period, waste included.": "Voer de totale hoeveelheid in die u voor deze voedselsoort in dezelfde periode hebt geproduceerd, afval inbegrepen.",
     "Enter the total amount. You will allocate this total across destinations in the next step.": "Voer de totale hoeveelheid in. In de volgende stap verdeelt u dit totaal over de bestemmingen.",
     "Enter the total value of everything you produced for this food type over the reporting period, not the value per unit.": "Voer de totale waarde in van alles wat u voor deze voedselsoort in de verslagperiode hebt geproduceerd, niet de waarde per eenheid.",
     "Enter the total value of the waste for this food type over the same period, valued the same way as production above.": "Voer de totale waarde in van de verspilling voor deze voedselsoort in dezelfde periode, op dezelfde manier gewaardeerd als de productie hierboven.",
@@ -162,7 +163,6 @@
     "Estimate the environmental and financial impact of food waste in New Zealand food businesses.": "Schat het milieueffect en de financiële gevolgen van voedselafval bij Nieuw-Zeelandse voedselbedrijven.",
     "Estimate the environmental and financial impact of food waste, then explore how changes to its destination could affect the result.": "Schat het milieueffect en de financiële gevolgen van voedselafval en verken vervolgens hoe wijzigingen in de bestemming het resultaat kunnen beïnvloeden.",
     "Every emissions figure on the results page is built from this number.": "Elk emissiecijfer op de resultatenpagina komt voort uit dit getal.",
-    "Everything that went through this stage over the same period, waste included.": "Alles wat in dezelfde periode door deze schakel is gegaan, afval inbegrepen.",
     "Explore Improvements": "Verbeteringen verkennen",
     "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Verken geanonimiseerde, geaggregeerde statistieken uit berekeningen die zijn bijgedragen aan de Kai Commitment rekentool voor het effect van voedselafval.",
     "Explore how the recorded waste is distributed.": "Bekijk hoe het geregistreerde afval is verdeeld.",
@@ -216,7 +216,7 @@
     "Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.": "De verbeterde verdeling over de bestemmingen moet samen 100 % zijn, zodat het verbeterde scenario hetzelfde afval beschrijft als het huidige. Huidig totaal: %(total)s %.",
     "Improved scenario (Current → Improved)": "Verbeterd scenario (Huidig → Verbeterd)",
     "Incomplete": "Onvolledig",
-    "It joins the anonymous statistics only. No figure on the results page is calculated from it.": "Dit bedrag gaat alleen naar de anonieme statistieken. Geen enkel cijfer op de resultatenpagina wordt eruit berekend.",
+    "It joins the anonymous statistics, and the two together give the share of value wasted on the results page. No emissions or cost figure is calculated from it.": "Dit bedrag gaat naar de anonieme statistieken, en samen geven de twee het aandeel verspilde waarde op de resultatenpagina. Geen emissie- of kostencijfer wordt eruit berekend.",
     "It lets the results show the waste as a share of production. Leaving it empty changes no emissions figure.": "Daarmee kunnen de resultaten de verspilling tonen als aandeel van de productie. Leeg laten verandert geen enkel emissiecijfer.",
     "Kai Commitment - Leading action on food waste": "Kai Commitment - Voorop in de aanpak van voedselverspilling",
     "Kai Commitment home": "Startpagina van Kai Commitment",
@@ -226,6 +226,7 @@
     "Language": "Taal",
     "Latest news": "Laatste nieuws",
     "Latest news is temporarily unavailable. You can still use the calculator and explore the documentation.": "Het laatste nieuws is tijdelijk niet beschikbaar. U kunt de rekentool nog steeds gebruiken en de documentatie bekijken.",
+    "Line graph": "Lijngrafiek",
     "Loading aggregate statistics…": "Geaggregeerde statistieken worden geladen…",
     "Loading calculator options…": "Opties van de rekentool worden geladen…",
     "Loading calculator…": "Rekentool wordt geladen…",
@@ -281,6 +282,7 @@
     "Percentage waste": "Afvalpercentage",
     "Period end": "Einde van de periode",
     "Period start": "Begin van de periode",
+    "Pie chart": "Cirkeldiagram",
     "Placeholder data": "Voorlopige gegevens",
     "Plain-language comparisons appear when supplied by the calculation service.": "Vergelijkingen in gewone taal verschijnen zodra de rekendienst ze aanlevert.",
     "Potential Improvement": "Mogelijke verbetering",
@@ -461,5 +463,8 @@
     "no impact figures were returned": "er zijn geen effectcijfers teruggegeven",
     "saved": "bespaard",
     "tonnes": "ton"
-  }
+  },
+  "tags": [
+    "nl"
+  ]
 }

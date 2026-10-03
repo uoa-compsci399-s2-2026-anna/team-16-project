@@ -43,6 +43,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.web.base_url import CALCULATOR
 from tests.web.steps import press_continue
 
 
@@ -52,7 +53,7 @@ playwright_api = pytest.importorskip(
 )
 
 ROOT = Path(__file__).resolve().parents[2]
-BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080/index.html")
+BASE = CALCULATOR
 
 #: The compose container name, not the service name. `docker/compose.yaml` names
 #: the service `db` and the container `kaicalc-stack-db`; `docker exec` wants the
@@ -364,24 +365,24 @@ def test_matching_the_current_allocation_puts_equal_rows_at_equal_shares(page):
 
 
 def test_matching_the_current_allocation_also_satisfies_the_mass_rule_in_unit_mode(page):
-    """The repair above, in the other mode of the unit/percentage toggle.
+    """The repair above, with the panel's unit control set to a unit.
 
-    `state.improvedAllocations` holds percentages whichever mode is showing, and
-    a row's own unit is a display conversion only. That is what lets "Match the
+    `state.improvedAllocations` holds percentages whichever unit is showing, and
+    the panel's unit is a display conversion only. That is what lets "Match the
     current allocation" enable Compare Impact in either mode - and it is worth
     an assertion, because storing a mass instead would turn the exactly-100
     rule in `improvementValidation` into a floating-point comparison against a
     mass and start refusing allocations that are correct.
 
     1,000 kg is allocated across the two rows, so equal shares are 500 kg each -
-    every row defaults to kilograms in unit mode, so the boxes read 500, not
-    50, and that difference is the evidence the mode really did change rather
+    the control is set to kilograms, so the boxes read 500, not
+    50, and that difference is the evidence the unit really did change rather
     than the label alone.
     """
     calculate(page)
     page.click('[data-action="explore-improvements"]')
     page.wait_for_selector("#improvement-mode")
-    page.select_option("#improvement-mode", "unit")
+    page.select_option("#improvement-mode", "kilograms")
     page.wait_for_timeout(120)
 
     page.click('[data-action="reset-improvement"]')

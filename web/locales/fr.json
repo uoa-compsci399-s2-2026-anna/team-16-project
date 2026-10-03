@@ -1,10 +1,7 @@
 {
-  "language": "fr",
   "endonym": "Français",
+  "language": "fr",
   "machine_translated": true,
-  "tags": [
-    "fr"
-  ],
   "strings": {
     "%(amount)s combined": "%(amount)s au total",
     "%(caption)s, horizontally scrollable": "%(caption)s, défilement horizontal possible",
@@ -23,6 +20,7 @@
     "%(share)s share": "part de %(share)s",
     "%(tab)s data": "Données : %(tab)s",
     "%(tab)s data — %(entry)s": "Données : %(tab)s — %(entry)s",
+    "%(title)s chart type": "Type de graphique pour %(title)s",
     "%(title)s data": "Données : %(title)s",
     "%(title)s, charted using the API-provided share for every published bucket. The full values follow in a text list.": "%(title)s, représenté graphiquement à partir de la part fournie par l'API pour chaque catégorie publiée. Les valeurs complètes suivent sous forme de liste textuelle.",
     "(optional)": "(facultatif)",
@@ -50,6 +48,7 @@
     "Back": "Retour",
     "Back to calculator": "Retour au calculateur",
     "Background reading": "Lectures complémentaires",
+    "Bar chart": "Diagramme à barres",
     "Breakdown by category": "Répartition par catégorie",
     "Breakdowns of entries contributed to this tool": "Répartitions des saisies partagées avec cet outil",
     "By food type": "Par type d'aliment",
@@ -64,6 +63,7 @@
     "Calculator options have changed. The latest options are being loaded; please review your selections and try again.": "Les options du calculateur ont changé. Les dernières options sont en cours de chargement ; veuillez vérifier vos sélections et réessayer.",
     "Calculator unavailable": "Calculateur indisponible",
     "Cancel": "Annuler",
+    "Categories follow the service's count-ranked order, with any combined Other bucket shown last. This compares categories, not a time trend.": "Les catégories suivent l’ordre du service selon le nombre d’entrées, toute catégorie « Autres » regroupée figurant à la fin. Il s’agit d’une comparaison entre catégories, et non d’une évolution dans le temps.",
     "Category": "Catégorie",
     "Check the highlighted fields and try again.": "Vérifiez les champs signalés et réessayez.",
     "Check this entry, or add another supply-chain entry before viewing the combined results.": "Vérifiez cette entrée, ou ajoutez une autre entrée de chaîne d'approvisionnement avant de consulter les résultats combinés.",
@@ -147,6 +147,7 @@
     "Enter the date as dd/mm/yyyy.": "Saisissez la date au format dd/mm/yyyy.",
     "Enter the time as hh:mm on the 24-hour clock.": "Saisissez l'heure au format hh:mm sur 24 heures.",
     "Enter the time on a keyboard": "Saisir l'heure au clavier",
+    "Enter the total amount you produced for this food type over the same period, waste included.": "Saisissez la quantité totale que vous avez produite pour ce type d'aliment pendant la même période, déchets compris.",
     "Enter the total amount. You will allocate this total across destinations in the next step.": "Saisissez la quantité totale. Vous répartirez ce total entre les destinations à l'étape suivante.",
     "Enter the total value of everything you produced for this food type over the reporting period, not the value per unit.": "Saisissez la valeur totale de tout ce que vous avez produit pour ce type d'aliment pendant la période de référence, et non la valeur par unité.",
     "Enter the total value of the waste for this food type over the same period, valued the same way as production above.": "Saisissez la valeur totale du gaspillage pour ce type d'aliment pendant la même période, évaluée de la même manière que la production ci-dessus.",
@@ -162,7 +163,6 @@
     "Estimate the environmental and financial impact of food waste in New Zealand food businesses.": "Estimez l'impact environnemental et financier du gaspillage alimentaire dans les entreprises alimentaires néo-zélandaises.",
     "Estimate the environmental and financial impact of food waste, then explore how changes to its destination could affect the result.": "Estimez l'impact environnemental et financier du gaspillage alimentaire, puis explorez comment un changement de destination pourrait modifier le résultat.",
     "Every emissions figure on the results page is built from this number.": "Tous les chiffres d'émissions de la page de résultats sont calculés à partir de ce nombre.",
-    "Everything that went through this stage over the same period, waste included.": "Tout ce qui est passé par cette étape pendant la même période, déchets compris.",
     "Explore Improvements": "Explorer les améliorations",
     "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Explorez les statistiques agrégées et anonymisées issues des calculs transmis au calculateur d'impact du gaspillage alimentaire Kai Commitment.",
     "Explore how the recorded waste is distributed.": "Découvrez comment le gaspillage enregistré se répartit.",
@@ -216,7 +216,7 @@
     "Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.": "La répartition améliorée entre les destinations doit totaliser 100 %, afin que le scénario amélioré décrive le même gaspillage que la situation actuelle. Total actuel : %(total)s %.",
     "Improved scenario (Current → Improved)": "Scénario amélioré (Actuel → Amélioré)",
     "Incomplete": "Incomplet",
-    "It joins the anonymous statistics only. No figure on the results page is calculated from it.": "Ce montant rejoint uniquement les statistiques anonymes. Aucun chiffre de la page de résultats n'en est calculé.",
+    "It joins the anonymous statistics, and the two together give the share of value wasted on the results page. No emissions or cost figure is calculated from it.": "Ce montant rejoint les statistiques anonymes, et les deux ensemble donnent la part de la valeur gaspillée affichée sur la page de résultats. Aucun chiffre d'émissions ni de coût n'en est calculé.",
     "It lets the results show the waste as a share of production. Leaving it empty changes no emissions figure.": "Cela permet aux résultats d'exprimer le gaspillage en proportion de la production. Laisser le champ vide ne change aucun chiffre d'émissions.",
     "Kai Commitment - Leading action on food waste": "Kai Commitment - À la tête de l'action contre le gaspillage alimentaire",
     "Kai Commitment home": "Accueil Kai Commitment",
@@ -226,6 +226,7 @@
     "Language": "Langue",
     "Latest news": "Dernières actualités",
     "Latest news is temporarily unavailable. You can still use the calculator and explore the documentation.": "Les dernières actualités sont temporairement indisponibles. Vous pouvez toujours utiliser le calculateur et consulter la documentation.",
+    "Line graph": "Graphique linéaire",
     "Loading aggregate statistics…": "Chargement des statistiques agrégées…",
     "Loading calculator options…": "Chargement des options du calculateur…",
     "Loading calculator…": "Chargement du calculateur…",
@@ -281,6 +282,7 @@
     "Percentage waste": "Pourcentage de gaspillage",
     "Period end": "Fin de la période",
     "Period start": "Début de la période",
+    "Pie chart": "Diagramme circulaire",
     "Placeholder data": "Données provisoires",
     "Plain-language comparisons appear when supplied by the calculation service.": "Des comparaisons en langage courant apparaissent lorsqu'elles sont fournies par le service de calcul.",
     "Potential Improvement": "Amélioration possible",
@@ -461,5 +463,8 @@
     "no impact figures were returned": "aucun chiffre d'impact n'a été renvoyé",
     "saved": "économisé",
     "tonnes": "tonnes (t)"
-  }
+  },
+  "tags": [
+    "fr"
+  ]
 }

@@ -1,10 +1,7 @@
 {
-  "language": "th",
   "endonym": "ไทย",
+  "language": "th",
   "machine_translated": true,
-  "tags": [
-    "th"
-  ],
   "strings": {
     "%(amount)s combined": "รวม %(amount)s",
     "%(caption)s, horizontally scrollable": "%(caption)s เลื่อนตามแนวนอนได้",
@@ -23,6 +20,7 @@
     "%(share)s share": "สัดส่วน %(share)s",
     "%(tab)s data": "ข้อมูล %(tab)s",
     "%(tab)s data — %(entry)s": "ข้อมูล %(tab)s — %(entry)s",
+    "%(title)s chart type": "ประเภทแผนภูมิสำหรับ %(title)s",
     "%(title)s data": "ข้อมูล %(title)s",
     "%(title)s, charted using the API-provided share for every published bucket. The full values follow in a text list.": "%(title)s แสดงเป็นแผนภูมิโดยใช้สัดส่วนที่ API ส่งมาสำหรับทุกกลุ่มที่เผยแพร่ ค่าทั้งหมดแสดงเป็นรายการข้อความถัดไป",
     "(optional)": "(ไม่บังคับ)",
@@ -50,6 +48,7 @@
     "Back": "ย้อนกลับ",
     "Back to calculator": "กลับไปที่เครื่องคำนวณ",
     "Background reading": "เอกสารอ่านประกอบ",
+    "Bar chart": "แผนภูมิแท่ง",
     "Breakdown by category": "รายละเอียดแยกตามหมวดหมู่",
     "Breakdowns of entries contributed to this tool": "รายละเอียดแยกตามรายการที่ผู้ใช้เลือกแบ่งปันในเครื่องมือนี้",
     "By food type": "ตามประเภทอาหาร",
@@ -64,6 +63,7 @@
     "Calculator options have changed. The latest options are being loaded; please review your selections and try again.": "ตัวเลือกของเครื่องคำนวณมีการเปลี่ยนแปลง ระบบกำลังโหลดตัวเลือกล่าสุด กรุณาตรวจสอบสิ่งที่คุณเลือกไว้แล้วลองใหม่อีกครั้ง",
     "Calculator unavailable": "ใช้เครื่องคำนวณไม่ได้",
     "Cancel": "ยกเลิก",
+    "Categories follow the service's count-ranked order, with any combined Other bucket shown last. This compares categories, not a time trend.": "หมวดหมู่เรียงตามจำนวนที่บริการจัดไว้ โดยหมวด «อื่น ๆ» ที่รวมข้อมูลจะแสดงท้ายสุดหากมี นี่คือการเปรียบเทียบหมวดหมู่ ไม่ใช่แนวโน้มตามเวลา",
     "Category": "หมวดหมู่",
     "Check the highlighted fields and try again.": "ตรวจสอบช่องที่ทำเครื่องหมายไว้แล้วลองใหม่อีกครั้ง",
     "Check this entry, or add another supply-chain entry before viewing the combined results.": "ตรวจสอบรายการนี้ หรือเพิ่มรายการห่วงโซ่อุปทานอีกรายการ ก่อนดูผลลัพธ์รวม",
@@ -147,6 +147,7 @@
     "Enter the date as dd/mm/yyyy.": "กรอกวันที่ในรูปแบบ dd/mm/yyyy",
     "Enter the time as hh:mm on the 24-hour clock.": "กรอกเวลาในรูปแบบ hh:mm ตามนาฬิกาแบบ 24 ชั่วโมง",
     "Enter the time on a keyboard": "กรอกเวลาด้วยแป้นพิมพ์",
+    "Enter the total amount you produced for this food type over the same period, waste included.": "กรอกปริมาณรวมที่คุณผลิตสำหรับประเภทอาหารนี้ในช่วงเวลาเดียวกัน รวมของเสียด้วย",
     "Enter the total amount. You will allocate this total across destinations in the next step.": "กรอกปริมาณรวม คุณจะแบ่งปริมาณรวมนี้ไปยังปลายทางต่าง ๆ ในขั้นตอนถัดไป",
     "Enter the total value of everything you produced for this food type over the reporting period, not the value per unit.": "กรอกมูลค่ารวมของทุกสิ่งที่คุณผลิตสำหรับประเภทอาหารนี้ในช่วงเวลารายงาน ไม่ใช่มูลค่าต่อหน่วย",
     "Enter the total value of the waste for this food type over the same period, valued the same way as production above.": "กรอกมูลค่ารวมของของเสียสำหรับประเภทอาหารนี้ในช่วงเวลาเดียวกัน โดยตีมูลค่าด้วยวิธีเดียวกับการผลิตด้านบน",
@@ -162,7 +163,6 @@
     "Estimate the environmental and financial impact of food waste in New Zealand food businesses.": "ประเมินผลกระทบต่อสิ่งแวดล้อมและการเงินจากขยะอาหารในธุรกิจอาหารของนิวซีแลนด์",
     "Estimate the environmental and financial impact of food waste, then explore how changes to its destination could affect the result.": "ประเมินผลกระทบต่อสิ่งแวดล้อมและการเงินจากขยะอาหาร แล้วดูว่าการเปลี่ยนปลายทางของขยะจะส่งผลต่อผลลัพธ์อย่างไร",
     "Every emissions figure on the results page is built from this number.": "ตัวเลขการปล่อยก๊าซทุกตัวในหน้าผลลัพธ์คำนวณจากตัวเลขนี้",
-    "Everything that went through this stage over the same period, waste included.": "ทุกอย่างที่ผ่านขั้นตอนนี้ในช่วงเวลาเดียวกัน รวมของเสียด้วย",
     "Explore Improvements": "สำรวจแนวทางปรับปรุง",
     "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "สำรวจสถิติรวมแบบไม่ระบุตัวตนจากการคำนวณที่มอบให้แก่เครื่องคำนวณผลกระทบจากขยะอาหารของ Kai Commitment",
     "Explore how the recorded waste is distributed.": "ดูว่าขยะที่บันทึกไว้กระจายตัวอย่างไร",
@@ -216,7 +216,7 @@
     "Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.": "การจัดสรรปลายทางหลังปรับปรุงต้องรวมกันได้ 100% เพื่อให้แผนที่ปรับปรุงแล้วอธิบายขยะปริมาณเดียวกับปัจจุบัน ยอดรวมปัจจุบัน: %(total)s%",
     "Improved scenario (Current → Improved)": "แผนที่ปรับปรุงแล้ว (ปัจจุบัน → หลังปรับปรุง)",
     "Incomplete": "ไม่ครบถ้วน",
-    "It joins the anonymous statistics only. No figure on the results page is calculated from it.": "ตัวเลขนี้เข้าสู่สถิติแบบไม่ระบุตัวตนเท่านั้น ไม่มีตัวเลขใดในหน้าผลลัพธ์ที่คำนวณจากตัวเลขนี้",
+    "It joins the anonymous statistics, and the two together give the share of value wasted on the results page. No emissions or cost figure is calculated from it.": "ตัวเลขนี้เข้าสู่สถิติแบบไม่ระบุตัวตน และตัวเลขทั้งสองรวมกันให้สัดส่วนมูลค่าที่สูญเสียในหน้าผลลัพธ์ ไม่มีตัวเลขการปล่อยก๊าซหรือต้นทุนใดที่คำนวณจากตัวเลขนี้",
     "It lets the results show the waste as a share of production. Leaving it empty changes no emissions figure.": "ช่วยให้ผลลัพธ์แสดงของเสียเป็นสัดส่วนของการผลิตได้ หากเว้นว่างไว้ ตัวเลขการปล่อยก๊าซจะไม่เปลี่ยนแปลง",
     "Kai Commitment - Leading action on food waste": "Kai Commitment - ผู้นำการลงมือแก้ปัญหาขยะอาหาร",
     "Kai Commitment home": "หน้าแรกของ Kai Commitment",
@@ -226,6 +226,7 @@
     "Language": "ภาษา",
     "Latest news": "ข่าวล่าสุด",
     "Latest news is temporarily unavailable. You can still use the calculator and explore the documentation.": "ขณะนี้ยังแสดงข่าวล่าสุดไม่ได้ชั่วคราว คุณยังใช้เครื่องคำนวณและดูเอกสารประกอบได้ตามปกติ",
+    "Line graph": "กราฟเส้น",
     "Loading aggregate statistics…": "กำลังโหลดสถิติรวม…",
     "Loading calculator options…": "กำลังโหลดตัวเลือกของเครื่องคำนวณ…",
     "Loading calculator…": "กำลังโหลดเครื่องคำนวณ…",
@@ -281,6 +282,7 @@
     "Percentage waste": "สัดส่วนขยะ",
     "Period end": "สิ้นสุดช่วงเวลา",
     "Period start": "เริ่มต้นช่วงเวลา",
+    "Pie chart": "แผนภูมิวงกลม",
     "Placeholder data": "ข้อมูลชั่วคราว",
     "Plain-language comparisons appear when supplied by the calculation service.": "การเปรียบเทียบแบบเข้าใจง่ายจะปรากฏเมื่อบริการคำนวณส่งข้อมูลมาให้",
     "Potential Improvement": "โอกาสในการปรับปรุง",
@@ -461,5 +463,8 @@
     "no impact figures were returned": "ไม่มีตัวเลขผลกระทบส่งกลับมา",
     "saved": "บันทึกแล้ว",
     "tonnes": "ตัน"
-  }
+  },
+  "tags": [
+    "th"
+  ]
 }

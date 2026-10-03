@@ -1,10 +1,7 @@
 {
-  "language": "ru",
   "endonym": "Русский",
+  "language": "ru",
   "machine_translated": true,
-  "tags": [
-    "ru"
-  ],
   "strings": {
     "%(amount)s combined": "%(amount)s в сумме",
     "%(caption)s, horizontally scrollable": "%(caption)s, прокручивается по горизонтали",
@@ -23,6 +20,7 @@
     "%(share)s share": "доля %(share)s",
     "%(tab)s data": "Данные: %(tab)s",
     "%(tab)s data — %(entry)s": "Данные: %(tab)s — %(entry)s",
+    "%(title)s chart type": "Тип диаграммы для %(title)s",
     "%(title)s data": "Данные: %(title)s",
     "%(title)s, charted using the API-provided share for every published bucket. The full values follow in a text list.": "%(title)s: диаграмма построена по доле, полученной от API для каждой опубликованной группы. Полные значения приведены ниже списком.",
     "(optional)": "(необязательно)",
@@ -50,6 +48,7 @@
     "Back": "Назад",
     "Back to calculator": "Вернуться к калькулятору",
     "Background reading": "Дополнительные материалы",
+    "Bar chart": "Столбчатая диаграмма",
     "Breakdown by category": "Разбивка по категориям",
     "Breakdowns of entries contributed to this tool": "Разбивки записей, переданных в этот инструмент",
     "By food type": "По виду продуктов",
@@ -64,6 +63,7 @@
     "Calculator options have changed. The latest options are being loaded; please review your selections and try again.": "Параметры калькулятора изменились. Загружаются актуальные варианты; проверьте свой выбор и повторите попытку.",
     "Calculator unavailable": "Калькулятор недоступен",
     "Cancel": "Отмена",
+    "Categories follow the service's count-ranked order, with any combined Other bucket shown last. This compares categories, not a time trend.": "Категории следуют порядку сервиса по числу записей; объединённая категория «Прочее», если она есть, показана последней. Это сравнение категорий, а не динамика во времени.",
     "Category": "Категория",
     "Check the highlighted fields and try again.": "Проверьте выделенные поля и повторите попытку.",
     "Check this entry, or add another supply-chain entry before viewing the combined results.": "Проверьте эту запись или добавьте ещё одну запись по цепочке поставок, прежде чем смотреть общий результат.",
@@ -147,6 +147,7 @@
     "Enter the date as dd/mm/yyyy.": "Введите дату в виде dd/mm/yyyy.",
     "Enter the time as hh:mm on the 24-hour clock.": "Введите время в виде hh:mm в 24-часовом формате.",
     "Enter the time on a keyboard": "Ввести время с клавиатуры",
+    "Enter the total amount you produced for this food type over the same period, waste included.": "Введите общее количество, произведённое по этому виду продуктов за тот же период, включая отходы.",
     "Enter the total amount. You will allocate this total across destinations in the next step.": "Введите общее количество. На следующем шаге вы распределите его по способам утилизации.",
     "Enter the total value of everything you produced for this food type over the reporting period, not the value per unit.": "Введите общую стоимость всего произведённого по этому виду продуктов за отчётный период, а не стоимость единицы.",
     "Enter the total value of the waste for this food type over the same period, valued the same way as production above.": "Введите общую стоимость отходов по этому виду продуктов за тот же период, оценённую так же, как производство выше.",
@@ -162,7 +163,6 @@
     "Estimate the environmental and financial impact of food waste in New Zealand food businesses.": "Оцените экологическое и финансовое воздействие пищевых отходов на пищевых предприятиях Новой Зеландии.",
     "Estimate the environmental and financial impact of food waste, then explore how changes to its destination could affect the result.": "Оцените экологическое и финансовое воздействие пищевых отходов, а затем посмотрите, как изменение способа утилизации может повлиять на результат.",
     "Every emissions figure on the results page is built from this number.": "Каждый показатель выбросов на странице результатов строится на этом числе.",
-    "Everything that went through this stage over the same period, waste included.": "Всё, что прошло через этот этап за тот же период, включая отходы.",
     "Explore Improvements": "Посмотреть улучшения",
     "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Изучите анонимную сводную статистику по расчётам, переданным в калькулятор воздействия пищевых отходов Kai Commitment.",
     "Explore how the recorded waste is distributed.": "Посмотрите, как распределяются зарегистрированные отходы.",
@@ -216,7 +216,7 @@
     "Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.": "Распределение по способам утилизации в улучшенном сценарии должно составлять 100%, чтобы улучшенный сценарий описывал тот же объём отходов, что и текущий. Текущая сумма: %(total)s%.",
     "Improved scenario (Current → Improved)": "Улучшенный сценарий (Текущий → Улучшенный)",
     "Incomplete": "Не заполнено",
-    "It joins the anonymous statistics only. No figure on the results page is calculated from it.": "Она попадает только в анонимную статистику. Ни один показатель на странице результатов по ней не рассчитывается.",
+    "It joins the anonymous statistics, and the two together give the share of value wasted on the results page. No emissions or cost figure is calculated from it.": "Она попадает в анонимную статистику, и вместе эти два показателя дают долю утраченной стоимости на странице результатов. Ни один показатель выбросов или затрат по ней не рассчитывается.",
     "It lets the results show the waste as a share of production. Leaving it empty changes no emissions figure.": "Благодаря этому результаты покажут отходы как долю от производства. Если оставить поле пустым, ни один показатель выбросов не изменится.",
     "Kai Commitment - Leading action on food waste": "Kai Commitment - лидерство в борьбе с пищевыми отходами",
     "Kai Commitment home": "Главная страница Kai Commitment",
@@ -226,6 +226,7 @@
     "Language": "Язык",
     "Latest news": "Последние новости",
     "Latest news is temporarily unavailable. You can still use the calculator and explore the documentation.": "Последние новости временно недоступны. Вы по-прежнему можете пользоваться калькулятором и читать документацию.",
+    "Line graph": "Линейный график",
     "Loading aggregate statistics…": "Загрузка сводной статистики…",
     "Loading calculator options…": "Загрузка параметров калькулятора…",
     "Loading calculator…": "Загрузка калькулятора…",
@@ -281,6 +282,7 @@
     "Percentage waste": "Доля отходов",
     "Period end": "Конец периода",
     "Period start": "Начало периода",
+    "Pie chart": "Круговая диаграмма",
     "Placeholder data": "Условные данные",
     "Plain-language comparisons appear when supplied by the calculation service.": "Понятные сравнения появляются, когда их предоставляет сервис расчёта.",
     "Potential Improvement": "Возможное улучшение",
@@ -461,5 +463,8 @@
     "no impact figures were returned": "показатели воздействия не получены",
     "saved": "сохранено",
     "tonnes": "тонны"
-  }
+  },
+  "tags": [
+    "ru"
+  ]
 }

@@ -1,11 +1,8 @@
 {
-  "language": "ur",
-  "endonym": "اردو",
-  "machine_translated": true,
   "dir": "rtl",
-  "tags": [
-    "ur"
-  ],
+  "endonym": "اردو",
+  "language": "ur",
+  "machine_translated": true,
   "strings": {
     "%(amount)s combined": "مجموعی طور پر %(amount)s",
     "%(caption)s, horizontally scrollable": "%(caption)s، افقی طور پر سکرول کے قابل",
@@ -24,6 +21,7 @@
     "%(share)s share": "%(share)s حصہ",
     "%(tab)s data": "%(tab)s کا ڈیٹا",
     "%(tab)s data — %(entry)s": "%(tab)s کا ڈیٹا — %(entry)s",
+    "%(title)s chart type": "%(title)s کے لیے چارٹ کی قسم",
     "%(title)s data": "%(title)s کا ڈیٹا",
     "%(title)s, charted using the API-provided share for every published bucket. The full values follow in a text list.": "%(title)s، ہر شائع شدہ گروپ کے لیے API سے فراہم کردہ حصے کی مدد سے چارٹ بنایا گیا۔ مکمل اقدار آگے متن کی فہرست میں دی گئی ہیں۔",
     "(optional)": "(اختیاری)",
@@ -51,6 +49,7 @@
     "Back": "واپس",
     "Back to calculator": "کیلکولیٹر پر واپس",
     "Background reading": "پس منظر مطالعہ",
+    "Bar chart": "ستونی چارٹ",
     "Breakdown by category": "زمرے کے لحاظ سے تفصیل",
     "Breakdowns of entries contributed to this tool": "اس ٹول میں تعاون کی گئی اندراجات کی تفصیلات",
     "By food type": "کھانے کی قسم کے لحاظ سے",
@@ -65,6 +64,7 @@
     "Calculator options have changed. The latest options are being loaded; please review your selections and try again.": "کیلکولیٹر کے اختیارات بدل گئے ہیں۔ تازہ ترین اختیارات لوڈ ہو رہے ہیں؛ براہ کرم اپنے انتخاب پر نظرثانی کریں اور دوبارہ کوشش کریں۔",
     "Calculator unavailable": "کیلکولیٹر دستیاب نہیں",
     "Cancel": "منسوخ کریں",
+    "Categories follow the service's count-ranked order, with any combined Other bucket shown last. This compares categories, not a time trend.": "زمرے خدمت کی تعداد کے لحاظ سے ترتیب میں ہیں، اور اگر مشترکہ «دیگر» زمرہ ہو تو وہ آخر میں دکھایا جاتا ہے۔ یہ زمروں کا موازنہ ہے، وقت کے ساتھ رجحان نہیں۔",
     "Category": "زمرہ",
     "Check the highlighted fields and try again.": "نشان زد خانوں کو دیکھیں اور دوبارہ کوشش کریں۔",
     "Check this entry, or add another supply-chain entry before viewing the combined results.": "اس اندراج کو دیکھیں، یا مشترکہ نتائج دیکھنے سے پہلے سپلائی چین کا ایک اور اندراج شامل کریں۔",
@@ -148,6 +148,7 @@
     "Enter the date as dd/mm/yyyy.": "تاریخ dd/mm/yyyy کے طور پر درج کریں۔",
     "Enter the time as hh:mm on the 24-hour clock.": "وقت 24 گھنٹے کی گھڑی پر hh:mm کے طور پر درج کریں۔",
     "Enter the time on a keyboard": "کی بورڈ سے وقت درج کریں",
+    "Enter the total amount you produced for this food type over the same period, waste included.": "اس کھانے کی قسم کے لیے اُسی مدت میں تیار کی گئی کل مقدار درج کریں، ضیاع سمیت۔",
     "Enter the total amount. You will allocate this total across destinations in the next step.": "کل مقدار درج کریں۔ اگلے مرحلے میں آپ اس کل کو مختلف منزلوں میں تقسیم کریں گے۔",
     "Enter the total value of everything you produced for this food type over the reporting period, not the value per unit.": "اس کھانے کی قسم کے لیے رپورٹنگ مدت کے دوران تیار کی گئی ہر چیز کی کل قدر درج کریں، فی یونٹ قدر نہیں۔",
     "Enter the total value of the waste for this food type over the same period, valued the same way as production above.": "اس کھانے کی قسم کے لیے اُسی مدت کے ضیاع کی کل قدر درج کریں، اوپر والی پیداوار کی طرح ہی قدر لگا کر۔",
@@ -163,7 +164,6 @@
     "Estimate the environmental and financial impact of food waste in New Zealand food businesses.": "نیوزی لینڈ کے کھانے پینے کے کاروباروں میں کھانے کے ضیاع کے ماحولیاتی اور مالی اثر کا تخمینہ لگائیں۔",
     "Estimate the environmental and financial impact of food waste, then explore how changes to its destination could affect the result.": "کھانے کے ضیاع کے ماحولیاتی اور مالی اثر کا تخمینہ لگائیں، پھر دیکھیں کہ اس کی منزل میں تبدیلیاں نتیجے کو کیسے بدل سکتی ہیں۔",
     "Every emissions figure on the results page is built from this number.": "نتائج کے صفحے پر اخراج کا ہر عدد اسی نمبر سے بنتا ہے۔",
-    "Everything that went through this stage over the same period, waste included.": "اُسی مدت میں اس مرحلے سے گزرنے والی ہر چیز، ضیاع سمیت۔",
     "Explore Improvements": "بہتریاں دیکھیں",
     "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Kai Commitment کے کھانے کے ضیاع کے اثر کے کیلکولیٹر کو دیے گئے حسابات کے گمنام، مجموعی اعداد و شمار دیکھیں۔",
     "Explore how the recorded waste is distributed.": "دیکھیں کہ ریکارڈ کیا گیا ضیاع کیسے تقسیم ہوا ہے۔",
@@ -217,7 +217,7 @@
     "Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.": "بہتر منظرنامے میں منزلوں کی تقسیم کا مجموعہ 100% ہونا چاہیے، تاکہ بہتر منظرنامہ اتنے ہی ضیاع کو بیان کرے جتنا موجودہ۔ موجودہ مجموعہ: %(total)s%۔",
     "Improved scenario (Current → Improved)": "بہتر منظرنامہ (موجودہ → بہتر)",
     "Incomplete": "نامکمل",
-    "It joins the anonymous statistics only. No figure on the results page is calculated from it.": "یہ صرف گمنام اعداد و شمار میں شامل ہوتی ہے۔ نتائج کے صفحے کا کوئی عدد اس سے نہیں نکالا جاتا۔",
+    "It joins the anonymous statistics, and the two together give the share of value wasted on the results page. No emissions or cost figure is calculated from it.": "یہ گمنام اعداد و شمار میں شامل ہوتی ہے، اور دونوں مل کر نتائج کے صفحے پر ضائع شدہ قدر کا حصہ دیتے ہیں۔ اس سے اخراج یا لاگت کا کوئی عدد نہیں نکالا جاتا۔",
     "It lets the results show the waste as a share of production. Leaving it empty changes no emissions figure.": "اس سے نتائج ضیاع کو پیداوار کے حصے کے طور پر دکھا سکتے ہیں۔ خالی چھوڑنے سے اخراج کا کوئی عدد نہیں بدلتا۔",
     "Kai Commitment - Leading action on food waste": "Kai Commitment - کھانے کے ضیاع کے خلاف قیادت",
     "Kai Commitment home": "Kai Commitment کا ہوم صفحہ",
@@ -227,6 +227,7 @@
     "Language": "زبان",
     "Latest news": "تازہ ترین خبریں",
     "Latest news is temporarily unavailable. You can still use the calculator and explore the documentation.": "تازہ ترین خبریں عارضی طور پر دستیاب نہیں۔ آپ پھر بھی کیلکولیٹر استعمال کر سکتے ہیں اور دستاویزات دیکھ سکتے ہیں۔",
+    "Line graph": "خطی گراف",
     "Loading aggregate statistics…": "مجموعی اعداد و شمار لوڈ ہو رہے ہیں…",
     "Loading calculator options…": "کیلکولیٹر کے اختیارات لوڈ ہو رہے ہیں…",
     "Loading calculator…": "کیلکولیٹر لوڈ ہو رہا ہے…",
@@ -282,6 +283,7 @@
     "Percentage waste": "ضیاع کا فیصد",
     "Period end": "مدت کا اختتام",
     "Period start": "مدت کا آغاز",
+    "Pie chart": "دائروی چارٹ",
     "Placeholder data": "عارضی ڈیٹا",
     "Plain-language comparisons appear when supplied by the calculation service.": "آسان زبان میں موازنے اُس وقت ظاہر ہوتے ہیں جب حساب کی سروس انہیں فراہم کرے۔",
     "Potential Improvement": "ممکنہ بہتری",
@@ -462,5 +464,8 @@
     "no impact figures were returned": "اثر کے کوئی اعداد واپس نہیں آئے",
     "saved": "محفوظ ہو گیا",
     "tonnes": "ٹن"
-  }
+  },
+  "tags": [
+    "ur"
+  ]
 }

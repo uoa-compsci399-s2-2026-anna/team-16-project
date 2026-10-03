@@ -23,20 +23,21 @@ Run against an isolated stack rather than the developer's own::
 from __future__ import annotations
 
 import json
-import os
 
 import pytest
 
+from tests.web.base_url import ORIGIN
 from tests.web.steps import expand_step_cards
 
-pytestmark = pytest.mark.browser
+# The `browser` marker is applied by `conftest.py`, by location: every module
+# here is a browser suite unless it is named in its `NOT_A_BROWSER_SUITE`.
 
 pytest.importorskip(
     "playwright.sync_api",
     reason="playwright is required to drive step 2.5",
 )
 
-ROOT = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rstrip("/")
+ROOT = ORIGIN
 BASE = ROOT + "/index.html"
 
 
@@ -210,14 +211,16 @@ def test_the_right_navigation_lists_every_category_chosen_on_step_two(page, rele
     page.wait_for_selector(".item-floating-nav")
 
     links = page.evaluate(
-        "() => [...document.querySelectorAll('.item-floating-nav__links a')].map(link => ({"
-        "text: link.innerText.trim(), href: link.getAttribute('href'), current: link.getAttribute('aria-current')"
+        "() => [...document.querySelectorAll('.item-floating-nav__links button')].map(link => ({"
+        "text: link.innerText.trim(), target: link.dataset.navTarget, current: link.getAttribute('aria-current')"
         "}))"
     )
     assert [link["text"] for link in links] == [category["name"] for category in categories]
-    assert all(link["href"].startswith("#item-group-") for link in links)
-    assert all(page.locator(link["href"]).count() == 1 for link in links)
+    assert all(link["target"].startswith("item-group-") for link in links)
+    assert all(page.locator("#" + link["target"]).count() == 1 for link in links)
     assert links[0]["current"] == "location"
+    assert page.evaluate("location.hash") == ""
+    assert page.evaluate("document.querySelector('.step-floating-nav').compareDocumentPosition(document.querySelector('.item-step__content')) & Node.DOCUMENT_POSITION_FOLLOWING")
 
 
 def test_the_right_navigation_is_open_and_tracks_the_category_it_jumps_to(page, released):
@@ -228,25 +231,30 @@ def test_the_right_navigation_is_open_and_tracks_the_category_it_jumps_to(page, 
     _continue(page)
     page.wait_for_selector(".item-floating-nav")
 
-    panel = page.locator('.item-floating-nav .results-floating-nav__panel')
+    panel = page.locator('.item-floating-nav .step-floating-nav__panel')
     assert panel.is_visible()
     nav_box = page.locator('.item-floating-nav').bounding_box()
     viewport = page.viewport_size
     assert nav_box is not None and viewport is not None
     assert abs((nav_box["y"] + nav_box["height"] / 2) - viewport["height"] / 2) <= 2
-    second = page.locator('.item-floating-nav__links a').nth(1)
-    target = second.get_attribute("href")
+    second = page.locator('.item-floating-nav__links button').nth(1)
+    target = '#' + second.get_attribute("data-nav-target")
     toggle = page.locator(target + ' .step-card__toggle[aria-expanded]')
     if toggle.get_attribute('aria-expanded') == 'true':
         toggle.click()
     assert toggle.get_attribute('aria-expanded') == 'false'
-    second.click()
+    history_length = page.evaluate("history.length")
+    second.focus()
+    second.press("Enter")
     page.wait_for_function(
-        "selector => document.querySelector(`.item-floating-nav__links a[href=\"${selector}\"]`)"
+        "selector => document.querySelector(`.item-floating-nav__links button[data-nav-target=\"${selector}\"]`)"
         ".getAttribute('aria-current') === 'location'",
-        arg=target,
+        arg=target[1:],
     )
     assert toggle.get_attribute('aria-expanded') == 'true'
+    assert page.evaluate("document.activeElement.id") == toggle.get_attribute("id")
+    assert page.evaluate("location.hash") == ""
+    assert page.evaluate("history.length") == history_length
 
 
 def test_step_three_navigation_opens_the_selected_food_card(page, released):
@@ -270,17 +278,19 @@ def test_step_three_navigation_opens_the_selected_food_card(page, released):
     page.wait_for_selector(".amount-floating-nav")
     page.wait_for_function("() => window.scrollY === 0")
 
-    links = page.locator(".amount-floating-nav__links a")
+    links = page.locator(".amount-floating-nav__links button")
     assert links.all_inner_texts() == [item["name"] for item in items[:2]]
     nav_box = page.locator(".amount-floating-nav").bounding_box()
     assert nav_box is not None
     assert abs(nav_box["y"] + nav_box["height"] / 2 - page.viewport_size["height"] / 2) <= 2
 
-    second_target = links.nth(1).get_attribute("href")
+    second_target = '#' + links.nth(1).get_attribute("data-nav-target")
     assert page.locator(second_target + " .step-card__toggle").get_attribute("aria-expanded") == "false"
     links.nth(1).click()
     assert page.locator(second_target + " .step-card__toggle").get_attribute("aria-expanded") == "true"
-    assert page.locator('.amount-floating-nav__links a[aria-current="location"]').inner_text() == items[1]["name"]
+    assert page.locator('.amount-floating-nav__links button[aria-current="location"]').inner_text() == items[1]["name"]
+    links.first.click()
+    assert page.locator('.amount-floating-nav__links button[aria-current="location"]').inner_text() == items[0]["name"]
 
 
 def test_the_step_number_does_not_advance_into_the_food_panel(page, released):

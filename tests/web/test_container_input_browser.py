@@ -87,13 +87,13 @@ The four that survived first time, and what changed:
 from __future__ import annotations
 
 import json
-import os
 import re
 import urllib.request
 from decimal import Decimal
 
 import pytest
 
+from tests.web.base_url import ORIGIN
 from tests.web.steps import press_continue
 
 
@@ -108,7 +108,7 @@ pytest.importorskip(
 #: `http://localhost:18080/index.html/api/v1/taxonomy`, which 404s - and because that
 #: fixture *skips* on an unreachable taxonomy rather than failing, all twenty-four
 #: assertions in this file went green as skips and measured nothing.
-BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rstrip("/")
+BASE = ORIGIN
 
 #: The calculator's own URL. `/` serves this same file, and it is named anyway so
 #: the constant does not move when the `index` directive does.

@@ -1,10 +1,7 @@
 {
-  "language": "ja",
   "endonym": "日本語",
+  "language": "ja",
   "machine_translated": true,
-  "tags": [
-    "ja"
-  ],
   "strings": {
     "%(amount)s combined": "合計 %(amount)s",
     "%(caption)s, horizontally scrollable": "%(caption)s、横スクロールできます",
@@ -23,6 +20,7 @@
     "%(share)s share": "割合 %(share)s",
     "%(tab)s data": "%(tab)s のデータ",
     "%(tab)s data — %(entry)s": "%(tab)s のデータ — %(entry)s",
+    "%(title)s chart type": "%(title)s のグラフの種類",
     "%(title)s data": "%(title)s のデータ",
     "%(title)s, charted using the API-provided share for every published bucket. The full values follow in a text list.": "%(title)s。公開されている各区分について、API が提供した割合でグラフ化しています。すべての値は下のテキスト一覧に示します。",
     "(optional)": "（任意）",
@@ -50,6 +48,7 @@
     "Back": "戻る",
     "Back to calculator": "計算ツールに戻る",
     "Background reading": "参考資料",
+    "Bar chart": "棒グラフ",
     "Breakdown by category": "カテゴリー別の内訳",
     "Breakdowns of entries contributed to this tool": "このツールに提供された入力の内訳",
     "By food type": "食品の種類別",
@@ -64,6 +63,7 @@
     "Calculator options have changed. The latest options are being loaded; please review your selections and try again.": "計算ツールの選択肢が変更されました。最新の選択肢を読み込んでいます。選択内容を確認してから、もう一度お試しください。",
     "Calculator unavailable": "計算ツールを利用できません",
     "Cancel": "キャンセル",
+    "Categories follow the service's count-ranked order, with any combined Other bucket shown last. This compares categories, not a time trend.": "カテゴリはサービスが件数順に並べた順序に従い、統合された「その他」の項目がある場合は最後に表示されます。これはカテゴリ間の比較であり、時系列の傾向ではありません。",
     "Category": "カテゴリー",
     "Check the highlighted fields and try again.": "強調表示された項目を確認して、もう一度お試しください。",
     "Check this entry, or add another supply-chain entry before viewing the combined results.": "この入力を確認するか、まとめた結果を見る前にサプライチェーンの入力をもう一件追加してください。",
@@ -147,6 +147,7 @@
     "Enter the date as dd/mm/yyyy.": "日付は dd/mm/yyyy の形式で入力してください。",
     "Enter the time as hh:mm on the 24-hour clock.": "時刻は 24 時間制の hh:mm の形式で入力してください。",
     "Enter the time on a keyboard": "キーボードで時刻を入力する",
+    "Enter the total amount you produced for this food type over the same period, waste included.": "この食品の種類について、同じ期間に生産した総量を入力してください。廃棄分も含みます。",
     "Enter the total amount. You will allocate this total across destinations in the next step.": "合計量を入力してください。次のステップで、この合計を各廃棄先に振り分けます。",
     "Enter the total value of everything you produced for this food type over the reporting period, not the value per unit.": "この食品の種類について、報告期間中に生産したすべてのものの、単位あたりではなく合計の金額を入力してください。",
     "Enter the total value of the waste for this food type over the same period, valued the same way as production above.": "この食品の種類について、同じ期間に廃棄したものの合計金額を、上の生産の価値と同じ方法で評価して入力してください。",
@@ -162,7 +163,6 @@
     "Estimate the environmental and financial impact of food waste in New Zealand food businesses.": "ニュージーランドの食品事業における食品廃棄の環境面・経済面の影響を推計します。",
     "Estimate the environmental and financial impact of food waste, then explore how changes to its destination could affect the result.": "食品廃棄の環境面・経済面の影響を推計し、廃棄先を変えると結果がどう変わるかを確認できます。",
     "Every emissions figure on the results page is built from this number.": "結果ページの排出量の数値は、すべてこの数から算出されます。",
-    "Everything that went through this stage over the same period, waste included.": "同じ期間にこの段階を通過したすべての量です。廃棄分も含みます。",
     "Explore Improvements": "改善策を見てみる",
     "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Kai Commitment の食品廃棄インパクト計算ツールに提供された計算の、匿名化された集計統計をご覧いただけます。",
     "Explore how the recorded waste is distributed.": "記録された廃棄がどのように分かれているかを確認できます。",
@@ -216,7 +216,7 @@
     "Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.": "改善後の廃棄先の割り当ては合計 100% にする必要があります。そうすることで、改善シナリオが現状と同じ廃棄量を表します。現在の合計：%(total)s%。",
     "Improved scenario (Current → Improved)": "改善シナリオ（現状 → 改善後）",
     "Incomplete": "未入力",
-    "It joins the anonymous statistics only. No figure on the results page is calculated from it.": "匿名の統計に加わるだけです。結果ページのどの数値もこれから計算されることはありません。",
+    "It joins the anonymous statistics, and the two together give the share of value wasted on the results page. No emissions or cost figure is calculated from it.": "匿名の統計に加わり、二つの金額から結果ページの廃棄された価値の割合が求められます。排出量やコストの数値がこれから計算されることはありません。",
     "It lets the results show the waste as a share of production. Leaving it empty changes no emissions figure.": "これにより、結果で廃棄量を生産量に対する割合として示せます。空欄のままでも排出量の数値は変わりません。",
     "Kai Commitment - Leading action on food waste": "Kai Commitment - 食品廃棄への取り組みを牽引",
     "Kai Commitment home": "Kai Commitment のホーム",
@@ -226,6 +226,7 @@
     "Language": "言語",
     "Latest news": "最新のお知らせ",
     "Latest news is temporarily unavailable. You can still use the calculator and explore the documentation.": "最新のお知らせを一時的に表示できません。計算ツールとドキュメントは引き続きご利用いただけます。",
+    "Line graph": "折れ線グラフ",
     "Loading aggregate statistics…": "集計統計を読み込んでいます…",
     "Loading calculator options…": "計算ツールの選択肢を読み込んでいます…",
     "Loading calculator…": "計算ツールを読み込んでいます…",
@@ -281,6 +282,7 @@
     "Percentage waste": "廃棄の割合",
     "Period end": "期間の終了",
     "Period start": "期間の開始",
+    "Pie chart": "円グラフ",
     "Placeholder data": "仮のデータ",
     "Plain-language comparisons appear when supplied by the calculation service.": "分かりやすい換算例は、計算サービスから提供された場合に表示されます。",
     "Potential Improvement": "改善の余地",
@@ -461,5 +463,8 @@
     "no impact figures were returned": "影響の数値が返されませんでした",
     "saved": "削減",
     "tonnes": "トン"
-  }
+  },
+  "tags": [
+    "ja"
+  ]
 }

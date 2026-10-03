@@ -983,10 +983,10 @@ const itemStatus = chosen => ({
  *   with no chevron, no `aria-expanded` and nothing in the tab order — see
  *   `cardIsFixedOpen` for why a control that changes nothing is the worse answer. The one
  *   declaration such a header must not inherit from `.step-card__toggle` is
- *   `cursor: pointer`, and it is neutralised in a `style` attribute rather than in
- *   `web/css/styles.css`: this change is not permitted to touch that file, and the rule
- *   it is standing in for — a `.step-card__toggle--static { cursor: default }` beside the
- *   class it modifies — is recorded as owed.
+ *   `cursor: pointer`, and it is neutralised by
+ *   `.step-card__toggle--static { cursor: default }` in `web/css/styles.css`, beside the
+ *   class it modifies. It shipped here as a `style` attribute, because this change was
+ *   not permitted to touch that file; #160 moved it and the attribute is gone.
  * * **`always` is the strip the shut card still shows**, between the header and the body
  *   and so outside the `hidden`. #142 needs step 4's Remaining readable without opening
  *   anything; `leafSummary` already renders it with its unit and an `aria-live`, and
@@ -994,7 +994,10 @@ const itemStatus = chosen => ({
  *   already builds outside the fold is the whole of that criterion and no figure is
  *   computed twice.
  * * **`min-inline-size: 0` on the `<fieldset>`, and it is load-bearing rather than
- *   tidiness.** A fieldset's initial `min-inline-size` is `min-content`, so unlike a
+ *   tidiness.** It is `.form-panel.step-card`'s second declaration in
+ *   `web/css/styles.css`; it shipped here as a `style` attribute for the same reason as
+ *   the cursor above, and #160 moved it there too.
+ *   A fieldset's initial `min-inline-size` is `min-content`, so unlike a
  *   `<div>` it REFUSES to shrink below the widest thing inside it — and step 4's
  *   `.destination-row` is a two-column grid whose minimum is 220 + 24 + 260 = 504px.
  *   Measured on this build: at 500px the card was forced to 588px and the document
@@ -1003,16 +1006,18 @@ const itemStatus = chosen => ({
  *   `<div class="leaf-group">`, which shrinks and lets `.destination-list`'s own
  *   `overflow: hidden` clip; the `<fieldset>` does not, and
  *   `tests/web/test_horizontal_overflow.py` measures only 320 and 390, where the row is
- *   a single column and the band is invisible. The stylesheet already carries this fix
- *   twice in other dimensions (`.choice-fieldset { min-width: 0 }`,
- *   `.allocation-matrix input, .allocation-matrix select { min-inline-size: 0 }`).
+ *   a single column and the band is invisible, so the band has a test of its own in
+ *   `tests/web/test_leaf_layout_browser.py`. The stylesheet carries the same fix in
+ *   another dimension as `.choice-fieldset { min-width: 0 }`; it carried a third copy on
+ *   the matrix's own inputs until #160 deleted the withdrawn grid's rules.
  *
- * **Two declarations are in `style` attributes that belong in `web/css/styles.css`**, and
- * they are here only because this change was not permitted to touch that file while
- * another was in it: `min-inline-size: 0` above, which belongs beside
- * `.form-panel.step-card { padding: 0 }`, and `cursor: default` on the static header,
- * which belongs on a `.step-card__toggle--static` rule. Move them and delete the
- * attributes; nothing else has to change.
+ * **Neither declaration is in a `style` attribute any more.** Both were, while this
+ * change was not permitted to touch `web/css/styles.css` — `min-inline-size: 0` above
+ * and `cursor: default` on the static header — and v1.84's entry recorded both as owed
+ * there. #160 moved them, to `.form-panel.step-card` and
+ * `.step-card__toggle--static` respectively, and this function now emits no inline style
+ * at all. Nothing else changed: the computed values and the measured boxes are the same
+ * either way.
  *
  * **Deliberately plain.** The card's whole ground — background, border, radius — is one
  * element, `.step-card`, and it carries no `backdrop-filter`, no `transform` and no
@@ -1040,9 +1045,9 @@ function collapsibleCard({ step, key, anchor, name, count, forceOpen = false, st
   const open = forceOpen || cardIsOpen(step, key, count)
   const badge = `<span class="step-card__status" data-card-status data-state="${status.state}"><span class="step-card__mark" aria-hidden="true">${status.mark}</span><span data-card-status-text>${escapeHtml(status.text)}</span></span>`
   const header = fixed
-    ? `<div class="step-card__toggle step-card__toggle--static" style="cursor:default"><span class="step-card__name">${escapeHtml(name)}</span>${badge}</div>`
+    ? `<div class="step-card__toggle step-card__toggle--static"><span class="step-card__name">${escapeHtml(name)}</span>${badge}</div>`
     : `<button id="card-toggle--${anchor}" class="step-card__toggle" type="button" data-action="toggle-card" data-card-step="${step}" data-card="${keyAttr(key)}" aria-expanded="${open ? 'true' : 'false'}" aria-controls="${bodyId}"><span class="step-card__chevron ${open ? 'expanded' : ''}" aria-hidden="true">&#8964;</span><span class="step-card__name">${escapeHtml(name)}</span>${badge}</button>`
-  return `<fieldset class="form-panel step-card ${open ? 'step-card--open' : ''} ${extraClass}" style="min-inline-size:0" ${dataAttr}><legend class="sr-only">${escapeHtml(name)}</legend>${header}${always}<div class="step-card__body" id="${bodyId}" ${open ? '' : 'hidden'}>${body}</div></fieldset>`
+  return `<fieldset class="form-panel step-card ${open ? 'step-card--open' : ''} ${extraClass}" ${dataAttr}><legend class="sr-only">${escapeHtml(name)}</legend>${header}${always}<div class="step-card__body" id="${bodyId}" ${open ? '' : 'hidden'}>${body}</div></fieldset>`
 }
 
 /**
@@ -1162,11 +1167,26 @@ function leafPanel(leaf, leaves, index) {
   //: something the visible `.field-hint` does not — a hint that a tooltip repeats is a
   //: hint the visitor has been made to hover for twice.
   //:
-  //: **Nothing here may say the money figures become a cost.** Open item O-2 is exactly
-  //: that question and it is the client's to answer: what these two do today is join the
-  //: anonymous statistics, and the copy says that and stops. The sentence is shared by
-  //: both money terms because it is the same fact about both — one key, said twice.
-  const statisticsOnly = t('It joins the anonymous statistics only. No figure on the results page is calculated from it.')
+  //: **Nothing here may say the money figures become a cost.** O-2 is decided
+  //: (v1.48): `cost` is the waste levy plus disposal cost, `const_FOOD_VALUE_PER_KG`
+  //: stays at zero permanently, and the value of the food never enters a metric. So the
+  //: limit this sentence states is about the **emissions and cost figures**, which is
+  //: the claim the client actually ruled on.
+  //:
+  //: **It may not say no results figure is computed from these two, which is what it
+  //: said until #159.** The results page prints *Share of value wasted*, and §4.5
+  //: computes it as `wasted_value_nzd ÷ total_value_nzd × 100` — from exactly these
+  //: two boxes. `moneySummary` also echoes both sums back (*Total value of food
+  //: handled*, *Value of food wasted*) and `savingLines` prints `saving_nzd`, which
+  //: §4.5 derives from `wasted_value_nzd`. "Statistics only" is true in the sense that
+  //: changes no impact number and false as a claim about the whole page; the sentence
+  //: now names the one derived ratio and states the real limit.
+  //:
+  //: The sentence is shared by both money terms because it is the same fact about both
+  //: — one key, said twice. *"the two"* reads for either box: the production term's
+  //: first paragraph already says "both money figures" and the waste term's says "the
+  //: figure above".
+  const statisticsOnly = t('It joins the anonymous statistics, and the two together give the share of value wasted on the results page. No emissions or cost figure is calculated from it.')
   const amountTip = container
     ? [t('Count the containers you filled with waste over the period you are reporting, not the food inside them.'),
        t('The calculator turns the count into a weight using the container chosen above.')]
@@ -1210,6 +1230,19 @@ function leafPanel(leaf, leaves, index) {
   //: the constraint has to be in the always-visible hint.
   const amountField = `<div class="form-field ${amountFieldError ? 'has-error' : ''}"><label for="${amountId}">${term(amountLabel, amountTipId, amountTip)} <span class="required">${escapeHtml(t('(required)'))}</span></label><p class="field-hint">${escapeHtml(amountHint)}</p><input id="${amountId}" ${data(container ? 'count' : 'amount')} type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(amountValue)}" ${amountFieldError ? `aria-invalid="true" aria-describedby="${errorId}"` : ''}>${amountFieldError ? `<p class="field-error" id="${errorId}" role="alert">${escapeHtml(amountFieldError)}</p>` : ''}${container ? `<p class="container-total" id="${totalId}" aria-live="polite">${escapeHtml(containerTotalText(figures))}</p>` : ''}</div>`
   const unitField = `<div class="form-field unit-field"><label for="${unitId}">${escapeHtml(t('Unit'))} <span class="required">${escapeHtml(t('(required)'))}</span></label><p class="field-hint">${escapeHtml(t('Choose a weight, or the container you fill.'))}</p><select id="${unitId}" ${data('unit')} title="${escapeHtml(rowUnitLabel(unitSelectValue(figures)))}">${unitOptionsHtml(unitSelectValue(figures), presets)}</select></div>`
+  //: **This hint is scoped to the card, and the word "stage" is why it had to change.**
+  //: Until #158 it read "Everything that went through this stage over the same period,
+  //: waste included" — a **stage**, which is the supply chain, not this card.
+  //: `total_input_kg` is a per-leaf field: each panel's box becomes that leaf's own
+  //: `EntryInput.total_input_kg`, and `engine/calculate.py` sums them for
+  //: `totals.production_share_percent` (§4.6). So a visitor with three food types who
+  //: read it literally typed the whole stage's throughput three times, making the
+  //: denominator three times too large and the waste share three times too small — and
+  //: that share is printed on the results page, not confined to the statistics. Scoped
+  //: in the shape v1.85 settled for the two money hints ("for this food type"), one
+  //: sentence, keeping the "waste included" clarification: the denominator has to
+  //: contain the wasted mass or the share it carries is not a share of production.
+  //:
   //: **The two sentences sit in two places, and neither repeats the other.** Issue #65
   //: is the client saying this field is not explained; the explanation existed from
   //: 2026-09-19 but only behind the term tooltip, which a reader has to know is there
@@ -1218,7 +1251,7 @@ function leafPanel(leaf, leaves, index) {
   //: both in both places was tried first: `aria-describedby` makes the tooltip the
   //: label's description, so a screen reader read the same two sentences twice in a
   //: row - once after the label, once as the hint.
-  const totalInputHint = t('Everything that went through this stage over the same period, waste included.')
+  const totalInputHint = t('Enter the total amount you produced for this food type over the same period, waste included.')
   const totalInputField = `<div class="form-field ${totalInputError ? 'has-error' : ''}"><label for="${inputId}">${term(t('Total amount produced'), inputTipId, [t('It lets the results show the waste as a share of production. Leaving it empty changes no emissions figure.')])} (${escapeHtml(unitLabel(figures.totalUnit))}) <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(totalInputHint)}</p><input id="${inputId}" ${data('totalInput')} type="number" inputmode="decimal" min="0" step="0.001" value="${escapeHtml(figures.totalInputKg)}" ${totalInputError ? `aria-invalid="true" aria-describedby="${inputId}-error"` : ''}>${totalInputError ? `<p class="field-error" id="${inputId}-error" role="alert">${escapeHtml(totalInputError)}</p>` : ''}</div>`
   //: **An example value, and it carries NO thousands separator.** Both boxes are
   //: `type="number"`, which refuses `50,000` outright — a placeholder showing one would
@@ -1260,16 +1293,16 @@ function leafPanel(leaf, leaves, index) {
   //: routed back to.
   const errored = Boolean(amountFieldError || totalInputError || totalValueError || wastedValueError)
   return collapsibleCard({
-    step: 2,
+    step: AMOUNT_CARD_STEP,
     key,
-    anchor: leafSlug(leaf),
+    anchor: `amount-${index + 1}`,
     name: leafName(leaf),
     count: leaves.length,
     forceOpen: errored,
     status: cardStatus(leafSettled(2, leaf, leafName(leaf))),
     body: `<div class="zones">${zones}</div>`,
     extraClass: 'leaf-panel',
-    dataAttr: `id="amount-leaf-${leafSlug(leaf)}" data-leaf-panel="${keyAttr(key)}"`,
+    dataAttr: `id="amount-leaf-${index + 1}" data-leaf-panel="${keyAttr(key)}"`,
   })
 }
 
@@ -1379,15 +1412,15 @@ function itemFloatingNavigation() {
   if (state.foodCategories.length < 2) return ''
   const entries = state.foodCategories.map((category, index) => {
     const definition = selected(state.taxonomy.food_categories, category)
-    return { name: definition?.name || category, id: `item-group-${index + 1}-${slug(category)}` }
+    return { name: definition?.name || category, id: `item-group-${index + 1}` }
   })
   return stepFloatingNavigation(entries, 'item-floating-nav')
 }
 
 /** Shared expanded navigation for the category, amount and destination panels. */
 function stepFloatingNavigation(entries, extraClass) {
-  const links = entries.map(({ name, id }) => `<li><a href="#${id}">${escapeHtml(name)}</a></li>`).join('')
-  return `<nav class="step-floating-nav ${extraClass}" aria-label="${escapeHtml(t('Sections on this page'))}"><div class="results-floating-nav__panel"><ul class="results-floating-nav__links step-floating-nav__links ${extraClass}__links">${links}</ul></div></nav>`
+  const links = entries.map(({ name, id }) => `<li><button type="button" data-action="focus-card" data-nav-target="${id}">${escapeHtml(name)}</button></li>`).join('')
+  return `<nav class="step-floating-nav ${extraClass}" aria-label="${escapeHtml(t('Sections on this page'))}"><div class="step-floating-nav__panel"><ul class="step-floating-nav__links ${extraClass}__links">${links}</ul></div></nav>`
 }
 
 let itemNavScrollBound = false
@@ -1397,25 +1430,27 @@ let itemNavFrame = null
 function markCurrentStepSection(preferredId = null) {
   const nav = document.querySelector('.step-floating-nav')
   if (!nav) return
-  const links = [...nav.querySelectorAll('.step-floating-nav__links a[href^="#"]')]
+  const links = [...nav.querySelectorAll('.step-floating-nav__links button[data-nav-target]')]
   if (!links.length) return
   // Item groups can be much taller than result sections. Halfway down the
   // viewport changes the marker when the next group's heading is actually in
   // view, including a short final group that cannot reach the page top.
   const threshold = window.innerHeight * 0.5
   let current = links[0]
-  for (const link of links) {
-    const target = document.getElementById(link.getAttribute('href').slice(1))
-    if (target?.getClientRects().length && target.getBoundingClientRect().top <= threshold) current = link
-    else break
+  if (window.scrollY > 1) {
+    for (const link of links) {
+      const target = document.getElementById(link.dataset.navTarget)
+      if (target?.getClientRects().length && target.getBoundingClientRect().top <= threshold) current = link
+      else break
+    }
   }
   // The last group can be too close to the document end to ever reach the
   // reading line. At the bottom of the page it is nevertheless the group in
   // view, so let the document boundary settle the final item.
   const scrollable = document.documentElement.scrollHeight > window.innerHeight + 1
   const atBottom = scrollable && Math.ceil(window.scrollY + window.innerHeight) >= document.documentElement.scrollHeight - 1
-  if (atBottom) current = links[links.length - 1]
-  if (preferredId) current = links.find(link => link.getAttribute('href') === `#${preferredId}`) || current
+  if (atBottom && window.scrollY > 1) current = links[links.length - 1]
+  if (preferredId) current = links.find(link => link.dataset.navTarget === preferredId) || current
   for (const link of links) {
     if (link === current) link.setAttribute('aria-current', 'location')
     else link.removeAttribute('aria-current')
@@ -1476,13 +1511,13 @@ function itemStep() {
     return collapsibleCard({
       step: ITEM_CARD_STEP,
       key: category,
-      anchor: `item-${slug(category)}`,
+      anchor: `item-${index + 1}`,
       name: heading,
       count,
       status: itemStatus(((state.foodItems || {})[category] || []).length),
       body,
       extraClass: 'item-group',
-      dataAttr: `id="item-group-${index + 1}-${slug(category)}" data-item-group="${escapeHtml(category)}"`,
+      dataAttr: `id="item-group-${index + 1}" data-item-group="${escapeHtml(category)}"`,
     })
   }
   //: **The ceiling notice and the clear button are outside every card**, which is #138's
@@ -1490,7 +1525,152 @@ function itemStep() {
   //: shut: the boxes it explains are inside the cards and go dark there, so a message
   //: folded away with them would leave a visitor looking at nothing.
   const content = `<div class="item-step__content"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 2 }))} &middot; ${escapeHtml(t('Optional'))}</p><h1 id="item-title">${escapeHtml(t('Do you know which foods these were?'))}</h1><p class="section-intro">${escapeHtml(t('Choose the specific foods you measured, or continue without choosing any. A category with no food chosen is counted as that category.'))}</p><p class="choice-count" aria-live="polite">${escapeHtml(t('%(count)s selected', { count: chosen }))}</p>${state.foodCategories.map(group).join('')}${atCeiling ? `<p class="field-hint choice-ceiling" role="status">${escapeHtml(t('You can enter at most %(limit)s food types in one calculation. Untick one, or calculate what you have.', { limit: MAX_LEAVES }))}</p>` : ''}${chosen ? `<button type="button" class="text-button" data-action="clear-items">${escapeHtml(t('Clear all selections'))}</button>` : ''}</div>`
-  return `<section class="content-section item-step" aria-labelledby="item-title">${content}${itemFloatingNavigation()}${stepNav({ step: 1, back: 1, backAction: 'back-to-categories' })}</section>`
+  return `<section class="content-section item-step" aria-labelledby="item-title">${itemFloatingNavigation()}${content}${stepNav({ step: 1, back: 1, backAction: 'back-to-categories' })}</section>`
+}
+
+/**
+ * **The step 3 card, as a step number, in one place** — `leafProblem`'s rule block,
+ * `collapsibleCard`'s card ids and the summary's own `focus-field` all mean this step,
+ * and all three used to spell it `2` at their own call site. `ITEM_CARD_STEP` above is
+ * the same idea for step 2.5.
+ */
+const AMOUNT_CARD_STEP = 2
+
+/**
+ * **The step 3 fields a message can be attached to, and the one place that names them.**
+ *
+ * Four readers want the same list: `leafProblem` returns one of these names as the
+ * `field` it refused, `leafPanel` draws the box, `focusLeafField` moves focus to it by
+ * name, and `amountErrorItems` below prints its label. A second list of field names for
+ * one of those readers is the defect `destinationStep`'s own comment records — and the
+ * list this replaces was already a second one, and already wrong: it knew `amount` and
+ * `wastedValue` and answered **nothing at all** for `totalInput`, `totalValue`,
+ * `allocation` or any name added later, so a refusal naming one of those left the page
+ * silent.
+ *
+ * **The label is the label `leafPanel` puts on the box, by key, not a second wording.**
+ * A summary reading *Waste value* over a field labelled *Value of the waste* is a
+ * summary the visitor has to translate. `amount` is a function of the figures because it
+ * is one question asked in two modes — a mass in `#total-waste`, a count in
+ * `#unit-count` — which is exactly how `leafPanel` and `focusLeafField` both treat it.
+ *
+ * **Step 4's `allocation` is deliberately absent.** This is step 3's list, and
+ * `leafProblem(AMOUNT_CARD_STEP, …)` cannot return it. A name this map does not carry is
+ * handled rather than assumed impossible — see `amountErrorItems`' `unbound`.
+ */
+const AMOUNT_STEP_FIELD_LABELS = {
+  amount: figures => (figures.measureMode === 'container' ? t('How many containers?') : t('Waste amount')),
+  totalInput: () => t('Total amount produced'),
+  totalValue: () => t('Value of production'),
+  wastedValue: () => t('Value of the waste'),
+}
+
+/**
+ * Every step 3 field the refusal on screen is about, in card order, plus a count of the
+ * ones that could not be named.
+ *
+ * This is the index beside the step title (#133). The detailed message still belongs
+ * beside its own input; what this adds is *which cards* — a forked step 3 folds its
+ * cards, so without it a visitor is told something is wrong and has to open each card to
+ * find out which.
+ *
+ * **Two halves, because step 3 is refused in two ways.**
+ *
+ * * **Continue's own rules.** `leafProblem` is the only copy of them (v1.81) and already
+ *   answers per leaf, so this walks the leaves and asks it rather than re-deriving
+ *   anything. It must not go through `stepProblemAt`, which stops at the **first**
+ *   problem because that is all Continue needs: a summary built on it is a one-item list
+ *   naming the one card `focusLeafField` has already expanded and focused, which is a
+ *   second surface restating a single fact. #133's criterion (b) is that *each* missing
+ *   or invalid field is identified, and three blank cards are three faults.
+ * * **The server's `VALIDATION_ERROR`.** One item per scalar path `state.fieldErrors`
+ *   carries, read through `ENTRY_SCALAR_FIELDS` — the map whose own note says one place
+ *   rather than a per-call-site guess — and rooted at each leaf's own request index, the
+ *   same arithmetic `leafPanel`'s `scalarError` does.
+ *
+ * **`unbound` is what the banner needs.** It counts the refusals in play that this list
+ * could not put a name and a destination against: a detail naming a saved entry, an
+ * `alternative[…]` path or a field this form has no box for (`validationMessage` spells
+ * those out in the banner for exactly that reason), and a `leafProblem` field
+ * `AMOUNT_STEP_FIELD_LABELS` does not know. Either way the text has nowhere else to go,
+ * so `amountStep` keeps the banner. Suppressing it unconditionally loses it.
+ */
+function amountErrorItems(leaves) {
+  const single = leaves.length === 1
+  const isApiError = state.errorCode === 'VALIDATION_ERROR'
+  const isClientError = !isApiError && Boolean(state.error)
+  const items = new Map()
+  let unbound = 0
+  const add = (leaf, field) => {
+    const label = AMOUNT_STEP_FIELD_LABELS[field]
+    if (!label) {
+      unbound += 1
+      return
+    }
+    const key = leafKey(leaf)
+    // Keyed by (leaf, field) so the two halves cannot list one box twice: a money
+    // contradiction refused by Continue and a `wasted_value_nzd` the server also named
+    // are one box and therefore one item.
+    items.set(`${key}\u0000${field}`, {
+      leaf: key,
+      field,
+      food: single ? '' : leafName(leaf),
+      fieldName: label(draftLeafFigures(leaf)),
+    })
+  }
+
+  // `state.errorAt` is the gate rather than `state.error` alone, and it is the same gate
+  // `leafPanel`'s `mine()` uses: it says this message came from THIS step's Continue and
+  // named a leaf. A `BLOCKED` banner (§9.2) survives a step change by design and carries
+  // no `errorAt`, so it must not be turned into a list of blank amount boxes.
+  if (isClientError && state.errorAt?.leaf) {
+    for (const leaf of leaves) {
+      const problem = leafProblem(AMOUNT_CARD_STEP, leaf, single ? null : leafName(leaf))
+      if (problem.message) add(leaf, problem.field)
+    }
+  }
+
+  if (isApiError) {
+    const base = savedLeafCount()
+    leaves.forEach((leaf, index) => {
+      for (const [path, scalar] of Object.entries(ENTRY_SCALAR_FIELDS)) {
+        if (state.fieldErrors[`entries[${base + index}].${path}`]) add(leaf, scalar.field)
+      }
+    })
+    unbound += unboundFieldErrors().length
+  }
+  return { items: [...items.values()], unbound }
+}
+
+/**
+ * The index itself.
+ *
+ * **Each item is a `button`, not an `<a href="#id">`, and that is a privacy decision
+ * rather than a style one.** The ids on this step are `fieldId`'s —
+ * `total-waste--bakery-grains`, a slug of a food category the visitor chose — and a
+ * fragment link writes that into the address bar, where §7.2b's own note says the
+ * answers must not go: *"a URL is pasted into chats and written into intermediaries'
+ * logs."* `?step=` and `#step-3` were refused on exactly that ground, and a food is a
+ * more specific answer than a step number. It also pushed a session-history entry
+ * `history.js`'s `traverse` ignores, which made the first Back after a click a dead
+ * press. So the item navigates the way this project navigates — `data-action`, then
+ * `openedCard` and `focusLeafField`, the pair decision 3 of #134 already uses for a
+ * refused Continue.
+ *
+ * **`role="alert"`, with `--error` on the border.** The ground is the Banana tint the
+ * tangible-equivalent cards use, which is brand-correct and gives Kale text 13.28:1 on
+ * it — but against the page that surface is 1.07:1, which is an information card wearing
+ * an assertive live region's semantics. The border carries `--error` (Beetroot) instead,
+ * 9.02:1 on the painted ground, so the surface reads as the alert it declares itself to
+ * be. It keeps the announcement, because it is the only thing that tells a screen-reader
+ * visitor there are three faults rather than the one the focus was moved to. The
+ * `aria-labelledby` it used to carry pointed at its own first child, which made the title
+ * both the region's name and its content and had it read out twice.
+ */
+function amountErrorSummary(items) {
+  if (!items.length) return ''
+  const links = items.map(item => `<li><button type="button" class="amount-validation-summary__link" data-action="focus-field" data-leaf="${keyAttr(item.leaf)}" data-field="${escapeHtml(item.field)}">${item.food ? `<span>${escapeHtml(item.food)}</span><span aria-hidden="true"> &mdash; </span>` : ''}<span>${escapeHtml(item.fieldName)}</span></button></li>`).join('')
+  return `<aside class="amount-validation-summary" role="alert"><p>${escapeHtml(t('Check the highlighted fields and try again.'))}</p><ul>${links}</ul></aside>`
 }
 
 function amountStep() {
@@ -1498,19 +1678,52 @@ function amountStep() {
   const single = leaves.length === 1
   const isApiError = state.errorCode === 'VALIDATION_ERROR'
   const isClientError = !isApiError && Boolean(state.error)
+  const errors = amountErrorItems(leaves)
+  const errorSummary = amountErrorSummary(errors.items)
   // **The classification's own `else`.** A `state.error` that belongs to no leaf field on
   // this screen - `BLOCKED` (§9.2), which `clearedError` deliberately keeps across a step
   // change - matched nothing before this line and rendered nothing at all.
-  const bannerError = isApiError ? state.error : (isClientError && !state.errorAt ? state.error : null)
+  //
+  // **The summary suppresses the banner only where it says the same sentence.** With
+  // every refusal in play carrying an item of its own, `validationMessage` returns
+  // exactly `Check the highlighted fields and try again.`, which is the summary's own
+  // title printed a second time. With anything unbound it returns the long form instead,
+  // naming details no box on this page can show, and that text has nowhere else to go.
+  // Suppressing the banner unconditionally loses it: a 400 whose first detail is
+  // `entries[0].total_value_nzd` and whose second is `entries[0].alternative[0].qty_kg`
+  // lands here (`errorStep` is the first detail with a locatable step), lists one item,
+  // and would drop the second detail from the page entirely.
+  const coveredBySummary = errors.items.length > 0 && errors.unbound === 0
+  const bannerError = coveredBySummary
+    ? null
+    : isApiError
+      ? state.error
+      // **`errors.unbound` is the new clause on the client side, and it closes a hole
+      // that predates the summary.** `leafPanel` draws an inline message for `amount`
+      // and `wastedValue` only, and the `!state.errorAt` test here is false for every
+      // refusal this step produces - so a `leafProblem` rule returning any other field
+      // name rendered NOTHING: no inline message, no banner, and no summary item either.
+      : (isClientError && (!state.errorAt || errors.unbound) ? state.error : null)
   const combined = leaves.reduce((sum, leaf) => sum + (totalKilograms(draftLeafFigures(leaf)) || 0), 0)
   const combinedText = state.totalUnit === 'tonnes' ? kgToTonnes(combined) : combined
   const heading = single ? t('How much food waste are you measuring?') : t('How much of each did you waste?')
   const intro = single
     ? t('Enter the total amount. You will allocate this total across destinations in the next step.')
     : t('Enter an amount for every food type you chose. You will allocate the combined total across destinations in the next step.')
-  const content = `<div class="amount-step__content"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 3 }))}</p><h1 id="amount-title">${escapeHtml(heading)}</h1><p class="section-intro">${escapeHtml(intro)}</p>${bannerError ? `<p class="field-error api-error ${state.errorCode ? `error-${slug(state.errorCode)}` : ''}" role="alert">${escapeHtml(bannerError)}</p>` : ''}<div class="leaf-panel-list">${leaves.map((leaf, index) => leafPanel(leaf, leaves, index)).join('')}</div>${single ? '' : `<p class="combined-total" aria-live="polite"><span>${escapeHtml(t('Combined waste amount'))}</span> <strong data-combined-total>${formatNumber(combinedText, 2)} ${escapeHtml(unitLabel(state.totalUnit))}</strong></p>`}</div>`
-  const navigation = single ? '' : stepFloatingNavigation(leaves.map(leaf => ({ name: leafName(leaf), id: `amount-leaf-${leafSlug(leaf)}` })), 'amount-floating-nav')
-  return `<section class="content-section ${single ? '' : 'wide'} amount-step" aria-labelledby="amount-title">${content}${navigation}${stepNav({ step: 2, back: backTarget(2) })}</section>`
+  // **Both wrappers exist only when there is a summary to put beside the title, so a
+  // step 3 with nothing wrong with it renders byte for byte what it rendered before
+  // #133.** `.amount-heading-row` is the two-column grid and `.amount-heading-copy` is
+  // its first cell; neither has a job without a second cell, and an empty second cell
+  // beside a step title is 28px of gap with nothing in it. Emitting the inner wrapper
+  // unconditionally would also put a `<div>` into every step-3 render for the sake of
+  // the refused ones, which is a diff twenty browser tests walk through for no reason.
+  const headingMarkup = `<p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 3 }))}</p><h1 id="amount-title">${escapeHtml(heading)}</h1>`
+  const headingBlock = errorSummary
+    ? `<div class="amount-heading-row"><div class="amount-heading-copy">${headingMarkup}</div>${errorSummary}</div>`
+    : headingMarkup
+  const content = `<div class="amount-step__content">${headingBlock}<p class="section-intro">${escapeHtml(intro)}</p>${bannerError ? `<p class="field-error api-error ${state.errorCode ? `error-${slug(state.errorCode)}` : ''}" role="alert">${escapeHtml(bannerError)}</p>` : ''}<div class="leaf-panel-list">${leaves.map((leaf, index) => leafPanel(leaf, leaves, index)).join('')}</div>${single ? '' : `<p class="combined-total" aria-live="polite"><span>${escapeHtml(t('Combined waste amount'))}</span> <strong data-combined-total>${formatNumber(combinedText, 2)} ${escapeHtml(unitLabel(state.totalUnit))}</strong></p>`}</div>`
+  const navigation = single ? '' : stepFloatingNavigation(leaves.map((leaf, index) => ({ name: leafName(leaf), id: `amount-leaf-${index + 1}` })), 'amount-floating-nav')
+  return `<section class="content-section ${single ? '' : 'wide'} amount-step" aria-labelledby="amount-title">${navigation}${content}${stepNav({ step: 2, back: backTarget(2) })}</section>`
 }
 
 /**
@@ -1680,7 +1893,7 @@ function destinationStep() {
     return collapsibleCard({
       step: 3,
       key,
-      anchor: leafSlug(leaf),
+      anchor: `destination-${index + 1}`,
       name: leafName(leaf),
       count: leaves.length,
       forceOpen: Boolean(errored),
@@ -1696,7 +1909,7 @@ function destinationStep() {
       // both steps - the attribute means "this leaf's card on the screen in front of
       // you", and only one step is ever on screen.
       extraClass: 'leaf-panel',
-      dataAttr: `id="destination-leaf-${leafSlug(leaf)}" data-leaf-panel="${keyAttr(key)}"`,
+      dataAttr: `id="destination-leaf-${index + 1}" data-leaf-panel="${keyAttr(key)}"`,
     })
   }
   const intro = single
@@ -1706,10 +1919,10 @@ function destinationStep() {
   const content = `<div class="destination-step__content"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 4 }))}</p><h1 id="destination-title">${escapeHtml(t('Where did the food waste go?'))}</h1><p class="section-intro">${escapeHtml(intro)}</p>
     <div class="leaf-panel-list">${leaves.map(card).join('')}</div>
     <p class="field-error" id="allocation-error" role="alert">${escapeHtml(state.error || '')}</p></div>`
-  const navigation = stepFloatingNavigation(leaves.map(leaf => ({
-    name: leafName(leaf), id: `destination-leaf-${leafSlug(leaf)}`,
+  const navigation = single ? '' : stepFloatingNavigation(leaves.map((leaf, index) => ({
+    name: leafName(leaf), id: `destination-leaf-${index + 1}`,
   })), 'destination-floating-nav')
-  return `<section class="content-section wide destination-step" aria-labelledby="destination-title">${content}${navigation}${stepNav({ step: 3, back: backTarget(3), disabled: !canContinue })}</section>`
+  return `<section class="content-section wide destination-step" aria-labelledby="destination-title">${navigation}${content}${stepNav({ step: 3, back: backTarget(3), disabled: !canContinue })}</section>`
 }
 
 /** One leaf's destination rows, as the visitor typed them and as they reach the wire. */
@@ -2256,17 +2469,26 @@ function publicError(error) {
   }
 }
 
-// **The three round-two scalar fields, and the step whose markup owns each.** `entries[N].
-// total_input_kg` (and its two money neighbours) are answered on step 2 (`amountStep`) —
-// a fact about that function's HTML, not something derivable from the field name itself.
-// One map, in one place, rather than a per-call-site guess; `entryDestinations`'s and
+// **The three round-two scalar fields, the step whose markup owns each, and the name
+// that markup calls it.** `entries[N].total_input_kg` (and its two money neighbours) are
+// answered on step 2 (`amountStep`) — a fact about that function's HTML, not something
+// derivable from the field name itself — and the box it is answered in is
+// `data-leaf-field="totalInput"`, which is equally a fact about that HTML. One map, in
+// one place, rather than a per-call-site guess; `entryDestinations`'s and
 // `draftFieldPaths`'s own paths cover the one other kind of field this form has a box
 // for, `entries[N].current[M].qty_kg`, and that one is derived from `state.current`
 // because there is one row per destination and the row is what the path counts.
-const ENTRY_SCALAR_FIELD_STEP = {
-  total_input_kg: 2,
-  total_value_nzd: 2,
-  wasted_value_nzd: 2,
+//
+// **`field` is new (v1.87) and it is here rather than beside its one reader** because
+// the request path and the control's own name are the same correspondence stated twice
+// the moment they live apart: `amountErrorItems` had written the triple out a fourth
+// time to get at it, alongside this map, `scalarFieldPaths()` and `leafPanel`'s three
+// `scalarError(...)` calls. It was `ENTRY_SCALAR_FIELD_STEP` while the step was all it
+// carried.
+const ENTRY_SCALAR_FIELDS = {
+  total_input_kg: { step: 2, field: 'totalInput' },
+  total_value_nzd: { step: 2, field: 'totalValue' },
+  wasted_value_nzd: { step: 2, field: 'wastedValue' },
 }
 
 /**
@@ -2302,7 +2524,36 @@ const draftLeafIndices = () => {
 // of request indices. Shared by `detailStep`, which routes a rejected visitor, and
 // `validationMessage`, which must not also describe in the banner a field already
 // highlighted at its own input.
-const scalarFieldPaths = () => draftLeafIndices().flatMap(index => Object.keys(ENTRY_SCALAR_FIELD_STEP).map(key => `entries[${index}].${key}`))
+const scalarFieldPaths = () => draftLeafIndices().flatMap(index => Object.keys(ENTRY_SCALAR_FIELDS).map(key => `entries[${index}].${key}`))
+
+/**
+ * **The §9 `field` paths this screen has a box for**, as one set.
+ *
+ * `validationMessage` asks it of the response's `details[]` to decide what the banner
+ * still owes, and `unboundFieldErrors` asks it of `state.fieldErrors` to decide the same
+ * thing at render time, one step later. Two readers of one definition: a second spelling
+ * of "bound" would let the banner and the field index disagree about whether a detail had
+ * been shown anywhere, which is precisely the state in which text goes missing.
+ */
+const boundFieldPaths = () => new Set([...draftFieldPaths().filter(Boolean), ...scalarFieldPaths()])
+
+/**
+ * The live `VALIDATION_ERROR`'s fields that no box on this form can display.
+ *
+ * Read off `state.fieldErrors`, whose keys are `details[].field` verbatim
+ * (`fieldErrorMap`), because `details[]` itself is not kept on `state` — only the copy
+ * made at the moment of the response. A detail with no `field` keys as `"undefined"`,
+ * which is in no bound set and is therefore counted, which is the right answer: it has
+ * no box either.
+ *
+ * `amountStep` is the caller. It is what keeps the banner on screen for a 400 that names
+ * both a field this step draws and one it does not — the summary beside the title can
+ * only ever index the first kind.
+ */
+const unboundFieldErrors = () => {
+  const bound = boundFieldPaths()
+  return Object.keys(state.fieldErrors || {}).filter(field => !bound.has(field))
+}
 
 /**
  * The step that owns one API validation detail, or `undefined` when this form has no
@@ -2313,7 +2564,7 @@ function detailStep(detail) {
   const field = detail.field || ''
   if (scalarFieldPaths().includes(field)) {
     const key = /\.(\w+)$/.exec(field)?.[1]
-    if (key && ENTRY_SCALAR_FIELD_STEP[key] !== undefined) return ENTRY_SCALAR_FIELD_STEP[key]
+    if (key && ENTRY_SCALAR_FIELDS[key] !== undefined) return ENTRY_SCALAR_FIELDS[key].step
   }
   // A detail naming a *saved* entry has no input to highlight, which is why this
   // function used to answer `undefined` for one and let `submitCalculation` fall
@@ -2382,9 +2633,15 @@ function duplicateOf(leafIndex) {
  * banner only has to point at what is left. A detail that names anything else — a saved
  * entry, an `alternative`, a field this form has no input for — has no box to attach to
  * and would otherwise vanish entirely, so it is spelled out here instead.
+ *
+ * **Which makes the short form, and only the short form, safe to suppress on screen.**
+ * `amountStep`'s field index beside the step title says the same sentence, so printing
+ * both is printing it twice; it asks `unboundFieldErrors` — the same `boundFieldPaths`
+ * set this function uses, over the copy of the details held on `state` — so the two
+ * cannot disagree about which branch was taken.
  */
 function validationMessage(error) {
-  const bound = new Set([...draftFieldPaths().filter(Boolean), ...scalarFieldPaths()])
+  const bound = boundFieldPaths()
   const unbound = (error.details || []).filter(detail => !bound.has(detail.field))
   if (!unbound.length) return t('Check the highlighted fields and try again.')
   // The envelope's `message` is the API's own English and never varies ("Request
@@ -3247,23 +3504,24 @@ export function bindCalculator(main, retryTaxonomy) {
     // It runs before the `[data-action]` guard below, which returns early for exactly the
     // clicks this needs to see - a label is not an action.
     if (event.target.closest('.term')) event.preventDefault()
-    const stepNavLink = event.target.closest('.step-floating-nav__links a[href^="#"]')
-    if (stepNavLink) {
-      event.preventDefault()
-      const id = stepNavLink.getAttribute('href').slice(1)
-      // Every linked section now lives in a collapsible card. Open it before
-      // scrolling, so a destination row or category's foods are actually visible.
-      const card = document.getElementById(id)?.closest('.step-card')
-      const toggle = card?.querySelector('.step-card__toggle[data-card-step]')
-      if (toggle?.getAttribute('aria-expanded') === 'false') {
-        setState({ openCards: openedCard(Number(toggle.dataset.cardStep), decodeURIComponent(toggle.dataset.card || '')) })
-      }
-      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      markCurrentStepSection(id)
-    }
     const control = event.target.closest('[data-action]')
     if (!control) return
     const action = control.dataset.action
+    if (action === 'focus-card') {
+      const id = control.dataset.navTarget
+      const card = document.getElementById(id)?.closest('.step-card')
+      const toggle = card?.querySelector('.step-card__toggle[data-card-step]')
+      if (!toggle) return
+      if (toggle.getAttribute('aria-expanded') === 'false') {
+        setState({ openCards: openedCard(Number(toggle.dataset.cardStep), decodeURIComponent(toggle.dataset.card || '')) })
+      }
+      const target = document.getElementById(id)
+      const focusTarget = target?.querySelector('.step-card__toggle') || target
+      if (focusTarget) focusTarget.focus({ preventScroll: true })
+      target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      markCurrentStepSection(id)
+      return
+    }
     // **The field a refused Continue has just put the caret in, or `null`** (#134,
     // decision 3). It exists so that the scroll-to-top at the bottom of this listener
     // can stand aside: `focus()` has already brought the box into view, and a smooth
@@ -3304,6 +3562,27 @@ export function bindCalculator(main, retryTaxonomy) {
       const id = cardId(Number(control.dataset.cardStep), decodeURIComponent(control.dataset.card || ''))
       const open = state.openCards || []
       setState({ openCards: open.includes(id) ? open.filter(one => one !== id) : [...open, id] })
+    }
+    // **#133's field index beside the step 3 title, and it navigates the way this project
+    // navigates.** `openedCard` then `focusLeafField` — the identical pair decision 3 of
+    // #134 uses for a refused Continue, and the reason the index emits a `<button>`
+    // rather than an `<a href="#total-waste--bakery-grains">`: that id is a slug of a food
+    // category the visitor chose, and a fragment link puts it in the address bar, which
+    // is the one thing §7.2b's privacy note refuses. See `amountErrorSummary`.
+    //
+    // **Not in the scroll-to-top list at the foot of this listener**, for `toggle-card`'s
+    // reason and one more: `focusLeafField` has already brought the box into view, so a
+    // smooth scroll to the top would animate the page away from the field the visitor
+    // just asked for.
+    //
+    // Synchronously after the `setState`, exactly as the `continue` branch is: `main.js`'s
+    // subscriber runs inside `setState`, so the opened card is already in the document by
+    // the time this line runs. Inside a `requestAnimationFrame` it would never fire in a
+    // background tab.
+    if (action === 'focus-field') {
+      const at = { leaf: leafOf(control), field: control.dataset.field }
+      setState({ openCards: openedCard(AMOUNT_CARD_STEP, at.leaf) })
+      focusLeafField(at)
     }
     // Clearing the category takes any category-specific container with it, for the same
     // reason choosing a different one does: the preset is no longer on the list step 3
@@ -3607,23 +3886,24 @@ export function bindCalculator(main, retryTaxonomy) {
     // by the element would be erased by the next unrelated update — a keystroke in the
     // improvement panel silently unticking a consent box.
     if (target.id === 'contribute') setState({ contributeTicked: target.checked, contributeError: null })
-    // Item ⑧'s percentage/unit toggle. A discrete choice like every other `<select>`
-    // on this page, so it goes through `setState` and a full re-render rather than the
-    // keystroke-preserving patch `updateImprovementInput` uses — there is no caret in a
-    // `<select>` to lose. `improvement.js` reads `state.improvementMode` to decide what
-    // each row displays; the allocation itself, in `improvedAllocations`, is untouched.
+    // **The improvement panel's one unit control** (#74). A discrete choice like every
+    // other `<select>` on this page, so it goes through `setState` and a full re-render
+    // rather than the keystroke-preserving patch `updateImprovementInput` uses — there is
+    // no caret in a `<select>` to lose, and a full re-render is exactly what is wanted
+    // here: every row of every leaf's card has to be redrawn in the new unit together.
+    //
+    // `improvement.js` reads `state.improvementMode` — `'percentage'`, `'kilograms'`,
+    // `'tonnes'` or `preset:<code>` — to decide what every row displays; the allocation
+    // itself, in `improvedAllocations`, stays the percentage it always was (see the note
+    // on `updateImprovementInput`), so changing what the panel is SHOWN in can never
+    // change what it MEANS.
+    //
+    // **The companion `[data-improvement-unit-code]` branch is gone**, with
+    // `state.improvementRowUnits`: between 2026-09-05 and #74 each row carried a unit of
+    // its own and this handler patched one key of that map. The client asked on
+    // 17 September for one unit throughout, so there is one key and one control; see the
+    // note in `ImprovementScenario`, which keeps both asks with their dates.
     if (target.id === 'improvement-mode') setState({ improvementMode: target.value })
-    // One destination row's own DISPLAY unit in unit mode — kilograms, tonnes, or a
-    // container — changed without touching any other row's, the same discipline
-    // `data-line-field="unit"` above follows and for the same reason: a shared value
-    // read by several `<select>`s is how one CSS selector ends up describing all of
-    // them. `state.improvementRowUnits` holds nothing the allocation depends on;
-    // `improvedAllocations` stays the percentage it always was (see the note on
-    // `updateImprovementInput`), so changing what a row is SHOWN in can never change
-    // what it MEANS.
-    if (target.matches('[data-improvement-unit-code]')) {
-      setState({ improvementRowUnits: { ...state.improvementRowUnits, [target.dataset.improvementUnitCode]: target.value } })
-    }
   })
 
   /**

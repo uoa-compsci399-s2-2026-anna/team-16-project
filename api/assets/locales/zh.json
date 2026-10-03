@@ -1,14 +1,7 @@
 {
-  "language": "zh",
   "endonym": "中文（简体）",
+  "language": "zh",
   "machine_translated": false,
-  "tags": [
-    "zh",
-    "zh-Hans",
-    "zh-CN",
-    "zh-SG",
-    "zh-MY"
-  ],
   "strings": {
     "%(amount)s combined": "合计 %(amount)s",
     "%(caption)s, horizontally scrollable": "%(caption)s，可横向滚动",
@@ -27,6 +20,7 @@
     "%(share)s share": "占比 %(share)s",
     "%(tab)s data": "%(tab)s 数据",
     "%(tab)s data — %(entry)s": "%(tab)s 数据 — %(entry)s",
+    "%(title)s chart type": "%(title)s 图表类型",
     "%(title)s data": "%(title)s 数据",
     "%(title)s, charted using the API-provided share for every published bucket. The full values follow in a text list.": "%(title)s，图表按 API 提供的各个已发布分组的占比绘制。完整数值见下方的文字列表。",
     "(optional)": "（可选）",
@@ -54,6 +48,7 @@
     "Back": "返回",
     "Back to calculator": "返回计算器",
     "Background reading": "延伸阅读",
+    "Bar chart": "条形图",
     "Breakdown by category": "按类别细分",
     "Breakdowns of entries contributed to this tool": "本工具中所贡献记录的细分情况",
     "By food type": "按食物类型",
@@ -68,6 +63,7 @@
     "Calculator options have changed. The latest options are being loaded; please review your selections and try again.": "计算器的选项已更新。正在载入最新选项，请检查您的选择后重试。",
     "Calculator unavailable": "计算器暂时不可用",
     "Cancel": "取消",
+    "Categories follow the service's count-ranked order, with any combined Other bucket shown last. This compares categories, not a time trend.": "类别按服务提供的记录数排序；如有合并的“其他”类别，则列在最后。此图比较的是类别，而非随时间变化的趋势。",
     "Category": "类别",
     "Check the highlighted fields and try again.": "请检查标出的字段后重试。",
     "Check this entry, or add another supply-chain entry before viewing the combined results.": "请检查这条记录，或在查看汇总结果前再添加一条供应链记录。",
@@ -151,6 +147,7 @@
     "Enter the date as dd/mm/yyyy.": "请按 dd/mm/yyyy 的格式输入日期。",
     "Enter the time as hh:mm on the 24-hour clock.": "请按 24 小时制的 hh:mm 格式输入时间。",
     "Enter the time on a keyboard": "用键盘输入时间",
+    "Enter the total amount you produced for this food type over the same period, waste included.": "请输入这个食物类型在同一时间段内生产的总量，包括废弃的部分。",
     "Enter the total amount. You will allocate this total across destinations in the next step.": "请输入总量。下一步您会把这个总量分配到各个去向。",
     "Enter the total value of everything you produced for this food type over the reporting period, not the value per unit.": "请输入这个食物类型在本报告时间段内生产的全部产品的总价值，而不是每单位的价值。",
     "Enter the total value of the waste for this food type over the same period, valued the same way as production above.": "请输入这个食物类型在同一时间段内浪费部分的总价值，与上面的生产价值采用同一口径。",
@@ -166,7 +163,6 @@
     "Estimate the environmental and financial impact of food waste in New Zealand food businesses.": "估算新西兰食品企业的食物浪费带来的环境与经济影响。",
     "Estimate the environmental and financial impact of food waste, then explore how changes to its destination could affect the result.": "估算食物浪费带来的环境与经济影响，再看看改变浪费去向会如何影响结果。",
     "Every emissions figure on the results page is built from this number.": "结果页上的每一项排放数据都由这个数字算出。",
-    "Everything that went through this stage over the same period, waste included.": "同一时期经过这一环节的全部数量，包括废弃的部分。",
     "Explore Improvements": "探索改进空间",
     "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "浏览提供给 Kai Commitment 食物浪费影响计算器的各次计算的匿名汇总统计。",
     "Explore how the recorded waste is distributed.": "看看已记录的浪费是如何分布的。",
@@ -220,7 +216,7 @@
     "Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.": "改进方案中各去向的分配合计必须为 100%，这样改进方案描述的才是与当前方案相同的浪费量。当前合计：%(total)s%。",
     "Improved scenario (Current → Improved)": "改进方案（当前 → 改进后）",
     "Incomplete": "未填完",
-    "It joins the anonymous statistics only. No figure on the results page is calculated from it.": "它只会并入匿名统计。结果页上的任何数据都不会由它算出。",
+    "It joins the anonymous statistics, and the two together give the share of value wasted on the results page. No emissions or cost figure is calculated from it.": "它会并入匿名统计，两个金额一起算出结果页上的浪费金额占比。排放或成本的数据都不会由它算出。",
     "It lets the results show the waste as a share of production. Leaving it empty changes no emissions figure.": "有了它，结果就能以生产量的占比显示浪费量。留空不会改变任何排放数据。",
     "Kai Commitment - Leading action on food waste": "Kai Commitment - 引领食物浪费治理行动",
     "Kai Commitment home": "Kai Commitment 首页",
@@ -230,6 +226,7 @@
     "Language": "语言",
     "Latest news": "最新消息",
     "Latest news is temporarily unavailable. You can still use the calculator and explore the documentation.": "最新消息暂时无法显示。您仍然可以使用计算器并查阅文档。",
+    "Line graph": "折线图",
     "Loading aggregate statistics…": "正在载入汇总统计…",
     "Loading calculator options…": "正在载入计算器选项…",
     "Loading calculator…": "正在载入计算器…",
@@ -285,6 +282,7 @@
     "Percentage waste": "浪费百分比",
     "Period end": "时间段结束",
     "Period start": "时间段开始",
+    "Pie chart": "饼图",
     "Placeholder data": "占位数据",
     "Plain-language comparisons appear when supplied by the calculation service.": "当计算服务提供时，会显示通俗易懂的对比说明。",
     "Potential Improvement": "潜在改进空间",
@@ -465,5 +463,12 @@
     "no impact figures were returned": "未返回任何影响数据",
     "saved": "减少",
     "tonnes": "吨"
-  }
+  },
+  "tags": [
+    "zh",
+    "zh-Hans",
+    "zh-CN",
+    "zh-SG",
+    "zh-MY"
+  ]
 }

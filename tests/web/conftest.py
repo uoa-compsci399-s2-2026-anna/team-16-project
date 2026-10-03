@@ -1,4 +1,14 @@
-"""Shared Playwright driver for every `tests/web` browser test.
+"""Shared Playwright driver for every `tests/web` browser test, and the
+`browser` marker itself.
+
+**Three things live here, and the second two arrived with contract v1.91.** The
+one Playwright driver (below, and the rest of this docstring is about why it is
+one); `NOT_A_BROWSER_SUITE` and `MIXED_BY_DESIGN`, which are what decides which
+cases carry the `browser` marker, applied by location rather than by each
+author remembering to type a line; and a `-v` report-header line naming the
+origin the run is pointed at. `tests/web/base_url.py` holds the origin itself
+and `tests/web/test_suite_isolation.py` is what fails when either rule is worked
+around.
 
 Each file used to open its own `sync_playwright()` context through a
 locally-defined `browser` fixture: five at `scope="module"`
@@ -58,7 +68,158 @@ one thread are exactly the conflict this file exists to close.
 
 from __future__ import annotations
 
+import pathlib
+
 import pytest
+
+HERE = pathlib.Path(__file__).resolve().parent
+
+#: Every module under `tests/web` that does **not** need the stack up, with what
+#: it reads instead.
+#:
+#: **The list is of the non-browser files on purpose, and the direction is the
+#: whole point.** Fifteen of the thirty-six Playwright-driving modules here
+#: carried no `browser` marker, so `pytest tests/web -m "not browser"` with the
+#: stack stopped was observed doing a full sweep against the live containers -
+#: 738 passed, 3 failed, 13m44s - while the command said `not browser` and the
+#: output said 738 passed (issue #149). The reason the marker drifted is that it
+#: was a line each author had to remember to type, and the browser list is the
+#: one that grows: a new browser file is written most weeks and a new
+#: source-reading one two or three times a semester. Enumerating the browser
+#: files would put the forgettable side of the rule back where it was. So the
+#: default for a new file is `browser`, and a file that genuinely needs no stack
+#: has to say so here and say why - which is a line in a review diff rather than
+#: a thing nobody notices.
+#:
+#: Read on the same terms as `tests/web/test_i18n_web.py`'s
+#: `IDENTICAL_BY_DESIGN`: an exemption names the file and gives its reason, and
+#: `test_suite_isolation.py` fails on an entry whose file does in fact reach
+#: Playwright - so the list cannot outlive the reason it was written for.
+NOT_A_BROWSER_SUITE = {
+    "test_consent_copy.py":
+        "greps `web/*.html` and the catalogues for the sentences that describe "
+        "where a calculation goes; the copy is in the files, not on a screen",
+    "test_entry_destinations.py":
+        "runs `calculator.js::entryDestinations` under Node against a "
+        "hand-built taxonomy; no page is rendered",
+    "test_i18n_negotiation.py":
+        "runs `i18n.js`'s negotiator under Node over `navigator.languages` "
+        "lists it supplies itself",
+    "test_i18n_web.py":
+        "compares `web/locales/` and `api/assets/locales/` as files on disk, "
+        "including the SHA-256 identity the PDF depends on",
+    "test_js_syntax.py":
+        "`node --check` over every module in `web/js/`; the question is whether "
+        "the file parses, which a served page cannot answer more cheaply",
+    "test_leaf_rule.py":
+        "runs the leaf fan-out under Node; the rule is a function and is tested "
+        "as one",
+    "test_methodology_columns.py":
+        "reads `methodology.js` and the §6.3 fixtures as source text",
+    "test_period_form_bounds.py":
+        "reads `period.js`'s `MAX_HOURS_AHEAD` and `api/schemas.py`'s "
+        "`PERIOD_CEILING_HOURS` as source, because the claim is that neither "
+        "number was copied onto the other side",
+    "test_period_rules.py":
+        "calls `period.js`'s rules directly under Node",
+    "test_snapshot.py":
+        "runs `snapshot.js` under Node over `sessionStorage` states it builds",
+    "test_suite_isolation.py":
+        "reads the modules in this package as source and collects them in a "
+        "subprocess; it has to run in exactly the stack-free run whose "
+        "correctness it asserts",
+}
+
+#: Modules that hold **both** kinds of case, with what the non-browser half is.
+#:
+#: These are exempt from the blanket above and nothing else: the fixture rule in
+#: `pytest_collection_modifyitems` still marks every case in them that asks for
+#: a browser, so their Playwright half is marked and their Node half stays
+#: selectable under `-m "not browser"` exactly as it is today. Marking them
+#: wholesale would have moved 85 passing source-level cases out of the
+#: stack-free run, which is a loss of coverage dressed up as a fix.
+#:
+#: A module belongs here only because splitting it would separate two halves of
+#: one subject - `test_unit_presets.py`'s Node conversion cases and its browser
+#: cases are the same arithmetic asserted at two altitudes, and a reader
+#: checking that they agree needs them in one file.
+MIXED_BY_DESIGN = {
+    "test_results_export.py":
+        "60 cases render the export from a fixture under Node and compare the "
+        "text to the screen's own wording; 88 drive the real download. Its "
+        "browser half carries `@pytest.mark.browser` per case already",
+    "test_step_navigation.py":
+        "two cases read the improvement panel's and the allocation rows' "
+        "breakpoints out of `styles.css`; the other 126 drive the step bar",
+    "test_unit_presets.py":
+        "23 cases run `units.js`'s container conversion under Node; six drive "
+        "the select the conversion is offered on",
+}
+
+
+def pytest_report_header(config):
+    """Say which origin this run is pointed at, in the report itself.
+
+    The contamination #149 records was only ever caught by reading a failure
+    message and recognising an attribute from somebody else's tree. A line at
+    the top of the report naming the origin makes "which stack did this run
+    read?" answerable from the report, which is where the question gets asked.
+
+    Two conditions on seeing it, both measured rather than assumed. It is
+    emitted only when `tests/web` is on the command line, because
+    `pytest_report_header` is called for the initial conftests alone - which is
+    the right condition anyway, since a `pytest tests/api` run has no web origin
+    to report. And `pytest.ini` pins `-q`, which suppresses the header block
+    entirely, so it shows under `-v` and not otherwise. That is the invocation
+    somebody investigating an inexplicable failure reaches for, which is the
+    moment this line is worth anything; the skip messages in each file name
+    `BASE` either way.
+    """
+    from tests.web.base_url import DEFAULT_ORIGIN, ORIGIN
+
+    how = "default" if ORIGIN == DEFAULT_ORIGIN else "KAICALC_WEB_URL"
+    return f"tests/web origin: {ORIGIN} ({how})"
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_collection_modifyitems(config, items):
+    """Give every `tests/web` case that needs the stack the `browser` marker.
+
+    Two rules, and the first is the one that cannot be forgotten:
+
+    1. **Any case whose fixture closure contains `browser`** is marked, wherever
+       it lives. That is read off what the test asked for, so a Playwright case
+       added to a mixed module - or to `tests/web` under a name nobody thought
+       to list - is marked the moment it is written.
+    2. **Any case in a module not named in `NOT_A_BROWSER_SUITE` or
+       `MIXED_BY_DESIGN`** is marked. This is what covers the shape rule 1
+       cannot see: `test_cache_headers.py` drives no browser at all and still
+       needs the container, because its subject is the headers nginx sends.
+
+    `tryfirst` because `-m` is applied by `_pytest.mark`'s own
+    `pytest_collection_modifyitems`, and a marker added after that hook has run
+    is a marker `-m "not browser"` never sees.
+
+    **It is belt rather than braces, and that was measured rather than
+    assumed.** Removing the decorator leaves the selection byte-identical -
+    440/1351 collected under `-m "not browser"` either way - because conftest
+    plugins are registered later than the builtins and non-wrapper hooks are
+    called last-registered-first. So the ordering already favours us and
+    `tryfirst` only says so out loud, for the reader who would otherwise have to
+    know that. The claim that matters is measured in `test_suite_isolation.py`'s
+    `test_the_stack_free_selection_is_exactly_what_is_declared`, which collects
+    in a subprocess and would fail if the ordering ever changed under us.
+    """
+    for item in items:
+        path = pathlib.Path(str(item.fspath)).resolve()
+        if path.parent != HERE:
+            continue
+        if "browser" in getattr(item, "fixturenames", ()):
+            item.add_marker(pytest.mark.browser)
+            continue
+        if path.name in NOT_A_BROWSER_SUITE or path.name in MIXED_BY_DESIGN:
+            continue
+        item.add_marker(pytest.mark.browser)
 
 
 @pytest.fixture(scope="package")

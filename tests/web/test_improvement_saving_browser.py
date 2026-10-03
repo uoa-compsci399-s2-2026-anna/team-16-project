@@ -31,12 +31,12 @@ unverified, not broken.
 from __future__ import annotations
 
 import json
-import os
 import urllib.error
 import urllib.request
 
 import pytest
 
+from tests.web.base_url import API_ORIGIN, CALCULATOR
 from tests.web.steps import press_continue
 
 
@@ -45,7 +45,7 @@ playwright_api = pytest.importorskip(
     reason="playwright is required to drive Compare Impact against the real API",
 )
 
-BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080/index.html")
+BASE = CALCULATOR
 
 #: One entry, one tonne of landfill, priced. The rate §4.5 derives is
 #: `wasted_value_nzd / entry current mass` = 4500 / 1000 = $4.50 per kilogram,
@@ -70,9 +70,7 @@ PREVENTED_SHARE = "50"
 #: `refed_landfill` / `refed_prevention`; the NZ set spells them `landfill` /
 #: `prevention`. A test naming either pair passes on one deployment and times
 #: out on the other looking exactly like a layout failure.
-TAXONOMY = os.environ.get(
-    "KAICALC_API_URL", "http://localhost:18080"
-).rstrip("/") + "/api/v1/taxonomy"
+TAXONOMY = API_ORIGIN + "/api/v1/taxonomy"
 
 
 @pytest.fixture(scope="module")

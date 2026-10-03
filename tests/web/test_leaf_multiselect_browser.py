@@ -26,21 +26,21 @@ Requires the stack: ``docker compose -f docker/compose.yaml up -d --build web``.
 
 from __future__ import annotations
 
-import os
-
 import pytest
 
+from tests.web.base_url import CALCULATOR
 from tests.web.steps import expand_step_cards, press_continue
 
 
-pytestmark = pytest.mark.browser
+# The `browser` marker is applied by `conftest.py`, by location: every module
+# here is a browser suite unless it is named in its `NOT_A_BROWSER_SUITE`.
 
 playwright_api = pytest.importorskip(
     "playwright.sync_api",
     reason="playwright is required to drive the multi-select",
 )
 
-BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rstrip("/") + "/index.html"
+BASE = CALCULATOR
 
 #: `api/schemas.py`'s `MAX_ENTRIES`, restated here for the same reason
 #: `calculator.js` restates it: a client-side ceiling may refuse earlier and more
@@ -395,6 +395,276 @@ def test_the_amount_error_lands_on_the_leaf_it_is_about(page):
         f"the message does not name the food it is about: {said!r} against "
         f"{marked[1]['legend']!r}"
     )
+    summary = page.locator(".amount-validation-summary")
+    assert summary.get_attribute("role") == "alert"
+    link = summary.locator(".amount-validation-summary__link")
+    assert link.count() == 1, summary.inner_text()
+    # **Equality, because containment cannot tell the two renderings apart.** Mutating
+    # `food: single ? '' : leafName(leaf)` to `food: leafName(leaf)` survived
+    # `"Waste amount" in text`: the single-leaf item then reads "Dairy - Waste amount"
+    # and the substring is still there. One string, compared whole, kills it from both
+    # sides - here where the food must be named, and in
+    # `test_amount_step_field_errors_browser.py` where it must not be.
+    assert link.inner_text().strip() == f"{marked[1]['legend']} — Waste amount", (
+        link.inner_text()
+    )
+    # **No `href`, and the URL does not move.** `fieldId` is `total-waste--<food slug>`
+    # here, so a fragment link would write a food the visitor chose into the address bar
+    # - the one thing §7.2b's privacy note rules out, and it is why `?step=` and
+    # `#step-3` were refused. The item is a `<button>` carrying `data-action`, and the
+    # handler is `openedCard` + `focusLeafField`: decision 3 of #134's own pair.
+    assert link.get_attribute("href") is None, "the item is a link and leaks a food code"
+    before = page.url
+    link.click()
+    page.wait_for_timeout(150)
+    assert page.url == before, f"the click moved the URL: {before!r} -> {page.url!r}"
+    assert page.evaluate("() => document.activeElement.id") == fields[1], (
+        "the item did not put the caret in the box it names"
+    )
+    assert page.input_value(f"#{fields[0]}") == "500", (
+        "showing the field-specific error discarded the valid amount in the other card"
+    )
+    presentation = page.evaluate(
+        """() => {
+          const title = document.querySelector('#amount-title').getBoundingClientRect();
+          const summary = document.querySelector('.amount-validation-summary');
+          const box = summary.getBoundingClientRect();
+          return {
+            besideTitle: box.left > title.left && box.top < title.bottom && box.bottom > title.top,
+            background: getComputedStyle(summary).backgroundColor,
+            borderColor: getComputedStyle(summary).borderTopColor,
+            textColor: getComputedStyle(summary).color,
+            linkColor: getComputedStyle(summary.querySelector('.amount-validation-summary__link')).color,
+            tapTarget: summary.querySelector('.amount-validation-summary__link').getBoundingClientRect().height,
+          };
+        }"""
+    )
+    assert presentation["besideTitle"], presentation
+    assert presentation["background"] == "rgba(255, 215, 110, 0.2)", presentation
+    # **The border is the error colour, and the ground is not.** Beetroot `#87005A` is
+    # 9.02:1 against the painted panel; the Banana hairline it replaced was 1.267:1
+    # against the page and the ground 1.068:1, which is a surface wearing a `role="alert"`
+    # and not looking like one. Asserted as a value because "it looks like an alert" is
+    # not measurable and the colour is.
+    assert presentation["borderColor"] == "rgb(135, 0, 90)", presentation
+    # **Kale on a light ground, which is the brand rule and not a preference.** `--ink`
+    # on the painted panel is 13.28:1; `--muted` was the mutation that survived, because
+    # nothing asserted the text colour at all. Both the title and the items, because they
+    # are two declarations.
+    assert presentation["textColor"] == "rgb(0, 50, 35)", presentation
+    assert presentation["linkColor"] == "rgb(0, 50, 35)", presentation
+    # 44px is this project's stated minimum touch target; every input on this step is
+    # held at 54px, and these items were ~26px in a panel that stacks on a phone.
+    assert presentation["tapTarget"] >= 44, presentation
+
+
+def test_the_summary_names_every_blank_card_and_not_only_the_first(page):
+    """**Three blank cards are three faults, and #133 asks for each by name.**
+
+    `stepProblemAt` stops at the first problem because that is all Continue needs, and a
+    summary inherited from it is a one-item list calling itself a summary - naming the
+    one card `focusLeafField` has already expanded and focused, and saying nothing about
+    the two still folded below it. Measured before the fix: three blank leaves produced
+    one item (`total-waste--dairy`) while two cards kept a `hidden` body.
+
+    Mutation: building the list from `stepProblemAt` rather than from a walk of
+    `leafProblem` returns it to one item and fails here by count.
+    """
+    _to_food_step(page)
+    _tick(page, 0, 1, 2)
+    press_continue(page)
+    _amount_step(page)
+    legends = page.evaluate(
+        "() => [...document.querySelectorAll('.leaf-panel legend')].map(e => e.textContent.trim())"
+    )
+    assert len(legends) == 3, legends
+    press_continue(page)
+    page.wait_for_selector(".amount-validation-summary")
+    said = page.evaluate(
+        """() => [...document.querySelectorAll('.amount-validation-summary__link')]
+                 .map(e => e.textContent.replace(/\\s+/g, ' ').trim())"""
+    )
+    assert said == [f"{legend} — Waste amount" for legend in legends], said
+
+
+def test_the_summary_names_the_container_question_where_the_card_counts_containers(page):
+    """The amount is one question in two modes, and the index must say which is asked.
+
+    `leafProblem` answers `field: 'amount'` for both, so the label is read off the card's
+    own `measureMode` exactly as `leafPanel` reads it - otherwise a card measuring
+    wheelie bins is indexed under "Waste amount", a label that card does not carry.
+    Nothing reached this branch before: the container card renders `#unit-count--<slug>`
+    and no assertion went near it.
+
+    Mutation: dropping the `measureMode` test from `AMOUNT_STEP_FIELD_LABELS.amount`
+    prints "Waste amount" here and fails by equality.
+    """
+    _to_food_step(page)
+    _tick(page, 0, 1)
+    press_continue(page)
+    _amount_step(page)
+    units = page.locator('[data-leaf-field="unit"]')
+    preset = page.evaluate(
+        """() => {
+             const option = [...document.querySelectorAll('[data-leaf-field=unit] option')]
+               .find(o => o.value.startsWith('preset:'));
+             return option ? option.value : null;
+           }"""
+    )
+    if preset is None:  # pragma: no cover - environment guard
+        pytest.skip("this deployment's taxonomy carries no unit_preset to choose")
+    units.nth(0).select_option(preset)
+    page.wait_for_timeout(120)
+    _amount_step(page)
+    fields = _amount_fields(page)
+    # The second card is answered in full, so the only fault left is the first card's
+    # empty container count - otherwise the item asserted below could be about the other
+    # card and satisfy this for the wrong reason.
+    page.fill(f"#{fields[-1]}", "500")
+    page.wait_for_timeout(80)
+    press_continue(page)
+    page.wait_for_selector(".amount-validation-summary")
+    legends = page.evaluate(
+        "() => [...document.querySelectorAll('.leaf-panel legend')].map(e => e.textContent.trim())"
+    )
+    said = page.evaluate(
+        """() => [...document.querySelectorAll('.amount-validation-summary__link')]
+                 .map(e => e.textContent.replace(/\\s+/g, ' ').trim())"""
+    )
+    assert said == [f"{legends[0]} — How many containers?"], said
+    page.locator(".amount-validation-summary__link").click()
+    page.wait_for_timeout(150)
+    assert page.evaluate("() => document.activeElement.dataset.leafField") == "count", (
+        "the item did not reach the container count box"
+    )
+
+
+@pytest.mark.parametrize("width", [849, 851])
+def test_the_summary_shares_the_title_s_row_only_above_its_own_breakpoint(page, width):
+    """**The 850px seam, pinned from inside.**
+
+    The narrow assertions below require a stack above 390 and the wide one requires a
+    shared row at or below 1278, so `min-width: 500px` and `min-width: 1200px` both
+    satisfied every other assertion in this file and the value itself was untested
+    across 391-1278. Two widths one pixel either side of it is what makes the number
+    the thing being measured.
+
+    Mutation: moving the media query to 500px or to 1200px fails one of the two.
+    """
+    page.set_viewport_size({"width": width, "height": 900})
+    _to_food_step(page)
+    _tick(page, 0, 1)
+    press_continue(page)
+    _amount_step(page)
+    press_continue(page)
+    page.wait_for_selector(".amount-validation-summary")
+    layout = page.evaluate(
+        """() => {
+          const title = document.querySelector('#amount-title').getBoundingClientRect();
+          const summary = document.querySelector('.amount-validation-summary').getBoundingClientRect();
+          return { titleBottom: title.bottom, titleRight: title.right,
+                   summaryTop: summary.top, summaryLeft: summary.left };
+        }"""
+    )
+    if width < 850:
+        assert layout["summaryTop"] >= layout["titleBottom"], layout
+    else:
+        assert layout["summaryTop"] < layout["titleBottom"], layout
+        assert layout["summaryLeft"] >= layout["titleRight"], layout
+
+
+@pytest.fixture(scope="module")
+def scrollbar_browser(_playwright):
+    """Chromium **with its scrollbars drawn**, for the two narrow-width assertions below.
+
+    `tests/web/test_horizontal_overflow.py` is the instrument for this claim and its
+    module docstring is the reasoning: Playwright launches headless Chromium with
+    `--hide-scrollbars`, under which `documentElement.clientWidth == innerWidth` and
+    every `scrollWidth <= clientWidth` assertion measures 320 against 320 instead of
+    305 against 320 - *"a test that reads zero because it cannot see is worse than no
+    test."* The previous version of this measurement took the shared `browser` fixture
+    and was blind in exactly that way.
+
+    **It is here rather than in that file for two reasons, and only the second
+    one still holds.** That file was the *only* module under `tests/web` with no
+    environment override at all - 36 of the 37 that named `http://localhost:18080`
+    already read `KAICALC_WEB_URL`, measured on `origin/main` at v1.91 - so it
+    could not be pointed at a worktree's own container, and a test that can only
+    ever be run against the shared stack is a test nobody runs before they push.
+    That is fixed: both files take their origin from `tests/web/base_url.py` now.
+    What has not changed is that **`test_horizontal_overflow.py` does not reach
+    step 3**: its `/index.html` case presses Start and waits for `#stage-title`,
+    which is step *one*, so the step-3 measurement has to live somewhere that
+    drives a forked chain - here. The scrollbar-visible `browser` override is
+    local to this module for the same reason. Built on the package-scoped
+    `_playwright` driver rather than a second `sync_playwright()`, for the reason
+    `tests/web/conftest.py` gives.
+    """
+    instance = _playwright.chromium.launch(ignore_default_args=["--hide-scrollbars"])
+    yield instance
+    instance.close()
+
+
+#: German builds unbreakable compounds and Arabic is RTL; `test_horizontal_overflow.py`'s
+#: own docstring records that **two of the three overflows that file now catches were
+#: German-only**, and the panel's longest whitespace-free token across the twenty
+#: catalogues is 49 characters (Thai), 27 (Japanese) - so an English-only measurement of
+#: a text panel measures the shortest case it has.
+@pytest.mark.parametrize("language", ["ar", "de", "en"])
+@pytest.mark.parametrize("width", [320, 390])
+def test_the_amount_error_summary_stacks_without_sideways_scroll(scrollbar_browser, width, language):
+    """The title and its summary share a row only when that row has room for both."""
+    context = scrollbar_browser.new_context(
+        viewport={"width": width, "height": 700},
+        locale=language,
+        extra_http_headers={"Accept-Language": f"{language},en;q=0.5"},
+    )
+    page = context.new_page()
+    try:
+        page.goto(f"{BASE}?lang={language}", wait_until="networkidle", timeout=15000)
+    except Exception as error:  # pragma: no cover - environment guard
+        context.close()
+        pytest.skip(f"the front end is not being served at {BASE}: {error}")
+    try:
+        page.wait_for_selector('[data-action="start"]', timeout=10000)
+        _to_food_step(page)
+        _tick(page, 0, 1)
+        press_continue(page)
+        _amount_step(page)
+        press_continue(page)
+        page.wait_for_selector(".amount-validation-summary")
+        layout = page.evaluate(
+            """() => {
+              const title = document.querySelector('#amount-title').getBoundingClientRect();
+              const summary = document.querySelector('.amount-validation-summary').getBoundingClientRect();
+              return {
+                titleBottom: title.bottom,
+                summaryTop: summary.top,
+                scrollWidth: document.documentElement.scrollWidth,
+                clientWidth: document.documentElement.clientWidth,
+                innerWidth: window.innerWidth,
+              };
+            }"""
+        )
+        # The guard `test_horizontal_overflow.py` keeps for the same reason: if the
+        # scrollbar is hidden again by a flag rename or a headless-mode change, this
+        # whole measurement goes blind rather than failing, so it fails by name instead.
+        assert layout["clientWidth"] < layout["innerWidth"], (
+            f"the browser is not drawing a scrollbar ({layout}); check that "
+            "`scrollbar_browser` still passes ignore_default_args=['--hide-scrollbars']"
+        )
+        assert layout["summaryTop"] >= layout["titleBottom"], layout
+        # **The floor is `test_horizontal_overflow.py`'s `MIN_CONTENT_WIDTH`, and the
+        # first run of this measurement is why.** `body { min-width: 320px }` holds the
+        # document at 320 while a drawn scrollbar leaves a 305px content box, so a bare
+        # `scrollWidth <= clientWidth` fails at 320px on every page of this site - step 3
+        # with no error on screen at all measured 320 against 305, with no element
+        # overflowing. It does not blunt the assertion: at 390 `max()` returns
+        # `clientWidth` untouched, and a real overflow at 320 is measured against 320.
+        allowed = max(layout["clientWidth"], 320)
+        assert layout["scrollWidth"] <= allowed, (layout, allowed)
+    finally:
+        context.close()
 
 
 def test_two_leaves_producing_the_identical_sentence_mark_only_the_one_at_fault(page):

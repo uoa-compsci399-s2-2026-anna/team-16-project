@@ -1,10 +1,7 @@
 {
-  "language": "vi",
   "endonym": "Tiếng Việt",
+  "language": "vi",
   "machine_translated": true,
-  "tags": [
-    "vi"
-  ],
   "strings": {
     "%(amount)s combined": "tổng cộng %(amount)s",
     "%(caption)s, horizontally scrollable": "%(caption)s, cuộn ngang được",
@@ -23,6 +20,7 @@
     "%(share)s share": "tỷ lệ %(share)s",
     "%(tab)s data": "Dữ liệu %(tab)s",
     "%(tab)s data — %(entry)s": "Dữ liệu %(tab)s — %(entry)s",
+    "%(title)s chart type": "Loại biểu đồ cho %(title)s",
     "%(title)s data": "Dữ liệu %(title)s",
     "%(title)s, charted using the API-provided share for every published bucket. The full values follow in a text list.": "%(title)s, được vẽ theo tỷ lệ do API cung cấp cho từng nhóm đã công bố. Các giá trị đầy đủ được liệt kê bên dưới.",
     "(optional)": "(tùy chọn)",
@@ -50,6 +48,7 @@
     "Back": "Quay lại",
     "Back to calculator": "Quay lại công cụ tính",
     "Background reading": "Tài liệu tham khảo",
+    "Bar chart": "Biểu đồ cột",
     "Breakdown by category": "Phân tích theo nhóm",
     "Breakdowns of entries contributed to this tool": "Phân tích các mục đã được đóng góp cho công cụ này",
     "By food type": "Theo loại thực phẩm",
@@ -64,6 +63,7 @@
     "Calculator options have changed. The latest options are being loaded; please review your selections and try again.": "Các tùy chọn của công cụ tính đã thay đổi. Hệ thống đang tải các tùy chọn mới nhất; vui lòng xem lại lựa chọn của bạn và thử lại.",
     "Calculator unavailable": "Không dùng được công cụ tính",
     "Cancel": "Hủy",
+    "Categories follow the service's count-ranked order, with any combined Other bucket shown last. This compares categories, not a time trend.": "Các nhóm giữ nguyên thứ tự theo số lượng do dịch vụ sắp xếp; nhóm Khác được gộp, nếu có, nằm cuối. Đây là so sánh giữa các nhóm, không phải xu hướng theo thời gian.",
     "Category": "Danh mục",
     "Check the highlighted fields and try again.": "Hãy kiểm tra các ô được đánh dấu rồi thử lại.",
     "Check this entry, or add another supply-chain entry before viewing the combined results.": "Hãy kiểm tra mục này, hoặc thêm một mục chuỗi cung ứng khác trước khi xem kết quả tổng hợp.",
@@ -147,6 +147,7 @@
     "Enter the date as dd/mm/yyyy.": "Nhập ngày theo dạng dd/mm/yyyy.",
     "Enter the time as hh:mm on the 24-hour clock.": "Nhập giờ theo dạng hh:mm trên đồng hồ 24 giờ.",
     "Enter the time on a keyboard": "Nhập giờ bằng bàn phím",
+    "Enter the total amount you produced for this food type over the same period, waste included.": "Nhập tổng lượng bạn đã sản xuất cho loại thực phẩm này trong cùng kỳ, bao gồm cả phần bỏ đi.",
     "Enter the total amount. You will allocate this total across destinations in the next step.": "Nhập tổng lượng. Bạn sẽ phân bổ tổng này cho các điểm đến ở bước tiếp theo.",
     "Enter the total value of everything you produced for this food type over the reporting period, not the value per unit.": "Nhập tổng giá trị của mọi thứ bạn đã sản xuất cho loại thực phẩm này trong kỳ báo cáo, không phải giá trị mỗi đơn vị.",
     "Enter the total value of the waste for this food type over the same period, valued the same way as production above.": "Nhập tổng giá trị lượng lãng phí của loại thực phẩm này trong cùng kỳ, định giá theo cùng cách với sản xuất ở trên.",
@@ -162,7 +163,6 @@
     "Estimate the environmental and financial impact of food waste in New Zealand food businesses.": "Ước tính tác động môi trường và tài chính của thực phẩm bỏ đi tại các doanh nghiệp thực phẩm ở New Zealand.",
     "Estimate the environmental and financial impact of food waste, then explore how changes to its destination could affect the result.": "Ước tính tác động môi trường và tài chính của thực phẩm bỏ đi, rồi xem việc thay đổi điểm đến có thể ảnh hưởng đến kết quả ra sao.",
     "Every emissions figure on the results page is built from this number.": "Mọi con số phát thải trên trang kết quả đều được tính từ số này.",
-    "Everything that went through this stage over the same period, waste included.": "Toàn bộ lượng đã đi qua giai đoạn này trong cùng kỳ, bao gồm cả phần bỏ đi.",
     "Explore Improvements": "Tìm hiểu các cải thiện",
     "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Khám phá thống kê tổng hợp, ẩn danh từ các phép tính đã đóng góp cho công cụ tính tác động của thực phẩm bỏ đi Kai Commitment.",
     "Explore how the recorded waste is distributed.": "Xem lượng bỏ đi đã ghi nhận được phân bổ ra sao.",
@@ -216,7 +216,7 @@
     "Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.": "Phân bổ cho các điểm đến sau cải thiện phải cộng lại thành 100%, để kịch bản cải thiện mô tả đúng lượng bỏ đi như hiện tại. Tổng hiện tại: %(total)s%.",
     "Improved scenario (Current → Improved)": "Kịch bản cải thiện (Hiện tại → Cải thiện)",
     "Incomplete": "Chưa đủ",
-    "It joins the anonymous statistics only. No figure on the results page is calculated from it.": "Nó chỉ đi vào phần thống kê ẩn danh. Không con số nào trên trang kết quả được tính từ nó.",
+    "It joins the anonymous statistics, and the two together give the share of value wasted on the results page. No emissions or cost figure is calculated from it.": "Nó đi vào phần thống kê ẩn danh, và hai con số cùng nhau cho ra tỷ lệ giá trị bị lãng phí trên trang kết quả. Không con số phát thải hay chi phí nào được tính từ nó.",
     "It lets the results show the waste as a share of production. Leaving it empty changes no emissions figure.": "Nhờ đó kết quả có thể hiển thị lượng bỏ đi theo tỷ lệ so với sản lượng. Để trống thì không con số phát thải nào thay đổi.",
     "Kai Commitment - Leading action on food waste": "Kai Commitment - Dẫn đầu hành động về thực phẩm bỏ đi",
     "Kai Commitment home": "Trang chủ Kai Commitment",
@@ -226,6 +226,7 @@
     "Language": "Ngôn ngữ",
     "Latest news": "Tin mới nhất",
     "Latest news is temporarily unavailable. You can still use the calculator and explore the documentation.": "Tạm thời không xem được tin mới nhất. Bạn vẫn có thể dùng công cụ tính và xem tài liệu.",
+    "Line graph": "Biểu đồ đường",
     "Loading aggregate statistics…": "Đang tải thống kê tổng hợp…",
     "Loading calculator options…": "Đang tải các tùy chọn của công cụ tính…",
     "Loading calculator…": "Đang tải công cụ tính…",
@@ -281,6 +282,7 @@
     "Percentage waste": "Tỷ lệ bỏ đi",
     "Period end": "Kết thúc kỳ",
     "Period start": "Bắt đầu kỳ",
+    "Pie chart": "Biểu đồ tròn",
     "Placeholder data": "Dữ liệu tạm",
     "Plain-language comparisons appear when supplied by the calculation service.": "Các phép so sánh dễ hình dung sẽ xuất hiện khi dịch vụ tính toán cung cấp.",
     "Potential Improvement": "Mức cải thiện tiềm năng",
@@ -461,5 +463,8 @@
     "no impact figures were returned": "không có số liệu tác động nào được trả về",
     "saved": "đã lưu",
     "tonnes": "tấn"
-  }
+  },
+  "tags": [
+    "vi"
+  ]
 }

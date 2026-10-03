@@ -148,6 +148,13 @@ LANGUAGES = i18n_keys.catalogue_languages()
 SOURCE = i18n_keys.source_strings()
 
 
+def test_statistics_selector_copy_is_extracted():
+    assert {
+        "Pie chart", "Bar chart", "Line graph", "%(title)s chart type",
+        "Categories follow the service's count-ranked order, with any combined Other bucket shown last. This compares categories, not a time trend.",
+    } <= i18n_keys.source_strings()
+
+
 def test_the_manifest_lists_exactly_the_catalogues_on_disk():
     """`index.json` is the browser's `glob`, and a browser cannot glob.
 

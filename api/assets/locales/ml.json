@@ -1,10 +1,7 @@
 {
-  "language": "ml",
   "endonym": "മലയാളം",
+  "language": "ml",
   "machine_translated": true,
-  "tags": [
-    "ml"
-  ],
   "strings": {
     "%(amount)s combined": "ആകെ %(amount)s",
     "%(caption)s, horizontally scrollable": "%(caption)s, തിരശ്ചീനമായി സ്ക്രോൾ ചെയ്യാവുന്നത്",
@@ -23,6 +20,7 @@
     "%(share)s share": "%(share)s വിഹിതം",
     "%(tab)s data": "%(tab)s ഡാറ്റ",
     "%(tab)s data — %(entry)s": "%(tab)s ഡാറ്റ — %(entry)s",
+    "%(title)s chart type": "%(title)s എന്നതിനുള്ള ചാർട്ട് തരം",
     "%(title)s data": "%(title)s ഡാറ്റ",
     "%(title)s, charted using the API-provided share for every published bucket. The full values follow in a text list.": "%(title)s, പ്രസിദ്ധീകരിച്ച ഓരോ ഗണത്തിനും API നൽകിയ വിഹിതം ഉപയോഗിച്ച് വരച്ചത്. പൂർണ്ണ മൂല്യങ്ങൾ താഴെ ഒരു എഴുത്തുപട്ടികയിലുണ്ട്.",
     "(optional)": "(ഐച്ഛികം)",
@@ -50,6 +48,7 @@
     "Back": "പിന്നോട്ട്",
     "Back to calculator": "കാൽക്കുലേറ്ററിലേക്ക് മടങ്ങുക",
     "Background reading": "പശ്ചാത്തല വായന",
+    "Bar chart": "ബാർ ചാർട്ട്",
     "Breakdown by category": "വിഭാഗം അനുസരിച്ചുള്ള വിശദാംശം",
     "Breakdowns of entries contributed to this tool": "ഈ ഉപകരണത്തിന് സംഭാവന ചെയ്ത എൻട്രികളുടെ വിശദാംശങ്ങൾ",
     "By food type": "ഭക്ഷ്യ ഇനം അനുസരിച്ച്",
@@ -64,6 +63,7 @@
     "Calculator options have changed. The latest options are being loaded; please review your selections and try again.": "കാൽക്കുലേറ്റർ ഓപ്ഷനുകൾ മാറിയിട്ടുണ്ട്. പുതിയ ഓപ്ഷനുകൾ ലോഡ് ചെയ്യുന്നു; നിങ്ങളുടെ തിരഞ്ഞെടുപ്പുകൾ പരിശോധിച്ച് വീണ്ടും ശ്രമിക്കുക.",
     "Calculator unavailable": "കാൽക്കുലേറ്റർ ലഭ്യമല്ല",
     "Cancel": "റദ്ദാക്കുക",
+    "Categories follow the service's count-ranked order, with any combined Other bucket shown last. This compares categories, not a time trend.": "വിഭാഗങ്ങൾ സേവനം എണ്ണം അനുസരിച്ച് ക്രമപ്പെടുത്തിയതുപോലെയാണ്; സംയോജിപ്പിച്ച ‘മറ്റുള്ളവ’ വിഭാഗമുണ്ടെങ്കിൽ അത് അവസാനമായി കാണിക്കും. ഇത് സമയ പ്രവണതയല്ല, വിഭാഗങ്ങളുടെ താരതമ്യമാണ്.",
     "Category": "വിഭാഗം",
     "Check the highlighted fields and try again.": "അടയാളപ്പെടുത്തിയ ഫീൽഡുകൾ പരിശോധിച്ച് വീണ്ടും ശ്രമിക്കുക.",
     "Check this entry, or add another supply-chain entry before viewing the combined results.": "സംയോജിത ഫലങ്ങൾ കാണുന്നതിന് മുമ്പ് ഈ എൻട്രി പരിശോധിക്കുക, അല്ലെങ്കിൽ മറ്റൊരു വിതരണ ശൃംഖല എൻട്രി ചേർക്കുക.",
@@ -147,6 +147,7 @@
     "Enter the date as dd/mm/yyyy.": "തീയതി dd/mm/yyyy എന്ന രീതിയിൽ നൽകുക.",
     "Enter the time as hh:mm on the 24-hour clock.": "സമയം 24 മണിക്കൂർ രീതിയിൽ hh:mm എന്ന് നൽകുക.",
     "Enter the time on a keyboard": "കീബോർഡിൽ സമയം നൽകുക",
+    "Enter the total amount you produced for this food type over the same period, waste included.": "ഈ ഭക്ഷ്യ ഇനത്തിന് അതേ കാലയളവിൽ ഉൽപ്പാദിപ്പിച്ച ആകെ അളവ് നൽകുക, മാലിന്യം ഉൾപ്പെടെ.",
     "Enter the total amount. You will allocate this total across destinations in the next step.": "ആകെ അളവ് നൽകുക. അടുത്ത ഘട്ടത്തിൽ ഈ ആകെ അളവ് വിവിധ ലക്ഷ്യസ്ഥാനങ്ങളിലേക്ക് വിഭജിക്കും.",
     "Enter the total value of everything you produced for this food type over the reporting period, not the value per unit.": "ഈ ഭക്ഷ്യ ഇനത്തിന് റിപ്പോർട്ടിംഗ് കാലയളവിൽ ഉൽപ്പാദിപ്പിച്ച എല്ലാത്തിന്റെയും മൊത്തം മൂല്യം നൽകുക, യൂണിറ്റിന്റെ മൂല്യമല്ല.",
     "Enter the total value of the waste for this food type over the same period, valued the same way as production above.": "ഈ ഭക്ഷ്യ ഇനത്തിന് അതേ കാലയളവിലെ പാഴാക്കലിന്റെ മൊത്തം മൂല്യം, മുകളിലെ ഉൽപ്പാദനത്തിന്റെ അതേ രീതിയിൽ കണക്കാക്കി നൽകുക.",
@@ -162,7 +163,6 @@
     "Estimate the environmental and financial impact of food waste in New Zealand food businesses.": "ന്യൂസിലൻഡിലെ ഭക്ഷ്യ സ്ഥാപനങ്ങളിലെ ഭക്ഷ്യമാലിന്യത്തിന്റെ പാരിസ്ഥിതികവും സാമ്പത്തികവുമായ ആഘാതം കണക്കാക്കുക.",
     "Estimate the environmental and financial impact of food waste, then explore how changes to its destination could affect the result.": "ഭക്ഷ്യമാലിന്യത്തിന്റെ പാരിസ്ഥിതികവും സാമ്പത്തികവുമായ ആഘാതം കണക്കാക്കുക; തുടർന്ന്, അതിന്റെ ലക്ഷ്യസ്ഥാനത്തിലെ മാറ്റങ്ങൾ ഫലത്തെ എങ്ങനെ ബാധിക്കാമെന്ന് പരിശോധിക്കുക.",
     "Every emissions figure on the results page is built from this number.": "ഫലങ്ങളുടെ പേജിലെ എല്ലാ ഉദ്‌വമന കണക്കുകളും ഈ സംഖ്യയിൽ നിന്നാണ് ഉണ്ടാകുന്നത്.",
-    "Everything that went through this stage over the same period, waste included.": "അതേ കാലയളവിൽ ഈ ഘട്ടത്തിലൂടെ കടന്നുപോയ എല്ലാം, മാലിന്യം ഉൾപ്പെടെ.",
     "Explore Improvements": "മെച്ചപ്പെടുത്തലുകൾ പരിശോധിക്കുക",
     "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Kai Commitment ഭക്ഷ്യമാലിന്യ ആഘാത കാൽക്കുലേറ്ററിലേക്ക് നൽകിയ കണക്കുകൂട്ടലുകളുടെ പേരില്ലാത്ത, സമഗ്ര സ്ഥിതിവിവരക്കണക്കുകൾ പരിശോധിക്കുക.",
     "Explore how the recorded waste is distributed.": "രേഖപ്പെടുത്തിയ മാലിന്യം എങ്ങനെ വിതരണം ചെയ്യപ്പെട്ടിരിക്കുന്നു എന്ന് നോക്കുക.",
@@ -216,7 +216,7 @@
     "Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.": "മെച്ചപ്പെട്ട സാഹചര്യത്തിലെ ലക്ഷ്യസ്ഥാന വിഹിതങ്ങളുടെ ആകെത്തുക 100% ആയിരിക്കണം; അപ്പോൾ മാത്രമേ ആ സാഹചര്യം നിലവിലേതിന് തുല്യമായ മാലിന്യത്തെ വിവരിക്കൂ. ഇപ്പോഴത്തെ ആകെത്തുക: %(total)s%.",
     "Improved scenario (Current → Improved)": "മെച്ചപ്പെട്ട സാഹചര്യം (നിലവിലെ → മെച്ചപ്പെട്ടത്)",
     "Incomplete": "പൂർത്തിയായില്ല",
-    "It joins the anonymous statistics only. No figure on the results page is calculated from it.": "ഇത് അജ്ഞാത സ്ഥിതിവിവരക്കണക്കുകളിൽ മാത്രമേ ചേരുന്നുള്ളൂ. ഫലങ്ങളുടെ പേജിലെ ഒരു കണക്കും ഇതിൽ നിന്ന് കണക്കാക്കുന്നില്ല.",
+    "It joins the anonymous statistics, and the two together give the share of value wasted on the results page. No emissions or cost figure is calculated from it.": "ഇത് അജ്ഞാത സ്ഥിതിവിവരക്കണക്കുകളിൽ ചേരുന്നു, രണ്ടും ചേർന്ന് ഫലങ്ങളുടെ പേജിലെ പാഴായ മൂല്യത്തിന്റെ വിഹിതം നൽകുന്നു. ഉദ്‌വമനത്തിന്റെയോ ചെലവിന്റെയോ ഒരു കണക്കും ഇതിൽ നിന്ന് കണക്കാക്കുന്നില്ല.",
     "It lets the results show the waste as a share of production. Leaving it empty changes no emissions figure.": "ഇതുവഴി ഉൽപ്പാദനത്തിന്റെ ഒരു പങ്കായി പാഴാക്കൽ ഫലങ്ങളിൽ കാണിക്കാനാകും. ഒഴിച്ചിട്ടാലും ഒരു ഉദ്‌വമന കണക്കും മാറില്ല.",
     "Kai Commitment - Leading action on food waste": "Kai Commitment - ഭക്ഷ്യമാലിന്യത്തിനെതിരെ മുൻനിര പ്രവർത്തനം",
     "Kai Commitment home": "Kai Commitment മുഖ്യതാൾ",
@@ -226,6 +226,7 @@
     "Language": "ഭാഷ",
     "Latest news": "ഏറ്റവും പുതിയ വാർത്തകൾ",
     "Latest news is temporarily unavailable. You can still use the calculator and explore the documentation.": "ഏറ്റവും പുതിയ വാർത്തകൾ താൽക്കാലികമായി ലഭ്യമല്ല. നിങ്ങൾക്ക് ഇപ്പോഴും കാൽക്കുലേറ്റർ ഉപയോഗിക്കാനും രേഖകൾ പരിശോധിക്കാനും കഴിയും.",
+    "Line graph": "രേഖാ ഗ്രാഫ്",
     "Loading aggregate statistics…": "സമഗ്ര സ്ഥിതിവിവരക്കണക്കുകൾ ലോഡ് ചെയ്യുന്നു…",
     "Loading calculator options…": "കാൽക്കുലേറ്റർ ഓപ്ഷനുകൾ ലോഡ് ചെയ്യുന്നു…",
     "Loading calculator…": "കാൽക്കുലേറ്റർ ലോഡ് ചെയ്യുന്നു…",
@@ -281,6 +282,7 @@
     "Percentage waste": "മാലിന്യ ശതമാനം",
     "Period end": "കാലയളവിന്റെ അവസാനം",
     "Period start": "കാലയളവിന്റെ ആരംഭം",
+    "Pie chart": "വൃത്ത ചാർട്ട്",
     "Placeholder data": "താൽക്കാലിക മാതൃകാ ഡാറ്റ",
     "Plain-language comparisons appear when supplied by the calculation service.": "കണക്കുകൂട്ടൽ സേവനം നൽകുമ്പോൾ ലളിതമായ ഭാഷയിലുള്ള താരതമ്യങ്ങൾ കാണാം.",
     "Potential Improvement": "സാധ്യമായ മെച്ചപ്പെടുത്തൽ",
@@ -461,5 +463,8 @@
     "no impact figures were returned": "ആഘാത കണക്കുകളൊന്നും ലഭിച്ചില്ല",
     "saved": "സംരക്ഷിച്ചു",
     "tonnes": "ടൺ"
-  }
+  },
+  "tags": [
+    "ml"
+  ]
 }

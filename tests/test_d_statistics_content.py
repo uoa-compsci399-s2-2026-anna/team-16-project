@@ -619,7 +619,7 @@ def test_charts_module_has_exact_public_exports_and_vendored_chartjs():
     assert path.is_file()
     source = _read(path)
     exported = set(re.findall(r"export\s+function\s+([A-Za-z_$][\w$]*)\s*\(", source))
-    assert exported == {"renderDonut", "renderBar"}
+    assert exported == {"renderDonut", "renderPie", "renderBar", "renderLine"}
     assert re.search(r"\bnew\s+Chart\s*\(", source)
 
     chart_sources = []
@@ -641,6 +641,50 @@ def test_charts_module_has_exact_public_exports_and_vendored_chartjs():
         "charts.js or stats.html must actually load the vendored Chart.js runtime"
     )
     assert "https://cdn" not in source.lower()
+
+
+def test_documented_statistics_visual_contract_matches_the_public_modules():
+    """Catch a chart contract that omits the shipped selection and rendering rules."""
+
+    contract = _read(ROOT / "docs" / "interfaces.md")
+    section = contract.split("## 7.4 `charts.js` (written by D)", 1)[1].split("## 7.5", 1)[0]
+    changelog = contract.split("## 0.1 Change Log", 1)[1].split("### v1.78", 1)[0]
+    entry = re.search(r"(?ms)^### v(\d+)\.(\d+) [^\n]*statistics chart selection[^\n]*\n.*?(?=^### v|\Z)", changelog)
+    assert entry, "the statistics presentation change needs its own changelog entry"
+
+    versions = [(int(major), int(minor)) for major, minor in re.findall(
+        r"(?m)^### v(\d+)\.(\d+)\b", contract,
+    )]
+    header = re.search(r'(?m)^date: "[^"]+ \(v(\d+)\.(\d+)\)"$', contract)
+    assert header
+    assert len(versions) == len(set(versions))
+    assert (int(entry[1]), int(entry[2])) > (1, 78)
+    assert (int(header[1]), int(header[2])) == max(versions), (
+        "the contract front matter must name its latest changelog version"
+    )
+
+    charts_source = _read(WEB / "js" / "charts.js")
+    actual = set(re.findall(r"(?m)^export (?:function|const)\s+(\w+)", charts_source))
+    documented = set(re.findall(r"(?m)^export (?:function|const)\s+(\w+)", section))
+    assert documented == actual == {"PALETTE", "renderDonut", "renderPie", "renderBar", "renderLine"}
+    assert len(re.findall(r"(?m)^export function\s+\w+", section)) == 4
+
+    for token in (
+        "labelKey", "valueKey", "formatValue", "allowNegative", "String(value)",
+        "RangeError", "finite negative", "count-ranked", "Other", "not a time trend",
+        "pie", "bar", "line", "latestStats", "latestFailure", "rerenderInActiveLanguage",
+        "fitLegend", "reduced-motion", "16", "§6.4", "§7.7.7", "en-NZ",
+    ):
+        assert token in section, f"§7.4 omits {token}"
+    for token in ("REST", "wire", "fixture", "no-op", "team", "PR"):
+        assert token in entry[0], f"statistics changelog omits {token}"
+
+    architecture = _read(ROOT / "docs" / "architecture.md")
+    statistics_row = re.search(r"(?m)^\| Statistics \|.*$", architecture)
+    assert statistics_row and all(chart in statistics_row[0] for chart in ("Pie", "Bar", "Line"))
+    readme = _read(WEB / "README.md")
+    assert "Chart.js adapters for doughnut, pie, bar and line charts" in readme
+    assert "count-ranked" in readme and "Other" in readme
 
 
 #: The provenance note beside the runtime, and the two files it vouches for.
@@ -836,8 +880,10 @@ def test_the_palette_is_built_only_from_brand_colours():
 def test_every_palette_ink_follows_the_brand_rule():
     """Dark grounds take white text, light grounds take Kale.
 
-    `ink` is load-bearing rather than recorded: `renderDonut` paints the tooltip
-    on the hovered segment's own fill and takes that segment's ink, so an `ink`
+    `ink` is load-bearing rather than recorded: the current Statistics default,
+    `renderPie`, paints the tooltip on the hovered segment's own fill and takes
+    that segment's ink. `renderDonut` remains a compatible adapter with no
+    Statistics caller. An `ink`
     edited out of step with its `fill` draws white text on Banana. The contrast
     ratio is recomputed here from the hex, independently of the table, so this
     fails on the entry that drifted rather than on the rule being restated.
@@ -929,7 +975,7 @@ def test_statistics_source_consumes_the_stats_contract_without_nz_generalisation
             f"membership are the service's ({source[opening - 40:opening + len(body)]!r})"
         )
 
-    assert "renderDonut" in source and "renderBar" in source and "./charts.js" in source
+    assert all(name in source for name in ("renderPie", "renderBar", "renderLine", "./charts.js"))
 
 
 def test_the_statistics_page_never_makes_new_zealand_the_subject():

@@ -408,3 +408,61 @@ thirty-three were undrawable**, which is the 2026-09-22 entry's point restated:
 近 - eight characters each already carried by one CJK face - never failed the
 test, and they arrive in their own face only because a fresh cut reads that
 catalogue's current strings.
+
+## Re-cut, 2026-10-02 (statistics translations)
+
+The merged statistics catalogues introduced fifteen characters absent from
+every embedded face: U+50BE, U+5186, U+52BF, U+52E2, U+5448, U+5713,
+U+6298, U+68D2, U+8D8B, U+8DA8, U+8F83, U+9905, U+997C, U+BC94 and
+U+CCD0. With FontTools available, the catalogue-glyph test failed on exactly
+these code points before this re-cut. A first run without FontTools failed on
+`ModuleNotFoundError` and was not counted as a glyph baseline.
+
+Source: Debian `fonts-noto-cjk` **1:20240730+repack1-1**,
+`fonts-noto-cjk_20240730+repack1-1_all.deb`, downloaded from
+`https://deb.debian.org/debian/pool/main/f/fonts-noto-cjk/`.
+The downloaded package was 56,674,044 B and SHA256
+`f5dc28a754e17327d99f0a612134d92c8dd6187314ae967cb77f25df60860139`,
+matching the independently supplied checksum from Debian's package download
+metadata before extraction. The extracted
+`usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc` was 19,484,784 B,
+SHA256
+`b76b0433203017ca80401b2ee0dd69350349871c4b19d504c34dbdd80541690a`.
+The TTC checksum describes the observed file inside the verified package; it
+is not a second independent source of trust.
+
+On Windows, the project Python 3.12 virtual environment was used with
+`fonttools==4.63.0` and `brotli==1.2.0` installed. The package was
+unpacked with `tar -xf <deb> data.tar.xz`, then
+`tar -xf data.tar.xz ./usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc`.
+From the repository root, the exact re-cut command was:
+
+```powershell
+& 'C:/Users/李恩愈/OneDrive/文档/GitHub/team-16-project/.venv/Scripts/python.exe' api/assets/fonts/noto/recut_cjk_subsets.py --source-collection "$env:TEMP/stats-font-recut-20261002/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
+```
+
+The source-path option changes only where the script reads the TTC; the
+catalogue extraction, face indices, subset flags and output paths are
+unchanged. Cmap counts below count Unicode code points, not internal glyph
+IDs. Hashes are SHA256 of the committed WOFF2 files.
+
+| Face | Cmap before | Cmap after | Bytes after | SHA256 after |
+| --- | ---: | ---: | ---: | --- |
+| `jp` | 673 | 680 | 245,180 | `18e209a71975aa5088f3b0ee464abfec8a8dc0da7ef41339ebe637a9161749d6` |
+| `kr` | 578 | 580 | 82,548 | `58163cccfd9ed7e0708801d2ebccdb11f657b94d39acea97f30769963664ee4a` |
+| `sc` | 732 | 737 | 212,420 | `cdfd9e3ece236582418864c13513a48b7a52553e3b97c2052d34ff9e927b707d` |
+| `tc` | 732 | 737 | 281,112 | `f7e8b162445aa107a50d7a5c7bcb8a6a1789321d875ce2f8ab3da5be75f1c7e5` |
+
+Independent old/new cmap comparison found no required character dropped from
+any face. Japanese lost U+62E0 and U+6839; Traditional Chinese lost U+5247
+and U+5957. None occurs in its face's current catalogue `strings`. Korean
+and Simplified Chinese lost nothing. All fifteen missing points and all
+characters in each face's current catalogue `strings` are now covered. A
+second re-cut from the same verified TTC produced identical SHA256 hashes for
+all four outputs.
+
+`pytest tests/api/test_pdf_render.py -k 'box or glyph or embedded_catalog' -q -ra`
+passed every runnable selection; one test was skipped because this Windows
+host has no WeasyPrint/native PDF-renderer libraries
+(`ModuleNotFoundError: No module named 'weasyprint'`). This is a renderer
+limitation, not a glyph-test skip.

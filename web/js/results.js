@@ -1230,7 +1230,9 @@ function contributeBlock(state) {
   // occupant at a time: **Submit → Undo → the flower, each replacing the last in the
   // position the eye is already on.** The handover is exact — `done` empties `action`
   // and turns `celebrate` on in the same `setState` (`contributeCalculation`), so the
-  // one render that removes Undo is the one that plants the flower.
+  // one render that removes Undo is the one that plants the flower. The class itself
+  // outlived its rule by three rounds and is gone with #160: the slot is `.contribute-
+  // slot` and the button is reached by its id, so nothing was left for it to name.
   //
   // The flower is unchanged in every other respect: still gated on
   // `state.contributeCelebrating` so an unrelated re-render cannot replay it, and still
@@ -1241,8 +1243,8 @@ function contributeBlock(state) {
   const action = done
     ? ''
     : armed
-      ? `<button class="button button-secondary contribute-action" type="button" id="contribute-action" data-action="contribute-undo">${escapeHtml(t('Undo'))}</button>`
-      : `<button class="button button-primary contribute-action" type="button" id="contribute-action" data-action="contribute-submit" ${ticked && !pending ? '' : 'disabled'}>${escapeHtml(t('Submit'))}</button>`
+      ? `<button class="button button-secondary" type="button" id="contribute-action" data-action="contribute-undo">${escapeHtml(t('Undo'))}</button>`
+      : `<button class="button button-primary" type="button" id="contribute-action" data-action="contribute-submit" ${ticked && !pending ? '' : 'disabled'}>${escapeHtml(t('Submit'))}</button>`
   return `<div class="contribute-block">
     <p class="contribute-sentence" id="contribute-sentence">${escapeHtml(t('This sends an anonymous copy of your results into this calculator\'s public statistics — no name, no address, nothing that identifies you. You have five seconds after pressing Submit to undo it; once those five seconds pass it cannot be undone from here, and if you come back and recalculate, your updated figures take its place under this same choice.'))}</p>
     <div class="contribute-control">
@@ -1455,6 +1457,20 @@ function categoryAverageLines(state, prefix) {
  * `test_the_results_sections_are_in_the_order_the_floating_nav_claims` asserts it
  * against the rendered page for exactly that reason.
  *
+ * **Every entry here must be a place the page can actually come to rest**, and that
+ * is a real constraint rather than a tidiness one (#126/#150). A jump leaves its
+ * target at `SECTION_REST_TOP`, and `bindNavGestures`'s scroll path releases a pin
+ * only once the target has *reached* that line and then left it. An entry close
+ * enough to the end of the document that the scroll clamps before it gets there can
+ * never set `pinnedSettled`, so the `aria-current` mark a press put on it is never
+ * taken off again by a scroll -- and a dragged scrollbar, which is precisely the
+ * gesture the scroll path exists for, fires no wheel, no touch and no key to take it
+ * off either. That is why the *Start a new calculation* and *Download results*
+ * entries #126 asked for are not here: they are the page's closing action row, which
+ * sits about 430px from the end of the document, and `.result-actions` is one flex
+ * row so both of them were also the same destination. They are in the panel as the
+ * controls they are instead -- see `resultsFloatingNavigation`.
+ *
  * The label is a function because `t()` has to run at render time: changing language
  * re-renders in place rather than reloading (`main.js`), so a label evaluated once at
  * module load would stay in the language the page was opened in. Each one is still a
@@ -1470,6 +1486,45 @@ const RESULTS_NAV_SECTIONS = [
   ['tangible-equivalents', () => t('Tangible equivalents')],
   ['breakdown-section', () => t('Breakdown by category')],
   ['improvement-section', () => t('Explore Improvements')],
+]
+
+/**
+ * The results page's own actions, offered **inside the nav panel as controls**.
+ *
+ * #126 asked for *Download* and *Start a new calculator* in the results-page
+ * navigation. They are not sections and they are not entries in
+ * `RESULTS_NAV_SECTIONS`: as `#`-links they were two links onto one flex row, so
+ * both jumped to the same place, only the first could ever be marked by the
+ * observer, and neither could release the pin a press put on it (see that list's
+ * note). As buttons they do the thing the issue asks for -- the download downloads
+ * and *Start a new calculation* starts one -- from wherever the reader has got to,
+ * without scrolling anywhere at all.
+ *
+ * **Each one presses the action row's own button, and that is the whole of its
+ * behaviour**: `bindNavGestures` forwards the press to
+ * `.result-actions [data-action="..."]`, whose click reaches `calculator.js`'s one
+ * delegated `main` listener exactly as the row's own press does. So there is one
+ * implementation of each action and no second code path, and `calculator.js` needed
+ * nothing. It is also what makes the shared accessible name correct rather than the
+ * defect it would be on a link: the panel's *Download results* and the row's
+ * *Download results* are two doors onto one action, not a link and a button that
+ * happen to read alike while doing different things.
+ *
+ * **The attribute is `data-nav-action`, not `data-action`, and the difference is not
+ * cosmetic.** `[data-action="download-results"]` is how the whole browser suite names
+ * *the* download button -- eighteen selectors across five files -- and a second
+ * element answering to it made nine of them resolve to this panel's copy instead,
+ * which is hidden. Measured: `test_results_export.py` went from 135 passed to 9
+ * failed on actionability timeouts the moment these two carried `data-action`. A
+ * remote control for a button is not a second button, and it should not answer to
+ * the same name.
+ *
+ * Labels are functions for the same reason `RESULTS_NAV_SECTIONS`' are, and they are
+ * the two strings the action row already uses, so twenty catalogues needed nothing.
+ */
+const RESULTS_NAV_ACTIONS = [
+  ['start-over', () => t('Start a new calculation')],
+  ['download-results', () => t('Download results')],
 ]
 
 /**
@@ -1691,13 +1746,92 @@ function releasePin() {
 const SCROLL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ', 'Spacebar'])
 
 /**
+ * Whether the overlay panel is **showing** right now, read off the nav itself.
+ *
+ * Three states, because `data-open` has three: `"true"` is a visitor who opened it,
+ * `"false"` a visitor who closed it, and *absent* is "the stylesheet decides" -- and
+ * what the stylesheet decides, undocked, is closed unless `:focus-within` holds it
+ * open. So the absent case is answered by asking where focus is, which is the only
+ * thing that opens it in that state.
+ */
+function resultsNavPanelIsOpen(nav) {
+  const open = nav.getAttribute('data-open')
+  if (open === 'true') return true
+  if (open === 'false') return false
+  return nav.contains(document.activeElement)
+}
+
+/**
+ * Close the overlay **without re-rendering the results page**.
+ *
+ * `setState` rebuilds `main.innerHTML` wholesale, and `main.js`'s subscriber then
+ * restores focus **by `id`**: for a control with no `id` of its own
+ * `document.activeElement.id` is `''`, `document.getElementById('')` is `null`, and
+ * focus falls through to `main.focus()`. The results page is full of id-less
+ * focusable controls -- the improvement panel's number box, the methodology
+ * `<summary>`, every button in the action row -- so a `setState` here would mean
+ * that opening the nav and then clicking into the number box threw the reader to the
+ * top of the page. Before this dismissal existed those clicks caused no `setState`
+ * at all, so the re-render would have been a regression introduced by a convenience.
+ *
+ * Writing the two attributes and the flag directly is the same choice
+ * `updateImprovementInput` makes for a keystroke and `markCurrentSection` makes for
+ * the scroll mark: the results page has state that must not cost a render. The flag
+ * still has to move, because `resultsFloatingNavigation` writes `data-open` from it
+ * on the *next* render and would otherwise put the panel straight back up; it is
+ * assigned rather than `setState`-ed for exactly the reason above. `liveState` is the
+ * one `state` object, so the next real render reads this and agrees with the DOM.
+ *
+ * **`data-open` is written only where the flag already said `true`, or where the
+ * reader has pressed Escape.** Its absence means "the stylesheet decides", and the
+ * docked regime's default is *open* -- so stamping `"false"` on an untouched nav
+ * would hand a visitor who merely clicked a paragraph at 1280px a nav that stays
+ * collapsed when their window grows past 1600.
+ *
+ * @param {boolean} [focusHandle] Put focus back on the handle, as its own close does.
+ * @returns {boolean} Whether anything was closed.
+ */
+function closeResultsNav(focusHandle = false) {
+  //: **No nav, nothing to do, and no `setState` either.** The flag outlives the
+  //: results page -- `goToStep` does not clear it, only `resetCalculator` does --
+  //: so a visitor who opens the list, presses *Edit your data* and then clicks
+  //: anything on step 4 used to fire one extra full re-render of step 4, with the
+  //: same focus side effect and nothing on screen to show for it. This returns
+  //: instead, and the flag is left standing: it is still the last choice that
+  //: visitor made about a nav they will meet again when they recalculate.
+  const nav = document.querySelector('.results-floating-nav')
+  //: Docked, the panel is not "open": it IS the nav (`styles.css`'s
+  //: `min-width: 1600px` block shows it unconditionally, with no
+  //: `:not([data-open="false"])` guard). There is nothing to dismiss, and
+  //: writing `data-open="false"` would leave an `aria-expanded` on a handle
+  //: the stylesheet has already taken out of the page.
+  if (!nav || resultsNavIsDocked()) return false
+  if (!resultsNavPanelIsOpen(nav)) return false
+  liveState.resultsNavOpen = false
+  nav.setAttribute('data-open', 'false')
+  //: Before `focus()`, not after. `:focus-within` opens the panel too, and the
+  //: rule that stops the handle re-opening what it just closed is its
+  //: `:not([data-open="false"])` guard -- which only holds once the attribute
+  //: is there to be guarded by.
+  const handle = nav.querySelector('.results-floating-nav__handle')
+  handle?.setAttribute('aria-expanded', 'false')
+  if (focusHandle) handle?.focus()
+  return true
+}
+
+/**
  * The three listeners the pin needs, installed **once on `document`** for the life of
  * the page.
  *
  * Wired here rather than at module load because this module is imported by a Node
  * harness for the text export, where there is no `document` at all.
  *
- * * **click** sets the pin. Delegated, because the links are rebuilt by every render.
+ * * **click** sets the pin on a nav link, and dismisses the overlay anywhere else.
+ *   Delegated, because the links are rebuilt by every render and because a click
+ *   that should dismiss can land outside `main` altogether. The dismissal writes the
+ *   DOM rather than calling `setState` -- see `closeResultsNav` for why a re-render
+ *   here would throw a reader's focus to the top of the page.
+ * * **Escape** dismisses it too, and returns focus to the handle.
  * * **wheel / touchmove / a scrolling key** release it at once: that is the reader's
  *   hand on the page, and it is allowed to interrupt a smooth scroll that is still
  *   running. Keys pressed inside a form control are excluded -- an arrow key in the
@@ -1725,11 +1859,65 @@ function bindNavGestures() {
   navGesturesBound = true
   document.addEventListener('click', event => {
     const link = event.target?.closest?.('.results-floating-nav__links a[href^="#"]')
-    if (link) pinSection(link.getAttribute('href').slice(1))
+    if (link) {
+      pinSection(link.getAttribute('href').slice(1))
+      return
+    }
+    //: **The panel's two actions are remote controls for the action row's own
+    //: buttons** (#126), and this is the whole of the forwarding. Pressing the real
+    //: control rather than re-implementing it is what keeps one implementation of
+    //: each action: the synthesised click bubbles to `calculator.js`'s delegated
+    //: listener on `main` and runs the confirm, the reset, the export -- all of it
+    //: in the one place it already lived, which is why that file is untouched.
+    //:
+    //: The forwarded click is `isTrusted: false`, so the dismissal below does not
+    //: fire on it and the panel survives its own action. See `RESULTS_NAV_ACTIONS`
+    //: for why the attribute is `data-nav-action` and not `data-action`.
+    const remote = event.target?.closest?.('.results-floating-nav__actions [data-nav-action]')
+    if (remote) {
+      document.querySelector(`.result-actions [data-action="${remote.dataset.navAction}"]`)?.click()
+      return
+    }
+    //: **The overlay closes when the reader's attention goes elsewhere**, which is
+    //: what a floating menu over the text has to do. Delegated on `document`
+    //: rather than on `main` because the click may land in the header, the
+    //: language chooser or the footer, all of which are outside the results page's
+    //: own event boundary.
+    //:
+    //: **`closest('.results-floating-nav')` is what keeps the nav's own clicks out
+    //: of here, and it works on a node that is no longer in the document.** The
+    //: handle's press reaches `calculator.js`'s listener on `main` first (`main` is
+    //: an ancestor, so it bubbles there before `document`), that listener calls
+    //: `setState`, and `render()` replaces `main.innerHTML` -- so by the time this
+    //: runs, `event.target` is the handle's `<span>` inside a *detached* subtree.
+    //: `closest` still walks span -> button -> nav, because replacing
+    //: `innerHTML` detaches the old tree without taking its internal parent links
+    //: apart. That is load-bearing: a `render()` that patched in place, or a move
+    //: of the calculator's listener from `main` to `document` *after* this one is
+    //: bound, would leave the handle opening the panel and this line closing it on
+    //: the same click. `test_the_first_press_of_the_handle_opens_the_list_it_is_
+    //: the_only_way_into` is the assertion that would report it.
+    //: **And only a click the reader actually made.** `downloadResults` builds a
+    //: `<a download>`, appends it to `document.body` and calls `.click()` on it;
+    //: that event bubbles to this listener with a target outside the nav, so
+    //: without `isTrusted` pressing *Download results* **inside the panel** closed
+    //: the panel -- measured, and the reason this guard is here rather than
+    //: imagined. Any other programmatic `.click()` anywhere on the page would do
+    //: the same. A dismissal is a reader's gesture; a synthesised click is not.
+    if (event.isTrusted && !event.target?.closest?.('.results-floating-nav')) closeResultsNav()
   })
   document.addEventListener('wheel', releasePin, { passive: true })
   document.addEventListener('touchmove', releasePin, { passive: true })
   document.addEventListener('keydown', event => {
+    //: **Escape, so that the keyboard has the way out the pointer now has.** The
+    //: handle could already close the panel, but only by being pressed again, and
+    //: `:focus-within` means a keyboard reader can be *inside* the list with the
+    //: handle behind them. Focus goes back to the handle, which is what the
+    //: handle's own close path does and the reason that button carries an `id`.
+    if (event.key === 'Escape') {
+      if (closeResultsNav(true)) event.preventDefault()
+      return
+    }
     if (!SCROLL_KEYS.has(event.key)) return
     if (event.target?.closest?.('input, textarea, select, [contenteditable]')) return
     releasePin()
@@ -1742,6 +1930,146 @@ function bindNavGestures() {
     if (arrived) pinnedSettled = true
     else if (pinnedSettled) releasePin()
   }, { passive: true })
+}
+
+/**
+ * The selector `equivalenceBasis` writes, in one place, because both of the listeners
+ * below and the closer between them read it.
+ */
+const EQUIVALENCE_DISCLOSURE = 'details.equivalent-basis'
+
+/** Installed once, on `document`, and never by a render. See `bindEquivalenceOverlay`. */
+let equivalenceOverlayBound = false
+
+/**
+ * Close every open equivalence panel except `keep`, **writing the DOM and not `state`**.
+ *
+ * `<details open>` is the whole of this overlay's state and it lives nowhere else: nothing
+ * in `state` records which `?` is expanded, and `equivalenceBasis` renders every one of
+ * them closed. So there is no flag to move, which is one fewer thing than
+ * `closeResultsNav` has to do — but the reason for not reaching for `setState` is the
+ * same one, and it is worth writing down because the convenient version is wrong in
+ * exactly the way the nav's was. `setState` rebuilds `main.innerHTML`, and `main.js`
+ * restores focus **by `id`**; `<summary>` has no `id` (it is one of three per results
+ * page and an id would have to be minted per equivalence `code`), so
+ * `document.activeElement.id` is `''`, `document.getElementById('')` is `null`, and focus
+ * falls through to `main.focus()`. A reader who pressed Escape to close a panel would be
+ * thrown to the top of the page by the keystroke that was meant to put them back on the
+ * `?` they came from.
+ *
+ * @param {Element|null} [keep] A disclosure to leave alone — the one just clicked.
+ * @returns {Element|null} The `<summary>` of the panel closed, for focus to return to.
+ */
+function closeEquivalencePanels(keep = null) {
+  let returnTo = null
+  for (const details of document.querySelectorAll(`${EQUIVALENCE_DISCLOSURE}[open]`)) {
+    if (details === keep) continue
+    details.open = false
+    returnTo = details.querySelector('summary') || returnTo
+  }
+  return returnTo
+}
+
+/**
+ * The two listeners the floating equivalence panel needs (#83), installed **once on
+ * `document`** for the life of the page.
+ *
+ * Until #83 this panel was an in-flow block and owed none of this: it pushed the page
+ * down, stayed inside its own card, and a reader who had finished with it could leave it
+ * open at no cost to anything else. Floating, it is the same kind of object as
+ * `.results-floating-nav__panel` — it covers the cards below it and the section beneath
+ * the grid — so it acquires that object's obligations, and #150 (v1.88) had just built
+ * them. **What is reused here is the reasoning and the two guards, not the code**: the
+ * nav's own path cannot be called, because it closes a nav.
+ *
+ * * **A click elsewhere closes it**, delegated on `document` rather than on `main`
+ *   because the click may land in the header, the language chooser or the footer. The
+ *   same click expression does the exclusivity, below.
+ * * **`event.isTrusted`**, for v1.88's measured reason: `downloadResults` appends an
+ *   `<a download>` to `document.body` and calls `.click()` on it, and the nav's two
+ *   action buttons forward a press to `.result-actions [data-action=…]` the same way.
+ *   Both bubble to this listener with a target outside every `.equivalent-basis`.
+ *
+ *   **Dropping this guard was mutation-tested and SURVIVED — 179 tests still passed —
+ *   and the measurement says it is an equivalent mutation rather than a weak test.**
+ *   Every synthesised click on this page was logged with the panel state at the moment
+ *   it arrived, and all three paths are masked, each by something different:
+ *     - *the text download.* The `<a>`'s click is a NESTED dispatch raised from
+ *       `calculator.js`'s listener on `main`, so it reaches this listener with a panel
+ *       still open — before the outer trusted click has got here. Ungated, this closes
+ *       the panel; gated, the outer click closes it one step later. Same end state.
+ *     - *the nav's forwarded action.* The press that opened the nav had already
+ *       dismissed the panel, so there is nothing open by then (measured: 0).
+ *     - *the PDF.* Its synthesised click lands a round trip later, so a panel opened in
+ *       between IS open when it arrives — and `setState({ pdfExporting: false })` one
+ *       line after `link.click()` re-renders `main` and closes it anyway. Measured 0
+ *       panels open afterwards with the guard and without it.
+ *
+ *   **It is kept, and the mask is the reason to keep it rather than to drop it.** What
+ *   it states is an invariant — a dismissal is a reader's gesture — and the three things
+ *   standing in for it are accidents of other code: a listener's position in the tree,
+ *   an unrelated press, and a `setState` that could stop being needed the day
+ *   `pdfExporting` is rendered without a full re-render. None of them is a decision
+ *   anybody made about this panel.
+ * * **Escape closes it and returns focus to the `?` that opened it**, which is the
+ *   keyboard's half of the click-away. Unlike the nav there is only ONE open state to
+ *   handle: a `<details>` opens on activation of its summary and nothing else, where the
+ *   nav's panel is also opened by `:focus-within` and so has an open state carrying no
+ *   `data-open` at all. Nothing inside this panel is focusable — a `<dl>` and a `<p>` —
+ *   so there is no second phase and no "focus is inside the panel" case to unwind.
+ * * **The tab order needs no rule here, and that is `<details>`'s doing.** The nav's
+ *   stylesheet had to use `visibility: hidden` to take its links out of the tab order
+ *   and `:focus-within` to put the closed panel back within keyboard reach; a closed
+ *   `<details>` does not render its non-summary children at all, so there is nothing to
+ *   remove, and the panel holds no focusable descendant when open either. The summary is
+ *   the one tab stop in both states. Measured, not assumed, in
+ *   `test_the_closed_panel_is_out_of_the_tab_order_and_the_open_one_adds_nothing`.
+ *
+ * **The nav and a panel cannot both be open, so Escape closing both is not a case.**
+ * Opening a `?` is a trusted click in the page's content, which is outside the nav, and
+ * `bindNavGestures`'s own click listener dismisses the nav on exactly that. Measured
+ * rather than reasoned about in
+ * `test_opening_an_equivalence_panel_dismisses_the_floating_nav`, which is why these are
+ * two independent listeners rather than one ordered handler.
+ */
+function bindEquivalenceOverlay() {
+  if (equivalenceOverlayBound || typeof document === 'undefined') return
+  equivalenceOverlayBound = true
+  document.addEventListener('click', event => {
+    if (!event.isTrusted) return
+    //: **One expression for the dismissal AND the exclusivity**, because they are the
+    //: same question asked of the same click: which disclosure, if any, did the reader
+    //: just press? `closest` returns the pressed one and `closeEquivalencePanels` closes
+    //: every other open one; a click outside all of them returns `null` and closes the
+    //: lot. A click INSIDE an open panel — selecting a figure to copy — finds that
+    //: panel's own `<details>` and is therefore not a dismissal, which is the behaviour
+    //: a reader expects of a thing they are reading.
+    //:
+    //: **Only one panel open at a time is a decision, and the measurement behind it is
+    //: that two of these overlap.** At 320px the first card's open panel is 250px tall
+    //: over a 97px card, and the next card starts 14px below it: two open panels put
+    //: translucent glass over translucent glass, and the ground every contrast figure
+    //: on this surface was measured against stops being the one that is there.
+    //:
+    //: The native route is `<details name="…">`, which makes an exclusive accordion
+    //: with no JavaScript at all and would be the first choice in this project if it
+    //: were the only thing needed. It is not taken because it is NEWER than the
+    //: `backdrop-filter` this panel already carries an `@supports` fallback for, so it
+    //: would be a second mechanism that silently does nothing in the browsers that
+    //: fallback exists for — while Escape and the click-away need this listener anyway.
+    closeEquivalencePanels(event.target?.closest?.(EQUIVALENCE_DISCLOSURE) || null)
+  })
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Escape') return
+    //: Focus LAST, and to the summary rather than by `id`: see `closeEquivalencePanels`
+    //: for why there is no `id` to restore by and why no render may happen here.
+    //: `preventDefault` only when something was actually closed, so Escape keeps
+    //: whatever other meaning it has on this page when no panel is open.
+    const returnTo = closeEquivalencePanels()
+    if (!returnTo) return
+    returnTo.focus()
+    event.preventDefault()
+  })
 }
 
 /**
@@ -1760,6 +2088,15 @@ function bindNavGestures() {
  * @param {Element} root The container `render()` wrote into.
  */
 export function bindResultsSectionSpy(root) {
+  //: **Before the early return, and deliberately not behind the nav's existence**
+  //: (#83). This function is the one hook `render()` calls on every exit, in a
+  //: browser, which is what the equivalence overlay's two document listeners need:
+  //: one install, outliving every render. It must NOT be moved below the
+  //: `!sections.length` return — the nav is `display: none` under 1100px but is
+  //: still in the markup, so that return happens off the results page, and the
+  //: panel it guards is drawn at every width down to 320px. Guarded by its own
+  //: flag, so being called on every render installs nothing twice.
+  bindEquivalenceOverlay()
   const nav = root?.querySelector?.('.results-floating-nav')
   const sections = nav
     ? RESULTS_NAV_SECTIONS.map(([id]) => root.querySelector(`#${id}`)).filter(Boolean)
@@ -1837,8 +2174,20 @@ function resultsFloatingNavigation(state) {
   //: The handle carries an `id` so that `main.js` can put focus back on it after the
   //: re-render its own press causes. Without one, `document.activeElement.id` is `''`,
   //: focus lands on `<main>`, and a keyboard visitor who opens the list is thrown to
-  //: the top of the page instead of into it.
-  return `<nav class="results-floating-nav"${openAttribute} aria-label="${escapeHtml(label)}"><button class="results-floating-nav__handle" id="results-floating-nav-handle" type="button" data-action="toggle-results-nav" aria-controls="results-floating-nav-menu"${expanded} aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"><span aria-hidden="true">⋮</span></button><div class="results-floating-nav__panel" id="results-floating-nav-menu"><ul class="results-floating-nav__links">${links}</ul></div></nav>`
+  //: the top of the page instead of into it. It is also where `closeResultsNav` puts
+  //: focus on the Escape path, for the same reason.
+  //:
+  //: **The two actions below are buttons, and that is the answer to #126 rather than
+  //: a shortcut past it** -- see `RESULTS_NAV_ACTIONS`. Each one presses the action
+  //: row's own button, so the delegated listener in `calculator.js` runs the same
+  //: code the row's own press runs and there is nothing nav-specific behind them.
+  //: They are outside the `<ul>` because that list is the section index and these are
+  //: not sections, and `role="group"` is what says "these belong together" without
+  //: claiming they are a second list of places to go.
+  const actions = RESULTS_NAV_ACTIONS
+    .map(([action, text]) => `<button class="results-floating-nav__action" type="button" data-nav-action="${action}">${escapeHtml(text())}</button>`)
+    .join('')
+  return `<nav class="results-floating-nav"${openAttribute} aria-label="${escapeHtml(label)}"><button class="results-floating-nav__handle" id="results-floating-nav-handle" type="button" data-action="toggle-results-nav" aria-controls="results-floating-nav-menu"${expanded} aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"><span aria-hidden="true">⋮</span></button><div class="results-floating-nav__panel" id="results-floating-nav-menu"><ul class="results-floating-nav__links">${links}</ul><div class="results-floating-nav__actions" role="group">${actions}</div></div></nav>`
 }
 
 export function renderResults(state) {

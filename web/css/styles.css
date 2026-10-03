@@ -318,7 +318,10 @@ button:disabled { cursor: not-allowed; color: rgba(0, 50, 35, 0.56); background:
 /* The introduction screen is a full-bleed Kale panel rather than a 900px column, so it
    takes the page's measure and padding off. `:has()` rather than the `.introduction-main`
    class `render()` also sets, because the class is what a test can assert and this is what
-   the browser needs; both are set from the one `state.step === -1`. */
+   the browser needs; both are set from the one `state.step === -1`. That class therefore
+   has no rule of its own and is declared with its reason in
+   `tests/web/test_class_rules.py`'s `CLASSES_WITH_NO_RULE_OF_THEIR_OWN` (#160); giving
+   `:has()` up is what would make it bind. */
 .main-content:has(.hero) {
   max-width: none;
   padding: 0;
@@ -434,6 +437,13 @@ p { line-height: 1.65; }
   background: rgba(230, 190, 255, 0.38);
 }
 .disclaimer.compact { padding: 16px; }
+/* **`.restore-notice` is a hook on the two rules above** (#160). The session-restore
+   notice is `class="disclaimer compact restore-notice"`, so it is already the compact
+   disclaimer in full and has nothing of its own to declare; the third class is how
+   `test_session_restore_browser.py` and `test_step_history_browser.py` tell it apart
+   from the other disclaimers on the page (both hold it as `NOTICE = ".restore-notice"`).
+   What would make it bind is wanting this one disclaimer to look unlike the rest.
+   Declared in `tests/web/test_class_rules.py`'s `CLASSES_WITH_NO_RULE_OF_THEIR_OWN`. */
 .disclaimer strong {
   display: block;
   color: var(--beetroot);
@@ -572,7 +582,24 @@ p { line-height: 1.65; }
 .required { color: var(--kai-orange); font-size: 0.8rem; }
 .optional-tag { color: var(--muted); font-size: 0.8rem; font-weight: 400; }
 .field-hint { margin: -2px 0 8px; color: var(--muted); font-size: 0.92rem; }
+/* **`.time-frame-field` is a hook on `.form-field`, not a rule of its own** (#160). The
+   reporting-period `<select>` sits in an ordinary `.form-field` and wants nothing extra;
+   the second class is how `test_step_navigation.py` reaches `.time-frame-field >
+   .field-hint` rather than whichever hint happens to be first on the step. What would
+   make it bind is this one field needing a width or a rhythm of its own. Declared in
+   `tests/web/test_class_rules.py`'s `CLASSES_WITH_NO_RULE_OF_THEIR_OWN`. */
 .field-error { margin: 8px 0 0; color: var(--error); font-weight: 700; }
+/* **`.api-error` and `.entry-problem` are hooks on this rule, not rules of their own**
+   (#160). Both are second classes on a `.field-error`, so both are styled by the line
+   above and neither has anything left to declare: `api-error` names the banner the
+   amount and review steps raise from a failed `POST /calculate`
+   (`test_amount_step_field_errors_browser.py` waits on `.field-error.api-error`, and
+   `test_duplicate_entry_routing_browser.py` says in prose why it waits on the narrower
+   one), `entry-problem` names the per-entry message on the review step
+   (`test_duplicate_entry_routing_browser.py` locates `.entry-problem`). What would make
+   either bind is a declaration that must apply to one kind of error and not the other -
+   today there is none, and adding one here would be the only rule they need. Declared in
+   `tests/web/test_class_rules.py`'s `CLASSES_WITH_NO_RULE_OF_THEIR_OWN`. */
 input, select {
   width: 100%;
   min-height: 54px;
@@ -771,11 +798,13 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 
    **Both branches of `leafPanel` use this one layout**, the single leaf and the leaf
    card alike. The single-leaf panel carries `amount-grid` as well, and that class now
-   has no declarations anywhere in this file: it is the hook three browser tests use to
+   has no declarations anywhere in this file: it is the hook the browser tests use to
    address "the one element wrapping every step-3 field" (removing it and requiring the
    document to collapse to the viewport, selecting `.amount-grid .form-field`, and
    reading its `innerText`). Styling it a second time here would mean two rules for one
-   box, and the second would silently win.
+   box, and the second would silently win. Declared with that reason in
+   `tests/web/test_class_rules.py`'s `CLASSES_WITH_NO_RULE_OF_THEIR_OWN`, which is the
+   register the rest of these live in since #160.
 
    **The zones stack below `min-width: 650px`** and the two-column template is in the
    650px media rule, with the rest of this step's breakpoint. The stacked order is
@@ -1510,6 +1539,14 @@ tbody th { font-weight: 700; }
    swap, is what actually carries the state - see the rule this answers in `results.js`'s
    own note over `contributeBlock`. */
 .contribute-control input:checked + .contribute-toggle { background: var(--kai-pea); border-color: var(--green-dark); }
+/* **`.contribute-toggle__text` is the mark's BEM pair and carries no rule** (#160). The
+   toggle is a two-child flex row and only the mark has a box to describe; the text is
+   the row's other child and takes the toggle's own `font-weight`, `color` and
+   `line-height`. It is still named rather than left a bare `<span>`, because every rule
+   below addresses `__mark` specifically and an anonymous sibling would be whatever a
+   later `.contribute-toggle span` selector swept up. What would make it bind is the text
+   needing its own wrapping or flex behaviour. Declared in
+   `tests/web/test_class_rules.py`'s `CLASSES_WITH_NO_RULE_OF_THEIR_OWN`. */
 .contribute-toggle__mark {
   flex: 0 0 auto;
   width: 26px;
@@ -2311,6 +2348,16 @@ tbody th { font-weight: 700; }
 footer { position: relative; padding: 28px 20px; color: #fff; background: var(--green-dark); text-align: center; font-size: 0.9rem; overflow: hidden; }
 footer p { margin: 0; }
 .transparency-notice { max-width: 760px; margin: 10px auto 0; color: rgba(255, 255, 255, 0.78); font-size: 0.82rem; }
+/* **`.notice-server` and `.notice-browser` are hooks inside that paragraph, not rules**
+   (#160). The footer's privacy copy is two sentences about two different stores - what
+   the server keeps and what the browser tab keeps - and they are two `<span data-i18n>`
+   elements rather than one because `applyToDocument` assigns `textContent`, so one
+   element can only carry one key. The classes name the halves for
+   `test_i18n_browser.py`, which compares each against its own catalogue entry in all
+   twenty languages; they are deliberately not styled, because the paragraph is one
+   paragraph to read. What would make either bind is wanting the two halves to look
+   different. Declared in `tests/web/test_class_rules.py`'s
+   `CLASSES_WITH_NO_RULE_OF_THEIR_OWN`. */
 footer a { color: var(--kai-white); text-underline-offset: 3px; }
 footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; width: 110px; height: 55px; border: 1px solid rgba(40, 200, 130, 0.5); border-bottom: 0; border-radius: 110px 110px 0 0; }
 
@@ -2436,7 +2483,45 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
    a single-class rule here - however far down the file it sat - would lose to it at
    exactly the widths `test_horizontal_overflow.py` measures. The padding belongs to the
    header and the body, which are separately present. */
-.form-panel.step-card { padding: 0; }
+/* `min-inline-size: 0` is the second declaration here and it is load-bearing, not
+   tidiness (v1.84 rule 6, moved out of a `style` attribute by #160). A `<fieldset>`'s
+   initial `min-inline-size` is `min-content`, so unlike a `<div>` it REFUSES to shrink
+   below the widest thing inside it - and step 4's `.destination-row` is a two-column grid
+   whose minimum is 220 + 24 + 260 = 504px. Measured on this build: without it, at 500px
+   the card is forced to 588px and the document scrolls sideways to 608, at every width
+   from 481 (where the row stops being one column) to about 620 (where 504px fits again).
+   `test_horizontal_overflow.py` measures 320 and 390 only, where the row is a single
+   column and the band is invisible, so the band has a test of its own -
+   `test_leaf_layout_browser.py::test_step_four_does_not_scroll_sideways_where_the_row_is_
+   two_columns_and_does_not_fit`, at 481, 540 and 619.
+
+   It shipped in #142 as `style="min-inline-size:0"` on the element, because that change
+   was not permitted to touch this file while another branch was in it, and v1.84's entry
+   recorded it as owed here. This is where it belongs: the same rule that already has to
+   be two classes to beat the 480px `.form-panel { padding: 19px }` restatement.
+
+   The file carries the identical fix twice in other dimensions -
+   `.choice-fieldset { min-width: 0 }` and the matrix's own inputs, before #160 deleted
+   the latter with the rest of the withdrawn grid. */
+.form-panel.step-card { padding: 0; min-inline-size: 0; }
+/* **`.item-group` and `.leaf-panel` are the two `extraClass` values this card is given**,
+   and only the second carries a rule (`margin: 0`, below, for the list's own gap).
+   `.item-group` is step 2.5's per-category card and the card above already styles it; the
+   class is how three of `test_step_two_point_five_browser.py`'s assertions address a food
+   group (`.item-group legend`, `.item-group .simple-choice strong`). What would make it
+   bind is a food group needing a box unlike step 3's and step 4's. Declared in
+   `tests/web/test_class_rules.py`'s `CLASSES_WITH_NO_RULE_OF_THEIR_OWN` (#160). */
+/* **`.step-card--open` is the open state in the DOM and is deliberately not styled**
+   (#160). Openness is expressed by the body's `hidden` attribute rather than by a class -
+   decision 3 of `collapsibleCard`, so that a shut card's controls are genuinely
+   unreachable by Tab rather than merely invisible - and the card's own ground does not
+   change when it opens, so there is nothing for a rule here to say. The class is kept
+   because it is the ONLY open-state marker a lone card carries: a lone card is fixed open
+   and therefore has no toggle, so it has no `aria-expanded` either, and
+   `.step-card--open` is all a reader of the DOM has. What would make it bind is any
+   treatment that differs between an open and a shut card - a shadow, a border colour, the
+   glass token applying only while open. Declared in `tests/web/test_class_rules.py`'s
+   `CLASSES_WITH_NO_RULE_OF_THEIR_OWN`. */
 /* The header strip. A `<button>` so the keyboard gets it free and `aria-expanded`
    has somewhere legitimate to live; stripped back to text because it is a card
    header rather than a control the eye should look for.
@@ -2462,6 +2547,15 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
   text-align: start;
   cursor: pointer;
 }
+/* A lone card can never be shut (`cardIsFixedOpen`), so its header is a plain `<div>`
+   with no chevron, no `aria-expanded` and nothing in the tab order - and the one
+   declaration above it must not inherit is `cursor: pointer`, which would promise a
+   control that does not exist. Neutralised here, beside the class it modifies, rather
+   than in a `style` attribute on the element: that is how #142 shipped it, because the
+   change was not permitted to touch this file, and v1.84's entry recorded the rule as
+   owed. #160 is it. Measured on this build: the computed `cursor` is `default` either
+   way, and the header's box is unchanged at 500px and at 1280px. */
+.step-card__toggle--static { cursor: default; }
 .step-card__name {
   flex: 1 1 auto;
   min-width: 0;
@@ -2520,44 +2614,14 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 }
 .combined-total span { color: var(--muted); font-weight: 700; }
 
-/* Step 4, narrow: per-leaf stacked blocks. The shared side labels and column heads are
-   the matrix's furniture and are not drawn here; each cell carries its own label instead,
-   which is the `.destination-row` markup as it already was. */
-/* **The two layouts are one set of rules with a switch, not two sets of rules.**
-   Every declaration that differs between the matrix and the per-leaf blocks is written
-   once, in the `min-width: 650px` block near the end of this file, as
-   `var(--name, <matrix value>)`. Standing the matrix down is then a matter of setting
-   those custom properties to the block layout's values on `.allocation-matrix` - they
-   inherit, so one rule reaches the row labels, the column heads, the cells and the
-   summary - and the "stand down" list can be applied under whatever media-and-count
-   condition is needed without any layout rule being written a second time. A second copy
-   of a layout is a second place for it to drift. */
-.allocation-matrix { display: var(--matrix-display, block); }
-.matrix-row-label, .matrix-column-head { display: none; }
-.leaf-group {
-  margin-block: 20px;
-  border: 1px solid rgba(0, 50, 35, 0.12);
-  border-radius: 16px;
-  background: #fff;
-  overflow: hidden;
-}
-.leaf-group__heading {
-  margin: 0;
-  padding: 14px 17px;
-  font-size: 1rem;
-  border-bottom: 1px solid rgba(0, 50, 35, 0.09);
-  background: rgba(40, 200, 130, 0.07);
-}
-.allocation-matrix .allocation-summary {
-  position: static;
-  margin: 0;
-  border-radius: 0;
-  border-inline: 0;
-  border-block-start: 0;
-  box-shadow: none;
-}
-.allocation-matrix .destination-row:last-child { border-bottom: 0; }
-.allocation-matrix input, .allocation-matrix select { min-inline-size: 0; }
+/* **Step 4's matrix was withdrawn in #152 and its rules are gone with #160.** Seven
+   rules stood here -- `.allocation-matrix`, `.matrix-row-label`, `.matrix-column-head`,
+   `.leaf-group`, `.leaf-group__heading` and two `.allocation-matrix` descendant rules --
+   as the narrow half of a one-DOM-two-layouts switch. The client used the wide layout on
+   1 October 2026 and rejected it; `destinationStep`'s docstring keeps the arithmetic that
+   says nobody should put the grid back, and `test_leaf_layout_browser.py` asserts there
+   is no `.allocation-matrix` in the document at any width. Step 4 is `.step-card` and
+   `.destination-row` now, at every width, and those rules are above. */
 
 .entry-card__leaves { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 4px; }
 .entry-card__leaves li { display: flex; justify-content: space-between; gap: 14px; color: var(--muted); }
@@ -3254,7 +3318,17 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 }
 
 /* Statistics page: kept under a page namespace so the shared public shell can be unified
-   without coupling calculator controls to Chart.js layout. */
+   without coupling calculator controls to Chart.js layout.
+
+   **`.calculator-page` is the fourth member of that namespace and the only one with no
+   rules, because it is the default** (#160). `home.html`, `stats.html` and
+   `methodology.html` each carry their page class on `<body>` and each is scoped by it
+   below; `index.html` carries `.calculator-page` and everything above this point is
+   already the calculator, so scoping any of it would be a prefix that excludes nothing.
+   The class stays on the body so that the convention reads the same on all four pages
+   and so a rule that genuinely must apply to the calculator alone has somewhere to go -
+   which is also what would make it bind. Declared in `tests/web/test_class_rules.py`'s
+   `CLASSES_WITH_NO_RULE_OF_THEIR_OWN`. */
 .stats-page .stats-main { max-width: 1120px; }
 .stats-page .stats-introduction,
 .methodology-page .methodology-main > section:first-child { padding-top: 8px; }
@@ -3274,6 +3348,13 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 .stats-page .stats-chart-controls label { font-weight: 600; }
 .stats-page .stats-chart-region { position: relative; min-width: 0; min-height: 320px; margin: 22px 0; }
 .stats-page .stats-chart-region canvas { max-width: 100%; }
+/* **`.stats-list-region` wraps the list below with its `sr-only` heading and carries no
+   rule** (#160). The list has the layout and the heading is visually hidden, so the
+   grouping <div> has nothing to declare; it is named rather than left anonymous because a
+   bare <div> between `.stats-breakdown` and the list is the hardest kind of element to
+   address later. What would make it bind is the region needing a box of its own - spacing
+   between several breakdowns, a border, or the heading made visible. Declared in
+   `tests/web/test_class_rules.py`'s `CLASSES_WITH_NO_RULE_OF_THEIR_OWN`. */
 .stats-page .stats-breakdown-list { margin: 0; padding: 0; display: grid; gap: 8px; list-style: none; }
 .stats-page .stats-breakdown-list li { padding: 14px 0; display: grid; gap: 6px; border-top: 1px solid var(--border); }
 .stats-page .stats-breakdown-list li > span { display: grid; gap: 3px; color: var(--muted); font-size: 0.92rem; }
@@ -3564,154 +3645,27 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
   .methodology-page td { padding: 11px 13px; }
 }
 
-/* ------------------------------------------------- step 4 as a matrix, above 650px
-   Destinations down the side, leaves across the top - **and only above the breakpoint.**
-   It cannot be a matrix at every width and that is arithmetic rather than preference:
-   320px less the gutters is 288px, a destination label needs about 90px, and the ~198px
-   left over is 66px per column at three leaves and 40px at five.
-   `tests/web/test_horizontal_overflow.py` measures document `scrollWidth` against
-   `clientWidth` at 320 and 390 in a real browser and is a hard gate.
+/* **The matrix that stood above 650px is gone (#152, rules deleted in #160).**
+   Destinations down the side, leaves across the top, in an `@media (min-width: 650px)`
+   block of its own: `.allocation-matrix`'s `grid-template-columns`, the row labels, the
+   column heads, the sticky per-column summary, the cell placement by `--row` / `--col`,
+   and the two stand-down blocks that turned the whole grid off by resetting a dozen
+   custom properties wherever 84 + 14n + 104n would not fit. All of it addressed markup
+   `calculator.js` no longer builds, and every one of the properties it read
+   (`--matrix-*`, `--leaf-group-display`, `--leaf-heading-display`, `--cell-label-display`,
+   `--row`, `--col`, `--row-columns`, `--row-gap`, `--row-padding`, `--amount-unit-*`,
+   `--summary-*`, `--leaf-count`) was set only by those blocks and read only inside them,
+   so nothing outside is left reading a fallback.
 
-   ONE DOM, two layouts. The cells are rendered leaf by leaf, each carrying its own
-   `--row` / `--col`; `display: contents` on the leaf group lets them join the outer grid
-   here, and below the breakpoint the group is an ordinary block again. A second copy of
-   the inputs would mean two elements holding one figure. */
-@media (min-width: 650px) {
-  .allocation-matrix {
-    display: var(--matrix-display, grid);
-    /* Bounded, not `max-content`: a long destination name would otherwise set the label
-       column to its own full width and take the space the leaf columns need.
-
-       **The leaf columns have a real minimum, and 104px is measured rather than chosen.**
-       They were `minmax(0, 1fr)`, which lets a column shrink below its own content - and
-       at 650px with five leaves they resolved to 67.22px against an input content box of
-       65px, so an amount typed into a cell was cut off and the visitor could not read
-       back the number they had just entered. A cell showing `1234.56` needs 96px of
-       content box (measured in the shipped font), plus the input's own 2.53px of border,
-       so 104px is that with a little air. A minimum the container cannot honour would push
-       the document sideways instead, which `test_horizontal_overflow.py` forbids - so the
-       stand-down block below keeps the matrix off wherever this minimum does not fit. */
-    grid-template-columns: minmax(84px, 18ch) repeat(var(--leaf-count, 1), minmax(104px, 1fr));
-    column-gap: 14px;
-    align-items: start;
-  }
-  .leaf-group { display: var(--leaf-group-display, contents); }
-  .leaf-group__heading { display: var(--leaf-heading-display, none); }
-  .matrix-row-label {
-    display: var(--matrix-label-display, block);
-    grid-row: var(--row);
-    grid-column: 1;
-    align-self: center;
-    padding-block: 17px;
-    font-weight: 700;
-    line-height: 1.35;
-  }
-  .matrix-column-head {
-    display: var(--matrix-head-display, grid);
-    gap: 2px;
-    grid-row: 1;
-    grid-column: var(--col);
-    padding-block-end: 8px;
-    font-weight: 700;
-    line-height: 1.3;
-    border-bottom: 1px solid rgba(0, 50, 35, 0.12);
-  }
-  .matrix-column-head small { color: var(--muted); font-weight: 400; }
-  .allocation-matrix .allocation-summary {
-    grid-row: 2;
-    grid-column: var(--col);
-    position: var(--summary-position, sticky);
-    top: 10px;
-    margin-block: var(--summary-margin-block, 10px);
-    padding: var(--summary-padding, 10px);
-    grid-template-columns: var(--summary-columns, minmax(0, 1fr));
-    border-radius: var(--summary-radius, 12px);
-    border: var(--summary-border, 1px solid rgba(40, 200, 130, 0.5));
-    border-block-end: var(--summary-border-block-end, 1px solid rgba(40, 200, 130, 0.5));
-  }
-  .allocation-matrix .destination-row {
-    grid-row: var(--row);
-    grid-column: var(--col);
-    grid-template-columns: var(--row-columns, minmax(0, 1fr));
-    gap: var(--row-gap, 6px);
-    padding: var(--row-padding, 10px 0);
-  }
-  /* The name is down the side once, shared by every column. The input keeps its own
-     `aria-label` ("Landfill amount in kilograms"), so nothing loses its accessible name
-     by the label being hidden. */
-  .allocation-matrix .destination-row > label { display: var(--cell-label-display, none); }
-  .allocation-matrix .amount-with-unit { grid-template-columns: var(--amount-unit-columns, minmax(0, 1fr)); gap: var(--amount-unit-gap, 6px); }
-  /* **No leaf-card override of step 3's own layout here any more.** Three rules stood
-     here: a three-column `.leaf-panel .mass-fields`, a `.leaf-panel .money-fields` pair,
-     and a `.leaf-panel .unit-field select { inline-size: 100% }` that undid the unit's
-     half-width inside a card. They existed because the card's money pair lived outside
-     the grid, behind a disclosure, and the three mass fields had to be crushed into the
-     one live column of a two-column template whose other 445px was dead - `.amount-grid
-     --leaf` was a class with no rule anywhere. The card uses `.zones` now, the same two
-     tinted columns the single-leaf panel uses, so there is nothing left to override. */
-}
-
-/* ------------------------------------------- the matrix stands down where it will not fit
-   **Arithmetic, and measured.** A matrix column has to hold a cell that can show its own
-   number: 104px (see `grid-template-columns` above). One label column of at least 84px, one
-   14px gap per leaf and 104px per leaf is what the container must have, and the container is
-   `.main-content`'s 900px - or `.wide`'s 1000px above 1020px, past which extra viewport buys
-   the grid nothing and the leaf count alone decides.
-
-   So there are two conditions, and the same stand-down list serves both. Written as custom
-   properties on `.allocation-matrix` rather than as a second copy of the block layout: they
-   inherit to the row labels, the column heads, the cells and the summary, so one rule turns
-   the whole grid off and no layout declaration exists twice.
-
-   The `:not(...)` specificity (0,2,0) beats the matrix block's (0,1,0) whatever the source
-   order, so this cannot be defeated by moving a rule. */
-@media (max-width: 1019.98px) {
-  /* Five leaves or more, before `.wide` widens the container. */
-  .allocation-matrix:not([data-leaf-count="1"], [data-leaf-count="2"], [data-leaf-count="3"], [data-leaf-count="4"]) {
-    --matrix-display: block;
-    --leaf-group-display: block;
-    --leaf-heading-display: block;
-    --matrix-label-display: none;
-    --matrix-head-display: none;
-    --cell-label-display: grid;
-    --summary-position: static;
-    --summary-margin-block: 0;
-    --summary-padding: 16px;
-    --summary-columns: repeat(3, minmax(0, 1fr));
-    --summary-radius: 0;
-    --summary-border: 0;
-    --summary-border-block-end: 1px solid rgba(40, 200, 130, 0.5);
-    --row-columns: minmax(220px, 1fr) minmax(260px, 0.8fr);
-    --row-gap: 24px;
-    --row-padding: 17px 20px;
-    --amount-unit-columns: minmax(0, 1fr) minmax(120px, 45%);
-    --amount-unit-gap: 10px;
-  }
-}
-/* Eight leaves or more is never a matrix at any width: 84 + 8x14 + 8x104 is 1028px against
-   a container that stops at 1000px, so the grid could only fit by making a cell too narrow
-   to read - and a form of eight columns of number inputs is past the point of being
-   fillable in any case. `MAX_ENTRIES` allows twenty leaves, so this is reachable. */
-.allocation-matrix:not([data-leaf-count="1"], [data-leaf-count="2"], [data-leaf-count="3"], [data-leaf-count="4"], [data-leaf-count="5"], [data-leaf-count="6"], [data-leaf-count="7"]) {
-    --matrix-display: block;
-    --leaf-group-display: block;
-    --leaf-heading-display: block;
-    --matrix-label-display: none;
-    --matrix-head-display: none;
-    --cell-label-display: grid;
-    --summary-position: static;
-    --summary-margin-block: 0;
-    --summary-padding: 16px;
-    --summary-columns: repeat(3, minmax(0, 1fr));
-    --summary-radius: 0;
-    --summary-border: 0;
-    --summary-border-block-end: 1px solid rgba(40, 200, 130, 0.5);
-    --row-columns: minmax(220px, 1fr) minmax(260px, 0.8fr);
-    --row-gap: 24px;
-    --row-padding: 17px 20px;
-    --amount-unit-columns: minmax(0, 1fr) minmax(120px, 45%);
-    --amount-unit-gap: 10px;
-}
+   **One decision recorded there is worth keeping.** Three rules used to override step 3's
+   own layout inside a leaf card -- a three-column `.leaf-panel .mass-fields`, a
+   `.leaf-panel .money-fields` pair, and a `.leaf-panel .unit-field select
+   { inline-size: 100% }` that undid the unit's half-width. They existed because the
+   card's money pair lived outside the grid behind a disclosure and the three mass fields
+   had to be crushed into the one live column of a two-column template whose other 445px
+   was dead -- the case where `.amount-grid--leaf` was a class with no rule anywhere,
+   which is the defect #160 exists to stop recurring. The card uses `.zones` now, the same
+   two tinted columns the single-leaf panel uses, so there is nothing to override. */
 
 
 /* ---------------------------------------------------------------------------
@@ -3736,6 +3690,14 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 .period-bound-row { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
 .period-bound-row .form-field { flex: 1 1 200px; margin: 0; }
 .period-bound-row .period-time-field { flex: 0 1 190px; }
+/* **`.period-date-field` is the time field's named counterpart and has nothing to
+   declare** (#160). The rule two lines up gives every `.form-field` in the row
+   `flex: 1 1 200px` and the rule one line up takes the time field off that basis, so the
+   date field is exactly the default and a rule for it would restate the default. It is
+   named anyway, because `.period-bound-row > .form-field:first-child` would say "the one
+   on the left" about a row that wraps. What would make it bind is giving the date box a
+   basis of its own. Declared in `tests/web/test_class_rules.py`'s
+   `CLASSES_WITH_NO_RULE_OF_THEIR_OWN`. */
 .period-date-control { display: flex; gap: 6px; align-items: stretch; }
 .period-date-control .period-input { flex: 1 1 auto; min-inline-size: 0; }
 .period-input[aria-invalid="true"] { border-color: var(--error); }
@@ -3792,6 +3754,16 @@ td.period-day[data-day]:hover { background: var(--mint); }
    only one. */
 td.period-day.is-disabled { color: var(--muted); cursor: not-allowed; opacity: 0.4; }
 td.period-day.is-selected { font-weight: 700; color: var(--kai-white); background: var(--kai-kale); }
+/* **`.is-outside` is deliberately unstyled, and it is read by `period.js` rather than by
+   this file** (#160). A cell from the neighbouring month is drawn empty - no number, no
+   `data-day`, no `tabindex` - so there is nothing on it to style, and giving it a tint
+   would advertise a cell that cannot be chosen. The class is what `dayGrid` tests for
+   when it decides whether a sixth week is worth drawing
+   (`cells.some(cell => !cell.includes('is-outside'))`, a substring test against the row's
+   own HTML), so renaming it silently restores the empty sixth row and the dialog starts
+   changing height between months. What would make it bind is deciding to show those
+   dates. Declared in `tests/web/test_class_rules.py`'s
+   `CLASSES_WITH_NO_RULE_OF_THEIR_OWN`. */
 td.period-day:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 
 /* The month and year grids behind the caption.
@@ -3808,6 +3780,15 @@ td.period-day:focus-visible { outline: 2px solid var(--focus); outline-offset: -
    `position: relative` makes it the `offsetParent` of its own cells, which is
    what `period.js`'s `focusAfterRender` measures against to centre the cursor. */
 .period-scroller { position: relative; max-block-size: 232px; overflow-y: auto; }
+/* **`.period-choices` is the second class on those two tables and carries no rule**
+   (#160). Everything the month and year grids need is already on `.period-grid` (shared,
+   see the note above) and on `td.period-choice` below, so the table-level class has
+   nothing of its own; it exists so that a test can say *which* grid is on screen, and
+   `test_period_picker_browser.py` leans on it a dozen times - waiting for the choices to
+   appear, asserting exactly one `td[tabindex="0"]`, and asserting the count is back to
+   zero once a year is chosen. What would make it bind is wanting the choices table to
+   differ from the day table at the table level. Declared in
+   `tests/web/test_class_rules.py`'s `CLASSES_WITH_NO_RULE_OF_THEIR_OWN`. */
 td.period-choice { block-size: 40px; padding: 2px; font-size: 0.9rem; text-align: center; border-radius: 8px; }
 td.period-choice[data-action] { cursor: pointer; }
 td.period-choice[data-action]:hover { background: var(--mint); }

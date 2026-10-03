@@ -34,6 +34,7 @@ that is not on disk.
 
 from __future__ import annotations
 
+import calendar
 import datetime as dt
 import re
 
@@ -113,6 +114,152 @@ def _focused_day(page):
 
 def _values(page):
     return {field: page.locator(f"#{field}").input_value() for field in FIELDS}
+
+
+# ---------------------------------------------------------------------------
+# What the grid is allowed to offer, derived rather than named
+# ---------------------------------------------------------------------------
+#
+# **Why these exist.** Three assertions in this file used to name a number about
+# the calendar - `offerable >= 14`, and `disabled.count() > 0` twice - and each
+# of them was a measurement with an expiry date. The grid only offers days the
+# period may legally end on, and the browser's ceiling is the visitor's own
+# `now + 24 hours`, so on the 3rd of a month the calendar offers four days and
+# `assert 4 >= 14` fails for reasons that have nothing to do with the dialog
+# (issue #157, observed on 2 and 3 October by two independent runs). The
+# complement failed at the other end of the month: on the 30th and 31st no day
+# of the month is past the ceiling, so `disabled.count() > 0` had nothing to
+# count. A suite that is red for twelve days a month trains everyone to read a
+# failure as noise.
+#
+# So the rule is re-derived here from `web/js/period.js`'s `dayEnabled` -
+# `isoDay(FLOOR) <= iso <= isoDay(now() + MAX_HOURS_AHEAD)` - and the grid is
+# asserted to offer **every day the ceiling allows and no more**. That is a
+# relationship between the rendered grid and the rule, it holds on the 1st as
+# well as the 28th, and it is strictly stronger than either number it replaces.
+# Contract v1.78 replaced two pixel heights the same way: if a test needs a
+# number about the page, it measures it on the page; if it needs a relationship,
+# it asserts the relationship.
+#
+# **The alternative was pinning the clock** through CDP's
+# `Emulation.setVirtualTimePolicy` or an injected `Date` shim, which several
+# other tests in this tree would also benefit from. It is rejected here for two
+# reasons. It is the larger change - a shim has to survive `render()` replacing
+# `main.innerHTML` on every `setState`, which is the thing half this file exists
+# to prove - and it would leave the assertion still claiming something about a
+# date rather than about the dialog. The derived form fixes the test's subject as
+# well as its colour. A pinned clock remains the right answer for a test that
+# wants to stand *on* a boundary, and `test_period_clock_browser.py` is where
+# that would earn its keep.
+#
+# Re-derived rather than imported, on the same reasoning
+# `tests/api/test_fixture_consistency.py` gives for re-deriving §4.1's rule: the
+# value of the assertion is that it does not agree with the code under test by
+# construction.
+
+#: `period.js`'s `MAX_HOURS_AHEAD`. `test_period_form_bounds.py` is what asserts
+#: this is still 24 and still not `api/schemas.py`'s 38, so it is named here and
+#: not re-read.
+CEILING_HOURS = 24
+
+
+def _ceiling_day(moment: dt.datetime) -> dt.date:
+    """The last day the form accepts, as of `moment`.
+
+    `period.js` drops seconds from `now()` before adding the hours, which cannot
+    move the resulting *day*: truncating to the minute never crosses midnight in
+    the direction that matters, since `23:59:30 + 24h` and `23:59:00 + 24h` fall
+    on the same date. So the seconds are not reproduced here.
+    """
+    return (moment + dt.timedelta(hours=CEILING_HOURS)).date()
+
+
+def _days_of_month_within(month: dt.date, ceiling: dt.date) -> set[str]:
+    """Every ISO day of `month` at or before `ceiling`.
+
+    The floor - 1970-01-01 - is not applied: a freshly opened calendar stands on
+    the cursor's month, and the cursor is the visitor's own today clamped into
+    range, so the floor cannot bite on the month this file ever looks at.
+    `test_a_year_and_a_month_outside_the_range_are_genuinely_disabled` is what
+    asserts the floor end.
+    """
+    last = calendar.monthrange(month.year, month.month)[1]
+    return {
+        f"{month.year:04d}-{month.month:02d}-{day:02d}"
+        for day in range(1, last + 1)
+        if dt.date(month.year, month.month, day) <= ceiling
+    }
+
+
+def _day_grid(page):
+    """One read of the day grid: what it offers, and what it drew unreachable.
+
+    `offered` are the cells carrying `data-day` - the ones a pointer, the roving
+    `tabindex` and `aria-selected` all work through. `unreachable` are every
+    other cell in the grid: the days past the ceiling (`is-disabled`) and the
+    neighbouring month's blanks (`is-outside`). Read in one `evaluate` so the two
+    cannot be observed a re-render apart.
+    """
+    return page.evaluate("""() => {
+      const cells = [...document.querySelectorAll('.period-grid td')];
+      const day = cells.filter(c => !c.matches('th'));
+      return {
+        offered: day.filter(c => c.dataset.day).map(c => c.dataset.day),
+        disabled: day.filter(c => c.classList.contains('is-disabled')).length,
+        outside: day.filter(c => c.classList.contains('is-outside')).length,
+        reachable_without_a_day: day
+          .filter(c => !c.dataset.day)
+          .filter(c => c.hasAttribute('data-action') || c.hasAttribute('tabindex')
+                       || c.getAttribute('aria-selected') !== null)
+          .map(c => c.className + ' ' + c.textContent.trim()),
+      };
+    }""")
+
+
+def _assert_the_grid_offers_exactly_what_the_ceiling_allows(grid, opened_at, read_at):
+    """The one claim both ceiling tests share, asserted as a relationship.
+
+    `opened_at` and `read_at` bracket the render. They are normally the same
+    date, in which case this is an exact equality; when a run straddles the
+    minute the ceiling day rolls over on, the two differ by one day and the
+    assertion relaxes by exactly that day rather than failing on a race. Saying
+    so here because an exact equality written against a single `now()` read
+    *after* the render is the version of this that is flaky twice a month at
+    midnight, which would be trading one calendar-shaped failure for another.
+    """
+    offered = set(grid["offered"])
+    assert offered, (
+        "the day grid offers nothing at all; the dialog is open and empty"
+    )
+
+    months = {iso[:7] for iso in offered}
+    assert len(months) == 1, f"the grid is showing more than one month: {sorted(months)}"
+    year, month = (int(part) for part in months.pop().split("-"))
+    shown = dt.date(year, month, 1)
+    assert shown in {opened_at.date().replace(day=1), read_at.date().replace(day=1)}, (
+        f"the calendar opened on {shown:%B %Y} rather than the visitor's own "
+        f"month; the cursor is meant to be today, clamped"
+    )
+
+    must_offer = _days_of_month_within(shown, _ceiling_day(opened_at))
+    may_offer = _days_of_month_within(shown, _ceiling_day(read_at))
+    assert must_offer <= offered, (
+        f"the grid withholds days the 24-hour ceiling allows: "
+        f"{sorted(must_offer - offered)}"
+    )
+    assert offered <= may_offer, (
+        f"the grid offers days past the 24-hour ceiling: {sorted(offered - may_offer)}"
+    )
+
+    # And the month is drawn whole, so "no more than the ceiling allows" cannot
+    # be satisfied by a grid that quietly dropped cells: every day of the month
+    # is either offered or disabled.
+    last = calendar.monthrange(shown.year, shown.month)[1]
+    assert len(offered) + grid["disabled"] == last, (
+        f"{shown:%B %Y} has {last} days and the grid drew "
+        f"{len(offered)} offered + {grid['disabled']} disabled"
+    )
+    return offered
 
 
 # ---------------------------------------------------------------------------
@@ -236,10 +383,19 @@ def test_opening_the_calendar_moves_focus_into_it_and_leaves_one_tab_stop(review
     keyboard user has to hunt for. And there must be **one** tab stop into the
     grid, not thirty-one: a roving `tabindex` is the difference between one press
     of Tab and a month of them.
+
+    **The count of offered days is derived, not named** (issue #157). This test
+    used to carry `assert offerable >= 14` as a liveness guard, which failed for
+    the first twelve days of every month because the grid only offers days the
+    period may legally end on: on the 3rd it offers four. The subject of this
+    test is the tab stop, so the grid's size is now read off the grid and
+    checked against the rule rather than against a number somebody chose - see
+    the derivation above `_day_grid`.
     """
     page = review()
     page.select_option("#time-frame", "custom")
     page.wait_for_timeout(150)
+    opened_at = dt.datetime.now()
     _open_calendar(page)
 
     assert page.evaluate(
@@ -248,14 +404,19 @@ def test_opening_the_calendar_moves_focus_into_it_and_leaves_one_tab_stop(review
     assert page.locator('.period-grid td[tabindex="0"]').count() == 1, (
         "the grid has more than one tab stop; the roving tabindex is not roving"
     )
-    # Every other *enabled* day is explicitly out of the tab order. Counted
-    # against the enabled cells rather than against 31, because the days past
-    # the 24-hour ceiling carry no `tabindex` at all - so a fixed number here
-    # would be a different number in a month whose tail is disabled, and the
-    # test would pass or fail on the date it was run.
-    offerable = page.locator(".period-grid td[data-day]").count()
-    assert offerable >= 14
-    assert page.locator('.period-grid td[data-day][tabindex="-1"]').count() == offerable - 1
+    # The real claim: every *other* offered day is explicitly out of the tab
+    # order. Counted against the offered cells rather than against 31, because
+    # the days past the 24-hour ceiling carry no `tabindex` at all.
+    grid = _day_grid(page)
+    read_at = dt.datetime.now()
+    offered = _assert_the_grid_offers_exactly_what_the_ceiling_allows(
+        grid, opened_at, read_at
+    )
+    assert page.locator('.period-grid td[data-day][tabindex="-1"]').count() == len(offered) - 1, (
+        f"{len(offered)} days are offered and "
+        f"{page.locator('.period-grid td[data-day][tabindex=\"-1\"]').count()} carry "
+        f"tabindex=-1; every offered day but the cursor must be out of the tab order"
+    )
 
     # A click inside the dialog must not dismiss it. The dialog is a child of
     # the backdrop that carries the dismiss action, so `closest('[data-action]')`
@@ -442,21 +603,46 @@ def test_a_day_past_the_ceiling_is_genuinely_disabled_and_not_merely_grey(review
     and no `aria-selected`, so a pointer cannot choose it, the roving tabindex
     cannot land on it, and the arrow keys clamp at the boundary rather than
     stepping onto it.
+
+    **`disabled.count() > 0` was issue #157's defect at the other end of the
+    month.** The grid shows the visitor's own month, and on the 30th and 31st
+    every day of it is at or before `now + 24 hours`, so there was nothing past
+    the ceiling to count and this failed for two days a month exactly as
+    `>= 14` failed for twelve. The count is derived now, which makes the claim
+    *where the ceiling falls* rather than *that something is grey*, and holds on
+    the 31st.
+
+    **The unreachability claim is made of every cell that is not an offered
+    day**, not only of `is-disabled`: the neighbouring month's `is-outside`
+    blanks must be just as unreachable, and widening it is what keeps this
+    non-vacuous on the two days a month when the ceiling draws nothing. (A month
+    of exactly 28 days beginning on a Monday would have neither kind, which is
+    why the derived count above is the assertion carrying the ceiling and not
+    this one.)
     """
     page = review()
     page.select_option("#time-frame", "custom")
     page.wait_for_timeout(150)
+    opened_at = dt.datetime.now()
     _open_calendar(page)
 
+    grid = _day_grid(page)
+    read_at = dt.datetime.now()
+    # Where the ceiling falls, as a relationship: offered days are exactly the
+    # days the rule allows and the month is drawn whole, so the disabled tail is
+    # the complement and its size is not a number anybody had to choose.
+    _assert_the_grid_offers_exactly_what_the_ceiling_allows(grid, opened_at, read_at)
+
+    assert not grid["reachable_without_a_day"], (
+        f"a cell with no `data-day` is still a click target, still focusable or "
+        f"still selectable: {grid['reachable_without_a_day']}"
+    )
     disabled = page.locator(".period-grid td.is-disabled")
-    assert disabled.count() > 0, "no day is disabled; the ceiling is not being drawn"
-    assert page.locator(".period-grid td.is-disabled[data-day]").count() == 0, (
-        "a disabled day is still a click target"
-    )
-    assert page.locator(".period-grid td.is-disabled[tabindex]").count() == 0, (
-        "a disabled day is still focusable"
-    )
-    assert disabled.first.get_attribute("aria-disabled") == "true"
+    for index in range(disabled.count()):
+        assert disabled.nth(index).get_attribute("aria-disabled") == "true", (
+            f"a disabled day is grey and nothing else: cell {index} carries no "
+            f"aria-disabled"
+        )
 
     # And the arrow keys cannot walk onto one. Fifteen presses is more than two
     # weeks, which is well past a ceiling that is 24 hours away.
@@ -658,6 +844,16 @@ def test_a_year_and_a_month_outside_the_range_are_genuinely_disabled(review):
     grid's own shape says where the range stops. The ceiling's own year is the
     other boundary: the months after the one the ceiling falls in are out of
     range and are drawn the same way.
+
+    **The third date-dependent constant, and the slowest-burning one.**
+    `disabled.count() > 0` is true only because 2026 is not the last year of its
+    row. `yearGrid` draws rows of `YEARS_PER_ROW` from 1970 while the row's first
+    year is at or before the ceiling's, so in a year that *is* the last of its
+    half-decade - 2029, and 2024 before it - every drawn year is inside the
+    range and there is nothing disabled to find. It would have failed for a
+    whole year, five years from now, with nobody on the project to remember why.
+    Derived from the row arithmetic instead, which says the same thing in every
+    year including those.
     """
     page = review()
     page.select_option("#time-frame", "custom")
@@ -667,17 +863,29 @@ def test_a_year_and_a_month_outside_the_range_are_genuinely_disabled(review):
 
     limit = dt.datetime.now() + dt.timedelta(hours=24)
     disabled = page.locator(".period-choices td.is-disabled")
-    assert disabled.count() > 0, "no year past the ceiling is drawn; the boundary is invisible"
+    # `period.js`'s `YEARS_PER_ROW`, re-derived: rows start at 1970 and step by
+    # five while the row's first year is at or before the ceiling's, so the grid
+    # ends at the end of the row holding the ceiling and the years after it in
+    # that row are the drawn-but-disabled ones.
+    years_per_row = 5
+    last_drawn = 1970 + years_per_row * ((limit.year - 1970) // years_per_row) + years_per_row - 1
+    past_the_ceiling = [str(year) for year in range(limit.year + 1, last_drawn + 1)]
+    assert sorted(disabled.all_inner_texts()) == sorted(past_the_ceiling), (
+        f"the years drawn past the ceiling should be exactly {past_the_ceiling} - "
+        f"the tail of the 1970+{years_per_row}k row holding {limit.year} - and the "
+        f"grid disabled {sorted(disabled.all_inner_texts())}"
+    )
     assert page.locator(".period-choices td.is-disabled[data-action]").count() == 0, (
         "a disabled year is still a click target"
     )
     assert page.locator(".period-choices td.is-disabled[tabindex]").count() == 0, (
         "a disabled year is still focusable"
     )
-    assert disabled.first.get_attribute("aria-disabled") == "true"
-    assert all(int(text) > limit.year for text in disabled.all_inner_texts()), (
-        f"a year inside the range is disabled: {disabled.all_inner_texts()}"
-    )
+    for index in range(disabled.count()):
+        assert disabled.nth(index).get_attribute("aria-disabled") == "true", (
+            f"a disabled year is grey and nothing else: "
+            f"{disabled.nth(index).inner_text()} carries no aria-disabled"
+        )
     assert page.locator(f'td[data-action="period-choose-year"][data-value="{limit.year + 1}"]').count() == 0, (
         "the year after the ceiling's is choosable"
     )

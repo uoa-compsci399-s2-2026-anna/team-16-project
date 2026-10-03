@@ -147,6 +147,30 @@ MIXED_BY_DESIGN = {
 }
 
 
+def pytest_report_header(config):
+    """Say which origin this run is pointed at, in the report itself.
+
+    The contamination #149 records was only ever caught by reading a failure
+    message and recognising an attribute from somebody else's tree. A line at
+    the top of the report naming the origin makes "which stack did this run
+    read?" answerable from the report, which is where the question gets asked.
+
+    Two conditions on seeing it, both measured rather than assumed. It is
+    emitted only when `tests/web` is on the command line, because
+    `pytest_report_header` is called for the initial conftests alone - which is
+    the right condition anyway, since a `pytest tests/api` run has no web origin
+    to report. And `pytest.ini` pins `-q`, which suppresses the header block
+    entirely, so it shows under `-v` and not otherwise. That is the invocation
+    somebody investigating an inexplicable failure reaches for, which is the
+    moment this line is worth anything; the skip messages in each file name
+    `BASE` either way.
+    """
+    from tests.web.base_url import DEFAULT_ORIGIN, ORIGIN
+
+    how = "default" if ORIGIN == DEFAULT_ORIGIN else "KAICALC_WEB_URL"
+    return f"tests/web origin: {ORIGIN} ({how})"
+
+
 @pytest.hookimpl(tryfirst=True)
 def pytest_collection_modifyitems(config, items):
     """Give every `tests/web` case that needs the stack the `browser` marker.

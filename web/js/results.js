@@ -1731,6 +1731,72 @@ function releasePin() {
  */
 const SCROLL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ', 'Spacebar'])
 
+/**
+ * Whether the overlay panel is **showing** right now, read off the nav itself.
+ *
+ * Three states, because `data-open` has three: `"true"` is a visitor who opened it,
+ * `"false"` a visitor who closed it, and *absent* is "the stylesheet decides" -- and
+ * what the stylesheet decides, undocked, is closed unless `:focus-within` holds it
+ * open. So the absent case is answered by asking where focus is, which is the only
+ * thing that opens it in that state.
+ */
+function resultsNavPanelIsOpen(nav) {
+  const open = nav.getAttribute('data-open')
+  if (open === 'true') return true
+  if (open === 'false') return false
+  return nav.contains(document.activeElement)
+}
+
+/**
+ * Close the overlay **without re-rendering the results page**.
+ *
+ * `setState` rebuilds `main.innerHTML` wholesale, and `main.js`'s subscriber then
+ * restores focus **by `id`**: for a control with no `id` of its own
+ * `document.activeElement.id` is `''`, `document.getElementById('')` is `null`, and
+ * focus falls through to `main.focus()`. The results page is full of id-less
+ * focusable controls -- the improvement panel's number box, the methodology
+ * `<summary>`, every button in the action row -- so a `setState` here would mean
+ * that opening the nav and then clicking into the number box threw the reader to the
+ * top of the page. Before this dismissal existed those clicks caused no `setState`
+ * at all, so the re-render would have been a regression introduced by a convenience.
+ *
+ * Writing the two attributes and the flag directly is the same choice
+ * `updateImprovementInput` makes for a keystroke and `markCurrentSection` makes for
+ * the scroll mark: the results page has state that must not cost a render. The flag
+ * still has to move, because `resultsFloatingNavigation` writes `data-open` from it
+ * on the *next* render and would otherwise put the panel straight back up; it is
+ * assigned rather than `setState`-ed for exactly the reason above. `liveState` is the
+ * one `state` object, so the next real render reads this and agrees with the DOM.
+ *
+ * **`data-open` is written only where the flag already said `true`, or where the
+ * reader has pressed Escape.** Its absence means "the stylesheet decides", and the
+ * docked regime's default is *open* -- so stamping `"false"` on an untouched nav
+ * would hand a visitor who merely clicked a paragraph at 1280px a nav that stays
+ * collapsed when their window grows past 1600.
+ *
+ * @param {boolean} [focusHandle] Put focus back on the handle, as its own close does.
+ * @returns {boolean} Whether anything was closed.
+ */
+function closeResultsNav(focusHandle = false) {
+  const nav = document.querySelector('.results-floating-nav')
+  //: Docked, the panel is not "open": it IS the nav (`styles.css`'s
+  //: `min-width: 1600px` block shows it unconditionally, with no
+  //: `:not([data-open="false"])` guard). There is nothing to dismiss, and
+  //: writing `data-open="false"` would leave an `aria-expanded` on a handle
+  //: the stylesheet has already taken out of the page.
+  if (!nav || resultsNavIsDocked()) return false
+  if (!resultsNavPanelIsOpen(nav)) return false
+  liveState.resultsNavOpen = false
+  nav.setAttribute('data-open', 'false')
+  //: Before `focus()`, not after. `:focus-within` opens the panel too, and the
+  //: rule that stops the handle re-opening what it just closed is its
+  //: `:not([data-open="false"])` guard -- which only holds once the attribute
+  //: is there to be guarded by.
+  const handle = nav.querySelector('.results-floating-nav__handle')
+  handle?.setAttribute('aria-expanded', 'false')
+  if (focusHandle) handle?.focus()
+  return true
+}
 
 /**
  * The three listeners the pin needs, installed **once on `document`** for the life of
@@ -1739,7 +1805,12 @@ const SCROLL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home
  * Wired here rather than at module load because this module is imported by a Node
  * harness for the text export, where there is no `document` at all.
  *
- * * **click** sets the pin. Delegated, because the links are rebuilt by every render.
+ * * **click** sets the pin on a nav link, and dismisses the overlay anywhere else.
+ *   Delegated, because the links are rebuilt by every render and because a click
+ *   that should dismiss can land outside `main` altogether. The dismissal writes the
+ *   DOM rather than calling `setState` -- see `closeResultsNav` for why a re-render
+ *   here would throw a reader's focus to the top of the page.
+ * * **Escape** dismisses it too, and returns focus to the handle.
  * * **wheel / touchmove / a scrolling key** release it at once: that is the reader's
  *   hand on the page, and it is allowed to interrupt a smooth scroll that is still
  *   running. Keys pressed inside a form control are excluded -- an arrow key in the
@@ -1771,17 +1842,46 @@ function bindNavGestures() {
       pinSection(link.getAttribute('href').slice(1))
       return
     }
-    // The menu is an overlay in the narrow layout. Once it is open, any click
-    // outside the nav should return it to the circular handle state. Keep this
-    // delegated on document because the click may land in the header or footer,
-    // outside the results page's own event boundary.
-    if (!event.target?.closest?.('.results-floating-nav') && liveState.resultsNavOpen === true) {
-      setState({ resultsNavOpen: false })
-    }
+    //: **The overlay closes when the reader's attention goes elsewhere**, which is
+    //: what a floating menu over the text has to do. Delegated on `document`
+    //: rather than on `main` because the click may land in the header, the
+    //: language chooser or the footer, all of which are outside the results page's
+    //: own event boundary.
+    //:
+    //: **`closest('.results-floating-nav')` is what keeps the nav's own clicks out
+    //: of here, and it works on a node that is no longer in the document.** The
+    //: handle's press reaches `calculator.js`'s listener on `main` first (`main` is
+    //: an ancestor, so it bubbles there before `document`), that listener calls
+    //: `setState`, and `render()` replaces `main.innerHTML` -- so by the time this
+    //: runs, `event.target` is the handle's `<span>` inside a *detached* subtree.
+    //: `closest` still walks span -> button -> nav, because replacing
+    //: `innerHTML` detaches the old tree without taking its internal parent links
+    //: apart. That is load-bearing: a `render()` that patched in place, or a move
+    //: of the calculator's listener from `main` to `document` *after* this one is
+    //: bound, would leave the handle opening the panel and this line closing it on
+    //: the same click. `test_the_first_press_of_the_handle_opens_the_list_it_is_
+    //: the_only_way_into` is the assertion that would report it.
+    //: **And only a click the reader actually made.** `downloadResults` builds a
+    //: `<a download>`, appends it to `document.body` and calls `.click()` on it;
+    //: that event bubbles to this listener with a target outside the nav, so
+    //: without `isTrusted` pressing *Download results* **inside the panel** closed
+    //: the panel -- measured, and the reason this guard is here rather than
+    //: imagined. Any other programmatic `.click()` anywhere on the page would do
+    //: the same. A dismissal is a reader's gesture; a synthesised click is not.
+    if (event.isTrusted && !event.target?.closest?.('.results-floating-nav')) closeResultsNav()
   })
   document.addEventListener('wheel', releasePin, { passive: true })
   document.addEventListener('touchmove', releasePin, { passive: true })
   document.addEventListener('keydown', event => {
+    //: **Escape, so that the keyboard has the way out the pointer now has.** The
+    //: handle could already close the panel, but only by being pressed again, and
+    //: `:focus-within` means a keyboard reader can be *inside* the list with the
+    //: handle behind them. Focus goes back to the handle, which is what the
+    //: handle's own close path does and the reason that button carries an `id`.
+    if (event.key === 'Escape') {
+      if (closeResultsNav(true)) event.preventDefault()
+      return
+    }
     if (!SCROLL_KEYS.has(event.key)) return
     if (event.target?.closest?.('input, textarea, select, [contenteditable]')) return
     releasePin()
@@ -1889,7 +1989,8 @@ function resultsFloatingNavigation(state) {
   //: The handle carries an `id` so that `main.js` can put focus back on it after the
   //: re-render its own press causes. Without one, `document.activeElement.id` is `''`,
   //: focus lands on `<main>`, and a keyboard visitor who opens the list is thrown to
-  //: the top of the page instead of into it.
+  //: the top of the page instead of into it. It is also where `closeResultsNav` puts
+  //: focus on the Escape path, for the same reason.
   //:
   //: **The two actions below are buttons, and that is the answer to #126 rather than
   //: a shortcut past it** -- see `RESULTS_NAV_ACTIONS`. They carry the action row's

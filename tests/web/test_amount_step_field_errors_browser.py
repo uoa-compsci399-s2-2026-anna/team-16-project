@@ -19,6 +19,14 @@ that gets past the browser is rejected by the real backend with a genuine 400.
 same reasoning applied to a different defect: a test that answers its own POST proves
 only that the front end can parse a response it wrote itself.
 
+**One test below is the exception, and its own docstring says why.**
+``test_a_detail_with_no_box_on_this_screen_keeps_its_banner`` fulfils the route,
+because the response it needs — one detail bound to a field on screen and one naming
+an ``alternative[…]`` path — is §9-legal and emittable by the real API, while no
+control on any screen can make the form *send* a request that produces it. What is
+measured there is this module's rendering rule, not the server's refusal, so the
+response is the fixture and the renderer is the subject.
+
 **The paste itself.** `field.press_sequentially` types one keystroke at a time and
 *is* the keystroke guard's own path — it would prove nothing about a paste. Real
 clipboard access is unavailable to a sandboxed headless Chromium without OS-level
@@ -43,12 +51,20 @@ limit.
 
 from __future__ import annotations
 
+import json
 import os
 
 import pytest
 
 from tests.web.steps import press_continue
 
+
+#: **This file reaches Playwright and must say so.** It is one of the sixteen
+#: `tests/web/` files issue #149 found driving Chromium with no marker, so
+#: `-m "not browser"` selected it and ran it against the live stack. The import
+#: guard below skips when Playwright is absent; it does nothing about a marker
+#: filter, which is what the marker is for.
+pytestmark = pytest.mark.browser
 
 playwright_api = pytest.importorskip(
     "playwright.sync_api",
@@ -167,9 +183,113 @@ def test_a_pasted_over_precise_money_value_lands_back_on_the_amount_step(page):
     assert field_state["describedBy"] == "total-value-error", field_state
     assert field_state["role"] == "alert", field_state
 
-    # The one field the API named is the one field highlighted, so the generic banner
-    # collapses to the short "check the highlighted fields" form rather than repeating
-    # the same detail a second time in prose next to nothing.
+    # **The banner is gone, and asserted gone rather than tolerated.** The one field the
+    # API named is the one field highlighted, so `validationMessage` returns exactly
+    # `Check the highlighted fields and try again.` - which is the summary's own title.
+    # This assertion used to read `if banner is not None: assert "highlighted" in ...`,
+    # which passed while the banner carried that sentence and passed again, vacuously,
+    # once nothing rendered it: tolerant before, never executed after. The rule the
+    # summary actually implements is *suppressed only where it would have been the short
+    # form*, and that is a statement about absence, so it is asserted as one.
+    assert page.query_selector(".field-error.api-error") is None, (
+        "the banner repeats the summary's own title beside a summary that already says it: "
+        + page.inner_text(".field-error.api-error")
+    )
+
+    summary = page.locator(".amount-validation-summary")
+    assert summary.count() == 1, "the field error has no summary beside the Step 3 title"
+    assert summary.get_attribute("role") == "alert"
+    link = summary.locator(".amount-validation-summary__link")
+    assert link.count() == 1, summary.inner_text()
+    # **Equality, not containment.** `in` cannot tell `Value of production` from
+    # `Dairy - Value of production`, so `food: single ? '' : leafName(leaf)` -> `food:
+    # leafName(leaf)` survived it: the single-leaf item rendered "Dairy - Value of
+    # production" and the substring assertion still held. One food type means the panel
+    # names the field and nothing else, because there is no other card to distinguish it
+    # from.
+    assert link.inner_text().strip() == "Value of production", link.inner_text()
+    # **No fragment, anywhere.** `fieldId` is `total-value--<food slug>` the moment a
+    # second food type is chosen, and an `<a href="#...">` writes that into the address
+    # bar - which §7.2b's privacy note refuses for `?step=` and refuses harder for a food
+    # the visitor named. The item is a `<button>`, so there is no `href` to leak and no
+    # history entry `history.js`'s `traverse` cannot read.
+    assert link.get_attribute("href") is None, "the item is a link and puts an id in the URL"
+    before = page.url
+    link.click()
+    page.wait_for_timeout(150)
+    assert page.url == before, f"clicking the item changed the URL: {before!r} -> {page.url!r}"
+    assert page.evaluate("() => document.activeElement.id") == "total-value", (
+        "the item did not put the caret in the field it names"
+    )
+
+
+def test_a_detail_with_no_box_on_this_screen_keeps_its_banner(page):
+    """**One bound detail and one unbound detail, and the banner must survive.**
+
+    `validationMessage` has two branches. Where every detail is bound to a field on
+    screen it returns `Check the highlighted fields and try again.`, and suppressing
+    *that* beside a summary saying the same sentence is de-duplication. Where **any**
+    detail is unbound it returns `The calculation could not be completed.` plus a
+    `describeDetail` for each - and its own docstring says why: a detail naming a saved
+    entry, an `alternative[...]` path or a field this form has no input for *"has no box
+    to attach to and would otherwise vanish entirely"*.
+
+    `errorStep` is the first detail with a locatable step, so a 400 whose first detail is
+    `entries[0].total_value_nzd` and whose second is `entries[0].alternative[0].qty_kg`
+    lands the visitor on step 3, puts one item in the summary, and - with the banner
+    suppressed on the presence of a summary rather than on what the banner would have
+    said - drops the second detail from the page altogether. Measured by rendering both
+    sides with that state: the unbound sentence was present on `main` and absent with the
+    unconditional suppression.
+
+    **Why this one test intercepts the route when the rest of the file refuses to.**
+    The shape is §9-legal and the real API can emit it, but the *form* cannot be driven
+    into producing it: there is no control on any screen that sends an `alternative[]`
+    line with the main submission. The subject under test is not what the server refuses,
+    it is what this module renders when handed two details of different kinds, so the
+    response is the fixture and the renderer is the thing measured.
+    """
+    envelope = {
+        "error": {
+            "code": "VALIDATION_ERROR",
+            "message": "Request validation failed",
+            "details": [
+                {
+                    "field": "entries[0].total_value_nzd",
+                    "issue": "decimal_places",
+                    "message": "Enter at most two decimal places.",
+                },
+                {
+                    "field": "entries[0].alternative[0].qty_kg",
+                    "issue": "greater_than_equal",
+                    "message": "Destination amounts must be zero or greater.",
+                },
+            ],
+        }
+    }
+    page.route(
+        "**/api/v1/calculate*",
+        lambda route: route.fulfill(
+            status=400,
+            content_type="application/json",
+            body=json.dumps(envelope),
+        ),
+    )
+    page = to_review_and_calculate(page)
+
+    assert page.query_selector("#amount-title") is not None, "the 400 did not land on step 3"
+    summary = page.locator(".amount-validation-summary")
+    assert summary.count() == 1, "the bound detail has no item in the summary"
+    assert summary.locator(".amount-validation-summary__link").count() == 1, summary.inner_text()
+
     banner = page.query_selector(".field-error.api-error")
-    if banner is not None:
-        assert "highlighted" in banner.inner_text().lower(), banner.inner_text()
+    assert banner is not None, (
+        "the banner was suppressed on the presence of a summary, so the detail with no "
+        "box on this screen is now on no surface at all"
+    )
+    said = banner.inner_text()
+    assert "could not be completed" in said, said
+    assert "zero or greater" in said, said
+    # And the short form is NOT what is printed: if it were, the long branch never ran
+    # and this test would be asserting the banner's existence for the wrong reason.
+    assert "highlighted" not in said.lower(), said

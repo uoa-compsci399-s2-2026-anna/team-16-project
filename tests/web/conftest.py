@@ -114,6 +114,10 @@ NOT_A_BROWSER_SUITE = {
         "calls `period.js`'s rules directly under Node",
     "test_snapshot.py":
         "runs `snapshot.js` under Node over `sessionStorage` states it builds",
+    "test_suite_isolation.py":
+        "reads the modules in this package as source and collects them in a "
+        "subprocess; it has to run in exactly the stack-free run whose "
+        "correctness it asserts",
 }
 
 #: Modules that hold **both** kinds of case, with what the non-browser half is.
@@ -160,10 +164,17 @@ def pytest_collection_modifyitems(config, items):
 
     `tryfirst` because `-m` is applied by `_pytest.mark`'s own
     `pytest_collection_modifyitems`, and a marker added after that hook has run
-    is a marker `-m "not browser"` never sees. Conftest plugins are already
-    called before the builtins, so this is belt as well as braces - and the
-    acceptance run in `test_suite_isolation.py` measures the result rather than
-    trusting the ordering.
+    is a marker `-m "not browser"` never sees.
+
+    **It is belt rather than braces, and that was measured rather than
+    assumed.** Removing the decorator leaves the selection byte-identical -
+    440/1351 collected under `-m "not browser"` either way - because conftest
+    plugins are registered later than the builtins and non-wrapper hooks are
+    called last-registered-first. So the ordering already favours us and
+    `tryfirst` only says so out loud, for the reader who would otherwise have to
+    know that. The claim that matters is measured in `test_suite_isolation.py`'s
+    `test_the_stack_free_selection_is_exactly_what_is_declared`, which collects
+    in a subprocess and would fail if the ordering ever changed under us.
     """
     for item in items:
         path = pathlib.Path(str(item.fspath)).resolve()

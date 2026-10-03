@@ -34,6 +34,24 @@ not up::
 
     docker compose -f docker/compose.yaml up -d --build web
     pytest tests/web/test_cache_headers.py
+
+**Why this file carries the ``browser`` marker anyway, and why it is not
+parameterised like the rest.** The marker means "needs the stack up", and this
+file does: every assertion in it reads a header off a running container. So it
+is excluded from ``-m "not browser"`` deliberately, and
+``test_suite_isolation.py``'s
+``test_the_playwright_free_module_that_still_needs_the_stack_is_named_and_marked``
+is the declaration that says so, so that the next reader asking why a
+Playwright-free file is marked finds an answer rather than removing the marker.
+
+It does take its origin from ``tests/web/base_url.py`` like every other file
+here - pointing it at a private container is legitimate and useful, since the
+image is what it is asking about. What it cannot do is prove anything about a
+*different* stack than the one its subject belongs to: ``location /``'s and
+``location /admin``'s directives are properties of whichever container answers,
+and the value of this file is that it asks a real server rather than grepping
+``docker/nginx.conf`` - this repository's defect list already holds a health
+check that reported healthy over a socket the real server had not bound.
 """
 
 from __future__ import annotations

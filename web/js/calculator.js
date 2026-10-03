@@ -1603,12 +1603,17 @@ function amountStep() {
   const intro = single
     ? t('Enter the total amount. You will allocate this total across destinations in the next step.')
     : t('Enter an amount for every food type you chose. You will allocate the combined total across destinations in the next step.')
-  // The eyebrow and the title are wrapped only so that they are the first cell of
-  // `.amount-heading-row`'s two-column grid, and the row exists only when there is a
-  // summary to put beside it - an empty second cell beside a step title is 28px of gap
-  // with nothing in it.
-  const headingMarkup = `<div class="amount-heading-copy"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 3 }))}</p><h1 id="amount-title">${escapeHtml(heading)}</h1></div>`
-  const headingBlock = errorSummary ? `<div class="amount-heading-row">${headingMarkup}${errorSummary}</div>` : headingMarkup
+  // **Both wrappers exist only when there is a summary to put beside the title, so a
+  // step 3 with nothing wrong with it renders byte for byte what it rendered before
+  // #133.** `.amount-heading-row` is the two-column grid and `.amount-heading-copy` is
+  // its first cell; neither has a job without a second cell, and an empty second cell
+  // beside a step title is 28px of gap with nothing in it. Emitting the inner wrapper
+  // unconditionally would also put a `<div>` into every step-3 render for the sake of
+  // the refused ones, which is a diff twenty browser tests walk through for no reason.
+  const headingMarkup = `<p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 3 }))}</p><h1 id="amount-title">${escapeHtml(heading)}</h1>`
+  const headingBlock = errorSummary
+    ? `<div class="amount-heading-row"><div class="amount-heading-copy">${headingMarkup}</div>${errorSummary}</div>`
+    : headingMarkup
   return `<section class="content-section ${single ? '' : 'wide'}" aria-labelledby="amount-title">${headingBlock}<p class="section-intro">${escapeHtml(intro)}</p>${bannerError ? `<p class="field-error api-error ${state.errorCode ? `error-${slug(state.errorCode)}` : ''}" role="alert">${escapeHtml(bannerError)}</p>` : ''}<div class="leaf-panel-list">${leaves.map((leaf, index) => leafPanel(leaf, leaves, index)).join('')}</div>${single ? '' : `<p class="combined-total" aria-live="polite"><span>${escapeHtml(t('Combined waste amount'))}</span> <strong data-combined-total>${formatNumber(combinedText, 2)} ${escapeHtml(unitLabel(state.totalUnit))}</strong></p>`}${stepNav({ step: 2, back: backTarget(2) })}</section>`
 }
 

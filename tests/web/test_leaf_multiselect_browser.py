@@ -433,6 +433,8 @@ def test_the_amount_error_lands_on_the_leaf_it_is_about(page):
             besideTitle: box.left > title.left && box.top < title.bottom && box.bottom > title.top,
             background: getComputedStyle(summary).backgroundColor,
             borderColor: getComputedStyle(summary).borderTopColor,
+            textColor: getComputedStyle(summary).color,
+            linkColor: getComputedStyle(summary.querySelector('.amount-validation-summary__link')).color,
             tapTarget: summary.querySelector('.amount-validation-summary__link').getBoundingClientRect().height,
           };
         }"""
@@ -445,6 +447,12 @@ def test_the_amount_error_lands_on_the_leaf_it_is_about(page):
     # and not looking like one. Asserted as a value because "it looks like an alert" is
     # not measurable and the colour is.
     assert presentation["borderColor"] == "rgb(135, 0, 90)", presentation
+    # **Kale on a light ground, which is the brand rule and not a preference.** `--ink`
+    # on the painted panel is 13.28:1; `--muted` was the mutation that survived, because
+    # nothing asserted the text colour at all. Both the title and the items, because they
+    # are two declarations.
+    assert presentation["textColor"] == "rgb(0, 50, 35)", presentation
+    assert presentation["linkColor"] == "rgb(0, 50, 35)", presentation
     # 44px is this project's stated minimum touch target; every input on this step is
     # held at 54px, and these items were ~26px in a panel that stacks on a phone.
     assert presentation["tapTarget"] >= 44, presentation

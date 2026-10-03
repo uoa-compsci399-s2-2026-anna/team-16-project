@@ -1287,9 +1287,13 @@ def test_the_improvement_donut_draws_a_unit_mode_row_typed_to_its_own_maximum(pa
     this file believes it offers.
     """
     page = _improvement_panel(page_at, mass="1.04")
-    page.select_option("#improvement-mode", "unit")
-    page.wait_for_timeout(80)
-    page.select_option("select.improvement-row-unit >> nth=0", "tonnes")
+    # One control, not two. This test was written against the per-row unit
+    # selector and the `unit` mode that preceded it; v1.86 (#74) collapsed both
+    # into one panel-wide `<select>` whose values ARE the units, so `tonnes` is
+    # now a single choice rather than a mode plus a row. The two landed on `main`
+    # from branches that could not see each other: each was green alone and the
+    # merge was red, with no textual conflict to warn anybody.
+    page.select_option("#improvement-mode", "tonnes")
     page.wait_for_timeout(80)
 
     box = page.locator('.percentage-input input[type="number"]').first

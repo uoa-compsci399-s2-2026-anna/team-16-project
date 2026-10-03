@@ -2167,14 +2167,18 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 /* 44px, which is this project's stated minimum touch target and is what every input on
    this step is already held to (`min-height: 54px`). The items were ~26px at the default
    line height, in a panel that stacks above the form on a phone - the one place they are
-   most likely to be tapped rather than clicked. `inline-flex` so the box grows around the
-   text rather than the text being centred in a 44px block that is wider than it. */
+   most likely to be tapped rather than clicked. `padding-block` is what buys the height,
+   with `min-height` as the floor under a smaller computed font.
+   **`inline-block` and NOT `inline-flex`.** A flex container blockifies its children, so
+   the three spans inside the item each became a flex item: the separator's own leading
+   and trailing spaces are trimmed off a flex item, which printed "Fruit—Waste amount"
+   with the em dash jammed against both words, and `innerText` read the one line as three.
+   The item is a line of text and is laid out as one. */
 .amount-validation-summary li + li { margin-top: 4px; }
 .amount-validation-summary__link {
   min-height: 44px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
+  padding: 10px 0;
+  display: inline-block;
   border: 0;
   color: var(--ink);
   font: inherit;

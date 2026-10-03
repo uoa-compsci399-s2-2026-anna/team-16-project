@@ -44,7 +44,6 @@ answered `-139.200` kg.
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import subprocess
 from decimal import ROUND_HALF_UP, Decimal
@@ -52,6 +51,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.web.base_url import CALCULATOR
 from tests.web.steps import press_continue
 
 
@@ -354,7 +354,7 @@ playwright_api = pytest.importorskip(
     reason="playwright is required to drive the per-row unit select; it is unverified without it",
 )
 
-WEB_BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080/index.html")
+WEB_BASE = CALCULATOR
 
 #: `html { scroll-behavior: smooth }` otherwise animates `scrollTo`, which nothing here
 #: measures — but `test_step_navigation.py`'s note that a mid-animation read can misfire

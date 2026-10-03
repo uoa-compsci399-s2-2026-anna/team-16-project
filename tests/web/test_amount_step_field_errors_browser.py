@@ -52,10 +52,10 @@ limit.
 from __future__ import annotations
 
 import json
-import os
 
 import pytest
 
+from tests.web.base_url import CALCULATOR
 from tests.web.steps import press_continue
 
 
@@ -64,14 +64,15 @@ from tests.web.steps import press_continue
 #: `-m "not browser"` selected it and ran it against the live stack. The import
 #: guard below skips when Playwright is absent; it does nothing about a marker
 #: filter, which is what the marker is for.
-pytestmark = pytest.mark.browser
+# The `browser` marker is applied by `conftest.py`, by location: every module
+# here is a browser suite unless it is named in its `NOT_A_BROWSER_SUITE`.
 
 playwright_api = pytest.importorskip(
     "playwright.sync_api",
     reason="playwright is required to drive the real 400 this file asserts against",
 )
 
-BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rstrip("/") + "/index.html"
+BASE = CALCULATOR
 
 
 @pytest.fixture

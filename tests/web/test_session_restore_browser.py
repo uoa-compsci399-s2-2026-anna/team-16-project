@@ -62,22 +62,23 @@ Requires the stack, and the image rebuilt -- ``web/`` is baked in by
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import pytest
 
+from tests.web.base_url import ORIGIN
 from tests.web.steps import press_continue
 
 
-pytestmark = pytest.mark.browser
+# The `browser` marker is applied by `conftest.py`, by location: every module
+# here is a browser suite unless it is named in its `NOT_A_BROWSER_SUITE`.
 
 playwright_api = pytest.importorskip(
     "playwright.sync_api",
     reason="playwright is required to press Back in a real browser",
 )
 
-ORIGIN = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rstrip("/")
+ORIGIN = ORIGIN
 BASE = ORIGIN + "/index.html?lang=en"
 #: The page the results view's own link goes to (`calculator.js`'s
 #: `view-methodology`), and one of the three header links. Leaving by a real

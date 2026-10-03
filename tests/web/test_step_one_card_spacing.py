@@ -96,13 +96,15 @@ from pathlib import Path
 
 import pytest
 
+from tests.web.base_url import CALCULATOR
+
 playwright_api = pytest.importorskip(
     "playwright.sync_api",
     reason="playwright is required to measure where the copy sits inside a card; the spacing is unverified without it",
 )
 
 ROOT = Path(__file__).resolve().parents[2]
-BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080/index.html")
+BASE = CALCULATOR
 TAXONOMY_URL = BASE.rsplit("/", 1)[0] + "/api/v1/taxonomy"
 
 #: Injected as a stylesheet after load, the same hook `test_step_navigation.py`

@@ -907,13 +907,40 @@ directly. `tests/conftest.py` connects to `root:devroot@127.0.0.1:3307` (the roo
 
 ```bash
 docker compose up -d            # MySQL on 3307, if it is not already running
-python -m pytest                # the whole suite; takes several minutes
-python -m pytest -m "not db"    # skips everything that needs the database
-python -m pytest tests/golden   # the correctness suite alone
+python -m pytest                     # the whole suite; takes several minutes
+python -m pytest -m "not db"         # skips everything that needs the database
+python -m pytest -m "not browser"    # skips everything that needs the stack up
+python -m pytest tests/golden        # the correctness suite alone
 ```
 
 Run one suite at a time. Two concurrent runs share one MySQL server and the admin tests
 deadlock against each other.
+
+**`tests/web` drives a real browser against the running stack**, and two things about it
+are worth knowing before you run it.
+
+The `browser` marker means "needs the stack up" and is applied by `tests/web/conftest.py`
+**by location** — every module there is a browser suite unless it is named in that file's
+`NOT_A_BROWSER_SUITE`, with a reason. So a new test file under `tests/web` needs no marker
+of its own, and a new file that only reads `web/` as source text has to say so. The rule is
+enforced by `tests/web/test_suite_isolation.py`, which fails naming any module that reaches
+Playwright and is declared stack-free, and any module that hardcodes an address.
+
+Point it at your own container with `KAICALC_WEB_URL`, which defaults to
+`http://localhost:18080`. `web/` is baked into the image by `docker/web.Dockerfile`, so a
+front-end change is invisible to the browser suite until that container is rebuilt — and
+sharing one container between two branches means reading somebody else's build:
+
+```bash
+docker build -f docker/web.Dockerfile -t kaicalc-web:mine .
+docker run -d --name kaicalc-web-mine --network kaicalc_default -p 18094:18080 kaicalc-web:mine
+KAICALC_WEB_URL=http://localhost:18094 python -m pytest tests/web
+```
+
+A private container does **not** get a private rate limit: the API keys its bucket on the
+caller's address, so 600 `GET`s an hour and 120 calculations are shared by everything
+running on the host. Run `tests/web` in a few large batches with
+`docker compose restart api` between them rather than many small ones.
 
 Two directories carry more weight than the rest:
 

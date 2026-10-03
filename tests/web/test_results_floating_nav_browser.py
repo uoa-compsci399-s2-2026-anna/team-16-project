@@ -74,22 +74,23 @@ Requires Playwright and the stack::
 
 from __future__ import annotations
 
-import os
 import re
 
 import pytest
 
+from tests.web.base_url import CALCULATOR
 from tests.web.steps import press_continue
 
 
-pytestmark = pytest.mark.browser
+# The `browser` marker is applied by `conftest.py`, by location: every module
+# here is a browser suite unless it is named in its `NOT_A_BROWSER_SUITE`.
 
 playwright_api = pytest.importorskip(
     "playwright.sync_api",
     reason="playwright is required to measure a rendered layout; the floating nav is unverified without it",
 )
 
-BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rstrip("/") + "/index.html"
+BASE = CALCULATOR
 
 #: The widths the owner measured the defect at, kept as the widths it is fixed at.
 WIDTHS = (1100, 1280, 1440, 1600, 1920)

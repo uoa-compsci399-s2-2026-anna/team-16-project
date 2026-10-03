@@ -26,21 +26,22 @@ Requires the stack: ``docker compose -f docker/compose.yaml up -d --build web``.
 from __future__ import annotations
 
 import json
-import os
 
 import pytest
 
+from tests.web.base_url import CALCULATOR
 from tests.web.steps import expand_step_cards, press_continue
 
 
-pytestmark = pytest.mark.browser
+# The `browser` marker is applied by `conftest.py`, by location: every module
+# here is a browser suite unless it is named in its `NOT_A_BROWSER_SUITE`.
 
 playwright_api = pytest.importorskip(
     "playwright.sync_api",
     reason="playwright is required to walk the owner's own journey",
 )
 
-BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rstrip("/") + "/index.html"
+BASE = CALCULATOR
 
 #: Step 2's checkbox order is the taxonomy's `sort_order`: `standard_mix` first,
 #: `fruit` second. Named by index rather than by code because the boxes are what

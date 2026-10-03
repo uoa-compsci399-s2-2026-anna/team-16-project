@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-10-03 (v1.85)"
+date: "2026-10-03 (v1.86)"
 ---
 
 # 0. How to Use This Document
@@ -25,6 +25,9 @@ This document defines **what every person's code receives and what it returns.**
 
 ## 0.1 Change Log
 
+### v1.86 — 2026-10-03 (restore in-page navigation on Steps 2.5, 3 and 4; affects C and D)
+
+Issue #135's right-hand section navigation is restored on top of the current collapsible-card layouts. Step 2.5 lists every category chosen in Step 2 when at least two were chosen; Steps 3 and 4 list the chosen food types. Selecting a link opens the relevant card if necessary, scrolls to its section, and updates the current-section marker. The navigation is permanently visible beside the form on desktop and hidden on narrow viewports. This changes no API field, translation catalogue, or calculation fixture.
 
 ### v1.85 — 2026-10-03 (the two NZ$ hints say "total", and say it about the card they sit on; affects C)
 

@@ -785,6 +785,26 @@ def test_the_navs_two_actions_point_at_the_real_buttons_without_pressing_them(br
         asked = []
         page.on("dialog", lambda dialog: (asked.append(dialog.message), dialog.dismiss()))
 
+        #: **Which button was called out is recorded by an observer, not read
+        #: afterwards.** The call-out is 1.04s long and takes itself off; the
+        #: download check below has to wait 3s to prove a download did NOT start, by
+        #: which time the class is gone. Reading it after that wait measured `[]` and
+        #: said the call-out had not happened -- a test failing on its own clock
+        #: rather than on the subject. The observer records every button that ever
+        #: wears the class, which is the claim anyway.
+        page.evaluate("""() => {
+          window.__calledOut = [];
+          new MutationObserver(records => {
+            for (const r of records) {
+              const el = r.target;
+              if (el.classList.contains('result-action--called-out')) {
+                window.__calledOut.push(el.dataset.action);
+              }
+            }
+          }).observe(document.querySelector('.result-actions'),
+                     {attributes: true, attributeFilter: ['class'], subtree: true});
+        }""")
+
         downloaded = True
         try:
             with page.expect_download(timeout=3000):
@@ -800,8 +820,9 @@ def test_the_navs_two_actions_point_at_the_real_buttons_without_pressing_them(br
           return {
             stillOnResults: !!document.querySelector('#results-title'),
             introShown: !!document.querySelector('[data-action="start"]'),
-            calledOut: row.filter(b => b.classList.contains('result-action--called-out'))
-                          .map(b => b.dataset.action),
+            calledOut: [...new Set(window.__calledOut)],
+            stillWearingIt: row.filter(b => b.classList.contains('result-action--called-out'))
+                               .map(b => b.dataset.action),
             inView: box.top >= 0 && box.bottom <= window.innerHeight,
             panelVisible: getComputedStyle(
               document.querySelector('.results-floating-nav__panel')).visibility,
@@ -826,6 +847,10 @@ def test_the_navs_two_actions_point_at_the_real_buttons_without_pressing_them(br
         f"the call-out landed on {state['calledOut']}. `.result-actions` is one row of "
         "three buttons, so the scroll alone cannot say which entry was pressed -- the "
         "class is what distinguishes them, and it has to be on exactly the one named"
+    )
+    assert state["stillWearingIt"] == [], (
+        f"the call-out is still on {state['stillWearingIt']} a second after it ended. "
+        "`results.js` takes the class off on `animationend`"
     )
     assert state["inView"], (
         f"the button was not scrolled into the viewport: {state}. Pointing at a control "

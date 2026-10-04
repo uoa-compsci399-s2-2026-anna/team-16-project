@@ -188,6 +188,7 @@
     "For privacy, buckets containing fewer than %(threshold)s supply-chain points or destination entries are combined by the service. If the combined sample is still too small, that breakdown is not shown.": "حفاظًا على الخصوصية، تدمج الخدمة الشرائح التي تضم أقل من %(threshold)s من نقاط سلسلة الإمداد أو إدخالات المصائر. وإذا ظلّت العيّنة المدمجة صغيرة جدًا، فلا يُعرض ذلك التفصيل.",
     "From Kai Commitment": "من Kai Commitment",
     "Generation time unavailable": "وقت الإنشاء غير متاح",
+    "Go to %(action)s": "الانتقال إلى %(action)s",
     "Going back will discard the changes you have made to the entry you opened. Go back anyway?": "سيؤدي الرجوع إلى فقدان التغييرات التي أجريتها على الإدخال الذي فتحته. هل تريد الرجوع رغم ذلك؟",
     "Going back will discard the new supply-chain entry you have started. Go back anyway?": "سيؤدي الرجوع إلى فقدان الإدخال الجديد لسلسلة الإمداد الذي بدأته. هل تريد الرجوع رغم ذلك؟",
     "Hide details for %(name)s": "إخفاء تفاصيل %(name)s",

@@ -1500,15 +1500,32 @@ const RESULTS_NAV_SECTIONS = [
  * and *Start a new calculation* starts one -- from wherever the reader has got to,
  * without scrolling anywhere at all.
  *
- * **Each one presses the action row's own button, and that is the whole of its
- * behaviour**: `bindNavGestures` forwards the press to
- * `.result-actions [data-action="..."]`, whose click reaches `calculator.js`'s one
- * delegated `main` listener exactly as the row's own press does. So there is one
- * implementation of each action and no second code path, and `calculator.js` needed
- * nothing. It is also what makes the shared accessible name correct rather than the
- * defect it would be on a link: the panel's *Download results* and the row's
- * *Download results* are two doors onto one action, not a link and a button that
- * happen to read alike while doing different things.
+ * **They point at the action row's own button; they no longer press it** (v1.97,
+ * the owner's decision). v1.88 made each one a remote control -- the press was
+ * forwarded to `.result-actions [data-action="..."]` so the download downloaded from
+ * wherever the reader had got to. That worked, and it put the same action in two
+ * places, which is what the owner asked to undo: *avoid saying that two places do one
+ * thing*. So `revealAction` scrolls the real control into view and calls it out
+ * twice, and the action itself happens in exactly one place, when the reader presses
+ * the control they have just been shown.
+ *
+ * **The two objections v1.88 raised against links do not come back**, and it is worth
+ * saying why rather than hoping. They were objections to making these two
+ * `RESULTS_NAV_SECTIONS` entries: both would jump to the same flex row, so only the
+ * first could ever be marked, and a pin on either could never be released by a scroll
+ * (the row sits about 430px from the end of the document and the release latches only
+ * once the target reaches the 24px rest line). These stay buttons outside the `<ul>`,
+ * the scroll spy still does not know they exist, and nothing pins them -- so there is
+ * no marker to be stuck. What distinguishes them from each other is the call-out,
+ * which lands on a different control for each.
+ *
+ * **And the shared accessible name stops being correct the moment they stop doing the
+ * thing.** While they pressed the row's button, the panel's *Download results* and the
+ * row's *Download results* were two doors onto one action and reading alike was right.
+ * Now one navigates and one downloads, which is the defect #150's own review names --
+ * a control and a control sharing a name while doing different things. So the visible
+ * label is unchanged and the accessible name is `Go to %(action)s`, one new string in
+ * twenty catalogues.
  *
  * **The attribute is `data-nav-action`, not `data-action`, and the difference is not
  * cosmetic.** `[data-action="download-results"]` is how the whole browser suite names
@@ -1791,6 +1808,79 @@ function resultsNavPanelIsOpen(nav) {
  * @param {boolean} [focusHandle] Put focus back on the handle, as its own close does.
  * @returns {boolean} Whether anything was closed.
  */
+/**
+ * Take the reader to one of the results page's own action buttons and point at it
+ * twice, without pressing it (v1.97).
+ *
+ * **Why a call-out rather than a jump.** `.result-actions` is one flex row holding
+ * *Start a new calculation*, *Download results* and *Download PDF*. Scrolling to the
+ * row alone would be the same destination for both panel entries -- the thing v1.88
+ * refused when they were proposed as `#`-links -- so the thing that distinguishes
+ * them has to be on the control, not on the scroll. The button is what is scrolled
+ * to and the button is what flashes.
+ *
+ * **Twice, and the count is the owner's.** Two is also comfortably under WCAG 2.3.1's
+ * three-flashes-in-a-second threshold at 520ms an iteration, so the general flash
+ * rule is satisfied by arithmetic rather than by hope.
+ *
+ * **`prefers-reduced-motion` gets a different animation, not none.** A reader who has
+ * asked for less motion still has to be shown which of three buttons they were sent
+ * to, so the replacement holds one steady highlight and fades it, rather than
+ * blinking. It matters that it is still an *animation*: the class is taken off on
+ * `animationend`, and `animation: none` would fire no such event and leave the
+ * highlight on the button for the rest of the session. The timer below is the second
+ * belt on that -- a user stylesheet, or a browser that never starts the animation
+ * because the element is in a background tab, would otherwise do the same.
+ *
+ * **The re-press restart is deliberate and so is the way it is done.** Pressing the
+ * same entry twice has to call out twice; removing the class and adding it again in
+ * one task does nothing at all, because the browser never sees it absent. Reading
+ * `offsetWidth` between the two is what forces the reflow that makes it see.
+ */
+function revealAction(action) {
+  if (typeof document === 'undefined') return false
+  const target = document.querySelector(`.result-actions [data-action="${action}"]`)
+  if (!target) return false
+  const still = typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  //: **The panel gets out of the way, and that is not tidiness.** Measured at
+  //: 1100, 1280 and 1440px, the open overlay sits over `.result-actions`: the
+  //: element at the called-out button's own centre point came back as
+  //: `results-floating-nav__panel`, so the ring this function had just drawn was
+  //: behind the panel that drew it. `closeResultsNav` is a no-op in the docked
+  //: regime by its own design, which is the regime where the two do not overlap
+  //: (1600 and 1920px, measured), so this needs no width test of its own.
+  closeResultsNav()
+  //: **And focus goes with it**, because the press came from inside a panel that
+  //: has just been taken off the screen -- leaving focus there loses it to
+  //: `<body>`. Putting it on the target is also what makes the entry do what it
+  //: says for a keyboard reader: they are taken to the control, and the next
+  //: press is theirs. `preventScroll` because the smooth scroll below is the one
+  //: doing the travelling; without it `focus()` jumps there instantly first and
+  //: the animation has nowhere left to go.
+  target.focus({ preventScroll: true })
+  target.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'center' })
+  //: **The class name is written out three times rather than held in a constant,
+  //: and that is on purpose.** `tests/web/test_class_rules.py` reads static
+  //: literals; a `classList.add(SOME_CONST)` is invisible to it, and v1.95 has
+  //: just finished tightening that guard after a computed name reached the DOM
+  //: behind somebody else's declaration. Measured here: with the constant, the
+  //: guard failed naming `results.js:revealAction: CALLED_OUT` and the honest
+  //: repair is to let it see the name, not to register a new blind spot in a
+  //: guard this project has twice been bitten by.
+  target.classList.remove('result-action--called-out')
+  void target.offsetWidth
+  const done = () => {
+    clearTimeout(target._calloutTimer)
+    target.classList.remove('result-action--called-out')
+  }
+  target.addEventListener('animationend', done, { once: true })
+  target._calloutTimer = setTimeout(done, 4000)
+  target.classList.add('result-action--called-out')
+  return true
+}
+
 function closeResultsNav(focusHandle = false) {
   //: **No nav, nothing to do, and no `setState` either.** The flag outlives the
   //: results page -- `goToStep` does not clear it, only `resetCalculator` does --
@@ -1863,19 +1953,23 @@ function bindNavGestures() {
       pinSection(link.getAttribute('href').slice(1))
       return
     }
-    //: **The panel's two actions are remote controls for the action row's own
-    //: buttons** (#126), and this is the whole of the forwarding. Pressing the real
-    //: control rather than re-implementing it is what keeps one implementation of
-    //: each action: the synthesised click bubbles to `calculator.js`'s delegated
-    //: listener on `main` and runs the confirm, the reset, the export -- all of it
-    //: in the one place it already lived, which is why that file is untouched.
+    //: **The panel's two actions take the reader TO the action row's own buttons;
+    //: they do not press them** (v1.97). Until then this line was
+    //: `document.querySelector(...).click()`, a synthesised press that ran the real
+    //: control's handler from wherever the reader stood. The owner's reason for
+    //: changing it is composition rather than behaviour: two places offering one
+    //: action read as two actions, and the panel is a navigation.
     //:
-    //: The forwarded click is `isTrusted: false`, so the dismissal below does not
-    //: fire on it and the panel survives its own action. See `RESULTS_NAV_ACTIONS`
-    //: for why the attribute is `data-nav-action` and not `data-action`.
+    //: No synthesised click is dispatched any more, so the `isTrusted` note that
+    //: used to sit here is gone with it; the panel survives the press for the
+    //: ordinary reason, which is that the dismissal below ignores anything inside
+    //: `.results-floating-nav`. See `RESULTS_NAV_ACTIONS` for why the attribute is
+    //: `data-nav-action` and not `data-action` -- that reasoning is unchanged, and
+    //: it is now doubly true, because this element is not a second door onto the
+    //: action at all.
     const remote = event.target?.closest?.('.results-floating-nav__actions [data-nav-action]')
     if (remote) {
-      document.querySelector(`.result-actions [data-action="${remote.dataset.navAction}"]`)?.click()
+      revealAction(remote.dataset.navAction)
       return
     }
     //: **The overlay closes when the reader's attention goes elsewhere**, which is
@@ -2185,7 +2279,7 @@ function resultsFloatingNavigation(state) {
   //: not sections, and `role="group"` is what says "these belong together" without
   //: claiming they are a second list of places to go.
   const actions = RESULTS_NAV_ACTIONS
-    .map(([action, text]) => `<button class="results-floating-nav__action" type="button" data-nav-action="${action}">${escapeHtml(text())}</button>`)
+    .map(([action, text]) => `<button class="results-floating-nav__action" type="button" data-nav-action="${action}" aria-label="${escapeHtml(t('Go to %(action)s', { action: text() }))}">${escapeHtml(text())}</button>`)
     .join('')
   return `<nav class="results-floating-nav"${openAttribute} aria-label="${escapeHtml(label)}"><button class="results-floating-nav__handle" id="results-floating-nav-handle" type="button" data-action="toggle-results-nav" aria-controls="results-floating-nav-menu"${expanded} aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"><span aria-hidden="true">⋮</span></button><div class="results-floating-nav__panel" id="results-floating-nav-menu"><ul class="results-floating-nav__links">${links}</ul><div class="results-floating-nav__actions" role="group">${actions}</div></div></nav>`
 }

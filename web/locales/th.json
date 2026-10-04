@@ -187,6 +187,7 @@
     "For privacy, buckets containing fewer than %(threshold)s supply-chain points or destination entries are combined by the service. If the combined sample is still too small, that breakdown is not shown.": "เพื่อความเป็นส่วนตัว บริการจะรวมกลุ่มที่มีจุดในห่วงโซ่อุปทานหรือรายการปลายทางน้อยกว่า %(threshold)s เข้าด้วยกัน หากกลุ่มที่รวมแล้วยังเล็กเกินไป จะไม่แสดงรายละเอียดนั้น",
     "From Kai Commitment": "จาก Kai Commitment",
     "Generation time unavailable": "ไม่มีข้อมูลเวลาที่สร้าง",
+    "Go to %(action)s": "ไปที่ %(action)s",
     "Going back will discard the changes you have made to the entry you opened. Go back anyway?": "การย้อนกลับจะทิ้งการเปลี่ยนแปลงที่คุณทำไว้ในรายการที่คุณเปิด ต้องการย้อนกลับหรือไม่",
     "Going back will discard the new supply-chain entry you have started. Go back anyway?": "การย้อนกลับจะทิ้งรายการห่วงโซ่อุปทานใหม่ที่คุณเริ่มไว้ ต้องการย้อนกลับหรือไม่",
     "Hide details for %(name)s": "ซ่อนรายละเอียดของ %(name)s",

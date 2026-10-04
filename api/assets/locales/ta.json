@@ -187,6 +187,7 @@
     "For privacy, buckets containing fewer than %(threshold)s supply-chain points or destination entries are combined by the service. If the combined sample is still too small, that breakdown is not shown.": "தனியுரிமைக்காக, %(threshold)s க்கும் குறைவான விநியோகச் சங்கிலிப் புள்ளிகள் அல்லது சேருமிடப் பதிவுகள் கொண்ட பிரிவுகளை சேவை ஒன்றிணைக்கிறது. ஒன்றிணைத்த பிறகும் மாதிரி மிகச் சிறியதாக இருந்தால், அந்த விவரம் காட்டப்படாது.",
     "From Kai Commitment": "Kai Commitment இடமிருந்து",
     "Generation time unavailable": "உருவாக்கிய நேரம் கிடைக்கவில்லை",
+    "Go to %(action)s": "%(action)s க்குச் செல்",
     "Going back will discard the changes you have made to the entry you opened. Go back anyway?": "பின்செல்வது, நீங்கள் திறந்த பதிவில் செய்த மாற்றங்களை நீக்கிவிடும். இருப்பினும் பின்செல்லவா?",
     "Going back will discard the new supply-chain entry you have started. Go back anyway?": "பின்செல்வது, நீங்கள் தொடங்கிய புதிய விநியோகச் சங்கிலி பதிவை நீக்கிவிடும். இருப்பினும் பின்செல்லவா?",
     "Hide details for %(name)s": "%(name)s இன் விவரங்களை மறை",

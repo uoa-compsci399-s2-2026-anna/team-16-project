@@ -187,6 +187,7 @@
     "For privacy, buckets containing fewer than %(threshold)s supply-chain points or destination entries are combined by the service. If the combined sample is still too small, that breakdown is not shown.": "Zum Schutz der Privatsphäre fasst der Dienst Gruppen mit weniger als %(threshold)s Einträgen zur Lieferkette oder zu Entsorgungswegen zusammen. Ist die zusammengefasste Stichprobe weiterhin zu klein, wird diese Aufschlüsselung nicht angezeigt.",
     "From Kai Commitment": "Von Kai Commitment",
     "Generation time unavailable": "Erstellungszeit nicht verfügbar",
+    "Go to %(action)s": "Zu %(action)s springen",
     "Going back will discard the changes you have made to the entry you opened. Go back anyway?": "Wenn Sie zurückgehen, werden die Änderungen am geöffneten Eintrag verworfen. Trotzdem zurückgehen?",
     "Going back will discard the new supply-chain entry you have started. Go back anyway?": "Wenn Sie zurückgehen, wird der neu begonnene Eintrag zur Lieferkette verworfen. Trotzdem zurückgehen?",
     "Hide details for %(name)s": "Einzelheiten zu %(name)s ausblenden",

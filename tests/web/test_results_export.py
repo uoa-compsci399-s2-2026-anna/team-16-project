@@ -466,9 +466,14 @@ def test_the_navs_two_actions_are_controls_and_not_two_more_jumps(tmp_path):
       the forwarding is a `querySelector` and a typo in it is a silent no-op;
     * the section link list is untouched by them, because a section index with
       actions in it is what made the pin unreleasable;
-    * the labels are the action row's own strings, which is what keeps this at zero
-      new catalogue entries -- and legitimate, because the two controls that share a
-      name now do the same thing.
+    * the VISIBLE labels are the action row's own strings, and the accessible names
+      are not. That changed with v1.97: while these two forwarded a press they were
+      two doors onto one action and reading alike was correct, so they carried no
+      `aria-label` and cost no catalogue entry. They now scroll to the row's button
+      and call it out instead, so one navigates and one acts -- and two controls
+      sharing one accessible name while doing different things is the defect #150's
+      own review names. `Go to %(action)s` is the one string that buys the
+      difference, and it is asserted below rather than left to the eye.
 
     **`data-nav-action`, not `data-action`**, and that is asserted too, below.
     `[data-action="download-results"]` is how this whole suite names *the* download
@@ -502,6 +507,19 @@ def test_the_navs_two_actions_are_controls_and_not_two_more_jumps(tmp_path):
         f"element answering to `data-action` makes this panel's hidden copy the one "
         f"every unscoped selector in the suite finds"
     )
+    named = _re.findall(r'aria-label="([^"]+)"', body)
+    assert len(named) == 2 and all("Go to" in name for name in named), (
+        f"the nav's actions carry the accessible names {named!r}. Since v1.97 they "
+        f"navigate rather than act, so each has to say so: a panel entry and a row "
+        f"button both called *Download results*, one of which downloads and one of "
+        f"which does not, is two different things wearing one name"
+    )
+    assert len(set(named)) == 2, (
+        f"both of the nav's actions are called {named[0]!r}; they point at different "
+        f"buttons in the same row, so the name is the only thing that tells a screen "
+        f"reader which"
+    )
+
     assert 'data-action=' not in body, (
         f"the nav's action group carries a `data-action`: {body!r}. Eighteen selectors "
         f"across five test files name the real controls that way, and this panel is "

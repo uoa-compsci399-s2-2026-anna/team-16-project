@@ -187,6 +187,7 @@
     "For privacy, buckets containing fewer than %(threshold)s supply-chain points or destination entries are combined by the service. If the combined sample is still too small, that breakdown is not shown.": "プライバシー保護のため、サプライチェーン入力または廃棄先入力が %(threshold)s 件未満の区分は、サービス側でまとめられます。まとめてもサンプルが少なすぎる場合、その内訳は表示されません。",
     "From Kai Commitment": "Kai Commitment より",
     "Generation time unavailable": "生成時刻は不明",
+    "Go to %(action)s": "%(action)s に移動",
     "Going back will discard the changes you have made to the entry you opened. Go back anyway?": "戻ると、開いた入力に加えた変更は取り消されます。それでも戻りますか？",
     "Going back will discard the new supply-chain entry you have started. Go back anyway?": "戻ると、作成途中の新しいサプライチェーンの入力は削除されます。それでも戻りますか？",
     "Hide details for %(name)s": "%(name)s の詳細を隠す",

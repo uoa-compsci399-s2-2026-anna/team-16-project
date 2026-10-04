@@ -187,6 +187,7 @@
     "For privacy, buckets containing fewer than %(threshold)s supply-chain points or destination entries are combined by the service. If the combined sample is still too small, that breakdown is not shown.": "В целях конфиденциальности группы, содержащие менее %(threshold)s точек цепочки поставок или записей по способам утилизации, объединяются сервисом. Если объединённая выборка всё ещё слишком мала, такая разбивка не показывается.",
     "From Kai Commitment": "От Kai Commitment",
     "Generation time unavailable": "Время формирования недоступно",
+    "Go to %(action)s": "Перейти к %(action)s",
     "Going back will discard the changes you have made to the entry you opened. Go back anyway?": "Если вернуться назад, изменения, внесённые в открытую вами запись, будут отменены. Всё равно вернуться назад?",
     "Going back will discard the new supply-chain entry you have started. Go back anyway?": "Если вернуться назад, начатая вами новая запись по цепочке поставок будет удалена. Всё равно вернуться назад?",
     "Hide details for %(name)s": "Скрыть подробности: %(name)s",

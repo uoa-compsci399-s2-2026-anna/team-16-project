@@ -187,6 +187,7 @@
     "For privacy, buckets containing fewer than %(threshold)s supply-chain points or destination entries are combined by the service. If the combined sample is still too small, that breakdown is not shown.": "Ter bescherming van de privacy voegt de dienst groepen met minder dan %(threshold)s invoerregels voor de toeleveringsketen of bestemmingen samen. Is de samengevoegde steekproef nog steeds te klein, dan wordt die uitsplitsing niet getoond.",
     "From Kai Commitment": "Van Kai Commitment",
     "Generation time unavailable": "Tijdstip van aanmaak niet beschikbaar",
+    "Go to %(action)s": "Naar %(action)s gaan",
     "Going back will discard the changes you have made to the entry you opened. Go back anyway?": "Als u teruggaat, verliest u de wijzigingen die u in de geopende invoerregel hebt aangebracht. Toch teruggaan?",
     "Going back will discard the new supply-chain entry you have started. Go back anyway?": "Als u teruggaat, verliest u de nieuwe invoerregel voor de toeleveringsketen waaraan u bent begonnen. Toch teruggaan?",
     "Hide details for %(name)s": "Bijzonderheden van %(name)s verbergen",

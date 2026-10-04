@@ -744,93 +744,153 @@ def test_escape_closes_the_overlay_and_hands_focus_back_to_the_handle(browser):
     assert list_focus["id"] == "results-floating-nav-handle", list_focus
 
 
-def test_the_navs_two_actions_download_and_start_over_for_real(browser):
-    """**#126's criteria 2 and 3, asserted as the issue words them.**
+def test_the_navs_two_actions_point_at_the_real_buttons_without_pressing_them(browser):
+    """Contract v1.97. **The panel sends the reader to the action; it does not do it.**
 
-    *"Download produces the expected results file/output"* and *"Start a new
-    calculator clearly begins a fresh calculation"* are not satisfied by a link
-    that scrolls to a button, which is what these two entries were. They are
-    buttons that press the action row's own buttons, so what is asserted here is
-    that pressing them in the panel does what pressing them in the row does: a
-    file arrives, and the confirm-then-reset path runs. **That is the whole point
-    of measuring it in a browser**: the forwarding is a `querySelector` and a
-    synthesised `.click()`, and the only way to know the event reaches
-    `calculator.js`'s delegated listener on `main` is to watch the action happen.
+    Until v1.97 these two forwarded a synthesised `.click()` to
+    `.result-actions [data-action="..."]`, so the download downloaded and *Start a
+    new calculation* reset the calculator from wherever the reader stood. That
+    worked. The owner's objection is composition: it put the same action in two
+    places, and the panel is a navigation. So the press now scrolls the real control
+    into view and calls it out twice, and nothing happens until the reader presses
+    the control they have been shown.
 
-    The `window.confirm` is accepted rather than suppressed, and its message is
-    read, because "clearly begins a fresh calculation" includes being asked
-    first -- the action is destructive and the dialog is the fourth criterion
-    ("does not accidentally overwrite the current results") being met.
+    **This test is written the way the old one was -- around what must NOT happen.**
+    The old one proved the action by watching it happen; the only way to prove the
+    opposite is to give the action every chance to fire and show that it did not. So
+    the download is waited for and must time out, and the `dialog` handler is armed
+    and must never be called. An assertion that merely read the class on the button
+    would pass just as well against a build that flashed the button *and* downloaded.
 
-    **The panel surviving its own download is asserted, and it is the one thing
-    here that was found rather than written.** `downloadResults` appends an
-    `<a download>` to `document.body` and calls `.click()` on it; that event
-    bubbles to the document listener with a target outside the nav, so the first
-    run of this test closed the panel on the download and could not reach the
-    second button at all ("element is not visible", 30s). The listener now takes
-    `event.isTrusted` as well -- a dismissal is a reader's gesture, and any
-    programmatic `.click()` on the page would otherwise perform one.
+    Three claims, and the third is the one that distinguishes this from a plain jump
+    to the row:
 
-    Mutations: changing either button's `data-nav-action` to anything else leaves
-    the forwarding `querySelector` with nothing to find -- it is `?.click()`, so it
-    fails silently -- and this test reports it, the download timing out or no dialog
-    being raised and `[data-action="start"]` never appearing. Rendering the two as
-    `<a href="#...">` again fails for the same reason, which is the point: the
-    anchors could not have passed this test. Dropping `event.isTrusted` fails the
-    panel-survives-its-own-download assertion.
+    * no download starts and no confirm is raised -- the page is still the results
+      page afterwards;
+    * the button is scrolled into the viewport;
+    * the call-out lands on the button the entry names, and NOT on its neighbour.
+      `.result-actions` is one flex row of three buttons, so a scroll alone would be
+      the same destination for both entries. The class is what tells them apart.
     """
     context, page = _open(browser, 1280)
-    asked = []
     try:
         _to_results(page)
         page.click(".results-floating-nav__handle")
         page.wait_for_timeout(250)
         assert page.evaluate(GEOMETRY)["panelVisible"], "the panel did not open"
 
-        with page.expect_download(timeout=8000) as download:
-            page.click('.results-floating-nav__actions [data-nav-action="download-results"]')
-        filename = download.value.suggested_filename
-        body = download.value.path().read_text(encoding="utf-8")
+        #: Armed for the whole test and asserted empty at the end: `page.once` would
+        #: silently consume nothing if no dialog came, which is the state we want to
+        #: prove, so the list has to be read rather than the handler relied upon.
+        asked = []
+        page.on("dialog", lambda dialog: (asked.append(dialog.message), dialog.dismiss()))
 
-        #: Pressing an action inside the panel is a click inside the nav, so the
-        #: dismissal leaves it alone and the second action is still reachable.
-        #: Asserted here rather than after the `finally`, so that the mutation which
-        #: breaks it reports this sentence instead of a 30-second timeout waiting
-        #: for the second button to become visible. The wait is not optional:
-        #: `transition: visibility 140ms` keeps the computed `visibility` at
-        #: `visible` for the whole of the closing transition, so a reading taken
-        #: straight after the click says "open" about a panel on its way out.
-        page.wait_for_timeout(250)
-        assert page.evaluate(GEOMETRY)["panelVisible"], (
-            "the panel closed on its own download, and its second action is now "
-            "unreachable. `downloadResults` appends a synthesised `<a download>` to "
-            "`document.body` and clicks it; that event bubbles to the document listener "
-            "with a target outside the nav, so `event.isTrusted` is what keeps the "
-            "dismissal to gestures the reader actually made"
-        )
+        downloaded = True
+        try:
+            with page.expect_download(timeout=3000):
+                page.click('.results-floating-nav__actions [data-nav-action="download-results"]')
+        except Exception:
+            downloaded = False
+        page.wait_for_timeout(400)
 
-        page.once("dialog", lambda dialog: (asked.append(dialog.message), dialog.accept()))
-        page.click('.results-floating-nav__actions [data-nav-action="start-over"]')
-        page.wait_for_selector('[data-action="start"]', timeout=15000)
-        after = page.evaluate(
-            "() => ({intro: !!document.querySelector('[data-action=\\\"start\\\"]'),"
-            "        results: !!document.querySelector('#results-title'),"
-            "        nav: !!document.querySelector('.results-floating-nav')})")
+        state = page.evaluate("""() => {
+          const row = [...document.querySelectorAll('.result-actions [data-action]')];
+          const box = document.querySelector('.result-actions [data-action="download-results"]')
+            .getBoundingClientRect();
+          return {
+            stillOnResults: !!document.querySelector('#results-title'),
+            introShown: !!document.querySelector('[data-action="start"]'),
+            calledOut: row.filter(b => b.classList.contains('result-action--called-out'))
+                          .map(b => b.dataset.action),
+            inView: box.top >= 0 && box.bottom <= window.innerHeight,
+            panelVisible: getComputedStyle(
+              document.querySelector('.results-floating-nav__panel')).visibility,
+          };
+        }""")
     finally:
         context.close()
 
-    assert filename.startswith("food-waste-impact-results-") and filename.endswith(".txt"), filename
-    assert "Food Waste Impact" in body or "Impact" in body, body[:200]
+    assert not downloaded, (
+        "pressing *Download results* in the nav panel started a download. v1.97 is "
+        "that the panel points at the action row's own button rather than pressing "
+        "it, so that one action lives in one place"
+    )
+    assert not asked, (
+        f"pressing an entry in the nav raised {asked!r}. *Start a new calculation* is "
+        "not run from here any more -- the confirm belongs to the button in the row"
+    )
+    assert state["stillOnResults"] and not state["introShown"], (
+        f"the page is {state}: pressing a nav entry must leave the results where they are"
+    )
+    assert state["calledOut"] == ["download-results"], (
+        f"the call-out landed on {state['calledOut']}. `.result-actions` is one row of "
+        "three buttons, so the scroll alone cannot say which entry was pressed -- the "
+        "class is what distinguishes them, and it has to be on exactly the one named"
+    )
+    assert state["inView"], (
+        f"the button was not scrolled into the viewport: {state}. Pointing at a control "
+        "the reader cannot see is not pointing at it"
+    )
+    assert state["panelVisible"] == "visible", (
+        f"the panel closed on its own entry ({state}), so its second action is "
+        "unreachable without reopening"
+    )
 
-    assert asked and "Clear all calculator data" in asked[0], (
-        f"pressing *Start a new calculation* in the nav raised {asked!r}. A destructive "
-        f"action has to ask, and #126's fourth criterion is that starting a new "
-        f"calculation does not accidentally overwrite the current results"
+
+def test_the_call_out_is_two_flashes_and_then_takes_itself_off(browser):
+    """Contract v1.97. **Twice, and gone afterwards.**
+
+    Two things that a class-on-the-button assertion cannot see on its own, and both
+    have bitten this repository in other forms:
+
+    * the animation runs the number of iterations the owner asked for. Read off the
+      CSSOM rather than counted by sampling: a sampled count races the clock and
+      would be the kind of test that passes at 1 and at 3.
+    * the class comes OFF. `results.js` removes it on `animationend`, and an
+      `animation: none` -- which is what a careless `prefers-reduced-motion` rule
+      would be -- fires no such event and would leave the ring on the button for the
+      rest of the session. Measured here by waiting past the animation and reading
+      the class again.
+    """
+    context, page = _open(browser, 1280)
+    try:
+        _to_results(page)
+        page.click(".results-floating-nav__handle")
+        page.wait_for_timeout(250)
+        page.click('.results-floating-nav__actions [data-nav-action="start-over"]')
+        page.wait_for_timeout(150)
+
+        during = page.evaluate("""() => {
+          const b = document.querySelector('.result-actions [data-action="start-over"]');
+          const s = getComputedStyle(b);
+          return {
+            has: b.classList.contains('result-action--called-out'),
+            count: s.animationIterationCount,
+            name: s.animationName,
+            duration: s.animationDuration,
+          };
+        }""")
+        page.wait_for_timeout(1800)
+        after = page.evaluate(
+            "() => document.querySelector('.result-actions [data-action=\"start-over\"]')"
+            ".classList.contains('result-action--called-out')")
+    finally:
+        context.close()
+
+    assert during["has"], f"no call-out on the button the entry names: {during}"
+    assert during["name"] != "none", (
+        f"the call-out has no animation ({during}), so `animationend` never fires and "
+        "the class below can only be taken off by the safety timer"
     )
-    assert after["intro"] and not after["results"] and not after["nav"], (
-        f"after the confirm the page is {after}: *Start a new calculation* has to actually "
-        f"start one, which is #126's third criterion and is not something an anchor could do"
+    assert during["count"] == "2", (
+        f"the call-out flashes {during['count']} times, not twice: {during}"
     )
+    assert not after, (
+        "the call-out is still on the button a second later. `results.js` removes it on "
+        "`animationend`; a rule that muted the animation rather than replacing it would "
+        "leave the ring on for the rest of the session"
+    )
+
 
 
 @pytest.mark.parametrize("width", [w for w in WIDTHS if w >= DOCKED_FROM])

@@ -187,6 +187,7 @@
     "For privacy, buckets containing fewer than %(threshold)s supply-chain points or destination entries are combined by the service. If the combined sample is still too small, that breakdown is not shown.": "ਨਿੱਜਤਾ ਲਈ, ਜਿਨ੍ਹਾਂ ਵਰਗਾਂ ਵਿੱਚ %(threshold)s ਤੋਂ ਘੱਟ ਸਪਲਾਈ-ਚੇਨ ਬਿੰਦੂ ਜਾਂ ਮੰਜ਼ਿਲ ਐਂਟਰੀਆਂ ਹੁੰਦੀਆਂ ਹਨ, ਸੇਵਾ ਉਨ੍ਹਾਂ ਨੂੰ ਆਪਸ ਵਿੱਚ ਜੋੜ ਦਿੰਦੀ ਹੈ। ਜੇ ਜੋੜਿਆ ਨਮੂਨਾ ਫਿਰ ਵੀ ਬਹੁਤ ਛੋਟਾ ਰਹੇ, ਤਾਂ ਉਹ ਵੇਰਵਾ ਨਹੀਂ ਵਿਖਾਇਆ ਜਾਂਦਾ।",
     "From Kai Commitment": "Kai Commitment ਵੱਲੋਂ",
     "Generation time unavailable": "ਤਿਆਰੀ ਦਾ ਸਮਾਂ ਉਪਲਬਧ ਨਹੀਂ",
+    "Go to %(action)s": "%(action)s 'ਤੇ ਜਾਓ",
     "Going back will discard the changes you have made to the entry you opened. Go back anyway?": "ਪਿੱਛੇ ਜਾਣ ਨਾਲ, ਤੁਸੀਂ ਖੋਲ੍ਹੀ ਹੋਈ ਐਂਟਰੀ ਵਿੱਚ ਕੀਤੇ ਬਦਲਾਅ ਰੱਦ ਹੋ ਜਾਣਗੇ। ਫਿਰ ਵੀ ਪਿੱਛੇ ਜਾਣਾ ਹੈ?",
     "Going back will discard the new supply-chain entry you have started. Go back anyway?": "ਪਿੱਛੇ ਜਾਣ ਨਾਲ, ਤੁਸੀਂ ਜੋ ਨਵੀਂ ਸਪਲਾਈ-ਚੇਨ ਐਂਟਰੀ ਸ਼ੁਰੂ ਕੀਤੀ ਹੈ ਉਹ ਰੱਦ ਹੋ ਜਾਵੇਗੀ। ਫਿਰ ਵੀ ਪਿੱਛੇ ਜਾਣਾ ਹੈ?",
     "Hide details for %(name)s": "%(name)s ਦੇ ਵੇਰਵੇ ਲੁਕਾਓ",

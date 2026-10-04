@@ -187,6 +187,7 @@
     "For privacy, buckets containing fewer than %(threshold)s supply-chain points or destination entries are combined by the service. If the combined sample is still too small, that breakdown is not shown.": "Para sa pagkapribado, pinagsasama ng serbisyo ang mga pangkat na may wala pang %(threshold)s na punto sa daloy ng suplay o tala ng patutunguhan. Kung masyado pa ring maliit ang pinagsamang sampol, hindi ipinapakita ang paghahating iyon.",
     "From Kai Commitment": "Mula sa Kai Commitment",
     "Generation time unavailable": "Walang oras ng paglikha",
+    "Go to %(action)s": "Pumunta sa %(action)s",
     "Going back will discard the changes you have made to the entry you opened. Go back anyway?": "Kapag bumalik ka, mawawala ang mga pagbabagong ginawa mo sa talang binuksan mo. Bumalik pa rin?",
     "Going back will discard the new supply-chain entry you have started. Go back anyway?": "Kapag bumalik ka, mawawala ang bagong tala sa daloy ng suplay na sinimulan mo. Bumalik pa rin?",
     "Hide details for %(name)s": "Itago ang mga detalye para sa %(name)s",

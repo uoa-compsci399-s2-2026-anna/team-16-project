@@ -1431,6 +1431,47 @@ th, td { padding: 12px 10px; border-bottom: 1px solid var(--border); text-align:
 thead th { color: var(--muted); background: #f5f8f6; font-size: 0.82rem; }
 tbody th { font-weight: 700; }
 .result-actions { margin-top: 36px; padding-top: 26px; display: flex; flex-wrap: wrap; gap: 12px; border-top: 1px solid var(--border); }
+
+/* **THE CALL-OUT THE FLOATING NAV LEAVES ON A BUTTON** (v1.97).
+
+   The nav panel's *Start a new calculation* and *Download results* used to press
+   these buttons from a distance. They now scroll to one and flash it twice instead,
+   so the action lives in one place and the panel is a navigation -- `results.js`'s
+   `revealAction` is the whole of the behaviour and `RESULTS_NAV_ACTIONS` carries the
+   reasoning.
+
+   Blueberry rather than Pea, and a ring rather than a fill: the two buttons are
+   already Kale and white on a white ground, a fill would restate the primary/
+   secondary distinction the row is making, and `box-shadow` paints outside the box
+   so nothing inside the button moves. `0 0 0 Npx` is a ring and not a shadow -- no
+   blur, no offset -- which is why it reads as a marker rather than as elevation.
+
+   520ms x 2 is 1.04s for two flashes, comfortably under WCAG 2.3.1's three-per-second
+   threshold; the count is the owner's and the arithmetic is here so the next person
+   does not have to redo it before raising it.
+
+   The reduced-motion replacement is at the foot of this block and is an ANIMATION,
+   not `animation: none`. `results.js` takes the class off on `animationend`, so a
+   muted rule that fired no event would leave the ring on the button for the rest of
+   the session. It holds one steady highlight and fades it, which still answers
+   "which of these three did it send me to" without blinking at a reader who asked
+   for less motion. */
+.result-actions .button.result-action--called-out {
+  animation: kc-action-callout 520ms ease-in-out 2;
+}
+@keyframes kc-action-callout {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0, 90, 230, 0); }
+  50% { box-shadow: 0 0 0 4px rgba(0, 90, 230, 0.55); }
+}
+@keyframes kc-action-callout-held {
+  0%, 80% { box-shadow: 0 0 0 4px rgba(0, 90, 230, 0.55); }
+  100% { box-shadow: 0 0 0 0 rgba(0, 90, 230, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .result-actions .button.result-action--called-out {
+    animation: kc-action-callout-held 1200ms linear 1;
+  }
+}
 /* The two downloads (Task 3, 2026-08-31): one container, pushed to the row's end, holding
    both format buttons at equal weight. `flex-wrap` here is the same allowance
    `.result-actions` already makes for itself — at a width too narrow for both German

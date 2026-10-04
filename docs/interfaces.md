@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-10-04 (v1.96)"
+date: "2026-10-04 (v1.97)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,21 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.97 — 2026-10-04 (the results nav's two actions point at the buttons instead of pressing them; affects D)
+
+v1.88 made *Start a new calculation* and *Download results* **controls** inside the floating nav: each forwarded a synthesised press to `.result-actions [data-action=…]`, so the download downloaded and the reset reset from wherever the reader had got to. That worked, and the owner's objection to it is composition rather than behaviour — **it put one action in two places, and the panel is a navigation.** So `revealAction` now scrolls the row's own button into view and calls it out twice, and the action happens in exactly one place: when the reader presses the control they have just been shown.
+
+**v1.88's two objections do not come back, and that is checked rather than hoped.** They were objections to making these two `RESULTS_NAV_SECTIONS` entries: both would jump to the same flex row, so only the first could ever be marked, and a pin on either could never be released by a scroll — the row sits about 430px from the end of the document and the release latches only once the target reaches the 24px rest line. These stay `<button>`s outside the `<ul>`, the scroll spy still does not know they exist, and nothing pins them. What tells the two apart is the call-out, which lands on a different control for each.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`revealAction` replaces the forwarded `.click()`.** It scrolls `.result-actions [data-action=…]` into view and adds `result-action--called-out`, which `styles.css` animates twice. No synthesised click is dispatched any more, so the `isTrusted` note that sat beside the forwarding goes with it — the guard itself stays, because the row's own download still appends an `<a download>` and clicks it, and that is still not a reader's gesture | §7.3a |
+| 2 | **Two flashes, and the arithmetic is written down**: 520ms × 2 is 1.04s, comfortably under WCAG 2.3.1's three-flashes-a-second threshold, so the count is satisfied by measurement rather than by nobody having raised it. The count is the owner's | §7.6 |
+| 3 | **`prefers-reduced-motion` gets a different animation, not `animation: none`.** A reader who asked for less motion still has to be told which of three buttons in that row they were sent to, so the replacement holds one steady ring and fades it. It must remain an animation: `results.js` takes the class off on `animationend`, and a muted rule firing no such event would leave the ring on the button for the rest of the session. A 4s timer is the second belt, for a user stylesheet or a tab that never starts the animation at all | §7.6 |
+| 4 | **The shared accessible name stops being correct and is replaced.** While these pressed the row's button, the panel's *Download results* and the row's *Download results* were two doors onto one action and reading alike was right — v1.88 says so in those words. Now one navigates and one downloads, which is the defect #150's own review names. The visible label is unchanged; the accessible name is `Go to %(action)s`, **one new string, 460 keys in all twenty catalogues, both trees byte-identical**. No CJK re-cut: the Chinese wording is `跳至`, chosen because `前往` would have put `往` into `zh` and `zh-Hant` and forced one | §7.3a, §7.7 |
+| 5 | **The class name is written out as a literal three times rather than held in a constant.** With the constant, `test_class_rules.py` failed naming `results.js:revealAction: CALLED_OUT` — v1.95's keying reporting a real case on its first outing. The repair is to let the guard see the name, not to register a new blind spot in a guard this project has twice been bitten by | §7.6 |
+| 6 | Nothing on the wire moves and no fixture moves: steps one and two of §0's three-step rule, not step three. The owner notifies the team | §0 |
 
 ### v1.96 — 2026-10-04 (Step 1's supply-chain stages say what they are and what they cover; affects B, C and E)
 

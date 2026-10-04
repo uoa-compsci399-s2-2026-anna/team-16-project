@@ -187,6 +187,7 @@
     "For privacy, buckets containing fewer than %(threshold)s supply-chain points or destination entries are combined by the service. If the combined sample is still too small, that breakdown is not shown.": "സ്വകാര്യതയ്ക്കായി, %(threshold)s-ൽ താഴെ വിതരണ ശൃംഖല ബിന്ദുക്കളോ ലക്ഷ്യസ്ഥാന എൻട്രികളോ ഉള്ള ഗണങ്ങളെ സേവനം ഒന്നിച്ചു ചേർക്കുന്നു. ചേർത്ത സാമ്പിളും വളരെ ചെറുതാണെങ്കിൽ ആ വിശദാംശം കാണിക്കില്ല.",
     "From Kai Commitment": "Kai Commitment-ൽ നിന്ന്",
     "Generation time unavailable": "തയ്യാറാക്കിയ സമയം ലഭ്യമല്ല",
+    "Go to %(action)s": "%(action)s എന്നതിലേക്ക് പോകുക",
     "Going back will discard the changes you have made to the entry you opened. Go back anyway?": "പിന്നോട്ട് പോയാൽ, നിങ്ങൾ തുറന്ന എൻട്രിയിൽ വരുത്തിയ മാറ്റങ്ങൾ നഷ്ടപ്പെടും. എന്നിട്ടും പിന്നോട്ട് പോകണോ?",
     "Going back will discard the new supply-chain entry you have started. Go back anyway?": "പിന്നോട്ട് പോയാൽ, നിങ്ങൾ തുടങ്ങിയ പുതിയ വിതരണ ശൃംഖല എൻട്രി നഷ്ടപ്പെടും. എന്നിട്ടും പിന്നോട്ട് പോകണോ?",
     "Hide details for %(name)s": "%(name)s-ന്റെ വിശദാംശങ്ങൾ മറയ്ക്കുക",

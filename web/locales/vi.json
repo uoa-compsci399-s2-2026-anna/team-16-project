@@ -187,6 +187,7 @@
     "For privacy, buckets containing fewer than %(threshold)s supply-chain points or destination entries are combined by the service. If the combined sample is still too small, that breakdown is not shown.": "Vì lý do riêng tư, các nhóm có ít hơn %(threshold)s điểm chuỗi cung ứng hoặc mục điểm đến sẽ được dịch vụ gộp lại. Nếu mẫu sau khi gộp vẫn còn quá nhỏ, phần phân tích đó sẽ không được hiển thị.",
     "From Kai Commitment": "Từ Kai Commitment",
     "Generation time unavailable": "Không có thời điểm tạo",
+    "Go to %(action)s": "Đi đến %(action)s",
     "Going back will discard the changes you have made to the entry you opened. Go back anyway?": "Quay lại sẽ bỏ những thay đổi bạn đã thực hiện cho mục bạn đã mở. Bạn vẫn muốn quay lại?",
     "Going back will discard the new supply-chain entry you have started. Go back anyway?": "Quay lại sẽ bỏ mục chuỗi cung ứng mới mà bạn đã bắt đầu nhập. Bạn vẫn muốn quay lại?",
     "Hide details for %(name)s": "Ẩn chi tiết của %(name)s",

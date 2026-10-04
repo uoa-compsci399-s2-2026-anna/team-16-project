@@ -187,6 +187,7 @@
     "For privacy, buckets containing fewer than %(threshold)s supply-chain points or destination entries are combined by the service. If the combined sample is still too small, that breakdown is not shown.": "为保护隐私，供应链记录或去向记录少于 %(threshold)s 条的分组会由服务合并。如果合并后的样本仍然过小，就不会显示该项细分。",
     "From Kai Commitment": "来自 Kai Commitment",
     "Generation time unavailable": "生成时间无法提供",
+    "Go to %(action)s": "跳至 %(action)s",
     "Going back will discard the changes you have made to the entry you opened. Go back anyway?": "返回会撤销您对打开的那条记录的更改。仍要返回吗？",
     "Going back will discard the new supply-chain entry you have started. Go back anyway?": "返回会清除您已开始填写的这条新的供应链记录。仍要返回吗？",
     "Hide details for %(name)s": "隐藏 %(name)s 的详细信息",

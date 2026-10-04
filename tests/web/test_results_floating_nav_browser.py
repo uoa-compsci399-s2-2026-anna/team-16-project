@@ -826,6 +826,9 @@ def test_the_navs_two_actions_point_at_the_real_buttons_without_pressing_them(br
             inView: box.top >= 0 && box.bottom <= window.innerHeight,
             panelVisible: getComputedStyle(
               document.querySelector('.results-floating-nav__panel')).visibility,
+            focused: document.activeElement
+              ? (document.activeElement.dataset.action || document.activeElement.tagName)
+              : null,
           };
         }""")
     finally:
@@ -856,9 +859,67 @@ def test_the_navs_two_actions_point_at_the_real_buttons_without_pressing_them(br
         f"the button was not scrolled into the viewport: {state}. Pointing at a control "
         "the reader cannot see is not pointing at it"
     )
-    assert state["panelVisible"] == "visible", (
-        f"the panel closed on its own entry ({state}), so its second action is "
-        "unreachable without reopening"
+    assert state["panelVisible"] == "hidden", (
+        f"the panel stayed open over the button it had just pointed at ({state}). "
+        "Measured at 1100, 1280 and 1440px, the overlay sits over `.result-actions`"
+    )
+    assert state["focused"] == "download-results", (
+        f"focus is on {state['focused']!r} after the press. The panel the press came "
+        "from has just been taken off the screen, so focus left there is lost to "
+        "`<body>`; and a keyboard reader who asked to be taken to a control should "
+        "arrive on it"
+    )
+
+
+@pytest.mark.parametrize("width", WIDTHS)
+def test_the_panel_never_covers_the_button_it_points_at(browser, width):
+    """Contract v1.97. **A call-out behind the panel points at nothing.**
+
+    The panel is an overlay from 1100px to 1599px and a docked column from 1600px,
+    and `.result-actions` is centred in the page. Those two facts make "the panel
+    does not sit over that row" an arithmetic coincidence of two independent
+    layouts rather than a property anybody wrote down -- so it is measured at every
+    width this file knows about, and measured twice: the rectangles must not
+    intersect, and the element at the button's own centre point must still be the
+    button.
+
+    The second is the one that would catch a panel that overlaps by a few pixels
+    with `pointer-events: none`, which looks fine to a rectangle test and is still
+    something painted over the ring.
+    """
+    context, page = _open(browser, width)
+    try:
+        _to_results(page)
+        handle = page.locator(".results-floating-nav__handle")
+        if handle.count() and handle.is_visible():
+            handle.click()
+            page.wait_for_timeout(250)
+        page.click('.results-floating-nav__actions [data-nav-action="download-results"]')
+        page.wait_for_timeout(700)
+        found = page.evaluate("""() => {
+          const b = document.querySelector('.result-actions [data-action="download-results"]');
+          const p = document.querySelector('.results-floating-nav__panel');
+          const B = b.getBoundingClientRect(), P = p.getBoundingClientRect();
+          const hidden = getComputedStyle(p).visibility === 'hidden';
+          const mid = document.elementFromPoint((B.left + B.right) / 2, (B.top + B.bottom) / 2);
+          return {
+            panelHidden: hidden,
+            overlap: !hidden && !(B.right <= P.left || B.left >= P.right
+                                  || B.bottom <= P.top || B.top >= P.bottom),
+            topMost: mid ? (mid.dataset.action || mid.className || mid.tagName) : null,
+            button: [Math.round(B.left), Math.round(B.right)],
+            panel: [Math.round(P.left), Math.round(P.right)],
+          };
+        }""")
+    finally:
+        context.close()
+
+    assert not found["overlap"], (
+        f"at {width}px the open panel sits over the button it has just pointed at: {found}"
+    )
+    assert found["topMost"] == "download-results", (
+        f"at {width}px the topmost element at the called-out button's own centre is "
+        f"{found['topMost']!r}, not the button: {found}"
     )
 
 

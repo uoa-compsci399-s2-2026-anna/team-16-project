@@ -1844,6 +1844,22 @@ function revealAction(action) {
   const still = typeof window !== 'undefined'
     && typeof window.matchMedia === 'function'
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  //: **The panel gets out of the way, and that is not tidiness.** Measured at
+  //: 1100, 1280 and 1440px, the open overlay sits over `.result-actions`: the
+  //: element at the called-out button's own centre point came back as
+  //: `results-floating-nav__panel`, so the ring this function had just drawn was
+  //: behind the panel that drew it. `closeResultsNav` is a no-op in the docked
+  //: regime by its own design, which is the regime where the two do not overlap
+  //: (1600 and 1920px, measured), so this needs no width test of its own.
+  closeResultsNav()
+  //: **And focus goes with it**, because the press came from inside a panel that
+  //: has just been taken off the screen -- leaving focus there loses it to
+  //: `<body>`. Putting it on the target is also what makes the entry do what it
+  //: says for a keyboard reader: they are taken to the control, and the next
+  //: press is theirs. `preventScroll` because the smooth scroll below is the one
+  //: doing the travelling; without it `focus()` jumps there instantly first and
+  //: the animation has nowhere left to go.
+  target.focus({ preventScroll: true })
   target.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'center' })
   //: **The class name is written out three times rather than held in a constant,
   //: and that is on purpose.** `tests/web/test_class_rules.py` reads static

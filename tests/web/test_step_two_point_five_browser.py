@@ -167,6 +167,20 @@ def test_continuing_from_a_chosen_category_opens_the_food_panel(page, released):
     assert page.locator("#item-title").count() == 1
 
 
+def test_zero_selected_state_explains_category_level_calculation(page, released):
+    """Continuing without a food keeps the calculation rule visible on screen."""
+    category = _category_with_foods(released)
+    _to_food_step(page)
+    _tick_category(page, category["code"])
+    _continue(page)
+    page.wait_for_selector('input[name="food-item"]')
+
+    assert page.locator(".choice-count").inner_text() == "0 selected"
+    notice = page.locator(".item-step__no-selection")
+    assert notice.is_visible()
+    assert "category with no food chosen" in notice.inner_text()
+
+
 def test_the_panel_groups_the_foods_under_the_category_that_was_chosen(page, released):
     """One group per chosen category, the category's own name as its legend,
     and only the foods §6.1 offers under it."""

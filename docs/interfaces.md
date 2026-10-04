@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-10-04 (v1.95)"
+date: "2026-10-04 (v1.96)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,19 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.96 — 2026-10-04 (Step 1's supply-chain stages say what they are and what they cover; affects B, C and E)
+
+The owner reported Step 1's *Details* panels reading *Additional details have not been supplied.* **The copy was never the thing missing** — all six sector descriptions have been written in `tests/fixtures/taxonomy.json` since C wrote them. Two things were: `sector.description` is `NULL` in every row of every deployed database, because `admin/seed.py` only ever creates rows that are absent; and this renderer still read a field that does not exist. §2.1's ruling (change-log item 12) folded `sector.details` into `description` — the fixture was changed at the time and `web/js/calculator.js` was not, so for three weeks it read `sector.details || sector.description || t('…not been supplied.')`, which printed the description twice against the real API and the placeholder against a live database. **This revision lands the other half of that ruling and the data to go with it. It adds no column.**
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **One field, two slots: `sectorCopy` splits `description` at its first sentence.** The card takes the sentence, the *Details* panel takes the remainder, and each is said once. The split is the shape the copy is already written in — a defining sentence, then *This covers…*, then *Typical losses are…* — and the card's geometry was computed for exactly one line of it: `min-height: 92px` is 20 + 22.5 + 6 + 24 + 20, the 24 being one line of `.stage-description`. **It degrades rather than guesses**: a description with no sentence break is shown whole on the card and no panel is drawn at all, so staff-typed prose can never leave a button that opens an empty box, and a description that is absent leaves the card with its title alone | §2.1, §7.3a |
+| 2 | **`0021` seeds the six descriptions into the databases that already exist**, conditional on `description IS NULL`, on 0015's and 0020's precedent: it seeds and never corrects, so a sentence a staff member has typed is left exactly as it is and a re-run of the chain changes nothing. The downgrade cannot be conditional the same way — the column holds no provenance — so it matches on the text it wrote and leaves an edited row alone, which its own docstring states | §2.1 |
+| 3 | **The prose is held in three places and asserted to be one wording.** `admin/seed.py` for a fresh deployment, `0021` for the existing ones, the fixture for C's and D's development. `test_sector_descriptions_are_the_shipped_seeds` compares all three by exact string and `test_taxonomy_codes_and_names_are_the_shipped_seeds` gains `description`, because three copies of client-facing wording drift — and these already had, in the worse form the ruling was about. The same test requires every one of the six to survive the split with a remainder, so a one-sentence entry fails rather than quietly losing its panel | §2.1 |
+| 4 | **`Additional details have not been supplied.` is deleted from all twenty catalogues, both trees.** It is unreachable once a sector with no description draws no panel, and an orphaned key fails `test_no_catalogue_carries_a_key_the_front_end_never_asks_for` in every language. 460 keys to 459; the twenty pairs stay SHA-256 equal because each file was edited by line and copied across rather than re-serialised; no CJK re-cut, since removing a string can only shrink the character set | §7.7 |
+| 5 | **The stylesheet's note over `.stage-select` attributed the empty descriptions to O-1. That attribution was loose and is corrected.** O-1 is the absence of confirmed emissions factors; these are supply-chain stage definitions and nothing here changes a number. What the note gets right is that the 92px floor becomes inert once the copy fills the box, which it now does | §7.6 |
+| 6 | **This is the team's wording of the MfE stages, not the client's own copy**, and it is seeded so the feature is testable end to end rather than demonstrable only against a hand-edited row. The owner is putting it to the client; a correction is a staff edit through the panel. Taxonomy prose is **not** translated — no sector, destination, metric or food-category name is a catalogue key, measured across all twenty — so these six render in English in every language, exactly as the names beside them already do. Nothing on the wire changes shape: `description` is already in §6.1's `sectors[]` and was already being sent as `null` | §2.1, §6.1, §7.7 |
 
 ### v1.95 — 2026-10-04 (the class guard's blind-spot register is keyed by site, not by module; affects C, D and E)
 

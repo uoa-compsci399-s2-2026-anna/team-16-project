@@ -594,6 +594,42 @@ const markerAfterLeaving = () => {
   return back && !back.draft && back.from === state.step ? null : back
 }
 
+/** The first sentence terminator with text after it: `(lead, rest)`. */
+const SECTOR_SENTENCE = /^([\s\S]*?[.!?])\s+([\s\S]+)$/
+
+/**
+ * One `sector.description` read as the two parts step 1 has room for: the sentence the
+ * card carries and the remainder its *Details* panel carries.
+ *
+ * **There is one column and two slots, and the second half of §2.1's ruling is here.**
+ * `tests/fixtures/taxonomy.json` briefly carried a `details` string per sector and this
+ * renderer read `sector.details || sector.description || t('…not been supplied.')`. No
+ * version of the contract has ever defined `details`, so against the real API the panel
+ * printed every sector's description a second time, and against a live database — where
+ * all six descriptions are `NULL` — it printed *Additional details have not been
+ * supplied.* on all six cards, which is what the owner reported. The ruling folded the
+ * longer text into `description` and the fixture was changed; this renderer was not.
+ *
+ * The split is the shape the copy is already written in — a defining sentence, then
+ * *This covers…*, then *Typical losses are…* — and the card's geometry was computed for
+ * exactly one line of description: `styles.css`'s `min-height: 92px` is
+ * 20 + 22.5 + 6 + 24 + 20, with the 24 being one line of `.stage-description`.
+ *
+ * **It degrades rather than guesses.** A description with no sentence break is shown
+ * whole on the card and no panel is drawn, so staff-typed prose can never leave a button
+ * that opens an empty box; a description that is absent leaves the card with its title
+ * alone, which is the state the stylesheet's slack note already describes. Nothing here
+ * invents copy for an empty column — the placeholder sentence is gone from all twenty
+ * catalogues rather than being made unreachable, because an orphaned key fails
+ * `test_no_catalogue_carries_a_key_the_front_end_never_asks_for` in every language.
+ */
+function sectorCopy(description) {
+  const text = (description || '').trim()
+  if (!text) return { lead: '', rest: '' }
+  const split = SECTOR_SENTENCE.exec(text)
+  return split ? { lead: split[1], rest: split[2] } : { lead: text, rest: '' }
+}
+
 function sectorStep() {
   const sectors = sorted(state.taxonomy.sectors)
   return `<section class="content-section" aria-labelledby="stage-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 1 }))}</p><h1 id="stage-title">${escapeHtml(t('Where in the food supply chain did this waste occur?'))}</h1><p class="section-intro" id="supply-chain-support">${escapeHtml(t('Choose the stage that best describes where the food waste was generated.'))}</p>
@@ -601,7 +637,8 @@ function sectorStep() {
       const isSelected = state.sector === sector.code
       const expanded = state.expandedSectors.includes(sector.code)
       const id = `sector-${slug(sector.code)}`
-      return `<div class="stage-card ${isSelected ? 'selected' : ''}"><label class="stage-select" for="${id}"><input id="${id}" name="sector" type="radio" value="${escapeHtml(sector.code)}" ${isSelected ? 'checked' : ''}><span class="stage-copy"><span class="stage-title">${escapeHtml(sector.name)}</span><span class="stage-description">${escapeHtml(sector.description || '')}</span></span>${isSelected ? `<span class="selected-label" aria-hidden="true">✓ ${escapeHtml(t('Selected'))}</span>` : ''}</label><button class="details-button" type="button" data-action="toggle-sector" data-sector="${escapeHtml(sector.code)}" aria-expanded="${expanded}" aria-controls="${id}-details" aria-label="${escapeHtml(expanded ? t('Hide details for %(name)s', { name: sector.name }) : t('Show details for %(name)s', { name: sector.name }))}">${escapeHtml(t('Details'))} <span class="chevron ${expanded ? 'expanded' : ''}" aria-hidden="true">⌄</span></button><div class="stage-details" id="${id}-details" ${expanded ? '' : 'hidden'}><p>${escapeHtml(sector.details || sector.description || t('Additional details have not been supplied.'))}</p></div></div>`
+      const { lead, rest } = sectorCopy(sector.description)
+      return `<div class="stage-card ${isSelected ? 'selected' : ''}"><label class="stage-select" for="${id}"><input id="${id}" name="sector" type="radio" value="${escapeHtml(sector.code)}" ${isSelected ? 'checked' : ''}><span class="stage-copy"><span class="stage-title">${escapeHtml(sector.name)}</span><span class="stage-description">${escapeHtml(lead)}</span></span>${isSelected ? `<span class="selected-label" aria-hidden="true">✓ ${escapeHtml(t('Selected'))}</span>` : ''}</label>${rest ? `<button class="details-button" type="button" data-action="toggle-sector" data-sector="${escapeHtml(sector.code)}" aria-expanded="${expanded}" aria-controls="${id}-details" aria-label="${escapeHtml(expanded ? t('Hide details for %(name)s', { name: sector.name }) : t('Show details for %(name)s', { name: sector.name }))}">${escapeHtml(t('Details'))} <span class="chevron ${expanded ? 'expanded' : ''}" aria-hidden="true">⌄</span></button><div class="stage-details" id="${id}-details" ${expanded ? '' : 'hidden'}><p>${escapeHtml(rest)}</p></div>` : ''}</div>`
     }).join('')}</div>${state.error ? `<p class="field-error" role="alert">${escapeHtml(state.error)}</p>` : ''}</fieldset>${stepNav({ step: 0, back: backTarget(0) })}</section>`
 }
 

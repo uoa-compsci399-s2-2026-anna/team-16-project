@@ -487,6 +487,170 @@ def test_the_chain_gives_the_submission_its_period_columns(migrated_engine):
         )
 
 
+def test_sector_descriptions_are_the_shipped_seeds():
+    """One wording for a supply-chain stage, held in three places.
+
+    Contract v1.96. Step 1's cards are client-facing copy, and it lives in
+    `admin/seed.py` for a fresh deployment, in `0021` for the deployments that
+    already exist, and in `tests/fixtures/taxonomy.json` for C's and D's
+    development. Three copies of a sentence drift, and this one has drifted
+    already in a worse form: the fixture carried a `details` string per sector
+    that no version of the contract ever defined, so the panel repeated the
+    description against the real API and printed *Additional details have not
+    been supplied.* against a live database for three weeks.
+
+    `tests/api/test_fixture_consistency.py` ties the fixture to the seed. This
+    ties the migration to both, and it is deliberately an exact string
+    comparison rather than a similarity: the point of failure is somebody
+    improving one copy.
+
+    Needs no database -- it reads three Python objects.
+    """
+    import importlib.util
+    import json
+    import pathlib
+
+    from admin.seed import SECTORS
+
+    root = pathlib.Path(__file__).resolve().parents[1]
+    fixture = json.loads((root / "tests/fixtures/taxonomy.json").read_text(encoding="utf-8"))
+    spec = importlib.util.spec_from_file_location(
+        "_m0021", root / "alembic/versions/0021_sector_description.py"
+    )
+    revision = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(revision)
+
+    seed = {code: description for code, _name, _order, description in SECTORS}
+    migration = dict(revision.SECTOR_DESCRIPTIONS)
+    fixtured = {row["code"]: row["description"] for row in fixture["sectors"]}
+
+    assert set(seed) == set(migration) == set(fixtured), (
+        "the three copies do not even cover the same sectors: "
+        f"seed={sorted(seed)} migration={sorted(migration)} fixture={sorted(fixtured)}"
+    )
+    disagree = {
+        code: {"seed": seed[code], "migration": migration[code], "fixture": fixtured[code]}
+        for code in sorted(seed)
+        if not seed[code] == migration[code] == fixtured[code]
+    }
+    assert not disagree, (
+        "a sector's description has been improved in one place and not the "
+        f"others, so a deployment and a fixture now say different things: {disagree}"
+    )
+
+    #: Every one of them must survive `sectorCopy`'s split with something left
+    #: for the panel, or the card carries the whole paragraph and the *Details*
+    #: button is not drawn -- which is legal behaviour and not what any of
+    #: these six are written for.
+    import re
+
+    for code, text_value in sorted(seed.items()):
+        split = re.match(r"^([\s\S]*?[.!?])\s+([\s\S]+)$", text_value)
+        assert split, (
+            f"{code}'s description is one sentence, so step 1 draws no Details "
+            f"panel for it: {text_value!r}"
+        )
+        assert len(split.group(1)) <= 120, (
+            f"{code}'s first sentence is {len(split.group(1))} characters and the "
+            "card has room for one line of it at 1280px: "
+            f"{split.group(1)!r}"
+        )
+
+
+@pytest.mark.db
+def test_0021_seeds_an_existing_sector_and_never_corrects_one(database_url_root):
+    """Contract v1.96. **The half of `0021` that is data**, on 0020's shape.
+
+    Every other migration test in this module runs the chain against an EMPTY
+    database, where an UPDATE over `sector` matches no rows and a dropped one
+    is indistinguishable from a working one. So this runs the chain in two
+    halves with rows in between, which is the only arrangement in which the
+    seed is observable at all.
+
+    Three properties:
+
+    * a sector that existed before `0021` comes out carrying its description,
+      rather than leaving step 1 with an empty line beside every title and
+      *Additional details have not been supplied.* in every panel -- which is
+      the state the owner reported and the reason this revision exists;
+    * the description is the shipped wording, not a placeholder, checked by
+      the sentence the panel is supposed to open onto;
+    * a description somebody had already written is **left alone**. The UPDATE
+      tests `description IS NULL`, so it seeds and never corrects, which is
+      0015's rule for `unit_preset` and 0020's for `equivalence` applied
+      again: an operator who re-runs the chain must not lose work.
+
+    Its own scratch database, like the tests above, so a chain left part-way by
+    a failure here cannot reach another test.
+    """
+    root = create_engine(database_url_root, future=True)
+    with root.connect() as conn:
+        conn.execute(text("DROP DATABASE IF EXISTS kaicalc_sectortest"))
+        conn.execute(text("CREATE DATABASE kaicalc_sectortest"))
+        conn.commit()
+
+    url = database_url_root.rsplit("/", 1)[0] + "/kaicalc_sectortest"
+    cfg = Config("alembic.ini")
+    cfg.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
+    engine = create_engine(url, future=True)
+    mine = "Our own wording for this stage, which nothing may overwrite."
+    try:
+        #: Stop one revision short, so the rows below are written by a chain
+        #: that has not yet run the UPDATE -- which is every deployed database
+        #: on the day this lands. The column itself is as old as 0004.
+        command.upgrade(cfg, "0020")
+        with engine.begin() as conn:
+            for code, name, order in (
+                ("primary_production", "Primary production", 10),
+                ("consumer_household", "Households", 40),
+            ):
+                conn.execute(
+                    text(
+                        "INSERT INTO sector (code, name, description, sort_order, "
+                        "active) VALUES (:c, :n, NULL, :o, 1)"
+                    ),
+                    {"c": code, "n": name, "o": order},
+                )
+
+        command.upgrade(cfg, "head")
+
+        #: A description written by hand AFTER the seed ran, then the chain
+        #: re-run: `alembic upgrade head` is idempotent and an operator may do
+        #: it twice.
+        with engine.begin() as conn:
+            conn.execute(
+                text("UPDATE sector SET description = :d WHERE code = 'consumer_household'"),
+                {"d": mine},
+            )
+        command.upgrade(cfg, "head")
+
+        with engine.connect() as conn:
+            rows = dict(conn.execute(text("SELECT code, description FROM sector")).all())
+    finally:
+        engine.dispose()
+        with root.connect() as conn:
+            conn.execute(text("DROP DATABASE IF EXISTS kaicalc_sectortest"))
+            conn.commit()
+        root.dispose()
+
+    seeded = rows["primary_production"]
+    assert seeded, (
+        "0021 seeded nothing, so step 1 on a deployed site shows an empty line "
+        "beside every sector title and `Additional details have not been "
+        "supplied.` in every Details panel"
+    )
+    assert "Typical losses" in seeded, (
+        "the seeded description is not the shipped wording -- the panel is "
+        f"supposed to open onto what is typically lost at this stage: {seeded!r}"
+    )
+
+    kept = rows["consumer_household"]
+    assert kept == mine, (
+        "re-running the chain overwrote a description somebody had written. "
+        f"The UPDATE must be conditional on `description IS NULL`: {kept!r}"
+    )
+
+
 @pytest.mark.db
 def test_0020_seeds_an_existing_row_and_never_corrects_one(database_url_root):
     """Contract v1.80, issue #127. **The half of `0020` that is data.**

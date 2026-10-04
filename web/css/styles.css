@@ -3768,6 +3768,42 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 .methodology-page .methodology-explanation { max-width: 780px; }
 .methodology-page .methodology-back-link { display: inline-flex; align-items: center; text-decoration: none; }
 
+.results-summary-card {
+  margin: 28px 0 34px;
+  padding: 22px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border: 1px solid rgba(0, 50, 35, 0.14);
+  border-inline-start: 4px solid var(--kai-orange);
+  border-radius: 14px;
+  background: rgba(223, 248, 237, 0.52);
+}
+.results-summary-card h2 { margin: 2px 0 6px; font-size: 1.2rem; }
+.results-summary-card p { margin: 0; color: var(--muted); }
+.results-summary-card .eyebrow { margin: 0; color: var(--green-dark); }
+.results-summary-card__actions { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+.results-summary-card__dismiss {
+  inline-size: 44px;
+  block-size: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--green-dark);
+  background: var(--kai-white);
+  font-size: 1.4rem;
+  line-height: 1;
+}
+.results-summary-card__dismiss:hover { background: var(--kai-pea); }
+
+@media (max-width: 620px) {
+  .results-summary-card { align-items: stretch; flex-direction: column; }
+  .results-summary-card__actions { justify-content: space-between; }
+}
+
 @media (min-width: 700px) {
   .methodology-page .methodology-metadata { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 28px; }
 }

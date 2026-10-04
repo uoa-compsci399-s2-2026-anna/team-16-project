@@ -593,6 +593,20 @@ def test_the_results_page_renders_every_section_it_composes(tmp_path):
         )
 
 
+def test_the_results_summary_card_links_to_details_and_can_be_dismissed(tmp_path):
+    """The top card is a shortcut, not a second copy of the results."""
+    screen = screen_for(tmp_path, build_state())
+    card = re.search(r'<aside class="results-summary-card".*?</aside>', screen, re.S)
+    assert card, "the results page has no dismissible summary card"
+    body = card.group(0)
+    assert 'data-action="view-result-details"' in body
+    assert 'data-target="breakdown-section"' in body
+    assert 'data-action="dismiss-results-summary"' in body
+    assert 'aria-label="Dismiss"' in body
+    assert screen.index('id="results-summary-card"') < screen.index('id="impact-summary"')
+    assert 'id="breakdown-section" tabindex="-1"' in screen
+
+
 def test_the_screen_and_the_file_carry_the_same_disclosure(tmp_path):
     """Contract §7.3c: one sentence, three surfaces, one field.
 

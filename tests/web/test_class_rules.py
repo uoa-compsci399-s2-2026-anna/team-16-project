@@ -247,33 +247,52 @@ CLASSES_WITH_NO_RULE_OF_THEIR_OWN: dict[str, str] = {
 #: `test_every_unresolvable_class_expression_is_declared` naming the expression,
 #: rather than being quietly absent from everything above.
 #:
-#: Keyed `module.js: expression`, because the same expression in two modules is
-#: two decisions.
+#: Keyed `module.js:declaration: expression`, because the same expression in two
+#: modules is two decisions -- **and so is the same expression twice in one
+#: module.** The module-only key cost this file its first real miss: see
+#: `_enclosing_declaration`.
 CLASS_EXPRESSIONS_THE_SCAN_CANNOT_RESOLVE: dict[str, str] = {
-    "calculator.js: extra": (
-        "`leafFigures`' own parameter, forwarded into a field's class. Its call "
-        "sites pass literals this scan does see through "
-        "`_INDIRECT_PROPERTIES`-adjacent positions or pass nothing at all; a "
-        "class reaching the DOM only through here would be invisible."
+    "calculator.js:foodStep: extra": (
+        "The last parameter of the `choice` arrow declared inside `foodStep`, "
+        "defaulting to `''` and appended to `.simple-choice`. Its call sites "
+        "pass `'simple-choice--unspecified'` or nothing at all, as positional "
+        "arguments, which is a position this scan does not read -- so that class "
+        "is matched here only because its rule exists."
     ),
-    "calculator.js: extraClass": (
+    "calculator.js:collapsibleCard: extraClass": (
         "`collapsibleCard`'s documented escape hatch -- 'classes the consumer's "
         "own selectors need'. The literals its call sites pass ARE seen, because "
         "`extraClass` is named in `_INDIRECT_PROPERTIES`; what remains invisible "
         "is a call site that passes a computed value."
     ),
-    "home.js: options.className": (
+    "calculator.js:stepFloatingNavigation: extraClass": (
+        "**A different `extraClass` from `collapsibleCard`'s, and the reason "
+        "this register is keyed by declaration rather than by module** (v1.95). "
+        "It is a positional parameter, so the three literals its call sites pass "
+        "-- `'item-floating-nav'`, `'amount-floating-nav'`, "
+        "`'destination-floating-nav'` -- are invisible to this scan; all three "
+        "have rules, matched here only because those rules exist. It also "
+        "interpolates `${extraClass}__links` onto the `<ul>`, so it hides three "
+        "further names -- `item-floating-nav__links`, `amount-floating-nav__links` "
+        "and `destination-floating-nav__links` -- which have **no rules and are "
+        "not meant to**: they are the hooks six assertions in "
+        "`test_step_two_point_five_browser.py` use to address one step's "
+        "navigation rather than whichever one is on screen. Those tests are what "
+        "measures them. Binds if a step's navigation needs styling the other "
+        "steps' does not."
+    ),
+    "home.js:element: options.className": (
         "`element()`'s own forwarding of its options object. Every call site's "
         "literal is seen at the call site as `className: '...'`; this is the "
         "helper reading it back."
     ),
-    "methodology.js: options.className": (
+    "methodology.js:element: options.className": (
         "`element()` again, same helper copied into this module, same reasoning."
     ),
-    "stats.js: options.className": (
+    "stats.js:element: options.className": (
         "`element()` again, same helper copied into this module, same reasoning."
     ),
-    "improvement.js: className": (
+    "improvement.js:ComparisonBars: className": (
         "`bar(value, className)`'s positional parameter. Its two call sites pass "
         "`'current-bar'` and `'improved-bar'` as function arguments, which is a "
         "position this scan does not read -- so `.current-bar` and "
@@ -282,21 +301,21 @@ CLASS_EXPRESSIONS_THE_SCAN_CANNOT_RESOLVE: dict[str, str] = {
         "`test_results_export.py` and the improvement browser tests measure the "
         "bars themselves."
     ),
-    "improvement.js: change.className": (
+    "improvement.js:ImpactComparisonCard: change.className": (
         "`metricChange()`'s returned object. It is one of `'neutral'`, "
         "`'positive'` and `'negative'`; the first two are seen at the `className:` "
         "properties that build the object and `'negative'` with them, so all "
         "three are in fact covered -- but by the object literal, not by this "
         "attribute."
     ),
-    "improvement.js: change.valueClass": (
+    "improvement.js:ImpactComparisonCard: change.valueClass": (
         "`metricChange()`'s other returned field, which is `signClass()`'s result: "
         "`'change-none'`, `'change-down'` or `'change-up'`, returned from a "
         "function and so invisible. Those three rules exist and this file would "
         "not notice if they went; the arrow glyphs are asserted by the "
         "improvement tests."
     ),
-    "calculator.js: state.errorCode ? `error-${slug(state.errorCode)}` : ''": (
+    "calculator.js:amountStep: state.errorCode ? `error-${slug(state.errorCode)}` : ''": (
         "**One class per API error code, and this one is open-ended on purpose: "
         "it cannot be enumerated here, because the codes come from §6's error "
         "vocabulary and the set grows with the contract.** `error-` plus a slug, "
@@ -308,7 +327,21 @@ CLASS_EXPRESSIONS_THE_SCAN_CANNOT_RESOLVE: dict[str, str] = {
         "is reported to that file's owner as the one item here that may simply be "
         "removable."
     ),
-    "results.js: negativeClass(total)": (
+    "calculator.js:reviewStep: state.errorCode ? `error-${slug(state.errorCode)}` : ''": (
+        "The same open-ended `error-<code>` family on the review step's banner. "
+        "Same vocabulary, same measurement and same conclusion as `amountStep`'s "
+        "entry above; listed separately because it is a separate site, which is "
+        "what keying by declaration means."
+    ),
+    "improvement.js:ComparisonSummary: change.className": (
+        "The same `metricChange()` object, read by the other renderer on the same "
+        "screen. Two sites, two entries: the reason happens to be identical here, "
+        "and that is worth being able to see rather than having to assume."
+    ),
+    "improvement.js:ComparisonSummary: change.valueClass": (
+        "`signClass()`'s result in that same other renderer, as above."
+    ),
+    "results.js:summaryCards: negativeClass(total)": (
         "Returns `' value-negative'` or `''`, appended to `result-value`. Both "
         "`.result-value` and `.value-negative` have rules and are matched through "
         "other positions; the orientation of a negative result figure is measured "
@@ -577,6 +610,39 @@ def stylesheets() -> list[Path]:
     return sorted((WEB / "css").glob("*.css"))
 
 
+#: A top-level declaration in a front-end module: `function name(`,
+#: `async function name(` or `const name =`, anchored at column 0.
+_TOP_LEVEL_DECLARATION = re.compile(r"^(?:async\s+)?function\s+(\w+)|^const\s+(\w+)\s*=", re.M)
+
+
+def _enclosing_declaration(source: str, position: int) -> str:
+    """The nearest top-level declaration above `position`, or `<module>`.
+
+    **A locator, not a scope analysis**, and the register below is keyed on it.
+    Its whole job is to tell two class positions in one module apart, so that a
+    second site cannot inherit a reason written for the first -- which is what
+    happened: v1.94's `stepFloatingNavigation` interpolates an `extraClass` of
+    its own, the key `calculator.js: extraClass` was already held by
+    `collapsibleCard`, and three class names reached the DOM behind a reason
+    written about a different function. Nothing failed.
+
+    It reports the nearest *top-level* name, so a parameter of a helper declared
+    inside a function is attributed to that function: `extra` is a parameter of
+    a `choice` arrow inside `foodStep`, and `className` one of a `bar` arrow
+    inside `ComparisonBars`. That is the honest answer for a locator -- neither
+    helper is addressable from outside the function it lives in.
+
+    A class value sitting in a module-level constant *after* a function would be
+    attributed to that function, which is wrong in principle and absent from
+    this tree. If one ever appears, the two tests on the register fail naming
+    the key rather than absorbing it, because the key is what changes.
+    """
+    found = "<module>"
+    for match in _TOP_LEVEL_DECLARATION.finditer(source, 0, position):
+        found = match.group(1) or match.group(2)
+    return found
+
+
 def _value_positions(source: str):
     """Every (offset, how) at which a class value begins, in one script."""
     for match in _CLASS_ATTR.finditer(source):
@@ -617,7 +683,8 @@ def scan_front_end() -> tuple[set[str], dict[str, None]]:
             found, rest = classes_in_value(value)
             classes |= found
             for expression in rest:
-                unresolved[f"{path.name}: {expression}"] = None
+                where = _enclosing_declaration(source, position)
+                unresolved[f"{path.name}:{where}: {expression}"] = None
     return classes, unresolved
 
 

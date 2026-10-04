@@ -935,8 +935,22 @@ def test_taxonomy_codes_and_names_are_the_shipped_seeds(taxonomy):
         UNIT_PRESETS,
     )
 
-    assert {row["code"]: (row["name"], row["sort_order"]) for row in taxonomy["sectors"]} == {
-        code: (name, sort_order) for code, name, sort_order in SECTORS
+    #: `description` is in the tuple as of v1.96, and it is the one entry here
+    #: that is not an identifier. Step 1 shows its first sentence on the card
+    #: and the remainder in the *Details* panel, so it is client-facing copy
+    #: held in two places -- `admin/seed.py` for a deployment and this fixture
+    #: for C's and D's development -- and two copies of client-facing wording
+    #: drift. They drifted for three weeks already in a worse form: the fixture
+    #: carried a `details` string per sector that no version of the contract
+    #: ever defined (the §2.1 ruling), so the panel repeated the description
+    #: against the real API and printed *Additional details have not been
+    #: supplied.* against a live database, which is what the owner reported.
+    assert {
+        row["code"]: (row["name"], row["sort_order"], row["description"])
+        for row in taxonomy["sectors"]
+    } == {
+        code: (name, sort_order, description)
+        for code, name, sort_order, description in SECTORS
     }
     assert {
         row["code"]: (row["name"], row["is_standard_mix"], row["sort_order"])
@@ -1025,7 +1039,7 @@ def test_the_codes_the_fixtures_calculate_with_are_shipped_codes():
     """
     from admin.seed import DESTINATIONS, FOOD_CATEGORIES, FOOD_ITEMS, SECTORS
 
-    sectors = {code for code, _, _ in SECTORS}
+    sectors = {code for code, _, _, _ in SECTORS}
     foods = {code for code, _, _, _ in FOOD_CATEGORIES}
     destinations = {code for _, code, _, _, _ in DESTINATIONS}
     items = {code for code, _, _, _ in FOOD_ITEMS}

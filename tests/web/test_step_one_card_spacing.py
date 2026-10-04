@@ -15,9 +15,11 @@ flex-start`. Copy shorter than the box pinned to the top and the remainder
 showed as empty space underneath: 23.5px on all six cards at 1280px. The 92
 was not a design constant. It is the arithmetic of a card carrying one line of
 description - 20 padding + 22.5 title + 6 `.stage-copy` row gap + 24 for one
-line + 20 padding = 92.5 - so it was a floor sized for content the client has
-not supplied yet (open item O-1). It held that space open against a payload
-that has never contained it.
+line + 20 padding = 92.5 - so it was a floor sized for content no database
+held. It held that space open against a payload that did not then contain it.
+**The copy arrived in v1.96**, from `admin/seed.py` and revision `0021`; the
+descriptions were never O-1's to supply, and a sector a staff member leaves
+without one still renders the empty state these numbers describe.
 
 *Narrow, selected only.* `.selected-label` ("Selected") is a third flex child
 of `.stage-select`. Below 480px `flex-wrap: wrap` puts it on its own line, and
@@ -34,7 +36,7 @@ the copy grows the radio slides away from the line it labels. Measured, the
 radio's centre against the centre of the title's first line box::
 
     content state     as shipped   align-items: center
-    empty (today)          2.5           4.7
+    empty                  2.5           4.7
     one-line               2.5          16.7   (1280px)
     fixture prose          2.5          52.7   (1280px)
     fixture prose          2.5         136.7   (320px, selected)
@@ -51,14 +53,23 @@ box - against a wrapped title a bounding box averages the lines away and reads
 side: it measures -9.3 today, the radio floating above its own title, correct
 again only once a description arrives to fill the box.
 
-**Descriptions are supplied by this file, not by the server.** All six sectors
-return `description` of length 0 today, so the state the fix has to survive is
-not reachable from the running stack. `GET /api/v1/taxonomy` is fulfilled in
-the browser from three bodies - empty, one line, and the prose already sitting
-in `tests/fixtures/taxonomy.json` (150-276 characters, six sectors) - which is
-also what keeps these numbers meaningful *after* O-1 resolves: the empty-state
-geometry stays measurable when the real payload stops being empty. Fulfilling
-the route locally also keeps this file off the taxonomy rate limit.
+**Descriptions are supplied by this file, not by the server**, and that is why
+every state is still measurable now that the server has its own. `GET
+/api/v1/taxonomy` is fulfilled in the browser from four bodies - empty, one
+line, the shortest description with a second sentence, and the prose in
+`tests/fixtures/taxonomy.json` (150-276 characters, six sectors). Before v1.96
+all six sectors returned `description` of length 0 and the full-prose state was
+unreachable from the running stack; since v1.96 it is the *empty* state that is
+unreachable from it, and a staff member can create one at any time by clearing
+a description in the panel. Fulfilling the route locally also keeps this file
+off the taxonomy rate limit.
+
+**Two of those bodies now draw no `Details` button at all** (v1.96): the panel
+is the remainder of `description` after its first sentence, and neither `empty`
+nor `one-line` has one. `SHORTEST_WITH_A_PANEL` exists because the 44px touch
+target has to be measured on the smallest card that actually carries a button -
+reading it off `empty`, as this file did, measured a button that was not
+there.
 
 **The rhythm is asserted, not assumed.** The supervisor's rule on this project
 is to be wide where it should be wide and narrow where it should be narrow,
@@ -196,15 +207,29 @@ CARD_GAPS = """() => {
 SIDEWAYS = "() => [document.documentElement.scrollWidth, window.innerWidth]"
 
 
+#: The shortest description that still has a second sentence, so `sectorCopy`
+#: leaves a remainder and step 1 draws a *Details* button (v1.96). It is the
+#: smallest card a button can appear on, which is what the 44px target has to
+#: survive; `empty` and `one-line` draw no button at all now, so neither of
+#: them can measure one.
+SHORTEST_WITH_A_PANEL = "Grown. Lost in the field."
+
+
 @pytest.fixture(scope="module")
 def taxonomy_bodies():
-    """The three content states, as whole `/api/v1/taxonomy` response bodies.
+    """The four content states, as whole `/api/v1/taxonomy` response bodies.
 
-    Rewriting the response rather than the DOM is what makes the `empty` state
-    survive O-1: when the client finally supplies descriptions this file keeps
-    measuring a card whose description is absent, which is the state the
-    stylesheet still has to be right about for any sector nobody has written
-    copy for yet.
+    Rewriting the response rather than the DOM is what keeps the `empty` state
+    measurable now that the live one is not empty: the six descriptions arrived
+    in v1.96, and this file still has to be right about a sector nobody has
+    written copy for yet, which is a state a staff member can create in the
+    panel at any time.
+
+    **`empty` and `one-line` are now also the states with no *Details* button**,
+    because `sectorCopy` splits one `description` into the card's sentence and
+    the panel's remainder, and neither of those bodies has a remainder. That is
+    v1.96's deliberate behaviour rather than an accident of these fixtures, so
+    `SHORTEST_WITH_A_PANEL` exists to measure the button where it does appear.
     """
     live = _live_taxonomy()
     fixture = _fixture_descriptions()
@@ -218,6 +243,7 @@ def taxonomy_bodies():
     return {
         "empty": rewritten(lambda s: ""),
         "one-line": rewritten(lambda s: ONE_LINE),
+        "two-sentence": rewritten(lambda s: SHORTEST_WITH_A_PANEL),
         "fixture": rewritten(lambda s: fixture.get(s["code"], ONE_LINE)),
     }
 
@@ -465,11 +491,99 @@ def test_the_details_button_keeps_a_reachable_target(step_one, select):
     card shrinks the button. WCAG 2.5.5 wants 44x44, and the button's own
     `min-height: 48px` is the floor that has to still be doing the work once
     the card stops declaring one of its own.
+
+    **Measured on the smallest card that has a button, which v1.96 moved.** This
+    read `state="empty"` when an empty description still drew a button; now a
+    sector with nothing after its first sentence draws no panel and no button,
+    so `(detailsHeight or 0) < 44` was true on all six cards for the honest
+    reason that there was no button to measure -- the assertion had stopped
+    being about a touch target. `SHORTEST_WITH_A_PANEL` is the state that
+    restores the subject: two words and a short second sentence, so the card is
+    as small as a card carrying a button can be.
     """
-    page = step_one(1280, state="empty", select=select)
+    page = step_one(1280, state="two-sentence", select=select)
     cards = page.evaluate(MEASURE)
-    short = [c for c in cards if (c["detailsHeight"] or 0) < 44]
+    assert all(c["detailsHeight"] for c in cards), _report(
+        cards, "a two-sentence description drew no Details button at all:")
+    short = [c for c in cards if c["detailsHeight"] < 44]
     assert not short, _report(cards, "the Details button fell below a 44px target:")
+
+
+@pytest.mark.parametrize("state", ["empty", "one-line"])
+def test_a_description_with_nothing_after_it_draws_no_details_button(step_one, state):
+    """Contract v1.96. **There is one `description` and the panel is the rest of
+    it**, so a sector with nothing after its first sentence has nothing to open
+    onto and the button is not drawn.
+
+    What this replaces is what the owner reported: the button was drawn
+    unconditionally and its panel printed *Additional details have not been
+    supplied.* -- a translated placeholder on all six cards of a deployed site,
+    standing in for prose that had been sitting in `tests/fixtures/taxonomy.json`
+    all along. A button that opens onto an apology is worse than no button.
+
+    Asserted on the panel as well as the button: `aria-controls` must not name
+    an element that is not there, and a `hidden` div with an empty `<p>` would
+    satisfy a button-only check.
+    """
+    page = step_one(1280, state=state)
+    found = page.evaluate("""() => ({
+      cards: document.querySelectorAll('.stage-card').length,
+      buttons: document.querySelectorAll('.details-button').length,
+      panels: document.querySelectorAll('.stage-details').length,
+      // `textContent`, NOT `innerText`: a collapsed `.stage-details` is
+      // `hidden`, so `innerText` omits it and this read `false` under the
+      // very mutation it exists to catch. Measured -- the assertion could
+      // not fail under any mutation until this line changed.
+      placeholder: document.body.textContent.includes('not been supplied'),
+    })""")
+    assert found["cards"] == 6, found
+    #: The owner's own report first, because it is the most specific thing this
+    #: test says and the message a reader needs. Ordered deliberately: with
+    #: `buttons` asserted first, restoring the defect killed this test on "still
+    #: drew a button" and the placeholder assertion was never reached, which is
+    #: a test passing its own point by.
+    assert not found["placeholder"], (
+        "`Additional details have not been supplied.` is back on screen -- the "
+        "placeholder the owner reported, which means a field that does not "
+        f"exist is being read again: {found}"
+    )
+    assert found["buttons"] == 0, f"a description with no remainder still drew a button: {found}"
+    assert found["panels"] == 0, f"a button-less card still drew its panel: {found}"
+
+
+def test_the_card_takes_the_first_sentence_and_the_panel_takes_the_rest(step_one):
+    """Contract v1.96, the other half of §2.1's `details` ruling.
+
+    One field, two slots, and **each sentence appears exactly once**. Before
+    this, the renderer read `sector.details || sector.description`, and because
+    no version of the contract ever defined `details`, the panel showed the
+    whole description a second time against a real API.
+
+    Measured against the shipped prose rather than a contrived string, so the
+    split is asserted on the copy a visitor actually reads.
+    """
+    page = step_one(1280, state="fixture")
+    page.click('.stage-card:first-child .details-button')
+    found = page.evaluate("""() => [...document.querySelectorAll('.stage-card')].map(card => ({
+      title: card.querySelector('.stage-title').textContent,
+      lead: card.querySelector('.stage-description').textContent,
+      panel: card.querySelector('.stage-details p')?.textContent ?? null,
+    }))""")
+    assert len(found) == 6, found
+    for card in found:
+        assert card["lead"], f"no sentence on the card: {card}"
+        assert card["panel"], f"no remainder in the panel: {card}"
+        #: The claim, and the one a `details ||` fallback fails: the panel is
+        #: the REST of the description, not the description.
+        assert card["lead"] not in card["panel"], (
+            "the panel repeats the sentence the card already carries, which is "
+            f"what reading a `details` field that does not exist produced: {card}"
+        )
+        assert card["lead"].endswith((".", "!", "?")), f"the card's sentence is cut: {card}"
+        #: And together they are the whole field, so the split loses nothing.
+        assert f"{card['lead']} {card['panel']}" in _fixture_descriptions().values(), (
+            f"the card and the panel do not reassemble the shipped description: {card}"
+        )
 
 
 @pytest.mark.parametrize("lang", ["en", "ar"])

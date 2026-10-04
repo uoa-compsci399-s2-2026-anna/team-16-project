@@ -64,14 +64,56 @@ DESTINATIONS = [
     ("disposal", "sewer", "Sewer or wastewater", False, 130),
 ]
 
+#: Step 1 shows the first sentence of `description` on the card and the rest in
+#: the *Details* panel beside it (`web/js/calculator.js`'s `sectorCopy`), so each
+#: entry is written as a defining sentence followed by what it covers and what is
+#: typically lost there. **One column, by §2.1's ruling** -- there is no
+#: `details` column and the panel is a presentation split, not a second field.
+#:
+#: The prose is `tests/fixtures/taxonomy.json`'s, character for character;
+#: `test_taxonomy_codes_and_names_are_the_shipped_seeds` asserts that, because
+#: two copies of client-facing wording drift and the fixture is what C and D
+#: develop against. **It is the team's wording of the MfE supply-chain stages,
+#: not the client's own copy** -- the owner is putting it to the client, and a
+#: correction is a staff edit through the panel or a one-line change here.
 SECTORS = [
-    # (code, name, sort_order)
-    ("primary_production", "Primary production", 10),
-    ("processing", "Processing and manufacturing", 20),
-    ("wholesale_retail", "Wholesale and retail", 30),
-    ("consumer_household", "Households", 40),
-    ("consumer_hospitality", "Hospitality", 50),
-    ("consumer_institution", "Institutions", 60),
+    # (code, name, sort_order, description)
+    (
+        "primary_production", "Primary production", 10,
+        "Growing, farming, fishing or harvesting food. This covers farms, orchards, vineyards, "
+        "fisheries and other operations where food is grown, raised or caught. Typical losses "
+        "are crops left unharvested, produce rejected on grade or appearance, and food lost "
+        "during first handling."
+    ),
+    (
+        "processing", "Processing and manufacturing", 20,
+        "Producing, preparing, processing or packaging food. This covers factories, bakeries, "
+        "packhouses and processing facilities. Typical losses are trimming waste, damaged "
+        "product, production errors, rejected batches and food lost during packaging."
+    ),
+    (
+        "wholesale_retail", "Wholesale and retail", 30,
+        "Storing, moving and selling food — from distributors and wholesalers through to "
+        "supermarkets, grocers and markets. Typical losses are storage and transport damage, "
+        "stock that passes its date, unsold food and produce pulled from display."
+    ),
+    (
+        "consumer_household", "Households", 40,
+        "Food bought for the home and not eaten. Typical losses are leftovers, food that spoils "
+        "before it is used, and edible parts removed during preparation."
+    ),
+    (
+        "consumer_hospitality", "Hospitality", 50,
+        "Preparing or serving food outside the home for sale. This covers restaurants, cafés, "
+        "hotels, caterers and commercial kitchens. Typical losses are preparation waste, "
+        "overproduction, buffet waste and what customers leave on the plate."
+    ),
+    (
+        "consumer_institution", "Institutions", 60,
+        "Preparing or serving food in public and community organisations. This covers schools, "
+        "universities, hospitals, aged-care facilities, prisons and workplace cafeterias. "
+        "Typical losses are kitchen preparation waste, overproduction and uneaten meals."
+    ),
 ]
 
 FOOD_CATEGORIES = [
@@ -501,9 +543,10 @@ def seed_taxonomy(session: Session) -> dict[str, int]:
             is_prevention=is_prevention, sort_order=sort_order,
         )
 
-    for code, name, sort_order in SECTORS:
+    for code, name, sort_order, description in SECTORS:
         created["sector"] += _ensure(
-            session, Sector, code, name=name, sort_order=sort_order
+            session, Sector, code, name=name, sort_order=sort_order,
+            description=description,
         )
 
     for code, name, is_standard_mix, sort_order in FOOD_CATEGORIES:

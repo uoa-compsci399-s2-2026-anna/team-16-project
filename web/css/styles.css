@@ -660,13 +660,20 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
    *Why there is slack to centre at all.* `min-height: 92px` is not a design
    constant - it is the arithmetic of a card carrying one line of description:
    20 padding + 22.5 title + 6 `.stage-copy` row gap + 24 for one line of
-   `.stage-description` + 20 padding = 92.5. Every sector's `description` is
-   empty today (open item O-1: the client has not supplied the content), so the
-   floor holds 23.5px open on all six cards at every width above 480px. The
-   floor STAYS, by the repository owner's decision - the card reads comfortably
-   at that height - so the fix is to put the copy in the middle of the box
-   rather than to shrink the box onto the copy. The day O-1 resolves, the copy
-   fills the box and all of this becomes inert.
+   `.stage-description` + 20 padding = 92.5. Every sector's `description` was
+   empty until v1.96 -- not for O-1's reason, which is emissions factors: the
+   prose existed in the fixture and `admin/seed.py` never wrote it to a database
+   that already had the rows. `0021` seeds it and `sectorCopy` puts its first
+   sentence here, so the floor now holds one line of real copy. Until then it
+   held 23.5px open on all six cards at every width above 480px, against a
+   payload that had never contained it. The floor STAYS, by the repository
+   owner's decision - the card reads comfortably at that height - so the fix
+   was to put the copy in the middle of the box rather than to shrink the box
+   onto the copy. **The empty state is still reachable and still measured**: a
+   sector a staff member has left without a description renders exactly as all
+   six did before v1.96, which is why test_step_one_card_spacing.py fulfils
+   `GET /api/v1/taxonomy` from three bodies of its own rather than from
+   whatever the stack happens to hold.
 
    *Why not `align-items: center`.* It centres every flex child independently,
    so the radio drifts down the block as the copy grows: measured at 16.7px

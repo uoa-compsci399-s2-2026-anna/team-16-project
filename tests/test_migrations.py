@@ -18,6 +18,8 @@ test_the_gwp_horizon_is_one_of_the_two_the_contract_allows`) — this module's
 drift gate does not guard it.
 """
 
+import pathlib
+
 import pytest
 from alembic import command
 from alembic.autogenerate import compare_metadata
@@ -614,13 +616,30 @@ def test_0021_seeds_an_existing_sector_and_never_corrects_one(database_url_root)
 
         command.upgrade(cfg, "head")
 
-        #: A description written by hand AFTER the seed ran, then the chain
-        #: re-run: `alembic upgrade head` is idempotent and an operator may do
-        #: it twice.
+        #: A description written by hand AFTER the seed ran, then the UPDATE
+        #: made to run again.
+        #:
+        #: **It has to be a downgrade and a re-upgrade, not two upgrades.**
+        #: `alembic upgrade head` against a database already stamped at this
+        #: revision runs NOTHING -- so "write a sentence, upgrade again, check
+        #: it survived" exercises no UPDATE at all and passes with the
+        #: `description IS NULL` condition deleted. Measured: that mutation
+        #: survived the two-upgrade form. `test_0020_...` above is written the
+        #: same way and has the same hole; it is fixed in the same commit.
+        #:
+        #: The round trip also exercises `downgrade`, which matches on the text
+        #: it wrote: `primary_production` still holds exactly what `upgrade`
+        #: seeded, so it is cleared; `consumer_household` has been edited, so
+        #: it is left alone.
         with engine.begin() as conn:
             conn.execute(
                 text("UPDATE sector SET description = :d WHERE code = 'consumer_household'"),
                 {"d": mine},
+            )
+        command.downgrade(cfg, "0020")
+        with engine.connect() as conn:
+            after_downgrade = dict(
+                conn.execute(text("SELECT code, description FROM sector")).all()
             )
         command.upgrade(cfg, "head")
 
@@ -644,10 +663,19 @@ def test_0021_seeds_an_existing_sector_and_never_corrects_one(database_url_root)
         f"supposed to open onto what is typically lost at this stage: {seeded!r}"
     )
 
+    assert after_downgrade["primary_production"] is None, (
+        "downgrade left a description it had seeded itself: "
+        f"{after_downgrade['primary_production']!r}"
+    )
+    assert after_downgrade["consumer_household"] == mine, (
+        "downgrade cleared a description somebody had edited. It matches on the "
+        f"text it wrote precisely so it cannot: {after_downgrade['consumer_household']!r}"
+    )
+
     kept = rows["consumer_household"]
     assert kept == mine, (
-        "re-running the chain overwrote a description somebody had written. "
-        f"The UPDATE must be conditional on `description IS NULL`: {kept!r}"
+        "re-running the UPDATE overwrote a description somebody had written. "
+        f"It must be conditional on `description IS NULL`: {kept!r}"
     )
 
 
@@ -730,6 +758,19 @@ def test_0020_seeds_an_existing_row_and_never_corrects_one(database_url_root):
         #: A sentence written by hand AFTER the column exists, then the chain
         #: re-run: `alembic upgrade head` is idempotent and an operator may do
         #: it twice.
+        #:
+        #: **The re-run below is a no-op, and that is now said rather than
+        #: implied** (v1.96). A second `upgrade` against a database already
+        #: stamped at `0020` runs nothing, so `kept == mine` cannot fail here
+        #: whatever the UPDATE says -- measured while writing the same test for
+        #: `0021`, where deleting `description IS NULL` left the two-upgrade
+        #: form passing. And it cannot be made to fail by a downgrade and a
+        #: re-upgrade either: `0020`'s downgrade drops the COLUMN, which takes
+        #: `mine` with it, exactly as that revision's own docstring says. So
+        #: the assertion stays as a statement of intent, and the property it
+        #: claims is carried by `test_0020_s_seed_is_conditional_in_its_source`
+        #: below, which can. `0021` keeps the behavioural form, because its
+        #: downgrade clears text rather than a column.
         with engine.begin() as conn:
             conn.execute(
                 text("UPDATE equivalence SET description = :d WHERE code = 'meals'"),
@@ -770,6 +811,35 @@ def test_0020_seeds_an_existing_row_and_never_corrects_one(database_url_root):
     assert kept == mine, (
         "re-running the chain overwrote a sentence somebody had written. The "
         f"UPDATE must be conditional on `description IS NULL`: {kept!r}"
+    )
+
+
+def test_0020_s_seed_is_conditional_in_its_source():
+    """The property the test above states but cannot exercise.
+
+    `0020` adds its own column, so the only way to re-run its UPDATE is to
+    re-run the revision, and the revision starts by adding a column that then
+    already exists; its downgrade drops the column and takes every sentence
+    with it. There is therefore no arrangement of `upgrade` and `downgrade` in
+    which a staff edit survives into a second run of that statement, which is
+    what makes the behavioural assertion inert.
+
+    So the claim is read where it is actually made. Deleting `AND description
+    IS NULL` from the revision fails this, which is more than the behavioural
+    assertion can say. `0021` needs no equivalent -- it adds no column, so its
+    own test drives the real thing.
+
+    Needs no database.
+    """
+    source = (
+        pathlib.Path(__file__).resolve().parents[1]
+        / "alembic/versions/0020_equivalence_description.py"
+    ).read_text(encoding="utf-8")
+    assert "WHERE code = :code AND description IS NULL" in source, (
+        "0020's seeding UPDATE is no longer conditional on `description IS "
+        "NULL`, so re-running the chain would overwrite every sentence staff "
+        "have typed -- and the behavioural test above cannot see it, because a "
+        "second `alembic upgrade head` runs nothing at all"
     )
 
 

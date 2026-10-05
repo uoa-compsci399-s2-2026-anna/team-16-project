@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-10-04 (v1.97)"
+date: "2026-10-05 (v1.98)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,20 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.98 — 2026-10-05 (a test module that needs no stack says so, and the suite reports it when one does not; affects everybody who writes a test under `tests/web`)
+
+v1.91 made `tests/web` mark browser tests **by location**: a module is `browser` unless it is named in `conftest.py`'s `NOT_A_BROWSER_SUITE`, on the stated reasoning that the browser list is the one that grows and enumerating it would put the forgettable half of the rule back where it was. That reasoning stands. **What was missing is that nothing reported a stack-free module which never declared itself** — it is simply marked `browser`, deselected from the stack-free run, and silently not run.
+
+Two modules were in that state, both of them pure static analysis and both of them ours: **`test_class_rules.py` from v1.93, and `test_step_three_copy_truth.py` from v1.92.** The cost is measurable rather than theoretical — PR #170 added a class with no rule in `web/css/`, its author ran the stack-free suite, saw green, and pushed a build CI would have failed, because **the guard that exists to catch exactly that had been switched off by a rule written to protect it**. `test_class_rules.py`'s own module docstring said it ran in the default suite while it did not.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **Both modules are declared in `NOT_A_BROWSER_SUITE`**, with reasons that say what they read and record how long each was missing. Measured: `pytest tests/web -m "not browser"` goes from **440 selected / 941 deselected** to **456 / 926**, the +15 being `test_class_rules.py`'s eleven cases and `test_step_three_copy_truth.py`'s four | §7.6 |
+| 2 | **`test_every_playwright_free_module_is_declared_rather_than_silently_skipped` closes the direction the other guards leave open.** The existing five all check the declaration against the code; this one checks the code against the declaration's **absence**. The gap was not visible from inside: `test_the_stack_free_selection_is_exactly_what_is_declared` compares the selection with the declaration and both **agreed on excluding** these two files — two sets can be equal and both wrong. The rule is the smallest one that closes it: a module reaching no Playwright must be declared, in `NOT_A_BROWSER_SUITE`, in `MIXED_BY_DESIGN`, or by being the one named file that needs the container without driving a browser | §7.6 |
+| 3 | **It is scoped to `test_*.py`, and that is measured rather than assumed.** `_modules()` is every `.py` in the package, so without the filter the assertion names `base_url.py`, `i18n_keys.py`, `steps.py` and `__init__.py` — helpers that carry no case for `-m` to select, where a declaration would be a note about nothing | §7.6 |
+| 4 | **The default is not re-litigated.** A new file still defaults to `browser`, because a file that forgets to declare itself is then skipped — slow and safe — rather than driving a browser in a run that asked for none. The only thing that changes is that the skipping is now reported | §7.6 |
+| 5 | Nothing under `web/`, `api/`, `engine/`, `db/`, `admin/`, `tests/golden/` or `tests/fixtures/` moves, and no catalogue moves: steps one and two of §0's three-step rule, not step three. The owner notifies the team | §0 |
 
 ### v1.97 — 2026-10-04 (the results nav's two actions point at the buttons instead of pressing them; affects D)
 

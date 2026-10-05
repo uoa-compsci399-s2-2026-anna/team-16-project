@@ -3753,17 +3753,21 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 .methodology-page .methodology-metadata dt { color: var(--muted); font-size: 0.9rem; }
 .methodology-page .methodology-metadata dd { margin: 0; overflow-wrap: anywhere; }
 .methodology-page .table-scroll { max-width: 100%; margin-top: 20px; border: 1px solid var(--border); border-radius: 12px; }
-.methodology-page table { width: 100%; min-width: 760px; border-collapse: collapse; background: var(--kai-white); }
+.methodology-page table { width: 100%; min-width: 760px; border-collapse: collapse; background: var(--kai-white); table-layout: auto; }
 /* `start`, not `left`. D built these two rules against v1.17, before Arabic and
    Urdu; `test_the_stylesheet_carries_no_physical_direction_left` has forbidden a
    physical side since, and a factor table that keeps its columns left-aligned
    under `dir="rtl"` is exactly the half-mirrored page that rule exists to stop. */
 .methodology-page caption { padding: 14px 16px; color: var(--muted); text-align: start; font-size: 0.9rem; }
 .methodology-page th,
-.methodology-page td { padding: 13px 16px; border-top: 1px solid var(--border); text-align: start; vertical-align: top; overflow-wrap: anywhere; }
-.methodology-page thead th { color: var(--kai-white); background: var(--kai-kale); }
+.methodology-page td { padding: 13px 16px; border-top: 1px solid var(--border); text-align: start; vertical-align: top; overflow-wrap: normal; word-break: normal; }
+.methodology-page thead th { color: var(--kai-white); background: var(--kai-kale); white-space: nowrap; }
+.methodology-page [data-column-kind="code"],
+.methodology-page [data-column-kind="number"],
+.methodology-page [data-column-kind="unit"] { white-space: nowrap; }
+.methodology-page [data-column-kind="note"] { min-width: 18rem; overflow-wrap: anywhere; }
 .methodology-page tbody th { font-weight: 700; }
-.methodology-page code { color: inherit; white-space: pre-wrap; }
+.methodology-page code { color: inherit; white-space: inherit; }
 .methodology-page .methodology-warning { align-items: flex-start; }
 .methodology-page .methodology-explanation { max-width: 780px; }
 .methodology-page .methodology-back-link { display: inline-flex; align-items: center; text-decoration: none; }

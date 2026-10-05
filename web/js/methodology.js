@@ -86,7 +86,10 @@ function makeTable({ caption, columns, rows }) {
   table.append(element('caption', { text: caption }))
   const headerRow = element('tr')
   for (const column of columns) {
-    headerRow.append(element('th', { text: column.label, attributes: { scope: 'col' } }))
+    headerRow.append(element('th', {
+      text: column.label,
+      attributes: { scope: 'col', 'data-column-kind': column.kind },
+    }))
   }
   table.append(element('thead', {}, [headerRow]))
 
@@ -96,7 +99,10 @@ function makeTable({ caption, columns, rows }) {
     columns.forEach((column, index) => {
       const cell = element(index === 0 ? 'th' : 'td', {
         text: column.value(row),
-        attributes: index === 0 ? { scope: 'row' } : {},
+        attributes: {
+          ...(index === 0 ? { scope: 'row' } : {}),
+          'data-column-kind': column.kind,
+        },
       })
       if (column.code) {
         const code = element('code', { text: cell.textContent })
@@ -201,10 +207,10 @@ function renderFactors(payload) {
     {
       caption: t('Published constants'),
       columns: [
-        { label: t('Code'), value: row => recorded(row?.code), code: true },
-        { label: t('Value'), value: row => recorded(row?.value) },
-        { label: t('Unit'), value: row => recorded(row?.unit) },
-        { label: t('Note'), value: row => recorded(row?.note) },
+        { label: t('Code'), kind: 'code', value: row => recorded(row?.code), code: true },
+        { label: t('Value'), kind: 'number', value: row => recorded(row?.value) },
+        { label: t('Unit'), kind: 'unit', value: row => recorded(row?.unit) },
+        { label: t('Note'), kind: 'note', value: row => recorded(row?.note) },
       ],
     },
   ))
@@ -218,9 +224,9 @@ function renderFactors(payload) {
     {
       caption: t('Published formulas'),
       columns: [
-        { label: t('Metric'), value: row => recorded(row?.metric), code: true },
-        { label: t('Expression'), value: row => recorded(row?.expression), code: true },
-        { label: t('Notes'), value: row => recorded(row?.notes) },
+        { label: t('Metric'), kind: 'code', value: row => recorded(row?.metric), code: true },
+        { label: t('Expression'), kind: 'code', value: row => recorded(row?.expression), code: true },
+        { label: t('Notes'), kind: 'note', value: row => recorded(row?.notes) },
       ],
     },
   ))
@@ -239,14 +245,14 @@ function renderFactors(payload) {
     {
       caption: t('Published upstream impact factors'),
       columns: [
-        { label: t('Sector'), value: row => recorded(row?.sector), code: true },
-        { label: t('Food category'), value: row => recorded(row?.food_category, t('All food categories')), code: true },
-        { label: t('Food'), value: row => recorded(row?.food_item, t('All foods in this category')), code: true },
-        { label: t('Destination'), value: row => recorded(row?.destination, t('All destinations')), code: true },
-        { label: t('Metric'), value: row => recorded(row?.metric), code: true },
-        { label: t('Value per kg'), value: row => recorded(row?.value_per_kg) },
-        { label: t('Source note'), value: row => recorded(row?.source_note) },
-        { label: t('Data quality'), value: row => recorded(row?.data_quality) },
+        { label: t('Sector'), kind: 'code', value: row => recorded(row?.sector), code: true },
+        { label: t('Food category'), kind: 'code', value: row => recorded(row?.food_category, t('All food categories')), code: true },
+        { label: t('Food'), kind: 'code', value: row => recorded(row?.food_item, t('All foods in this category')), code: true },
+        { label: t('Destination'), kind: 'code', value: row => recorded(row?.destination, t('All destinations')), code: true },
+        { label: t('Metric'), kind: 'code', value: row => recorded(row?.metric), code: true },
+        { label: t('Value per kg'), kind: 'number', value: row => recorded(row?.value_per_kg) },
+        { label: t('Source note'), kind: 'note', value: row => recorded(row?.source_note) },
+        { label: t('Data quality'), kind: 'label', value: row => recorded(row?.data_quality) },
       ],
     },
   ))
@@ -264,13 +270,13 @@ function renderFactors(payload) {
     {
       caption: t('Published downstream impact factors'),
       columns: [
-        { label: t('Destination'), value: row => recorded(row?.destination), code: true },
-        { label: t('Sector'), value: row => recorded(row?.sector, t('All sectors')), code: true },
-        { label: t('Food category'), value: row => recorded(row?.food_category, t('All food categories')), code: true },
-        { label: t('Metric'), value: row => recorded(row?.metric), code: true },
-        { label: t('Value per kg'), value: row => recorded(row?.value_per_kg) },
-        { label: t('Source note'), value: row => recorded(row?.source_note) },
-        { label: t('Data quality'), value: row => recorded(row?.data_quality) },
+        { label: t('Destination'), kind: 'code', value: row => recorded(row?.destination), code: true },
+        { label: t('Sector'), kind: 'code', value: row => recorded(row?.sector, t('All sectors')), code: true },
+        { label: t('Food category'), kind: 'code', value: row => recorded(row?.food_category, t('All food categories')), code: true },
+        { label: t('Metric'), kind: 'code', value: row => recorded(row?.metric), code: true },
+        { label: t('Value per kg'), kind: 'number', value: row => recorded(row?.value_per_kg) },
+        { label: t('Source note'), kind: 'note', value: row => recorded(row?.source_note) },
+        { label: t('Data quality'), kind: 'label', value: row => recorded(row?.data_quality) },
       ],
     },
   ))
@@ -284,15 +290,15 @@ function renderFactors(payload) {
     {
       caption: t('Published metric equivalences'),
       columns: [
-        { label: t('Code'), value: row => recorded(row?.code), code: true },
-        { label: t('Name'), value: row => recorded(row?.name) },
-        { label: t('Source metric'), value: row => recorded(row?.source_metric), code: true },
-        { label: t('Value per unit'), value: row => recorded(row?.value_per_unit) },
+        { label: t('Code'), kind: 'code', value: row => recorded(row?.code), code: true },
+        { label: t('Name'), kind: 'label', value: row => recorded(row?.name) },
+        { label: t('Source metric'), kind: 'code', value: row => recorded(row?.source_metric), code: true },
+        { label: t('Value per unit'), kind: 'number', value: row => recorded(row?.value_per_unit) },
         // The template itself is staff-authored and §3 interpolates it in the
         // engine, so the *value* stays as published; only this header moves.
-        { label: t('Label template'), value: row => recorded(row?.label_template) },
-        { label: t('Source note'), value: row => recorded(row?.source_note) },
-        { label: t('Sort order'), value: row => recorded(row?.sort_order) },
+        { label: t('Label template'), kind: 'label', value: row => recorded(row?.label_template) },
+        { label: t('Source note'), kind: 'note', value: row => recorded(row?.source_note) },
+        { label: t('Sort order'), kind: 'number', value: row => recorded(row?.sort_order) },
       ],
     },
   ))

@@ -153,6 +153,21 @@ def test_the_drawer_is_on_every_public_page_and_opens(browser, path):
         context.close()
 
 
+def test_homepage_exposes_navigation_without_opening_the_drawer(browser):
+    """The homepage's main destinations are visible without a hidden-menu step."""
+    context, page = _open_page(browser, "/index.html")
+    try:
+        nav = page.locator(".intro-navigation")
+        assert nav.is_visible()
+        assert page.locator("#site-drawer[open]").count() == 0
+        assert page.eval_on_selector_all(
+            ".intro-navigation a", "els => els.map(el => el.getAttribute('href'))"
+        ) == ["./index.html", "./stats.html", "./methodology.html"]
+        assert page.locator('.intro-navigation a[aria-current="page"]').inner_text() == "Calculator"
+    finally:
+        context.close()
+
+
 @pytest.mark.parametrize("width,height", [(1278, 983), (938, 898), (390, 700), (320, 700)])
 def test_opening_the_drawer_moves_nothing_on_the_page(browser, width, height):
     """**Overlay, never compress**, and it is measured rather than asserted from CSS.

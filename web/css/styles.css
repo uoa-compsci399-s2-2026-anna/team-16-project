@@ -2342,10 +2342,29 @@ tbody th { font-weight: 700; }
 /* One food's editor, when the chain forked. A single-leaf panel renders no wrapper at
    all, so none of this applies to the commonest journey. Logical properties throughout,
    per the house rule. */
-.improvement-leaf { margin-block-start: 26px; padding-block-start: 20px; border-block-start: 1px solid rgba(0, 50, 35, 0.12); }
-.improvement-leaf:first-of-type { margin-block-start: 8px; padding-block-start: 0; border-block-start: 0; }
+/* **The improvement panel's per-food blocks are `.step-card`s since v1.100**, so the
+   rule that used to separate them is gone rather than kept beside the card's own ground.
+   It was `margin-block-start: 26px; padding-block-start: 20px; border-block-start: 1px`
+   — a hairline between two plain `<section>`s — and a card already has a border, a
+   radius and a background of its own: keeping both drew a line above a box that was
+   already visibly separate, and the padding pushed the card's own header away from its
+   own edge. What remains is the gap between cards, which is what the hairline was
+   standing in for.
+
+   `:first-of-type` went with it, and that is worth saying because it would have changed
+   meaning silently: these are `<fieldset>`s now, not `<section>`s, so the selector that
+   used to mean "the first food block" would have started matching the first fieldset on
+   the panel — which is what the unit field would be if it ever became one.
+
+   `.improvement-leaf__heading` STAYS and is still live: the card header carries the
+   food's name now, but the expanded-chart dialog still draws an `<h3>` with this class
+   (`improvement.js`'s `modal`). A rule for a class nobody emits is deliberately not
+   asserted by `tests/web/test_class_rules.py`, so this one is checked by eye here and
+   by that dialog's own test. */
+.improvement-leaf { margin-block-start: 14px; }
 .improvement-leaf__heading { margin-block: 0; font-size: 1.05rem; }
-.improvement-leaf .improvement-editor { margin-block-start: 14px; }
+.improvement-leaf .improvement-editor { margin-block-start: 14px; padding-inline: 20px; }
+.improvement-leaf .improvement-total { margin-inline: 20px; }
 .improvement-submission-mass { margin-block-start: 18px; color: var(--muted); font-size: 0.9rem; text-align: end; }
 .improvement-total.invalid { color: var(--error); background: rgba(135, 0, 90, 0.06); }
 .improvement-actions { margin-top: 22px; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 12px; }

@@ -259,11 +259,14 @@ CLASS_EXPRESSIONS_THE_SCAN_CANNOT_RESOLVE: dict[str, str] = {
         "arguments, which is a position this scan does not read -- so that class "
         "is matched here only because its rule exists."
     ),
-    "calculator.js:collapsibleCard: extraClass": (
+    "cards.js:collapsibleCard: extraClass": (
         "`collapsibleCard`'s documented escape hatch -- 'classes the consumer's "
         "own selectors need'. The literals its call sites pass ARE seen, because "
         "`extraClass` is named in `_INDIRECT_PROPERTIES`; what remains invisible "
-        "is a call site that passes a computed value."
+        "is a call site that passes a computed value. **It moved from "
+        "`calculator.js` to `cards.js` in v1.100** and this register noticed, "
+        "which is what keying by declaration buys: the old key went stale and the "
+        "new one was undeclared, in two separate assertions."
     ),
     "calculator.js:stepFloatingNavigation: extraClass": (
         "**A different `extraClass` from `collapsibleCard`'s, and the reason "
@@ -612,7 +615,10 @@ def stylesheets() -> list[Path]:
 
 #: A top-level declaration in a front-end module: `function name(`,
 #: `async function name(` or `const name =`, anchored at column 0.
-_TOP_LEVEL_DECLARATION = re.compile(r"^(?:async\s+)?function\s+(\w+)|^const\s+(\w+)\s*=", re.M)
+_TOP_LEVEL_DECLARATION = re.compile(
+    r"^(?:export\s+)?(?:async\s+)?function\s+(\w+)|^(?:export\s+)?const\s+(\w+)\s*=",
+    re.M,
+)
 
 
 def _enclosing_declaration(source: str, position: int) -> str:
@@ -636,6 +642,13 @@ def _enclosing_declaration(source: str, position: int) -> str:
     attributed to that function, which is wrong in principle and absent from
     this tree. If one ever appears, the two tests on the register fail naming
     the key rather than absorbing it, because the key is what changes.
+
+    **`export` is part of the pattern, and it was not until v1.100.** The first
+    file to export one of these declarations -- `web/js/cards.js`, when the card
+    chrome moved out of `calculator.js` -- reported `cards.js:<module>:
+    extraClass`, because `export function collapsibleCard(` does not begin with
+    `function`. Every exported declaration in the tree would have collapsed to
+    `<module>` the same way, which is one bucket rather than a locator.
     """
     found = "<module>"
     for match in _TOP_LEVEL_DECLARATION.finditer(source, 0, position):

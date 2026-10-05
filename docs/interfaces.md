@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-10-05 (v1.98)"
+date: "2026-10-06 (v1.100)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,23 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.100 — 2026-10-06 (the improvement panel folds one card per food type, and the card chrome moves to a module of its own; affects C and D)
+
+**v1.99 is on an open branch and is not in this file yet.** This takes 100 rather than 99 for that reason; if the two land out of order the later one renumbers.
+
+#134's problem on a fourth screen, reported by the owner: a chain of several food types draws a pie chart and a stack of fourteen sliders **per food**, so the improvement panel runs to thousands of pixels and the foods below the fold go unadjusted with nothing saying so. Steps 2.5, 3 and 4 already answer that with one collapsible card each. **Measured on a two-food chain: the panel is 3,540px as plain sections and 560px with every card folded**, and that is the smallest case — the owner's screenshot had four.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **The card chrome moves from `calculator.js` to `web/js/cards.js`**, which both files import. `calculator.js` already imports `improvement.js`, so `improvement.js` could not import back without a cycle; moving the chrome is the answer that leaves **one** implementation rather than two. `cardId`, `cardIsFixedOpen`, `cardIsOpen`, `openedCard`, `cardStatus`, `collapsibleCard` and `keyAttr` travel; `itemStatus`, `updateCardBadges` and `focusLeafField` stay, being step-flavoured. **Cut by line and pasted** — nothing was rewritten or summarised, because the notes #134, #138 and #142 wrote into those functions are the reason they behave as they do, and a paraphrase would be a second statement of a decision. The module owns no state: the open set stays in `state.openCards` | §7.3a |
+| 2 | **`totalPanel` is the card's `always` slot, not part of its body**, and that is what makes folding safe here rather than merely shorter. `Total allocation` and `Total mass` stay readable with the card shut, so a reader scanning a folded panel can see which food still needs work without opening anything — #142's rule for step 4's `Remaining`, applied to the figure this screen is actually about | §7.3a, §7.6 |
+| 3 | **`IMPROVEMENT_CARD_STEP = 5`**, because the results page is `state.step === 5`. `cardId` joins step to key, so this only has to be a number no other screen uses — steps 2.5, 3 and 4 are 1, 2 and 3 — and a card open here must not make a card open there, since the two are answered minutes apart for different reasons | §7.3a |
+| 4 | **A single leaf is unchanged and still draws no card at all.** `LeafAllocationEditor`'s `single` branch returns the editor and the total exactly as before, which is consistent rather than an exception: `leafPanel` does the same on step 3, and `cardIsFixedOpen` exists for the count of one. The screen the commonest journey sees does not move | §7.3a |
+| 5 | **`.improvement-leaf` and `data-improvement-leaf-panel` are carried through `extraClass` and `dataAttr`, deliberately.** `updateImprovementInput` finds a leaf's pie by that attribute and `test_leaf_improvement_browser.py` counts that class, so both are load-bearing. The `<h3 class="improvement-leaf__heading">` goes — the card header carries the name — and the class stays live because the expanded-chart dialog still draws one | §7.3a, §7.6 |
+| 6 | **The hairline between food blocks is deleted rather than kept beside the card's own ground.** It was `margin-block-start: 26px; padding-block-start: 20px; border-block-start: 1px`, drawn between two plain `<section>`s; a card already has a border, a radius and a background, so keeping both drew a line above a box that was already separate and the padding pushed the header off its own edge. `:first-of-type` went with it, and that is said rather than left silent: these are `<fieldset>`s now, so the selector would have changed meaning | §7.6 |
+| 7 | **`_enclosing_declaration` learns the word `export`** (v1.98's locator). `cards.js` is the first file to export one of these declarations, and `export function collapsibleCard(` does not begin with `function` — so the register reported `cards.js:<module>: extraClass`, and every exported declaration in the tree would have collapsed into that one bucket. Worth recording that the register **noticed the move at all**: the old key went stale and the new one was undeclared, in two separate assertions, which is what keying by declaration (v1.95) buys | §7.6 |
+| 8 | Nothing on the wire moves, no fixture moves and **no catalogue moves** — the card's name is the food's own display name and its badge reuses `cardStatus`'s two existing strings. Steps one and two of §0's three-step rule, not step three. The owner notifies the team | §0 |
 
 ### v1.98 — 2026-10-05 (a test module that needs no stack says so, and the suite reports it when one does not; affects everybody who writes a test under `tests/web`)
 

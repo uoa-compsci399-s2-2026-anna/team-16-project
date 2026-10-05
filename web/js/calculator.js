@@ -3022,7 +3022,20 @@ function updateLine(control) {
   const sum = allocatedAmount(lines, unit)
   const summary = document.querySelector(`[data-summary-leaf="${CSS.escape(keyAttr(key))}"]`)
   const hasNegative = lines.some(line => line.qtyInput !== '' && Number(line.qtyInput) < 0)
-  summary?.classList.toggle('invalid', exceedsTotal(sum, total) || hasNegative)
+  //: **Both directions here, and only one of them below** (v1.99). This strip is the
+  //: whole card's state, so it turns `invalid` for an allocation that misses its total
+  //: either way -- it is what a SHUT card shows, and #142 put it outside the fold for
+  //: exactly that. The row-level marking further down stays `exceedsTotal` only:
+  //: going over is attributable to the row just typed into, while falling short is no
+  //: single row's fault and colouring one would point at an innocent control.
+  //:
+  //: **This is the keystroke path and `leafSummary` is the re-render path, and they
+  //: are two copies of one rule.** Changing only the other one is what the first run
+  //: of `test_under_allocation_is_refused_and_visible_from_a_shut_card` reported:
+  //: Continue refused, the badge read `incomplete`, the message named the food and
+  //: the 40.00 kg -- and the strip stayed calm, because the visitor had typed rather
+  //: than re-rendered.
+  summary?.classList.toggle('invalid', exceedsTotal(sum, total) || fallsShortOfTotal(sum, total) || hasNegative)
   if (summary) {
     summary.querySelector('[data-summary="allocated"]').textContent = `${sum.toFixed(2)} ${unitLabel(unit)}`
     summary.querySelector('[data-summary="remaining"]').textContent = `${remainingAmount(total, sum).toFixed(2)} ${unitLabel(unit)}`

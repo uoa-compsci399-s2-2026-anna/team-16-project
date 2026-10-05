@@ -726,18 +726,49 @@ def test_under_allocation_is_refused_and_visible_from_a_shut_card(opened):
     assert folded["badge"] == "incomplete", folded
     assert folded["continueDisabled"] is True, folded
 
-    #: And the other direction, on the same card: placing the rest clears all three.
-    #: Without this the whole test passes against a rule that never lets anybody
-    #: through.
-    page.locator('.step-card__toggle[aria-expanded="false"]').first.click()
-    page.wait_for_timeout(180)
-    page.fill(f"#{first_row}", "100")
-    page.wait_for_timeout(220)
+    #: And the other direction: placing the rest clears all three readers. Without
+    #: this the whole test passes against a rule that never lets anybody through.
+    #:
+    #: **Every card, not just this one.** `continueDisabled` is the step's reader, not
+    #: the card's, and this walk builds two leaves — the first run of this block
+    #: filled only the first and reported `continueDisabled: True` with the message
+    #: `Enter an amount for at least one waste destination for Fruit.`, which was the
+    #: test being wrong rather than the rule. Filling both is also the stronger claim:
+    #: a chain whose every card matches its own amount is one the step lets through.
+    #: **Open everything first, then read the ids, then fill — in that order.**
+    #: `expand_step_cards` rather than a loop over `.all()`, because a toggle press is
+    #: a `setState` and `render()` replaces `main.innerHTML`: a list of handles taken
+    #: before the first click points into a detached tree and waits out its timeout
+    #: against a screen that is working correctly. And the ids are read *after* that
+    #: render rather than before it — read first, they named rows that no longer
+    #: existed and the second card silently kept all 100 kg unplaced.
+    expand_step_cards(page)
+    page.wait_for_timeout(200)
+    #: **Each card's own amount, not a constant.** This walk gives the two leaves
+    #: different totals — 100 kg and 200 kg — so filling 100 into both left Fruit
+    #: 100 short and the first version of this block read that correct refusal as a
+    #: failure. The row and the figure it has to match are taken from the same card.
+    cards = page.evaluate("""() => [...document.querySelectorAll('.step-card')].map(card => {
+      const row = card.querySelector('[data-line-field=amount]');
+      const total = card.querySelector('[data-summary=remaining]')
+        ?.closest('.allocation-summary')?.querySelector('strong')?.textContent?.trim();
+      return {row: row ? row.id : null, total: total ? total.split(' ')[0] : null};
+    }).filter(c => c.row && c.total)""")
+    assert len(cards) == 2, f"this walk is meant to build two leaves, not {len(cards)}"
+    assert len({c["total"] for c in cards}) == 2, (
+        f"the two leaves are meant to carry different totals, which is what makes "
+        f"'each card against its own amount' a real claim: {cards}"
+    )
+    for card in cards:
+        page.fill(f"#{card['row']}", card["total"])
+        page.wait_for_timeout(180)
     settled = page.evaluate(VERDICT)
     assert settled["summaryInvalid"] is False, settled
-    assert settled["badge"] == "complete", settled
+    assert settled["badges"] == ["complete", "complete"], (
+        f"a card whose allocation matches its amount is still not complete: {settled}"
+    )
     assert settled["continueDisabled"] is False, (
-        f"a card whose allocation matches its amount still refuses Continue: {settled}"
+        f"every card matches its own amount and the step still refuses Continue: {settled}"
     )
 
 

@@ -188,9 +188,14 @@ def _to_destination_step(page, *, amount="1200.50"):
     page.wait_for_selector('[data-line-field="amount"]', timeout=10000)
 
 
-def _to_review_step(page, *, amount="1200.50", allocated="1000.00"):
+def _to_review_step(page, *, amount="1200.50", allocated=None):
+    #: `allocated` defaults to the whole amount (v1.99). It was "1000.00" against
+    #: an amount of "1200.50" -- a 200.50 kg short allocation that step 4 used to
+    #: let through, and no longer does, so the helper sat on a disabled Continue
+    #: for 30 seconds. The parameter stays, so a test that wants a short allocation
+    #: can still ask for one and expect to be refused.
     _to_destination_step(page, amount=amount)
-    page.locator('[data-line-field="amount"]').first.fill(allocated)
+    page.locator('[data-line-field="amount"]').first.fill(allocated or amount)
     page.wait_for_timeout(200)
     press_continue(page)
     page.wait_for_selector("#time-frame", timeout=10000)

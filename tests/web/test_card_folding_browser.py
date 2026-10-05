@@ -668,6 +668,79 @@ def test_over_allocation_is_visible_from_a_shut_card(opened):
     assert folded["continueDisabled"] is True, folded
 
 
+def test_under_allocation_is_refused_and_visible_from_a_shut_card(opened):
+    """Contract v1.99. **Short of the total is as wrong as over it.**
+
+    Until v1.99 step 4's rules bounded the allocation from above and said nothing
+    below it, and §7.3a recorded that as deliberate. The owner's screenshot is what
+    it looked like: a card holding 3.00 of 4.00 kilograms, `Remaining 1.00`, wearing
+    a **`Complete`** badge, with Continue enabled.
+
+    What made it worse than an interface slip is that **the step-3 total never
+    crosses the wire** -- `buildLines` sends the destination rows, so the entry's
+    waste IS their sum. The unallocated kilogram was not held back for later and not
+    refused by the API; every metric, the cost, the equivalences and
+    `production_share_percent` were computed on three quarters of what the visitor
+    had typed, with a tick saying it was accounted for.
+
+    Written as the mirror of `test_over_allocation_is_visible_from_a_shut_card`,
+    against the same three readers, because v1.81's rule is that the badge, the strip
+    and the button all read one rule set -- and all three were wrong together here,
+    which is exactly why nothing reported it.
+
+    **It finishes by allocating the rest**, so the test cannot be satisfied by a rule
+    that refuses everything: the same three readers have to come back clean on the
+    same card without a reload.
+    """
+    page = opened()
+    _to_step_four(page, 2)
+    page.locator('.step-card__toggle[aria-expanded="false"]').first.click()
+    page.wait_for_timeout(180)
+    first_row = page.evaluate(
+        "() => document.querySelector('.step-card [data-line-field=amount]').id")
+    page.fill(f"#{first_row}", "60")  # against a leaf holding 100
+    page.wait_for_timeout(220)
+    short = page.evaluate(VERDICT)
+    assert short["summaryInvalid"] is True, (
+        f"60 kg placed against a 100 kg leaf is not marked, so a visitor who folds "
+        f"this card away is told nothing: {short}"
+    )
+    assert short["badge"] == "incomplete", (
+        f"the card calls itself complete with 40 kg unplaced -- the badge the owner "
+        f"photographed: {short}"
+    )
+    assert short["continueDisabled"] is True, (
+        f"Continue is enabled on an under-allocated card, so the submission carries "
+        f"60 kg of a 100 kg entry and every figure is computed on the smaller mass: "
+        f"{short}"
+    )
+
+    page.locator('.step-card__toggle[aria-expanded="true"]').first.click()
+    page.wait_for_timeout(200)
+    folded = page.evaluate(VERDICT)
+    assert folded["shut"] is True, folded
+    assert folded["summaryDrawn"] is True, folded
+    assert folded["summaryInvalid"] is True, (
+        f"folding an under-allocated card hides that it is under-allocated: {folded}"
+    )
+    assert folded["badge"] == "incomplete", folded
+    assert folded["continueDisabled"] is True, folded
+
+    #: And the other direction, on the same card: placing the rest clears all three.
+    #: Without this the whole test passes against a rule that never lets anybody
+    #: through.
+    page.locator('.step-card__toggle[aria-expanded="false"]').first.click()
+    page.wait_for_timeout(180)
+    page.fill(f"#{first_row}", "100")
+    page.wait_for_timeout(220)
+    settled = page.evaluate(VERDICT)
+    assert settled["summaryInvalid"] is False, settled
+    assert settled["badge"] == "complete", settled
+    assert settled["continueDisabled"] is False, (
+        f"a card whose allocation matches its amount still refuses Continue: {settled}"
+    )
+
+
 def test_one_food_type_is_a_card_that_is_open_and_has_no_toggle(opened):
     """`cardIsFixedOpen` on step 4, which is #142's own criterion: *collapsed by
     default unless it is the only card*.

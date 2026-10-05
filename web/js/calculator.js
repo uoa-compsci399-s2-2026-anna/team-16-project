@@ -1852,8 +1852,19 @@ function leafSummary(leaf, first) {
   //: SHUT card -- #142 put this strip outside the fold precisely so Remaining and its
   //: state are readable without opening anything -- so a strip that stayed calm while
   //: Continue refused would be the collapsed card contradicting the button again.
+  //:
+  //: **Short counts only once the visitor has started placing.** An untouched card
+  //: is short of its total by definition, and marking it on arrival turns every
+  //: step-4 card Beetroot before anybody has done anything -- shouting at someone
+  //: for not having acted yet. `test_the_allocation_summary_is_opaque_in_both_states`
+  //: is what reported it: it reads the strip's ordinary ground on arrival, and there
+  //: was no longer an ordinary state to read. The badge already says `Incomplete` for
+  //: an untouched card through `leafProblem`'s first rule, so nothing is hidden by
+  //: waiting. Over-allocation and negatives keep firing unconditionally, because
+  //: both are states the visitor had to type to reach.
+  const started = (figures.current || []).some(line => line.qtyInput !== '')
   const invalid = exceedsTotal(allocated, total)
-    || fallsShortOfTotal(allocated, total)
+    || (started && fallsShortOfTotal(allocated, total))
     || (figures.current || []).some(line => line.qtyInput !== '' && Number(line.qtyInput) < 0)
   const unit = unitLabel(figures.totalUnit)
   return `<div class="allocation-summary ${invalid ? 'invalid' : ''}" ${first ? 'id="current-summary"' : ''} data-summary-leaf="${leafAttr(leaf)}" aria-live="polite"><div><span>${escapeHtml(t('Total waste'))}</span><strong>${formatNumber(total, 2)} ${escapeHtml(unit)}</strong></div><div><span>${escapeHtml(t('Allocated'))}</span><strong data-summary="allocated">${formatNumber(allocated, 2)} ${escapeHtml(unit)}</strong></div><div><span>${escapeHtml(t('Remaining'))}</span><strong data-summary="remaining">${formatNumber(remainingAmount(total, allocated), 2)} ${escapeHtml(unit)}</strong></div></div>`
@@ -3035,7 +3046,11 @@ function updateLine(control) {
   //: Continue refused, the badge read `incomplete`, the message named the food and
   //: the 40.00 kg -- and the strip stayed calm, because the visitor had typed rather
   //: than re-rendered.
-  summary?.classList.toggle('invalid', exceedsTotal(sum, total) || fallsShortOfTotal(sum, total) || hasNegative)
+  //: See `leafSummary` for why falling short is conditional on having started and
+  //: the other two are not. The two writers state one rule and have already drifted
+  //: once in this revision.
+  const started = lines.some(line => line.qtyInput !== '')
+  summary?.classList.toggle('invalid', exceedsTotal(sum, total) || (started && fallsShortOfTotal(sum, total)) || hasNegative)
   if (summary) {
     summary.querySelector('[data-summary="allocated"]').textContent = `${sum.toFixed(2)} ${unitLabel(unit)}`
     summary.querySelector('[data-summary="remaining"]').textContent = `${remainingAmount(total, sum).toFixed(2)} ${unitLabel(unit)}`

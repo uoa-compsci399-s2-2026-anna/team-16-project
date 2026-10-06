@@ -153,6 +153,73 @@ def test_the_drawer_is_on_every_public_page_and_opens(browser, path):
         context.close()
 
 
+@pytest.mark.parametrize("width", [1278, 390, 320])
+@pytest.mark.parametrize("lang", ["en", "de", "ar"])
+def test_homepage_exposes_navigation_without_opening_the_drawer(browser, width, lang):
+    """The homepage's main destinations are visible without a hidden-menu step.
+
+    **Two assertions here were worth nothing and are replaced** (v1.101).
+
+    `assert page.locator("#site-drawer[open]").count() == 0` was satisfied before
+    this feature and after it: the drawer never loads open, and #173 does not touch
+    `index.html`. Measured on a build of `main` from before the row existed, it read
+    0 there too. It is gone; what it was reaching for -- *the reader does not have
+    to open anything* -- is the `nav.is_visible()` above it, which the drawer's own
+    closed state cannot satisfy.
+
+    And **nothing asserted the thing the twenty-one new CSS lines exist for.**
+    Deleting every one of them left this test green, and shrinking `min-height` from
+    44px to 1px left the whole suite green while the targets collapsed to 22px high
+    and 32-48px wide. §7.6's touch-target rule is the only reason that block is
+    there, so it is measured here, at the widths and in the languages where it is
+    tightest -- German is the long compound, Arabic the short label, 320px the floor.
+
+    The width axis is **reported rather than asserted at 44**: the existing
+    `.public-nav a` on `stats.html` measures 41 and 37 in Arabic at both widths, so a
+    44 here would be a stricter rule than the site keeps elsewhere and would fail on
+    arrival. The height is the half this block actually sets.
+    """
+    context, page = _open_page(browser, f"/index.html?lang={lang}", width=width, height=900)
+    try:
+        nav = page.locator(".intro-navigation")
+        assert nav.is_visible(), (
+            "the hero navigation is not visible, so the reader is back to opening a "
+            "hidden menu to find out what this site does"
+        )
+        assert page.eval_on_selector_all(
+            ".intro-navigation a", "els => els.map(el => el.getAttribute('href'))"
+        ) == ["./index.html", "./stats.html", "./methodology.html"]
+
+        measured = page.eval_on_selector_all(
+            ".intro-navigation a",
+            """els => els.map(el => {
+              const box = el.getBoundingClientRect();
+              return {text: el.textContent.trim(),
+                      h: Math.round(box.height), w: Math.round(box.width)};
+            })""",
+        )
+        short = [m for m in measured if m["h"] < 44]
+        assert not short, (
+            f"at {width}px in {lang} these links are under the 44px touch target the "
+            f"`.intro-navigation a` block declares: {short}. That block's `min-height` "
+            f"is the only reason it exists, and nothing else in the suite reads it"
+        )
+
+        if lang == "en":
+            current = page.locator('.intro-navigation a[aria-current="page"]')
+            assert current.count() == 1, (
+                f"{current.count()} links claim to be the current page; one page has "
+                f"one current mark, which is §7.9's rule"
+            )
+            assert current.inner_text() == "Calculator"
+
+        assert page.evaluate(
+            "() => document.documentElement.scrollWidth <= Math.max(document.documentElement.clientWidth, 320)"
+        ), f"the hero navigation pushed the page sideways at {width}px in {lang}"
+    finally:
+        context.close()
+
+
 @pytest.mark.parametrize("width,height", [(1278, 983), (938, 898), (390, 700), (320, 700)])
 def test_opening_the_drawer_moves_nothing_on_the_page(browser, width, height):
     """**Overlay, never compress**, and it is measured rather than asserted from CSS.

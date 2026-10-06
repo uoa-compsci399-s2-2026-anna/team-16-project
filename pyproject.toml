@@ -130,6 +130,20 @@ dev = [
     # tests/api/test_pdf_render.py reads the placeholder warning, the figures
     # and the macron back out of the bytes.
     "pypdf>=5.1",
+    # **The browser suite is a quarter of this project's tests and CI collected
+    # none of it until v1.102.** Every module under `tests/web` that drives a
+    # page opens with `pytest.importorskip("playwright.sync_api")`, so without
+    # this line those modules are skipped AT COLLECTION: their cases are not
+    # counted as passed, not counted as skipped, and not mentioned in the
+    # summary at all. Measured on the run of 2026-10-03: `3487 passed, 62
+    # skipped`, against 4696 collected on a developer machine. 1,063 of the
+    # missing cases live in the 39 modules that import this package.
+    #
+    # Installing it is only half: a browser also needs `playwright install`, and
+    # the suite needs a stack to drive. `.github/workflows/_browser.yaml` does
+    # both, and `tests/web/run_browser_suite.py` is what batches the run against
+    # §6.5's rate limit.
+    "playwright>=1.49",
     # httpx is deliberately absent here: it is a runtime dependency (see
     # above), and listing it twice would let someone "tidy up" the runtime
     # copy on the strength of this one.

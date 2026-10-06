@@ -48,6 +48,9 @@ BUILD_FILE = REPO / "docker" / "compose.yaml"
 DEPLOY_FILE = REPO / "docker" / "compose.deploy.yaml"
 BUILD_WORKFLOW = REPO / ".github" / "workflows" / "_build-images.yaml"
 MANIFEST_WORKFLOW = REPO / ".github" / "workflows" / "_publish-manifest.yaml"
+CI_WORKFLOW = REPO / ".github" / "workflows" / "ci.yaml"
+TEST_WORKFLOW = REPO / ".github" / "workflows" / "_test.yaml"
+BROWSER_WORKFLOW = REPO / ".github" / "workflows" / "_browser.yaml"
 README = REPO / "README.md"
 
 #: The registry path CI pushes to. `_build-images.yaml` and
@@ -494,4 +497,62 @@ def test_the_access_log_format_names_no_identifying_field() -> None:
     # it and falling back to the base image's `main`.
     assert re.search(r"access_log\s+\S+\s+kaicalc\s*;", body), (
         "the server block does not use the kaicalc log format"
+    )
+
+
+def test_ci_runs_the_browser_suite_and_will_not_publish_past_it():
+    """Contract v1.102. **The two test jobs partition the suite, and the images
+    wait for both.**
+
+    Until v1.102 `_test.yaml` ran `python -m pytest` with no selector, which
+    reads as the whole suite and was not: 39 modules opened with
+    `pytest.importorskip("playwright.sync_api")`, `playwright` was not a dev
+    dependency, and a collection skip is invisible in a pytest summary -- not
+    passed, not skipped, not mentioned. The run of 2026-10-03 reported `3487
+    passed, 62 skipped` against 4696 collected on a developer machine, and
+    nothing anywhere said where the other 1,147 cases went.
+
+    Three things are asserted, and the third is the one with teeth:
+
+    * `_test.yaml` selects `not browser`, so it says what it runs;
+    * `_browser.yaml` exists and runs the batching runner, which is what keeps
+      §6.5's rate limit from turning a long run into a wall of false failures;
+    * **`build` needs `browser`.** An image published past a red browser suite
+      is an image whose front end nobody checked, and the front end is most of
+      what this product is. Deleting the job would otherwise be a silent
+      downgrade, which is the shape of the defect this whole revision answers.
+
+    It reads the workflows as YAML rather than grepping them, so a reformat
+    cannot break it and a rename cannot slip past it.
+    """
+    import yaml
+
+    test_job = yaml.safe_load(TEST_WORKFLOW.read_text(encoding="utf-8"))["jobs"]["test"]
+    selectors = [step.get("run", "") for step in test_job["steps"]
+                 if "pytest" in str(step.get("run", ""))]
+    assert any('-m "not browser"' in run for run in selectors), (
+        "the suite job no longer selects `not browser`. With `playwright` a dev "
+        "dependency the browser modules collect here and skip one at a time "
+        "against a stack this job does not have -- measured at 18.8s for seven "
+        f"of them. What it runs: {selectors}"
+    )
+
+    assert BROWSER_WORKFLOW.is_file(), (
+        "_browser.yaml is gone, so nothing in CI drives a browser at all and the "
+        "1,063 cases it was added for are back to being invisible"
+    )
+    browser = yaml.safe_load(BROWSER_WORKFLOW.read_text(encoding="utf-8"))["jobs"]["browser"]
+    runs = " ".join(str(step.get("run", "")) for step in browser["steps"])
+    assert "run_browser_suite.py" in runs, (
+        "the browser job no longer uses the batching runner. §6.5 caps a caller "
+        "at 600 GETs an hour with no override, and one unbatched run of a "
+        "thousand browser cases spends the rest of itself failing on 429s that "
+        "read as code failures"
+    )
+
+    ci = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))["jobs"]
+    assert "browser" in ci, "ci.yaml no longer calls the browser workflow"
+    assert "browser" in ci["build"]["needs"], (
+        f"`build` does not wait for `browser` ({ci['build']['needs']}), so an "
+        f"image can be published past a red browser suite"
     )

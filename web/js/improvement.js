@@ -3,6 +3,7 @@ import { setState, draftEntry, leafDisplayName } from './state.js'
 import { rowKgString, percentageToKg, kgToPercentage, kgToUnitAmount, unitAmountToKg, unitDisplayPrecision, isPresetUnit, presetUnitCode, PRESET_UNIT } from './units.js'
 import { requestLines, submissionLeaves, submissionPayload } from './submission.js'
 import { escapeHtml, formatNumber, slug } from './view.js'
+import { cardStatus, collapsibleCard } from './cards.js'
 import { t } from './i18n.js'
 
 // Display-only coercion of an API decimal string (§7.6.1). `Number(value) || 0` stood here
@@ -814,7 +815,20 @@ function DestinationAllocationRow({ destination, current, improved, unit, totalK
  * by far and nothing about it changed. The leaf index still reaches the controls, so the
  * keystroke path has one code path rather than two.
  */
-function LeafAllocationEditor({ state, leaf, index, single, current, allocation, unit, presets }) {
+/**
+ * **The step number the improvement panel's cards are filed under in `state.openCards`.**
+ *
+ * 5, because the results page is `state.step === 5` and that is the screen these cards
+ * are on. `cardId` joins the step to the key, so this only has to be a number no other
+ * screen uses: steps 2.5, 3 and 4 are 1, 2 and 3, and a card open here must not make a
+ * card open there, since the two are answered minutes apart for different reasons.
+ *
+ * Named rather than written at the call site for `ITEM_CARD_STEP`'s reason — a literal
+ * repeated in a renderer and a handler is two statements of one fact.
+ */
+const IMPROVEMENT_CARD_STEP = 5
+
+function LeafAllocationEditor({ state, leaf, index, count, single, current, allocation, unit, presets }) {
   const totalKg = leafAllocatableKg(leaf, presets)
   const total = allocationTotal(allocation)
   const leafIndex = single ? null : index
@@ -839,7 +853,41 @@ function LeafAllocationEditor({ state, leaf, index, single, current, allocation,
   const massId = single ? ' id="improvement-total-kg"' : ''
   const totalPanel = `<div class="improvement-total ${total && Math.abs(total - 100) > 0.01 ? 'invalid' : ''}" aria-live="polite"><span>${escapeHtml(t('Total allocation'))}</span><strong id="${totalId}">${total.toFixed(2)}%</strong><span class="improvement-total-mass">${escapeHtml(t('Total mass'))}: <strong${massId}>${formatNumber(totalKg, 2)}</strong> kg</span></div>`
   if (single) return editor + totalPanel
-  return `<section class="improvement-leaf" data-improvement-leaf-panel="${index}"><h3 class="improvement-leaf__heading">${escapeHtml(leafDisplayName(leaf, state.taxonomy))}</h3>${editor}${totalPanel}</section>`
+  //: **One collapsible card per food type** (v1.100), for #134's reason on a fourth
+  //: screen: a chain of five foods draws five pie charts and five stacks of fourteen
+  //: sliders, and the ones below the fold go unadjusted with nothing saying so. The
+  //: owner asked for step 3's and step 4's treatment here.
+  //:
+  //: **`totalPanel` is the `always` slot, not part of the body**, which is the whole
+  //: of what makes folding safe here: `Total allocation 49.45%` and `Total mass 4.00
+  //: kg` stay readable with the card shut, so a visitor scanning a folded panel can
+  //: see which food still needs work without opening anything. That is #142's rule
+  //: for step 4's Remaining, applied to the figure this screen is actually about.
+  //:
+  //: **The class and the data attribute are carried through deliberately.**
+  //: `updateImprovementInput` finds a leaf's pie by `[data-improvement-leaf-panel]`
+  //: and `tests/web/test_leaf_improvement_browser.py` counts `.improvement-leaf`, so
+  //: both are load-bearing rather than decoration; `collapsibleCard` has `extraClass`
+  //: and `dataAttr` for exactly this. The `<h3 class="improvement-leaf__heading">`
+  //: goes — the card header carries the name now — and that class stays in the
+  //: stylesheet because the expanded-chart dialog still draws one.
+  //:
+  //: The badge is `cardStatus` over the same comparison the total strip already makes,
+  //: so the tick and the strip cannot say different things about one card. A card at
+  //: 0% reads `Incomplete`, which is true: nothing has been redistributed yet.
+  const settled = Math.abs(total - 100) <= 0.01
+  return collapsibleCard({
+    step: IMPROVEMENT_CARD_STEP,
+    key: String(index),
+    anchor: `improvement-${index}`,
+    name: leafDisplayName(leaf, state.taxonomy),
+    count,
+    status: cardStatus(settled),
+    body: editor,
+    always: totalPanel,
+    extraClass: 'improvement-leaf',
+    dataAttr: `data-improvement-leaf-panel="${index}"`,
+  })
 }
 
 export function ImprovementScenario(state) {
@@ -886,7 +934,8 @@ export function ImprovementScenario(state) {
   const unitField = `<div class="form-field improvement-mode-field"><label for="improvement-mode">${escapeHtml(t('Unit'))}</label><select id="improvement-mode" title="${escapeHtml(unitDisplayName(unit, presets))}">${unitOptionsHtml(presets, unit)}</select></div>`
   const single = leaves.length === 1
   const editors = leaves.map((leaf, index) => LeafAllocationEditor({
-    state, leaf, index, single, current: current[index] || {}, allocation: allocations[index] || {}, unit, presets,
+    state, leaf, index, count: leaves.length, single,
+    current: current[index] || {}, allocation: allocations[index] || {}, unit, presets,
   })).join('')
   // The intro says what is being redistributed. On a forked chain the answer is "each
   // food's own waste", and saying "the current waste amount" there would read as one pool

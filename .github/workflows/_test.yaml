@@ -222,7 +222,25 @@ jobs:
           PY
 
       - name: pytest
-        # No `-m` selector and no `-n`. The whole suite, one process.
+        # `-m "not browser"`, and no `-n`.
+        #
+        # **The selector is new in v1.102 and it makes this job HONEST rather
+        # than narrower.** It used to say "no `-m` selector, the whole suite",
+        # and that was true of the command and false of the outcome: 39 modules
+        # opened with `pytest.importorskip("playwright.sync_api")`, `playwright`
+        # was not a dev dependency, and a collection skip is invisible in the
+        # summary - not passed, not skipped, not mentioned. The run of
+        # 2026-10-03 reported `3487 passed, 62 skipped` against 4696 collected
+        # on a developer machine, and nothing said where the other 1,147 went.
+        #
+        # `playwright` IS a dev dependency now, so without this selector those
+        # modules would collect here and then skip one at a time against a
+        # stack this job does not have. Measured: 7 such skips take 18.8s, each
+        # of them a connection timeout, so ~1,000 of them is tens of minutes
+        # added to the job whose whole value is answering quickly. The browser
+        # suite has a machine shape of its own and now has a job of its own -
+        # `.github/workflows/_browser.yaml`, which `ci.yaml` gates `build` on.
+        # Between them the two jobs run everything; neither pretends to.
         #
         # NOT parallelised on purpose: tests/admin's fixtures commit against
         # one shared database and delete by prefix in teardown, and two runs
@@ -236,4 +254,4 @@ jobs:
           # render, "skipped" is not an available outcome - see
           # tests/support/pdf.py.
           KAICALC_PDF_REQUIRED: '1'
-        run: python -m pytest
+        run: python -m pytest -m "not browser"

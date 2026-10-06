@@ -94,6 +94,52 @@ def _open_page(browser, path, width=1278, height=983, language="en", **context_o
     return context, page
 
 
+def _assert_the_panel_has_arrived(page, path):
+    """The panel is open, on screen and no longer moving, said before clicking it.
+
+    **So that a failure names which of three things went wrong.** A click into
+    a drawer that never opened, one into a drawer still sliding, and one into a
+    link that is genuinely unreachable all produce the same report from
+    Playwright - `Timeout 30000ms exceeded` with `element is not stable` - after
+    thirty seconds. That is what the two cases of 2026-10-06 reported, and it
+    named none of them.
+
+    `page.evaluate` works with `java_script_enabled=False`: the flag stops the
+    page's own scripts, not the CDP Runtime this goes through. Checked rather
+    than assumed, because a probe that silently returned nothing here would
+    make this function a decoration.
+    """
+    seen = page.evaluate(
+        """
+        () => {
+          const panel = document.querySelector('.site-drawer__panel');
+          const link = document.querySelector('.site-drawer__nav a[href$="methodology.html"]');
+          if (!panel || !link) return null;
+          const box = panel.getBoundingClientRect();
+          const linkBox = link.getBoundingClientRect();
+          return {
+            open: panel.closest('details')?.hasAttribute('open') ?? false,
+            panelX: Math.round(box.x * 100) / 100,
+            linkX: Math.round(linkBox.x * 100) / 100,
+            linkWidth: Math.round(linkBox.width),
+            translate: getComputedStyle(panel).translate,
+          };
+        }
+        """
+    )
+    assert seen is not None, f"{path}: the drawer panel or its link is not in the document"
+    assert seen["open"], (
+        f"{path}: the <details> is not open, so clicking the handle did not "
+        f"toggle it - with scripting off that is the browser's own behaviour "
+        f"failing, not a timing problem: {seen}"
+    )
+    assert seen["linkX"] >= 0 and seen["linkWidth"] > 0, (
+        f"{path}: the panel has not finished arriving - the link is still off "
+        f"the left edge or has no width, so the 0.26s `drawer-open` animation "
+        f"is unfinished or did not run to completion: {seen}"
+    )
+
+
 #: What is at the centre of the panel, by hit-test. Returns the drawer link's text when
 #: the panel is really on screen and reachable, and something else when it is not.
 _AT_PANEL_CENTRE = """
@@ -437,7 +483,24 @@ def test_the_drawer_navigates_with_scripting_switched_off(browser, path):
     context, page = _open_page(browser, path, java_script_enabled=False)
     try:
         page.click(".site-drawer__handle")
-        page.wait_for_timeout(200)
+        #: **400ms, not 200, and the old number was under the animation's own
+        #: duration.** `styles.css` gives the panel `animation: drawer-open
+        #: 0.26s ease-out both`, so a 200ms wait put every click here into the
+        #: middle of a moving element and left it to Playwright's actionability
+        #: retry to recover. Every other site in this module already waited
+        #: 300-450ms; this one was the only one below 260, and it is the only
+        #: one that failed.
+        #:
+        #: It failed in CI and passed on every developer machine, both for the
+        #: same reason: the retry usually wins. Measured here with the wait at
+        #: 200ms and the click's budget cut to 8s - `/stats.html` and
+        #: `/methodology.html` both timed out, and both clicked in 0.02s under
+        #: `reduced_motion="reduce"`, where `styles.css` sets `animation: none`
+        #: deliberately. So the race was always there and 30s of retry was
+        #: hiding it; on the runner, 30s was not enough. Two cases of the
+        #: browser job's second real run (2026-10-06).
+        page.wait_for_timeout(400)
+        _assert_the_panel_has_arrived(page, path)
         page.click('.site-drawer__nav a[href$="methodology.html"]')
         page.wait_for_load_state("domcontentloaded")
         assert page.url.endswith("/methodology.html"), (

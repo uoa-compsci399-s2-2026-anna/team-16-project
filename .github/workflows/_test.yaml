@@ -52,19 +52,27 @@ jobs:
     # at 19:48:31, 39% at 20:01:57, 53% at 20:07) puts a full run near 53
     # minutes, hence 60 rather than 45.
     #
-    # WHAT HAS BEEN RULED OUT, so the next reader does not repeat it:
+    # WHERE THE TIME GOES, from the first run that reached its own summary:
+    # `3634 passed, 11 skipped, 694 deselected in 1995.69s (0:33:15)`, and the
+    # `--durations=25` below is **entirely `tests/admin` setup** - 2.3s to 2.8s
+    # per case, on `_create_onboarded_account` and the fixtures around it,
+    # which create a staff account and walk the TOTP enrolment for real. The
+    # cost is bcrypt and it is deliberate. `tests/admin` holds **1,710 cases**.
     #
-    #   * the 119 cases `-m "not browser"` newly selects out of the 40 browser
-    #     modules - timed at 10s for all of them, slowest 0.44s, and still that
-    #     fast with the origin pointed at a dead port, so they are not waiting
-    #     on a stack this job does not have;
-    #   * `tests/web/test_suite_isolation.py`'s `--collect-only` subprocesses -
-    #     6s for the whole module;
-    #   * a bigger `docker/mock-factors.json` - read by one test, parsed once.
+    # So there is no single culprit to remove: the suite grew past half an hour
+    # a few hundred admin cases ago and nobody saw it, because 30 minutes was
+    # enough until it was not. Anyone wanting this faster should look at the
+    # SCOPE of those account fixtures, not at a number in this file.
     #
-    # The cause is therefore still unidentified, and `--durations=25` below is
-    # how the next run will say. Reading that is the follow-up; this is the
-    # change that makes it possible.
+    # Three candidates were measured and are not it, so nobody repeats them:
+    # the 119 cases `-m "not browser"` newly selects out of the 40 browser
+    # modules (10s for all of them, slowest 0.44s, and still that fast with the
+    # origin pointed at a dead port); `test_suite_isolation.py`'s
+    # `--collect-only` subprocesses (6s for the module); and the larger
+    # `docker/mock-factors.json` - no conftest loads it, one test parses it.
+    #
+    # `--durations=25` stays, because that is what answered this and it is what
+    # will answer it next time instead of somebody guessing again.
     timeout-minutes: 60
 
     services:

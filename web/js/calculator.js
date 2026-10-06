@@ -24,6 +24,17 @@ const unitLabel = unit => (unit === 'tonnes' ? t('tonnes') : t('kilograms'))
 const ALLOCATION_EPSILON = 0.01
 const exceedsTotal = (allocated, total) => allocated - total > ALLOCATION_EPSILON
 const remainingAmount = (total, allocated) => (Math.abs(total - allocated) <= ALLOCATION_EPSILON ? 0 : total - allocated)
+// **Step 4's allocation has to account for all of the waste, not at most all of it**
+// (v1.99). Until then the rules bounded the allocation from above and said nothing
+// below it, and §7.3a recorded that as deliberate -- so a card with 3 of 4 kg placed
+// wore a `Complete` badge and let Continue through. **The step-3 total never crosses
+// the wire** (see the note over `MAX_LINE_KG`): an entry's waste IS the sum of its
+// destination lines, so the unallocated kilogram was not carried anywhere, not
+// refused by the API, and not visible on the results page -- every figure was simply
+// computed on three quarters of what the visitor had typed, under a tick that said
+// otherwise. The same epsilon as `remainingAmount`, so the rule and the Remaining
+// figure beside it can never disagree about zero.
+const fallsShortOfTotal = (allocated, total) => total - allocated > ALLOCATION_EPSILON
 
 // crypto.randomUUID() is [SecureContext] and so is undefined over plain http:// to a
 // LAN IP. crypto.getRandomValues() is not. These ids never leave the browser.
@@ -531,7 +542,7 @@ const hasData = () => Boolean(state.entries.length || state.sector || state.food
  */
 function introduction() {
   return `<section class="hero" aria-labelledby="page-title">
-    <div class="hero-copy"><p class="eyebrow">${escapeHtml(t('For New Zealand food businesses'))}</p><h1 id="page-title">${escapeHtml(t('Food Waste Impact Calculator'))}</h1><p class="lead">${escapeHtml(t('Turn your food waste measurements into a clearer view of their potential environmental and financial impact.'))}</p><button class="button button-primary button-large" type="button" data-action="start">${escapeHtml(t('Start calculator'))}</button><p class="privacy-note">${escapeHtml(t('Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.'))}</p></div>
+    <div class="hero-copy"><nav class="intro-navigation" data-i18n-attr="aria-label" aria-label="Site navigation"><a href="./index.html" aria-current="page">${escapeHtml(t('Calculator'))}</a><a href="./stats.html">${escapeHtml(t('Statistics'))}</a><a href="./methodology.html">${escapeHtml(t('Documentation'))}</a></nav><p class="eyebrow">${escapeHtml(t('For New Zealand food businesses'))}</p><h1 id="page-title">${escapeHtml(t('Food Waste Impact Calculator'))}</h1><p class="lead">${escapeHtml(t('Turn your food waste measurements into a clearer view of their potential environmental and financial impact.'))}</p><button class="button button-primary button-large" type="button" data-action="start">${escapeHtml(t('Start calculator'))}</button><p class="privacy-note">${escapeHtml(t('Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.'))}</p></div>
     <div class="hero-food-pattern" aria-hidden="true"><svg class="food-arch-mask" viewBox="0 0 1500 190" preserveAspectRatio="none"><defs><mask id="food-arch-cutouts"><rect width="1500" height="190" fill="white" />${[150, 450, 750, 1050, 1350].flatMap(centre => [`<ellipse cx="${centre}" cy="190" rx="205" ry="166" fill="none" stroke="black" stroke-width="32"/>`, `<ellipse cx="${centre}" cy="190" rx="151" ry="120" fill="none" stroke="black" stroke-width="28"/>`]).join('')}${[300, 600, 900, 1200].map(x => `<path d="M ${x} 72 L ${x + 36} 126 L ${x} 181 L ${x - 36} 126 Z" fill="black"/>`).join('')}</mask></defs><rect width="1500" height="190" fill="currentColor" mask="url(#food-arch-cutouts)"/></svg></div>
     <div class="hero-support-grid"><div class="needs-panel"><h2>${escapeHtml(t('What you will need'))}</h2><ul class="check-list"><li>${escapeHtml(t('Where the waste occurred in the food supply chain'))}</li><li>${escapeHtml(t('The food category, if known'))}</li><li>${escapeHtml(t('The total waste amount — a weight, or how many containers you fill'))}</li><li>${escapeHtml(t('How that total was distributed across waste destinations'))}</li></ul></div></div>
   </section>`
@@ -1658,7 +1669,24 @@ function leafSummary(leaf, first) {
   const figures = draftLeafFigures(leaf)
   const total = totalNumber(figures)
   const allocated = allocatedAmount(figures.current, figures.totalUnit)
-  const invalid = exceedsTotal(allocated, total) || (figures.current || []).some(line => line.qtyInput !== '' && Number(line.qtyInput) < 0)
+  //: `invalid` now covers both directions (v1.99). It is what a visitor sees off a
+  //: SHUT card -- #142 put this strip outside the fold precisely so Remaining and its
+  //: state are readable without opening anything -- so a strip that stayed calm while
+  //: Continue refused would be the collapsed card contradicting the button again.
+  //:
+  //: **Short counts only once the visitor has started placing.** An untouched card
+  //: is short of its total by definition, and marking it on arrival turns every
+  //: step-4 card Beetroot before anybody has done anything -- shouting at someone
+  //: for not having acted yet. `test_the_allocation_summary_is_opaque_in_both_states`
+  //: is what reported it: it reads the strip's ordinary ground on arrival, and there
+  //: was no longer an ordinary state to read. The badge already says `Incomplete` for
+  //: an untouched card through `leafProblem`'s first rule, so nothing is hidden by
+  //: waiting. Over-allocation and negatives keep firing unconditionally, because
+  //: both are states the visitor had to type to reach.
+  const started = (figures.current || []).some(line => line.qtyInput !== '')
+  const invalid = exceedsTotal(allocated, total)
+    || (started && fallsShortOfTotal(allocated, total))
+    || (figures.current || []).some(line => line.qtyInput !== '' && Number(line.qtyInput) < 0)
   const unit = unitLabel(figures.totalUnit)
   return `<div class="allocation-summary ${invalid ? 'invalid' : ''}" ${first ? 'id="current-summary"' : ''} data-summary-leaf="${leafAttr(leaf)}" aria-live="polite"><div><span>${escapeHtml(t('Total waste'))}</span><strong>${formatNumber(total, 2)} ${escapeHtml(unit)}</strong></div><div><span>${escapeHtml(t('Allocated'))}</span><strong data-summary="allocated">${formatNumber(allocated, 2)} ${escapeHtml(unit)}</strong></div><div><span>${escapeHtml(t('Remaining'))}</span><strong data-summary="remaining">${formatNumber(remainingAmount(total, allocated), 2)} ${escapeHtml(unit)}</strong></div></div>`
 }
@@ -1729,9 +1757,15 @@ function destinationStep() {
   // one button: any rule added to one of two lists left the other enabling Continue on a
   // state the other had just refused.
   const canContinue = !validateCurrentStep()
-  const excess = leaf => {
+  //: Renamed from `excess` with the rule it reads (v1.99): a card is forced open by an
+  //: allocation that does not match its total, in either direction. While this asked only
+  //: about excess, an under-allocated card could be folded away with its own refusal
+  //: inside it.
+  const misallocated = leaf => {
     const figures = draftLeafFigures(leaf)
-    return exceedsTotal(allocatedAmount(figures.current, figures.totalUnit), totalNumber(figures))
+    const allocated = allocatedAmount(figures.current, figures.totalUnit)
+    const total = totalNumber(figures)
+    return exceedsTotal(allocated, total) || fallsShortOfTotal(allocated, total)
   }
   // A server `VALIDATION_ERROR` names a line by the §9 path `draftLinePaths` builds, and a
   // client-side refusal names a leaf in `state.errorAt`. Either way **a card holding a
@@ -1745,7 +1779,7 @@ function destinationStep() {
     const figures = draftLeafFigures(leaf)
     const key = leafKey(leaf)
     const lines = figures.current || []
-    const rows = lines.map(line => destinationCell(leaf, line, paths, excess(leaf))).join('')
+    const rows = lines.map(line => destinationCell(leaf, line, paths, misallocated(leaf))).join('')
     const errored = (!isApiError && state.errorAt?.leaf === key)
       || lines.some(line => state.fieldErrors[paths.get(line.id)])
     return collapsibleCard({
@@ -2200,6 +2234,20 @@ function leafProblem(step, leaf, food) {
     if (overLine) return fail(t('Enter destination amounts of no more than %(limit)s %(unit)s.', { limit: formatNumber(limitIn(MAX_LINE_KG, unit), 0), unit: unitLabel(unit) }))
     const total = totalNumber(figures)
     const sum = allocatedAmount(lines, unit)
+    //: **Short of the total is as wrong as over it, and it used to be neither.** The
+    //: unallocated remainder is not held back for later and it is not sent: `buildLines`
+    //: sends the destination rows, so an entry under-allocated by a kilogram is an entry
+    //: a kilogram lighter, and every metric, the cost, the equivalences and
+    //: `production_share_percent` are all computed on the smaller mass with nothing on
+    //: screen saying so. Checked before the over-allocation branch for no reason beyond
+    //: reading order; the two are mutually exclusive.
+    if (fallsShortOfTotal(sum, total)) {
+      const short = (total - sum).toFixed(2)
+      const unitName = unit === 'kilograms' ? 'kg' : t('tonnes')
+      return fail(food
+        ? t('%(food)s still has %(short)s %(unit)s to place. Every destination amount together has to add up to the waste you entered.', { food, short, unit: unitName })
+        : t('There is still %(short)s %(unit)s to place. Every destination amount together has to add up to the waste you entered.', { short, unit: unitName }))
+    }
     if (exceedsTotal(sum, total)) {
       const excess = (sum - total).toFixed(2)
       const unitName = unit === 'kilograms' ? 'kg' : t('tonnes')
@@ -2806,7 +2854,24 @@ function updateLine(control) {
   const sum = allocatedAmount(lines, unit)
   const summary = document.querySelector(`[data-summary-leaf="${CSS.escape(keyAttr(key))}"]`)
   const hasNegative = lines.some(line => line.qtyInput !== '' && Number(line.qtyInput) < 0)
-  summary?.classList.toggle('invalid', exceedsTotal(sum, total) || hasNegative)
+  //: **Both directions here, and only one of them below** (v1.99). This strip is the
+  //: whole card's state, so it turns `invalid` for an allocation that misses its total
+  //: either way -- it is what a SHUT card shows, and #142 put it outside the fold for
+  //: exactly that. The row-level marking further down stays `exceedsTotal` only:
+  //: going over is attributable to the row just typed into, while falling short is no
+  //: single row's fault and colouring one would point at an innocent control.
+  //:
+  //: **This is the keystroke path and `leafSummary` is the re-render path, and they
+  //: are two copies of one rule.** Changing only the other one is what the first run
+  //: of `test_under_allocation_is_refused_and_visible_from_a_shut_card` reported:
+  //: Continue refused, the badge read `incomplete`, the message named the food and
+  //: the 40.00 kg -- and the strip stayed calm, because the visitor had typed rather
+  //: than re-rendered.
+  //: See `leafSummary` for why falling short is conditional on having started and
+  //: the other two are not. The two writers state one rule and have already drifted
+  //: once in this revision.
+  const started = lines.some(line => line.qtyInput !== '')
+  summary?.classList.toggle('invalid', exceedsTotal(sum, total) || (started && fallsShortOfTotal(sum, total)) || hasNegative)
   if (summary) {
     summary.querySelector('[data-summary="allocated"]').textContent = `${sum.toFixed(2)} ${unitLabel(unit)}`
     summary.querySelector('[data-summary="remaining"]').textContent = `${remainingAmount(total, sum).toFixed(2)} ${unitLabel(unit)}`

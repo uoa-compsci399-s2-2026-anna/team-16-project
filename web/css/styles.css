@@ -389,6 +389,27 @@ p { line-height: 1.65; }
    browser's hyphenation dictionary for the reader's language; a missing dictionary is a
    silent return to the overflow. It can be layered on top of this, never instead of it. */
 .hero-copy h1 { margin-inline: auto; overflow-wrap: anywhere; }
+.intro-navigation {
+  width: 100%;
+  margin-block: -18px 28px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 22px;
+}
+.intro-navigation a {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--kai-white);
+  font-weight: 700;
+  text-underline-offset: 5px;
+}
+.intro-navigation a[aria-current="page"] {
+  color: var(--kai-pea);
+  text-decoration-thickness: 3px;
+}
+.intro-navigation a:hover { color: var(--kai-pea); }
 .hero .eyebrow { color: var(--green); }
 .hero .lead { margin-inline: auto; color: rgba(255, 255, 255, 0.82); }
 .hero .needs-panel { color: var(--ink); }

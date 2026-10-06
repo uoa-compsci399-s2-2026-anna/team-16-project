@@ -230,12 +230,19 @@ def _to_destination_step(page, *, amount="1200.50"):
     page.wait_for_selector('[data-line-field="amount"]', timeout=10000)
 
 
-def _to_review_step(page, *, amount="1200.50", allocated="1000.00"):
-    """One Continue further again, so that step 4's rows are inside a checkpoint
-    too. A partial allocation is accepted by the form, which is why this does not
-    have to fill the total."""
+def _to_review_step(page, *, amount="1200.50", allocated=None):
+    """One Continue further again, so that step 4's rows are inside a checkpoint too.
+
+    **`allocated` defaults to the whole amount, and the sentence that used to be
+    here is why it has to** (v1.99). It read "a partial allocation is accepted by
+    the form, which is why this does not have to fill the total" -- true when it
+    was written, false since step 4 began requiring the allocation to match. The
+    default was "1000.00" against an amount of "1200.50", so this helper sat on a
+    disabled Continue for thirty seconds. The parameter stays, so a test that wants
+    a short allocation can still ask for one and expect to be refused.
+    """
     _to_destination_step(page, amount=amount)
-    page.locator('[data-line-field="amount"]').first.fill(allocated)
+    page.locator('[data-line-field="amount"]').first.fill(allocated or amount)
     page.wait_for_timeout(200)
     press_continue(page)
     page.wait_for_selector("#time-frame", timeout=10000)
@@ -367,7 +374,10 @@ def test_the_destination_rows_and_their_units_come_back(page):
     page.wait_for_timeout(120)
     press_continue(page)
     page.wait_for_selector('[data-line-field="amount"]', timeout=10000)
-    page.locator('[data-line-field="amount"]').first.fill("2.25")
+    #: The whole 5.00, not a part of it (v1.99): step 4 now requires the allocation
+    #: to match the amount, and this test's subject is the unit round trip rather
+    #: than the figure, so the figure just has to be one the step will accept.
+    page.locator('[data-line-field="amount"]').first.fill("5.00")
     page.wait_for_timeout(200)
     # Continue to the review step, which is the checkpoint that records step 4.
     press_continue(page)
@@ -379,7 +389,7 @@ def test_the_destination_rows_and_their_units_come_back(page):
     # Back to step 4, and read the row off its own screen.
     page.click('.step-nav [data-action="go-step"]')
     page.wait_for_selector('[data-line-field="amount"]', timeout=10000)
-    assert page.locator('[data-line-field="amount"]').first.input_value() == "2.25"
+    assert page.locator('[data-line-field="amount"]').first.input_value() == "5.00"
     units = page.evaluate(
         "() => [...document.querySelectorAll('[data-line-field=unit]')].map(s => s.value)"
     )

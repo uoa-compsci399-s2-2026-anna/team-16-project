@@ -35,6 +35,21 @@
 # No `-n auto`. The browser modules hold session-scoped contexts and the stack
 # is one shared API with one rate-limit bucket; parallel workers would share the
 # bucket and race each other into the 429 the batching exists to avoid.
+#
+# WHAT THE FIRST REAL RUN FOUND, 2026-10-06.
+#
+# `KAICALC_WEB_URL` was set to `http://localhost:18080/index.html`. It takes an
+# ORIGIN. `tests/web/base_url.py` appends the path, so every page became
+# `/index.html/<path>` and nginx 302'd all of them to `/`: the browser drove the
+# calculator for every test in the suite. 74 failures, not one naming the cause,
+# and the job spent its 75 minutes on 15- and 30-second timeouts and was killed
+# with four of eight batches unrun. The clock was never the problem - batch 1,
+# the one batch with no affected module, ran 141 cases in 128 seconds.
+#
+# Two guards came out of it, and they are independent on purpose: `base_url.py`
+# refuses a value that is not an origin, which is a static check on the string,
+# and the smoke step below asks the origin for the pages the suite navigates,
+# which is the only check that catches an origin that parses and does not serve.
 
 name: Browser suite
 
@@ -110,6 +125,45 @@ jobs:
           docker compose -f docker/compose.yaml logs --tail=80
           exit 1
 
+      - name: Check the origin serves the pages the suite asks for
+        # `base_url.py` refuses a value that is not an origin. It cannot refuse
+        # an origin that parses and still does not serve the pages: a wrong
+        # port, a second stack on the right port, an nginx whose `location /`
+        # fell through. So the paths the suite navigates are asked for directly.
+        #
+        # A REDIRECT IS A FAILURE HERE, NOT SOMETHING TO FOLLOW. The 2026-10-06
+        # defect was a 302 to `/`, and `curl -L` would have reported 200 for
+        # every one of these and said nothing. That is the whole point of the
+        # step, so there is no `-L` and `%{redirect_url}` is printed in the
+        # message.
+        #
+        # `/locales/zh.json` rather than `en.json`, which does not exist:
+        # English is the source language and `index.json` names it as the
+        # default rather than shipping a catalogue for it. Checked - `ls
+        # web/locales` is 20 catalogues plus the index, and asking for
+        # `/locales/en.json` 302s even on a correct origin. A path that is
+        # always red is a step somebody turns off.
+        #
+        # WHAT IT DOES NOT CATCH, said plainly so nobody reads more into a
+        # green tick than is there: a `web` image built from an older commit
+        # serves all of these with a 200. Nothing in a request to nginx can see
+        # that. `docker compose up -d --build` above is what addresses it.
+        env:
+          KAICALC_WEB_URL: http://localhost:18080
+        run: |
+          fail=0
+          for path in /index.html /home.html /stats.html /locales/index.json /locales/zh.json; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "${KAICALC_WEB_URL}${path}")
+            to=$(curl -s -o /dev/null -w '%{redirect_url}' "${KAICALC_WEB_URL}${path}")
+            if [ "${code}" != "200" ]; then
+              echo "::error title=Origin does not serve ${path}::${KAICALC_WEB_URL}${path} answered ${code}${to:+ -> ${to}}. The suite navigates this path; a non-200 here is every browser test failing on a selector of a page it never loaded."
+              fail=1
+            else
+              echo "ok  ${path}  ${code}"
+            fi
+          done
+          [ "${fail}" = "0" ] || exit 1
+
       - name: Refuse to run with the suite missing
         # **The guard for the defect this whole file is the answer to.** Without
         # it, every failure mode here is silent: no `playwright`, no browser, no
@@ -139,7 +193,18 @@ jobs:
 
       - name: Run it, in batches
         env:
-          KAICALC_WEB_URL: http://localhost:18080/index.html
+          # AN ORIGIN, NOT A PAGE. `tests/web/base_url.py` appends the
+          # path - `/home.html`, `/stats.html`, `/admin/login` - so a
+          # value ending in `/index.html` makes every one of them
+          # `/index.html/<path>`, which docker/nginx.conf answers with a
+          # 302 to `/`. That was the value on 2026-10-06: the browser
+          # drove the calculator for every test in the suite, 74 failed
+          # on timeouts naming selectors of pages they never loaded, and
+          # the job was killed at 75 minutes with half the suite unrun.
+          # `base_url.py` now refuses a path outright; this is the value
+          # it should have had, and it is the module's own default, kept
+          # explicit because an invisible default is what nobody checks.
+          KAICALC_WEB_URL: http://localhost:18080
         run: python tests/web/run_browser_suite.py
 
       - name: What the stack logged

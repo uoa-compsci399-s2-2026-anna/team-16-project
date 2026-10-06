@@ -88,16 +88,90 @@ and a killed run can leave stale.
 from __future__ import annotations
 
 import os
+import urllib.parse
 
 #: What a checkout with no environment set is pointed at: the origin
 #: ``docker/compose.yaml`` publishes ``web`` on. Spelled here once so the
 #: meta-test in ``test_suite_isolation.py`` can find it in exactly one place.
 DEFAULT_ORIGIN = "http://localhost:18080"
 
+class WebOriginError(RuntimeError):
+    """``KAICALC_WEB_URL`` does not name an origin.
+
+    Its own class rather than a bare ``RuntimeError`` so the meta-test can
+    assert the refusal happened for this reason and not for some other import
+    failure that also stops collection.
+    """
+
+
+def _origin(raw: str, *, source: str) -> str:
+    """``raw`` reduced to scheme and authority, or a refusal naming the defect.
+
+    **This guard exists because the value was got wrong in CI and not one of the
+    failures said so.** ``.github/workflows/_browser.yaml`` set it to
+    ``http://localhost:18080/index.html`` -- the *page* spelling that ten files
+    used before v1.91 unified them here, and the one this module's docstring
+    already warns about -- so every address the suite built became
+    ``/index.html/<path>``, which ``docker/nginx.conf`` answers with a 302 to
+    ``/``. The browser loaded the calculator for every test in the suite.
+
+    The run of 2026-10-06 reported **74 failures and named the cause in none of
+    them**:
+
+    * **42** in ``test_horizontal_overflow.py``, each a 15s timeout on
+      ``#news-feed[aria-busy='false']`` or ``#stats-breakdown-content[aria-busy=
+      'false']`` -- selectors that are not on the calculator, waited for on a
+      page that was never ``/home.html`` or ``/stats.html``;
+    * **32** in ``test_i18n_browser.py``, where ``.gate`` was ``null`` (
+      ``getComputedStyle`` on ``null``), ``?lang=zh`` left the document at
+      ``en-NZ`` and ``Vary`` was absent, because ``/index.html/admin/login`` is
+      not the panel.
+
+    Every one of them reads as a front-end defect. The job spent its 75 minutes
+    on 15- and 30-second timeouts and was killed with half the suite unrun, and
+    the figure that would have given it away -- ``<Page url='http://localhost:
+    18080/'>`` in the assertion output -- was four thousand log lines in.
+
+    So the value is checked where it is read, once, for every caller. **A path
+    is the only thing that has actually gone wrong**, so the refusal names what
+    was found rather than lecturing about URLs in general; a missing scheme is
+    refused in the same breath only because ``urlsplit`` makes
+    ``localhost:18080`` a *scheme* of ``localhost`` and would otherwise pass it
+    silently.
+
+    Raising at import is deliberate. It turns a wrong value into a collection
+    error on every ``tests/web`` module -- which is loud, immediate, and the one
+    thing 74 timeouts spread over 48 minutes was not. It also trips the
+    browser job's collection floor, so the two guards are independent.
+    """
+    parts = urllib.parse.urlsplit(raw)
+    if not parts.scheme or not parts.netloc:
+        raise WebOriginError(
+            f"{source} is {raw!r}, which is not an origin: it needs a scheme "
+            f"and a host, as in {DEFAULT_ORIGIN!r}. `urlsplit` reads "
+            f"scheme={parts.scheme!r} netloc={parts.netloc!r}, and a bare "
+            f"`host:port` parses as a scheme rather than failing."
+        )
+    if parts.path.strip("/") or parts.query or parts.fragment:
+        raise WebOriginError(
+            f"{source} is {raw!r}, which names a page rather than an origin. "
+            f"This module appends the path: with {raw!r} the suite would ask "
+            f"for {raw.rstrip('/')}/home.html, which docker/nginx.conf answers "
+            f"with a 302 to `/` -- so every test would drive the calculator "
+            f"and fail waiting for a control of the page it meant. That is "
+            f"exactly what the browser job did on 2026-10-06, for 74 failures "
+            f"and 75 minutes. Drop the path: "
+            f"{parts.scheme}://{parts.netloc}"
+        )
+    return f"{parts.scheme}://{parts.netloc}"
+
+
 #: The nginx origin under test -- scheme, host and port, no path and no trailing
 #: slash. ``/api/v1/`` and ``/admin`` are proxied through the same origin, so
 #: this is the one address the whole stack answers on.
-ORIGIN = os.environ.get("KAICALC_WEB_URL", DEFAULT_ORIGIN).rstrip("/")
+ORIGIN = _origin(
+    os.environ.get("KAICALC_WEB_URL", DEFAULT_ORIGIN), source="KAICALC_WEB_URL"
+)
 
 #: The calculator page itself. Named rather than left to each caller to append,
 #: because the nine files that used to bake ``/index.html`` into their default
@@ -109,7 +183,9 @@ CALCULATOR = ORIGIN + "/index.html"
 #: serves its own API path too, and a suite pointed at one should not keep asking
 #: the shared stack for its taxonomy. ``KAICALC_API_URL`` still overrides, which
 #: is the one existing caller's spelling.
-API_ORIGIN = os.environ.get("KAICALC_API_URL", ORIGIN).rstrip("/")
+API_ORIGIN = _origin(
+    os.environ.get("KAICALC_API_URL", ORIGIN), source="KAICALC_API_URL"
+)
 
 
 def page(path: str) -> str:

@@ -70,7 +70,11 @@ from pathlib import Path
 
 import pytest
 
-from tests.web.base_url import CALCULATOR
+from tests.web.base_url import (
+    CALCULATOR,
+    compose_container,
+    compose_stack_mismatch,
+)
 from tests.web.steps import press_continue
 
 
@@ -82,9 +86,27 @@ playwright_api = pytest.importorskip(
 ROOT = Path(__file__).resolve().parents[2]
 BASE = CALCULATOR
 
+#: v1.103. The calculation is submitted over HTTP to `BASE` and the row
+#: is read back out of a container. On two different stacks the row is
+#: written to one database and looked for in the other, which fails as a
+#: flag that did not move rather than as what it is.
+_SPLIT = compose_stack_mismatch()
+if _SPLIT:  # pragma: no cover - environment guard
+    pytest.skip(_SPLIT, allow_module_level=True)
+
 #: The compose container name, not the service name - see `test_improvement_
 #: submission.py`'s identical note.
-DB_CONTAINER = os.environ.get("KAICALC_DB_CONTAINER", "kaicalc-stack-db")
+#: v1.103. **Resolved from the compose project, not written down.**
+#: `docker/compose.yaml` names the service `db` and pins its container
+#: `kaicalc-stack-db`, and `docker exec` wants the latter - but a pinned
+#: container name does not follow `COMPOSE_PROJECT_NAME` and `docker compose
+#: ps` does. With the literal, a run pointed at a private stack by
+#: `KAICALC_WEB_URL` submitted the calculation to that stack and looked for the
+#: row in the development one; it cost four cases here, reported as a flag that
+#: had not moved. `KAICALC_DB_CONTAINER` still overrides, and the literal is
+#: the fallback for a checkout with no docker.
+DB_CONTAINER = (os.environ.get("KAICALC_DB_CONTAINER")
+                or compose_container("db", "kaicalc-stack-db"))
 DB_USER = os.environ.get("MYSQL_USER", "kaicalc")
 DB_PASSWORD = os.environ.get("MYSQL_PASSWORD", "devpass")
 DB_NAME = os.environ.get("MYSQL_DATABASE", "kaicalc")

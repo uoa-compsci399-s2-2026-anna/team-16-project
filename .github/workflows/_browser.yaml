@@ -1,0 +1,154 @@
+# THE BROWSER SUITE, WHICH CI DID NOT RUN AT ALL UNTIL v1.102.
+#
+# `_test.yaml` runs `python -m pytest` with no `-m` selector, which looks like
+# the whole suite and is not. Every module under `tests/web` that drives a page
+# opens with `pytest.importorskip("playwright.sync_api")`, and `playwright` was
+# not a dev dependency - so those 39 modules were skipped AT COLLECTION. A
+# collection skip is invisible in the summary: their cases are not counted as
+# passed, not counted as skipped, and not mentioned. The run of 2026-10-03 said
+#
+#     3487 passed, 62 skipped in 1667.02s
+#
+# against 4696 collected on a developer machine. 1,063 of the missing cases live
+# in those modules. Every finding of the five reviews run on 2026-10-04 and
+# 2026-10-05 came out of them.
+#
+# WHY THIS IS A JOB OF ITS OWN rather than more steps in `_test.yaml`.
+#
+# It needs a different machine shape: the compose stack, a browser binary, and
+# forty minutes. `_test.yaml` is a MySQL service and a pip install, and it
+# answers in under half an hour. Keeping them apart keeps the fast answer fast
+# and makes a failure attributable to one of two kinds of thing.
+#
+# WHY IT IS BATCHED.
+#
+# §6.5 caps a caller at 600 `GET`s an hour and `POST /calculate` plus
+# `/export/pdf` at 120, keyed on an HMAC of the client IP (`api/router.py`'s
+# `_limit`), with no environment override. One run of 1,063 browser cases does
+# not fit in one window: past it the API answers 429 and every later case fails
+# waiting for a control that was never drawn, which reads as a code failure and
+# is not one. `tests/web/run_browser_suite.py` is that practice as a program -
+# the same thing a developer runs, so neither has to remember it.
+#
+# WHAT IT DELIBERATELY DOES NOT DO.
+#
+# No `-n auto`. The browser modules hold session-scoped contexts and the stack
+# is one shared API with one rate-limit bucket; parallel workers would share the
+# bucket and race each other into the 429 the batching exists to avoid.
+
+name: Browser suite
+
+on:
+  workflow_call:
+
+jobs:
+  browser:
+    name: Browser (Playwright, real stack)
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          # The same pin as `_test.yaml`, for its reason: a divergence between
+          # CI and the desk produces a failure nobody can reproduce.
+          python-version: '3.12'
+
+      - name: Install the suite's dependencies
+        # `-c docker/constraints.txt` for `_test.yaml`'s reason. `playwright` is
+        # not in that file and must not be: it constrains the RUNTIME set the
+        # images install, and this is test-only - the same place `pypdf` and
+        # `pytest` sit, with a floor in pyproject.toml and no entry there.
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]" -c docker/constraints.txt
+
+      - name: Install Chromium
+        # `--with-deps` because the runner has none of the shared libraries a
+        # headless browser links against, and the failure without them is an
+        # unreadable launch error rather than a missing-package message.
+        #
+        # Chromium only. The suite's measurements - computed styles, line boxes,
+        # `elementFromPoint`, the accessibility tree - are taken against one
+        # engine on purpose, and three engines would be three sets of numbers to
+        # keep true rather than one.
+        run: python -m playwright install --with-deps chromium
+
+      - name: Bring up the stack
+        # `web/` is BAKED INTO ITS IMAGE by docker/web.Dockerfile (`COPY web/`),
+        # so a checkout is not enough - the image has to be built from this
+        # commit or the browser drives the previous one. That has been observed
+        # on developer machines and is why every batch below is run after a
+        # build rather than against whatever was there.
+        #
+        # KAICALC_NEWS_ORIGIN is set because `home.js` removes the news feed
+        # when it is empty, and four of `test_horizontal_overflow.py`'s cases
+        # then wait out their timeout on `#news-feed[aria-busy='false']`. Three
+        # separate reviewers have reported those four as failures of the change
+        # they were reviewing.
+        env:
+          KAICALC_NEWS_ORIGIN: https://kaicommitment.org.nz
+        run: |
+          docker compose -f docker/compose.yaml up -d --build
+          docker compose -f docker/compose.yaml ps
+
+      - name: Wait for the calculator to answer
+        # The compose health checks answer before the application is serving,
+        # which is the same early-answer problem `_test.yaml` records for
+        # MySQL's `mysqladmin ping`. Ask the thing the tests ask for.
+        run: |
+          for attempt in $(seq 1 60); do
+            if curl -fsS -o /dev/null http://localhost:18080/api/v1/taxonomy; then
+              echo "the API answered on attempt ${attempt}"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error title=Stack never came up::GET /api/v1/taxonomy did not answer in five minutes"
+          docker compose -f docker/compose.yaml logs --tail=80
+          exit 1
+
+      - name: Refuse to run with the suite missing
+        # **The guard for the defect this whole file is the answer to.** Without
+        # it, every failure mode here is silent: no `playwright`, no browser, no
+        # stack, a renamed marker - each ends in "collected 0 items" and a green
+        # job. So the count is asserted before anything is run, against a floor
+        # rather than an exact number, because the number grows most weeks.
+        run: |
+          python - <<'PY'
+          import re, subprocess, sys
+          FLOOR = 900
+          done = subprocess.run(
+              [sys.executable, "-m", "pytest", "tests", "-m", "browser",
+               "-o", "addopts=", "-q", "--collect-only"],
+              capture_output=True, text=True)
+          match = re.search(r"(\d+)/(\d+) tests collected", done.stdout) \
+              or re.search(r"(\d+) tests collected", done.stdout)
+          count = int(match.group(1)) if match else 0
+          print(f"browser cases collected: {count}")
+          if count < FLOOR:
+              print(f"::error title=Browser suite did not collect::{count} cases, "
+                    f"expected at least {FLOOR}. That is what a missing playwright, "
+                    f"a missing browser, a stack that is down or a renamed marker all "
+                    f"look like, and all four of them otherwise end in a green job.")
+              print(done.stdout[-3000:])
+              sys.exit(1)
+          PY
+
+      - name: Run it, in batches
+        env:
+          KAICALC_WEB_URL: http://localhost:18080/index.html
+        run: python tests/web/run_browser_suite.py
+
+      - name: What the stack logged
+        if: always()
+        # Read on failure for the reason this project reads it by hand: a 429 or
+        # a 502 in here means the batch was starved rather than wrong, and the
+        # difference is not visible from pytest's output.
+        run: |
+          echo "### 429s and 502s" >> "$GITHUB_STEP_SUMMARY"
+          docker compose -f docker/compose.yaml logs web 2>&1 \
+            | grep -cE ' (429|502) ' >> "$GITHUB_STEP_SUMMARY" || true
+          docker compose -f docker/compose.yaml logs --tail=120

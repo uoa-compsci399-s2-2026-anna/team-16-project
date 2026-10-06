@@ -182,6 +182,104 @@ def test_the_panel_forks_its_allocation_one_per_leaf(page):
         )
 
 
+def test_each_food_type_is_a_card_the_reader_can_fold(page):
+    """Contract v1.100. **#134's rule on a fourth screen.**
+
+    The owner's complaint was length: a chain of several foods draws a pie chart and a
+    stack of fourteen sliders per food, so the panel runs to thousands of pixels and the
+    foods below the fold go unadjusted with nothing saying so. Steps 2.5, 3 and 4 already
+    answer that with one collapsible card each; this is the same chrome, from the same
+    module, on the improvement panel.
+
+    **Four claims, and the third is the one that makes folding safe here.**
+
+    * every food type is a card, and they arrive shut;
+    * the body is `hidden` while shut, so its sliders are out of the tab order rather
+      than merely invisible — the thing `hidden` is defined to do and a class is not;
+    * **`Total allocation` and `Total mass` stay readable with the card shut**, because
+      they are in `collapsibleCard`'s `always` slot rather than its body. A fold that
+      hid the one figure telling a visitor which food still needs work would have made
+      the screen shorter and less usable, which is #142's rule for step 4's Remaining
+      applied to the figure this screen is about;
+    * opening one brings its editor back, and the panel grows by the amount the fold was
+      saving — asserted as a relation rather than a pixel count, because the body's
+      height is thirteen destinations' worth of rows and that number is data.
+    """
+    _forked_chain(page)
+    page.click('[data-action="explore-improvements"]')
+    page.wait_for_selector(".improvement-scenario", timeout=20000)
+    page.wait_for_timeout(300)
+
+    shut = page.evaluate("""() => {
+      const cards = [...document.querySelectorAll('.improvement-leaf')];
+      const panel = document.querySelector('#improvement-section');
+      return {
+        cards: cards.length,
+        toggles: cards.filter(c => c.querySelector('.step-card__toggle[aria-expanded]')).length,
+        expanded: cards.map(c => c.querySelector('.step-card__toggle')?.getAttribute('aria-expanded')),
+        bodiesHidden: cards.map(c => c.querySelector('.step-card__body')?.hasAttribute('hidden')),
+        slidersReachable: [...document.querySelectorAll('.improvement-allocation-list input')]
+          .filter(i => i.checkVisibility()).length,
+        totalsVisible: cards.map(c => !!c.querySelector('.improvement-total')?.checkVisibility()),
+        totalsText: cards.map(c => c.querySelector('.improvement-total')?.textContent?.trim()),
+        panelHeight: Math.round(panel.getBoundingClientRect().height),
+        names: cards.map(c => c.querySelector('.step-card__name')?.textContent?.trim()),
+      };
+    }""")
+
+    assert shut["cards"] == 2, f"the forked chain did not draw one card per food: {shut}"
+    assert shut["toggles"] == 2, (
+        f"a card without a toggle cannot be folded, which is the whole request: {shut}"
+    )
+    assert shut["expanded"] == ["false", "false"], (
+        f"the cards did not arrive shut, so the panel is as long as it was: {shut}"
+    )
+    assert all(shut["bodiesHidden"]), (
+        f"a shut card's body is not `hidden`, so its sliders are invisible and still in "
+        f"the tab order: {shut}"
+    )
+    assert shut["slidersReachable"] == 0, (
+        f"{shut['slidersReachable']} slider(s) are still reachable inside a shut card: {shut}"
+    )
+    assert all(shut["totalsVisible"]), (
+        f"the running total is inside the fold, so a reader scanning a folded panel "
+        f"cannot see which food still needs work: {shut}"
+    )
+    assert all("Total allocation" in (text or "") for text in shut["totalsText"]), shut
+    assert all(name for name in shut["names"]), (
+        f"a card without a name on its header is a fold with nothing to choose by: {shut}"
+    )
+
+    page.locator('.improvement-leaf .step-card__toggle[aria-expanded="false"]').first.click()
+    page.wait_for_timeout(400)
+    opened = page.evaluate("""() => {
+      const cards = [...document.querySelectorAll('.improvement-leaf')];
+      return {
+        expanded: cards.map(c => c.querySelector('.step-card__toggle')?.getAttribute('aria-expanded')),
+        slidersReachable: [...document.querySelectorAll('.improvement-allocation-list input')]
+          .filter(i => i.checkVisibility()).length,
+        pies: [...document.querySelectorAll('[data-improvement-pie]')]
+          .filter(e => e.checkVisibility()).length,
+        panelHeight: Math.round(
+          document.querySelector('#improvement-section').getBoundingClientRect().height),
+      };
+    }""")
+
+    assert opened["expanded"] == ["true", "false"], (
+        f"pressing one card's toggle did not open exactly that card: {opened}"
+    )
+    assert opened["slidersReachable"] > 0, (
+        f"the card opened and its editor did not come back: {opened}"
+    )
+    assert opened["pies"] == 1, (
+        f"{opened['pies']} pie chart(s) are visible with one card open: {opened}"
+    )
+    assert opened["panelHeight"] > shut["panelHeight"], (
+        f"opening a card did not make the panel taller, so the fold was saving nothing: "
+        f"{shut['panelHeight']} -> {opened['panelHeight']}"
+    )
+
+
 def test_match_the_current_allocation_is_an_identity_on_a_forked_chain(page):
     """Pressing *Match the current allocation* and then *Compare Impact* must
     reproduce the current scenario exactly, leaf by leaf - that is what the button

@@ -33,6 +33,7 @@ import json
 import os
 import shutil
 import subprocess
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -207,17 +208,43 @@ def unconfigured_base() -> str:
     assert started.returncode == 0, f"could not start the unconfigured container: {started.stderr}"
     base = f"http://localhost:{UNCONFIGURED_PORT}"
     try:
-        for _ in range(40):
+        # A DEADLINE IN SECONDS WITH AN EXPLICIT SLEEP, AND THE REASON IS A
+        # PLATFORM DIFFERENCE RATHER THAN A PREFERENCE. This was `for _ in
+        # range(40)` with no sleep, which spends however long forty refused
+        # connections take - and that is not a constant across platforms.
+        # Measured on this project's Windows desktop against a closed localhost
+        # port: 4.03s per refused attempt, so the loop ran for 161s and nginx
+        # had long since come up. On the Linux runner a refused connection
+        # returns at once, so the same forty attempts are over in a moment - the
+        # log of 2026-10-06 shows it, quoting the entrypoint's FIRST startup
+        # line (`/docker-entrypoint.d/ is not empty, will attempt to perform
+        # configuration`) as its evidence that the container `never answered`.
+        # It had not been given the chance to. The message reads like a broken
+        # image and was a loop that never waited; it cost four cases, both of
+        # the CSP policies this module exists to check, and it had passed on
+        # every developer machine here.
+        #
+        # Sixty seconds because the image has to be pulled into a new container
+        # and nginx's entrypoint templates its configuration first; the loop
+        # leaves as soon as the page answers, so the budget costs nothing when
+        # the container is quick.
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
             try:
                 with urllib.request.urlopen(f"{base}/", timeout=2) as response:
                     if response.status == 200:
                         break
             except (urllib.error.URLError, OSError):
                 pass
+            time.sleep(0.5)
         else:  # pragma: no cover - environment guard
             logs = subprocess.run(["docker", "logs", UNCONFIGURED_NAME],
                                   capture_output=True, text=True)
-            pytest.fail(f"the unconfigured container never answered: {logs.stdout}{logs.stderr}")
+            pytest.fail(
+                f"the unconfigured container did not answer on {base}/ within "
+                f"60s. docker logs {UNCONFIGURED_NAME}:\n"
+                f"{logs.stdout}{logs.stderr}"
+            )
         yield base
     finally:
         subprocess.run(["docker", "rm", "-f", UNCONFIGURED_NAME], capture_output=True, text=True)

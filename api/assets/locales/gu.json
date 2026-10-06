@@ -75,7 +75,6 @@
     "Choose the end time": "સમાપ્તિનો સમય પસંદ કરો",
     "Choose the hour": "કલાક પસંદ કરો",
     "Choose the minute": "મિનિટ પસંદ કરો",
-    "Choose the specific foods you measured, or continue without choosing any. A category with no food chosen is counted as that category.": "તમે માપેલા ચોક્કસ ખોરાક પસંદ કરો, અથવા કોઈ પસંદ કર્યા વગર આગળ વધો. જે શ્રેણીમાં કોઈ ખોરાક પસંદ ન થાય તે એ જ શ્રેણી તરીકે ગણાય છે.",
     "Choose the stage that best describes where the food waste was generated.": "ખોરાકનો કચરો ક્યાં પેદા થયો તે સૌથી સારી રીતે દર્શાવતો તબક્કો પસંદ કરો.",
     "Choose the start date": "શરૂઆતની તારીખ પસંદ કરો",
     "Choose the start time": "શરૂઆતનો સમય પસંદ કરો",
@@ -465,7 +464,9 @@
     "no change": "કોઈ ફેરફાર નથી",
     "no impact figures were returned": "કોઈ અસરના આંકડા મળ્યા નથી",
     "saved": "સાચવેલું",
-    "tonnes": "ટન"
+    "tonnes": "ટન",
+    "Choose the specific foods you measured, or continue without choosing any.": "તમે માપેલા ચોક્કસ ખોરાક પસંદ કરો, અથવા કંઈ પસંદ કર્યા વિના આગળ વધો.",
+    "If you continue without choosing a specific food, the calculation uses the average figures for the whole category.": "જો તમે ચોક્કસ ખોરાક પસંદ કર્યા વિના આગળ વધશો, તો ગણતરી આખી શ્રેણીના સરેરાશ આંકડાનો ઉપયોગ કરે છે."
   },
   "tags": [
     "gu"

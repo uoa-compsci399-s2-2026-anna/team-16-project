@@ -75,7 +75,6 @@
     "Choose the end time": "Eindtijd kiezen",
     "Choose the hour": "Het uur kiezen",
     "Choose the minute": "De minuut kiezen",
-    "Choose the specific foods you measured, or continue without choosing any. A category with no food chosen is counted as that category.": "Kies de specifieke voedingsmiddelen die u hebt gemeten, of ga verder zonder er een te kiezen. Een categorie zonder gekozen voedingsmiddel telt als die categorie.",
     "Choose the stage that best describes where the food waste was generated.": "Kies de schakel die het beste beschrijft waar het voedselafval is ontstaan.",
     "Choose the start date": "Begindatum kiezen",
     "Choose the start time": "Begintijd kiezen",
@@ -465,7 +464,9 @@
     "no change": "geen verandering",
     "no impact figures were returned": "er zijn geen effectcijfers teruggegeven",
     "saved": "bespaard",
-    "tonnes": "ton"
+    "tonnes": "ton",
+    "Choose the specific foods you measured, or continue without choosing any.": "Kies de specifieke voedingsmiddelen die je hebt gemeten, of ga door zonder iets te kiezen.",
+    "If you continue without choosing a specific food, the calculation uses the average figures for the whole category.": "Als je doorgaat zonder een specifiek voedingsmiddel te kiezen, gebruikt de berekening de gemiddelde cijfers voor de hele categorie."
   },
   "tags": [
     "nl"

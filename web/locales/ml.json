@@ -75,7 +75,6 @@
     "Choose the end time": "അവസാന സമയം തിരഞ്ഞെടുക്കുക",
     "Choose the hour": "മണിക്കൂർ തിരഞ്ഞെടുക്കുക",
     "Choose the minute": "മിനിറ്റ് തിരഞ്ഞെടുക്കുക",
-    "Choose the specific foods you measured, or continue without choosing any. A category with no food chosen is counted as that category.": "നിങ്ങൾ അളന്ന നിർദിഷ്ട ഭക്ഷണങ്ങൾ തിരഞ്ഞെടുക്കുക, അല്ലെങ്കിൽ ഒന്നും തിരഞ്ഞെടുക്കാതെ തുടരുക. ഭക്ഷണം തിരഞ്ഞെടുക്കാത്ത വിഭാഗം ആ വിഭാഗമായിത്തന്നെ കണക്കാക്കും.",
     "Choose the stage that best describes where the food waste was generated.": "ഭക്ഷ്യമാലിന്യം എവിടെ ഉണ്ടായി എന്ന് ഏറ്റവും നന്നായി വിവരിക്കുന്ന ഘട്ടം തിരഞ്ഞെടുക്കുക.",
     "Choose the start date": "ആരംഭ തീയതി തിരഞ്ഞെടുക്കുക",
     "Choose the start time": "ആരംഭ സമയം തിരഞ്ഞെടുക്കുക",
@@ -465,7 +464,9 @@
     "no change": "മാറ്റമില്ല",
     "no impact figures were returned": "ആഘാത കണക്കുകളൊന്നും ലഭിച്ചില്ല",
     "saved": "സംരക്ഷിച്ചു",
-    "tonnes": "ടൺ"
+    "tonnes": "ടൺ",
+    "Choose the specific foods you measured, or continue without choosing any.": "നിങ്ങൾ അളന്ന പ്രത്യേക ഭക്ഷണങ്ങൾ തിരഞ്ഞെടുക്കുക, അല്ലെങ്കിൽ ഒന്നും തിരഞ്ഞെടുക്കാതെ തുടരുക.",
+    "If you continue without choosing a specific food, the calculation uses the average figures for the whole category.": "പ്രത്യേക ഭക്ഷണം തിരഞ്ഞെടുക്കാതെ തുടരുകയാണെങ്കിൽ, കണക്കുകൂട്ടൽ മുഴുവൻ വിഭാഗത്തിന്റെയും ശരാശരി കണക്കുകൾ ഉപയോഗിക്കും."
   },
   "tags": [
     "ml"

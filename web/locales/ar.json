@@ -76,7 +76,6 @@
     "Choose the end time": "اختر وقت النهاية",
     "Choose the hour": "اختر الساعة",
     "Choose the minute": "اختر الدقيقة",
-    "Choose the specific foods you measured, or continue without choosing any. A category with no food chosen is counted as that category.": "اختر الأطعمة المحددة التي قِستها، أو تابع دون اختيار أي منها. تُحتسَب الفئة التي لم يُختَر لها طعام بوصفها تلك الفئة.",
     "Choose the stage that best describes where the food waste was generated.": "اختر المرحلة التي تصف على نحو أفضل المكان الذي نشأ فيه هدر الطعام.",
     "Choose the start date": "اختر تاريخ البداية",
     "Choose the start time": "اختر وقت البداية",
@@ -466,7 +465,9 @@
     "no change": "لا تغيير",
     "no impact figures were returned": "لم تُرجَع أي أرقام أثر",
     "saved": "تم الحفظ",
-    "tonnes": "أطنان"
+    "tonnes": "أطنان",
+    "Choose the specific foods you measured, or continue without choosing any.": "اختر الأطعمة المحددة التي قستها، أو تابع دون اختيار أي منها.",
+    "If you continue without choosing a specific food, the calculation uses the average figures for the whole category.": "إذا تابعت دون اختيار طعام محدد، تستخدم الحاسبة الأرقام المتوسطة للفئة بأكملها."
   },
   "tags": [
     "ar"

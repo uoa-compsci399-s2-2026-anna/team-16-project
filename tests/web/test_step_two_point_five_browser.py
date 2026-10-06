@@ -168,7 +168,7 @@ def test_continuing_from_a_chosen_category_opens_the_food_panel(page, released):
 
 
 def test_zero_selected_state_explains_category_level_calculation(page, released):
-    """Continuing without a food keeps the calculation rule visible on screen."""
+    """The permission and the category-average consequence are separate copy."""
     category = _category_with_foods(released)
     _to_food_step(page)
     _tick_category(page, category["code"])
@@ -176,9 +176,19 @@ def test_zero_selected_state_explains_category_level_calculation(page, released)
     page.wait_for_selector('input[name="food-item"]')
 
     assert page.locator(".choice-count").inner_text() == "0 selected"
+    assert page.locator(".section-intro").inner_text() == (
+        "Choose the specific foods you measured, or continue without choosing any."
+    )
     notice = page.locator(".item-step__no-selection")
     assert notice.is_visible()
-    assert "category with no food chosen" in notice.inner_text()
+    assert notice.get_attribute("role") == "note"
+    assert "average figures for the whole category" in notice.inner_text()
+    assert page.evaluate(
+        """() => {
+            const style = getComputedStyle(document.querySelector('.item-step__no-selection'))
+            return { weight: style.fontWeight, border: style.borderInlineStartWidth }
+        }"""
+    ) == {"weight": "700", "border": "6px"}
 
 
 def test_the_panel_groups_the_foods_under_the_category_that_was_chosen(page, released):

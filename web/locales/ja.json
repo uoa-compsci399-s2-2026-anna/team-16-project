@@ -75,7 +75,6 @@
     "Choose the end time": "終了時刻を選ぶ",
     "Choose the hour": "時を選ぶ",
     "Choose the minute": "分を選ぶ",
-    "Choose the specific foods you measured, or continue without choosing any. A category with no food chosen is counted as that category.": "測定した具体的な食品を選択するか、選択せずに次へ進んでください。食品を選択しなかったカテゴリーは、そのカテゴリーとして数えられます。",
     "Choose the stage that best describes where the food waste was generated.": "食品廃棄が発生した場所に最も近い段階を選んでください。",
     "Choose the start date": "開始日を選ぶ",
     "Choose the start time": "開始時刻を選ぶ",
@@ -465,7 +464,9 @@
     "no change": "変化なし",
     "no impact figures were returned": "影響の数値が返されませんでした",
     "saved": "削減",
-    "tonnes": "トン"
+    "tonnes": "トン",
+    "Choose the specific foods you measured, or continue without choosing any.": "測定した具体的な食品を選択するか、何も選択せずに進んでください。",
+    "If you continue without choosing a specific food, the calculation uses the average figures for the whole category.": "具体的な食品を選択せずに進むと、計算にはカテゴリー全体の平均値が使われます。"
   },
   "tags": [
     "ja"

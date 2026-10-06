@@ -75,7 +75,6 @@
     "Choose the end time": "选择结束时间",
     "Choose the hour": "选择小时",
     "Choose the minute": "选择分钟",
-    "Choose the specific foods you measured, or continue without choosing any. A category with no food chosen is counted as that category.": "请选择您测量的具体食物，或不选任何一项继续。未选择食物的类别，会按该类别计入。",
     "Choose the stage that best describes where the food waste was generated.": "请选择最能描述食物浪费产生环节的阶段。",
     "Choose the start date": "选择开始日期",
     "Choose the start time": "选择开始时间",
@@ -465,7 +464,9 @@
     "no change": "无变化",
     "no impact figures were returned": "未返回任何影响数据",
     "saved": "减少",
-    "tonnes": "吨"
+    "tonnes": "吨",
+    "Choose the specific foods you measured, or continue without choosing any.": "请选择您测量的具体食物，或不选任何一项继续。",
+    "If you continue without choosing a specific food, the calculation uses the average figures for the whole category.": "如果不选择具体食物就继续，计算会使用整个类别的平均数据。"
   },
   "tags": [
     "zh",

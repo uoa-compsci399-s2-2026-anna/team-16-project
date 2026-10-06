@@ -75,7 +75,6 @@
     "Choose the end time": "ਸਮਾਪਤੀ ਸਮਾਂ ਚੁਣੋ",
     "Choose the hour": "ਘੰਟਾ ਚੁਣੋ",
     "Choose the minute": "ਮਿੰਟ ਚੁਣੋ",
-    "Choose the specific foods you measured, or continue without choosing any. A category with no food chosen is counted as that category.": "ਤੁਸੀਂ ਜੋ ਖਾਸ ਭੋਜਨ ਮਾਪੇ, ਉਹ ਚੁਣੋ, ਜਾਂ ਕੋਈ ਚੁਣੇ ਬਿਨਾਂ ਅੱਗੇ ਵਧੋ। ਜਿਸ ਸ਼੍ਰੇਣੀ ਵਿੱਚ ਕੋਈ ਭੋਜਨ ਨਹੀਂ ਚੁਣਿਆ ਜਾਂਦਾ, ਉਹ ਉਸੇ ਸ਼੍ਰੇਣੀ ਵਜੋਂ ਗਿਣੀ ਜਾਂਦੀ ਹੈ।",
     "Choose the stage that best describes where the food waste was generated.": "ਉਹ ਪੜਾਅ ਚੁਣੋ ਜੋ ਸਭ ਤੋਂ ਵਧੀਆ ਦੱਸਦਾ ਹੈ ਕਿ ਭੋਜਨ ਦੀ ਬਰਬਾਦੀ ਕਿੱਥੇ ਹੋਈ।",
     "Choose the start date": "ਸ਼ੁਰੂਆਤੀ ਤਾਰੀਖ਼ ਚੁਣੋ",
     "Choose the start time": "ਸ਼ੁਰੂਆਤੀ ਸਮਾਂ ਚੁਣੋ",
@@ -465,7 +464,9 @@
     "no change": "ਕੋਈ ਬਦਲਾਅ ਨਹੀਂ",
     "no impact figures were returned": "ਪ੍ਰਭਾਵ ਦੇ ਕੋਈ ਅੰਕੜੇ ਨਹੀਂ ਮਿਲੇ",
     "saved": "ਸੰਭਾਲਿਆ ਗਿਆ",
-    "tonnes": "ਟਨ"
+    "tonnes": "ਟਨ",
+    "Choose the specific foods you measured, or continue without choosing any.": "ਤੁਸੀਂ ਮਾਪੇ ਖਾਸ ਭੋਜਨ ਚੁਣੋ ਜਾਂ ਕੁਝ ਵੀ ਚੁਣੇ ਬਿਨਾਂ ਜਾਰੀ ਰੱਖੋ।",
+    "If you continue without choosing a specific food, the calculation uses the average figures for the whole category.": "ਜੇ ਤੁਸੀਂ ਕੋਈ ਖਾਸ ਭੋਜਨ ਚੁਣੇ ਬਿਨਾਂ ਜਾਰੀ ਰੱਖਦੇ ਹੋ, ਤਾਂ ਗਣਨਾ ਪੂਰੀ ਸ਼੍ਰੇਣੀ ਦੇ ਔਸਤ ਅੰਕੜੇ ਵਰਤਦੀ ਹੈ।"
   },
   "tags": [
     "pa",

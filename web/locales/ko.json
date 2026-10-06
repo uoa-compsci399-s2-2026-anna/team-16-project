@@ -75,7 +75,6 @@
     "Choose the end time": "종료 시각 선택",
     "Choose the hour": "시 선택",
     "Choose the minute": "분 선택",
-    "Choose the specific foods you measured, or continue without choosing any. A category with no food chosen is counted as that category.": "측정한 구체적인 식품을 선택하거나, 선택하지 않고 계속 진행하세요. 식품을 선택하지 않은 분류는 그 분류로 집계됩니다.",
     "Choose the stage that best describes where the food waste was generated.": "음식물 폐기물이 발생한 지점을 가장 잘 설명하는 단계를 선택하세요.",
     "Choose the start date": "시작 날짜 선택",
     "Choose the start time": "시작 시각 선택",
@@ -465,7 +464,9 @@
     "no change": "변화 없음",
     "no impact figures were returned": "영향 수치가 오지 않았습니다",
     "saved": "절감",
-    "tonnes": "톤"
+    "tonnes": "톤",
+    "Choose the specific foods you measured, or continue without choosing any.": "측정한 특정 식품을 선택하거나 아무것도 선택하지 않고 계속하세요.",
+    "If you continue without choosing a specific food, the calculation uses the average figures for the whole category.": "특정 식품을 선택하지 않고 계속하면 계산에서 전체 카테고리의 평균 수치를 사용합니다."
   },
   "tags": [
     "ko"

@@ -2550,6 +2550,18 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
    Logical properties throughout: twenty locales, two of them right-to-left. */
 
 .choice-count { margin: 0 0 12px; font-weight: 700; color: var(--muted); }
+.item-step__no-selection {
+  max-width: 760px;
+  margin: 14px 0 20px;
+  padding: 14px 16px;
+  border: 1px solid var(--kai-orange);
+  border-inline-start: 6px solid var(--kai-orange);
+  border-radius: 10px;
+  color: var(--ink);
+  background: rgba(255, 183, 0, 0.12);
+  line-height: 1.5;
+}
+.item-step__no-selection strong { font-weight: 700; }
 .choice-ceiling { margin: 12px 0 0; }
 .simple-choice--unspecified { border-style: dashed; }
 .simple-choice input:disabled { cursor: not-allowed; opacity: 0.45; }

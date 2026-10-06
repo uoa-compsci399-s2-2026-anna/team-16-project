@@ -75,7 +75,6 @@
     "Choose the end time": "Chọn giờ kết thúc",
     "Choose the hour": "Chọn giờ",
     "Choose the minute": "Chọn phút",
-    "Choose the specific foods you measured, or continue without choosing any. A category with no food chosen is counted as that category.": "Hãy chọn các loại thực phẩm cụ thể bạn đã đo, hoặc tiếp tục mà không chọn loại nào. Nhóm không có thực phẩm nào được chọn được tính là nhóm đó.",
     "Choose the stage that best describes where the food waste was generated.": "Chọn giai đoạn mô tả đúng nhất nơi phát sinh thực phẩm bỏ đi.",
     "Choose the start date": "Chọn ngày bắt đầu",
     "Choose the start time": "Chọn giờ bắt đầu",
@@ -465,7 +464,9 @@
     "no change": "không thay đổi",
     "no impact figures were returned": "không có số liệu tác động nào được trả về",
     "saved": "đã lưu",
-    "tonnes": "tấn"
+    "tonnes": "tấn",
+    "Choose the specific foods you measured, or continue without choosing any.": "Chọn những thực phẩm cụ thể bạn đã đo, hoặc tiếp tục mà không chọn món nào.",
+    "If you continue without choosing a specific food, the calculation uses the average figures for the whole category.": "Nếu tiếp tục mà không chọn thực phẩm cụ thể, phép tính sẽ dùng các số liệu trung bình của toàn bộ danh mục."
   },
   "tags": [
     "vi"

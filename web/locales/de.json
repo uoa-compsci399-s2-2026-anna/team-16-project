@@ -75,7 +75,6 @@
     "Choose the end time": "Endzeit wählen",
     "Choose the hour": "Stunde wählen",
     "Choose the minute": "Minute wählen",
-    "Choose the specific foods you measured, or continue without choosing any. A category with no food chosen is counted as that category.": "Wählen Sie die konkreten Lebensmittel, die Sie gemessen haben, oder fahren Sie fort, ohne eines zu wählen. Eine Kategorie ohne gewähltes Lebensmittel zählt als diese Kategorie.",
     "Choose the stage that best describes where the food waste was generated.": "Wählen Sie die Stufe, die am besten beschreibt, wo die Lebensmittelabfälle entstanden sind.",
     "Choose the start date": "Startdatum wählen",
     "Choose the start time": "Startzeit wählen",
@@ -465,7 +464,9 @@
     "no change": "keine Veränderung",
     "no impact figures were returned": "es wurden keine Wirkungszahlen zurückgegeben",
     "saved": "eingespart",
-    "tonnes": "Tonnen"
+    "tonnes": "Tonnen",
+    "Choose the specific foods you measured, or continue without choosing any.": "Wählen Sie die konkreten Lebensmittel, die Sie gemessen haben, oder fahren Sie fort, ohne eines auszuwählen.",
+    "If you continue without choosing a specific food, the calculation uses the average figures for the whole category.": "Wenn Sie kein konkretes Lebensmittel auswählen, verwendet die Berechnung die Durchschnittswerte der gesamten Kategorie."
   },
   "tags": [
     "de"

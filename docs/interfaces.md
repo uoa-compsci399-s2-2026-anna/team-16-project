@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-10-06 (v1.102)"
+date: "2026-10-06 (v1.103)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,17 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.103 — 2026-10-06 (Step 2.5 separates the skip permission from its calculation consequence; affects C and D)
+
+Issue #140's no-selection state now says two different things in two different places. The introductory copy gives permission to continue without choosing a specific food. A separate, visually prominent notice then explains the consequence in plain language: the calculation uses the average figures for the whole category rather than the specific food. The notice is a note, not a duplicate status message, and is present only while no specific food is selected.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | The Step 2.5 permission copy and category-average consequence use separate translation keys and separate DOM blocks. The consequence is emphasized with a bordered notice so it cannot be mistaken for the permission to continue | §7.3a, §7.6 |
+| 2 | The new copy is present in all twenty catalogues under both `web/locales/` and `api/assets/locales/`; the two trees remain byte-identical | §7.7 |
+| 3 | `.item-step__no-selection` is registered and tested as a state-owned CSS class, including its prominent weight and border | §7.6 |
+| 4 | No API field, fixture, or wire shape changes. Steps one and two of §0's three-step rule, not step three. The owner notifies the team | §0 |
 
 ### v1.102 — 2026-10-06 (CI collected a quarter of the suite and said nothing; affects everybody)
 

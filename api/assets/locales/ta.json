@@ -75,7 +75,6 @@
     "Choose the end time": "முடிவு நேரத்தைத் தேர்ந்தெடு",
     "Choose the hour": "மணியைத் தேர்ந்தெடு",
     "Choose the minute": "நிமிடத்தைத் தேர்ந்தெடு",
-    "Choose the specific foods you measured, or continue without choosing any. A category with no food chosen is counted as that category.": "நீங்கள் அளந்த குறிப்பிட்ட உணவுகளைத் தேர்ந்தெடுக்கவும், அல்லது எதையும் தேர்ந்தெடுக்காமல் தொடரவும். உணவு தேர்ந்தெடுக்கப்படாத வகை அதே வகையாகவே கணக்கிடப்படும்.",
     "Choose the stage that best describes where the food waste was generated.": "உணவுக் கழிவு எங்கு உருவானது என்பதைச் சிறப்பாக விவரிக்கும் நிலையைத் தேர்ந்தெடுக்கவும்.",
     "Choose the start date": "தொடக்கத் தேதியைத் தேர்ந்தெடு",
     "Choose the start time": "தொடக்க நேரத்தைத் தேர்ந்தெடு",
@@ -465,7 +464,9 @@
     "no change": "மாற்றம் இல்லை",
     "no impact figures were returned": "தாக்க எண்கள் எதுவும் வரவில்லை",
     "saved": "சேமிக்கப்பட்டது",
-    "tonnes": "டன்"
+    "tonnes": "டன்",
+    "Choose the specific foods you measured, or continue without choosing any.": "நீங்கள் அளந்த குறிப்பிட்ட உணவுகளைத் தேர்ந்தெடுக்கவும் அல்லது எதையும் தேர்ந்தெடுக்காமல் தொடரவும்.",
+    "If you continue without choosing a specific food, the calculation uses the average figures for the whole category.": "குறிப்பிட்ட உணவைத் தேர்ந்தெடுக்காமல் தொடர்ந்தால், கணக்கீடு முழு வகையின் சராசரி அளவுகளைப் பயன்படுத்தும்."
   },
   "tags": [
     "ta"

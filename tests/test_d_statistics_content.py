@@ -351,11 +351,22 @@ def test_public_page_relationships_and_accessible_shells():
             missing = expected_links - linked
             assert not missing, f"{path.name}: public navigation is missing {sorted(missing)}"
         else:
-            # The calculator marks no current page because it carries no nav to
-            # mark it in; a stray `aria-current` here would mean one came back.
+            # **This parses the FILE, so it says nothing about the rendered page**,
+            # and since #173 the difference matters: `calculator.js` injects a hero
+            # navigation on the introduction screen that correctly marks
+            # `index.html` as the current page. This assertion stayed green through
+            # that, because a renderer's output is not in the file it reads — which
+            # is worth knowing before anyone reads it as "the calculator marks no
+            # current page". It does, once rendered.
+            #
+            # What it still buys: nothing may be hard-coded into the static HTML,
+            # where it would be a second claim beside the injected one and
+            # unremovable by any state change. `test_site_drawer.py` is what holds
+            # the rendered claim, in a browser.
             assert not page.matching("a", **{"aria-current": "page"}), (
-                f"{path.name}: carries no public navigation, so nothing may claim to be "
-                "the current page — see NAVIGATED_PAGES for the measurement"
+                f"{path.name}: carries no public navigation in the file, so nothing "
+                "static may claim to be the current page — the rendered hero nav's "
+                "own mark is asserted by test_site_drawer.py"
             )
 
         scripts = page.matching("script")

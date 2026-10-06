@@ -25,6 +25,16 @@ This document defines **what every person's code receives and what it returns.**
 
 ## 0.1 Change Log
 
+### v1.103 — 2026-10-06 (Published methodology tables stay readable on narrow screens; affects D)
+
+Issue #129 keeps the published-factor tables dense enough to scan without making the page itself wider than the viewport. Table headings remain on one line, cell text can wrap at safe word boundaries, and narrow screens scroll the labelled table region rather than clipping values or adding an unlabelled page scrollbar.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | The methodology table keeps the existing 760px readable table floor, uses `overflow-wrap: break-word` with normal word breaking for body cells, and keeps one consolidated header rule | §7.6 |
+| 2 | A 21-case browser matrix measures 320/390/1278px viewports across seven catalogues for one-line headings, unclipped cells, no ellipsis, and contained mobile scrolling | §7.6, §7.7 |
+| 3 | No API field, fixture, or wire shape changes. Steps one and two of §0's three-step rule, not step three. The owner notifies the team | §0 |
+
 ### v1.102 — 2026-10-06 (CI collected a quarter of the suite and said nothing; affects everybody)
 
 **This took 102 rather than 101 because v1.101 was on an open branch when it was written.** That branch has since merged, so both entries are below and in order; the note is kept rather than deleted because the gap it explains is the kind a reader otherwise takes for a missing revision.

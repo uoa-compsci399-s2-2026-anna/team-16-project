@@ -278,6 +278,87 @@ def test_no_marked_element_has_element_children():
         )
 
 
+def test_no_rendered_markup_carries_a_data_i18n_attribute():
+    """**`data-i18n` and `data-i18n-attr` are inert in markup JavaScript builds.**
+
+    `applyToDocument()` runs in exactly two places -- `main.js`, whose own comment
+    says *"Done once, before the first render"*, and `i18n.js`'s `chooseLanguage`,
+    **before** `afterChange()` re-renders. Neither ever walks markup a renderer
+    produced. So a `data-i18n*` attribute in a template literal is a translation
+    that silently never happens, and the extractor cannot see it either: it reads
+    `data-i18n*` out of `web/*.html` and `t('...')` out of `web/js/*.js`, so
+    nothing fails and the string ships in English in all twenty languages.
+
+    That is not hypothetical. #173 shipped
+
+        <nav class="intro-navigation" data-i18n-attr="aria-label"
+             aria-label="Site navigation">
+
+    from `calculator.js`'s `introduction()`. Measured in German on the merged
+    build: the drawer's landmark read `Website-Navigation` and this one read
+    `Site navigation`. It had been merged to `main`.
+
+    The rule is the one the mechanism already implies: **a `data-i18n*` attribute
+    belongs in static HTML, and a string a renderer emits goes through `t()`.**
+
+    `i18n.js` is excluded because it is the implementation -- it has to name the
+    attributes to look for them -- and comments are stripped first for
+    `test_class_rules.py`'s reason: this package discusses its own mechanisms at
+    length, and a scan that counted prose would be unusable.
+    """
+    import pathlib
+    import re
+
+    web = pathlib.Path(__file__).resolve().parents[2] / "web" / "js"
+    #: **Line by line, with the block-comment state carried**, rather than stripping
+    #: the comments out and scanning what is left. Stripping shifts every line after
+    #: a comment: the first version of this guard reported `calculator.js:336` for an
+    #: offence on 545, and blanking block comments to the same number of newlines
+    #: still landed eleven lines out. A message pointing at the wrong place is worse
+    #: than one giving no line at all, so the scan never renumbers anything.
+    offenders = []
+    for path in sorted(web.glob("*.js")):
+        if path.name == "i18n.js":
+            continue
+        in_block = False
+        for number, text in enumerate(path.read_text(encoding="utf-8").split("\n"), 1):
+            rest = text
+            code = []
+            while rest:
+                if in_block:
+                    closed = rest.find("*/")
+                    if closed < 0:
+                        rest = ""
+                    else:
+                        in_block = False
+                        rest = rest[closed + 2:]
+                    continue
+                opened = rest.find("/*")
+                slashes = rest.find("//")
+                if slashes >= 0 and (opened < 0 or slashes < opened):
+                    code.append(rest[:slashes])
+                    rest = ""
+                elif opened >= 0:
+                    code.append(rest[:opened])
+                    rest = rest[opened + 2:]
+                    in_block = True
+                else:
+                    code.append(rest)
+                    rest = ""
+            if "data-i18n" in "".join(code):
+                offenders.append(f"{path.name}:{number}")
+
+    assert not offenders, (
+        f"these lines put a `data-i18n*` attribute into markup JavaScript builds: "
+        f"{offenders}. `applyToDocument()` runs once before the first render and "
+        f"again before `chooseLanguage`'s re-render, so it never walks rendered "
+        f"markup -- the attribute does nothing, the extractor does not see the "
+        f"string, and it ships in English in all twenty languages with nothing "
+        f"failing. Use `${{escapeHtml(t('...'))}}` instead; `data-i18n*` is for the "
+        f"static HTML in `web/*.html`"
+    )
+
+
 @pytest.mark.parametrize("language", LANGUAGES)
 def test_every_source_string_is_translated(language):
     strings = i18n_keys.catalogue(language)["strings"]

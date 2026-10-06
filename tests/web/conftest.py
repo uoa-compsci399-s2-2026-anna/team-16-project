@@ -96,6 +96,15 @@ HERE = pathlib.Path(__file__).resolve().parent
 #: `test_suite_isolation.py` fails on an entry whose file does in fact reach
 #: Playwright - so the list cannot outlive the reason it was written for.
 NOT_A_BROWSER_SUITE = {
+    "test_class_rules.py":
+        "reads `web/*.html`, `web/js/*.js` and `web/css/*.css` off disk and "
+        "compares the class names one side emits with the ones the other "
+        "matches; it opens no socket and renders no page. **It was missing from "
+        "this list from the day it landed (v1.93) until v1.98**, so the blanket "
+        "marked it `browser`, `-m \"not browser\"` deselected all eleven of its "
+        "cases, and PR #170 reached review with a red build that looked green "
+        "to its author -- the file's own docstring said it ran in the default "
+        "suite while it did not",
     "test_consent_copy.py":
         "greps `web/*.html` and the catalogues for the sentences that describe "
         "where a calculation goes; the copy is in the files, not on a screen",
@@ -122,6 +131,12 @@ NOT_A_BROWSER_SUITE = {
         "number was copied onto the other side",
     "test_period_rules.py":
         "calls `period.js`'s rules directly under Node",
+    "test_step_three_copy_truth.py":
+        "runs `calculator.js`'s `render()` and `results.js`'s "
+        "`buildResultsReport()` in one Node process over a response fixture, "
+        "because the claim is that a hint and the figure it describes agree; "
+        "nothing is served. Missing from this list for the same reason "
+        "`test_class_rules.py` was, and found by the same measurement",
     "test_snapshot.py":
         "runs `snapshot.js` under Node over `sessionStorage` states it builds",
     "test_suite_isolation.py":

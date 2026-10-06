@@ -50,10 +50,19 @@
          owns the bottom edge and is what put every step's primary action above the
          fold.
 
-         **No `aria-current` here**, deliberately. The header navigation on the two
-         content pages carries it, and a second element claiming to be the current page
-         is a page with two current pages. On the calculator nothing claims it, which is
-         what `tests/test_d_statistics_content.py` asserts.
+         **No `aria-current` in this FILE**, and since #173 that is a narrower claim
+         than it used to be. The header navigation on the two content pages carries it,
+         and a second element claiming to be the current page is a page with two current
+         pages. `tests/test_d_statistics_content.py` asserts the absence here, by parsing
+         this file.
+
+         **The rendered introduction screen does carry one**, on the hero navigation
+         `calculator.js` injects, pointing at `index.html` itself. That is correct and
+         there is still exactly one per page — but it is invisible to the assertion
+         above, which reads the static HTML and cannot see anything a renderer adds. The
+         claim about the rendered page is `test_site_drawer.py`'s, which drives a browser.
+         Until v1.101 this comment said "on the calculator nothing claims it", which had
+         been false since #173 merged.
 
          **The page you are already on keeps its row**, as a link to itself. Dropping it
          would make this block three different blocks and lose the one property the whole

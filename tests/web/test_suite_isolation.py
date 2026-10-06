@@ -290,6 +290,63 @@ def test_the_playwright_free_module_that_still_needs_the_stack_is_named_and_mark
     )
 
 
+def test_every_playwright_free_module_is_declared_rather_than_silently_skipped():
+    """The direction the other five tests above do not cover (v1.98).
+
+    **Everything else here guards the declaration against the code. This guards
+    the code against the declaration's absence**, and that gap is not
+    hypothetical: `test_class_rules.py` sat outside `NOT_A_BROWSER_SUITE` from
+    v1.93 until v1.98, and `test_step_three_copy_truth.py` from v1.92 until
+    v1.98. Both are pure static analysis. The blanket marked them `browser`,
+    `-m "not browser"` deselected all of their cases, and nothing said so --
+    `test_the_stack_free_selection_is_exactly_what_is_declared` is satisfied
+    because the selection and the declaration **agreed on excluding them**. Two
+    sets can be equal and both wrong.
+
+    What it cost: PR #170 added a class with no rule, its author ran the
+    stack-free suite, saw green, and pushed a build that CI would have failed.
+    The guard that should have caught it had been switched off by a rule written
+    to protect it.
+
+    The rule, and it is the smallest one that closes the direction: a module that
+    reaches no Playwright is a module the stack-free run can have, so it must be
+    declared -- in `NOT_A_BROWSER_SUITE`, or in `MIXED_BY_DESIGN`, or by being
+    the one named file that needs the container without driving a browser. A new
+    stack-free file therefore fails here until its author writes the one line
+    that says why, which is the same bargain `NOT_A_BROWSER_SUITE`'s own header
+    strikes for the other direction.
+
+    **This does not re-litigate which default is right.** `conftest.py` defaults
+    a new file to `browser` on the reasoning that the browser list is the one
+    that grows, and that reasoning stands -- a file that forgets to declare
+    itself is skipped, which is slow and safe, rather than driving a browser in a
+    run that asked for none. What was missing is that nothing ever reported the
+    skipping.
+    """
+    declared = set(NOT_A_BROWSER_SUITE) | set(MIXED_BY_DESIGN)
+    #: Test modules only. `_modules()` is every `.py` in the package, and the
+    #: helpers beside them -- `base_url.py`, `i18n_keys.py`, `steps.py`,
+    #: `__init__.py` -- carry no cases for `-m` to select or deselect, so a
+    #: declaration for one would be a note about nothing. Measured: without this
+    #: filter the assertion names all four of them.
+    undeclared = sorted(
+        path.name for path in _modules()
+        if path.name.startswith("test_")
+        and not PLAYWRIGHT.search(_source(path))
+        and path.name not in declared
+        and path.name != NEEDS_THE_STACK_WITHOUT_A_BROWSER
+    )
+    assert not undeclared, (
+        f"these modules drive no browser and are declared nowhere, so "
+        f"`conftest.py`'s blanket marks them `browser` and `pytest tests/web -m "
+        f"\"not browser\"` silently skips every case in them: {undeclared}. "
+        f"Add each to NOT_A_BROWSER_SUITE with its reason -- or, if one really "
+        f"does need the running stack without driving a browser, it is a second "
+        f"NEEDS_THE_STACK_WITHOUT_A_BROWSER and that constant has to become a "
+        f"set with a reason apiece, like every other exemption in this package"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Rule two: there is one base URL and it is in one place
 # ---------------------------------------------------------------------------

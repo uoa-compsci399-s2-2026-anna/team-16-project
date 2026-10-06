@@ -3,6 +3,7 @@ import { state, setState, resetCalculator, entryResultsFrom, draftEntry, draftLe
 import { containerKg, countLimit, entryTotal, isPlainDecimal, isPresetUnit, kgToTonnes, massToKg, PRESET_UNIT, presetUnitCode, rowKgString } from './units.js'
 import { requestLines, submissionLeaves, submissionPayload } from './submission.js'
 import { escapeHtml, formatNumber, slug, stepNav } from './view.js'
+import { cardId, cardIsFixedOpen, cardIsOpen, cardStatus, collapsibleCard, keyAttr, openedCard } from './cards.js'
 import { t } from './i18n.js'
 import { armContribute, bindResultsSectionSpy, cancelContribute, downloadPdf, downloadResults, renderResults, resultsNavIsDocked } from './results.js'
 import { compareImprovement, openImprovement, resetImprovement, updateImprovementInput } from './improvement.js'
@@ -23,6 +24,17 @@ const unitLabel = unit => (unit === 'tonnes' ? t('tonnes') : t('kilograms'))
 const ALLOCATION_EPSILON = 0.01
 const exceedsTotal = (allocated, total) => allocated - total > ALLOCATION_EPSILON
 const remainingAmount = (total, allocated) => (Math.abs(total - allocated) <= ALLOCATION_EPSILON ? 0 : total - allocated)
+// **Step 4's allocation has to account for all of the waste, not at most all of it**
+// (v1.99). Until then the rules bounded the allocation from above and said nothing
+// below it, and §7.3a recorded that as deliberate -- so a card with 3 of 4 kg placed
+// wore a `Complete` badge and let Continue through. **The step-3 total never crosses
+// the wire** (see the note over `MAX_LINE_KG`): an entry's waste IS the sum of its
+// destination lines, so the unallocated kilogram was not carried anywhere, not
+// refused by the API, and not visible on the results page -- every figure was simply
+// computed on three quarters of what the visitor had typed, under a tick that said
+// otherwise. The same epsilon as `remainingAmount`, so the rule and the Remaining
+// figure beside it can never disagree about zero.
+const fallsShortOfTotal = (allocated, total) => total - allocated > ALLOCATION_EPSILON
 
 // crypto.randomUUID() is [SecureContext] and so is undefined over plain http:// to a
 // LAN IP. crypto.getRandomValues() is not. These ids never leave the browser.
@@ -336,7 +348,6 @@ const leafName = leaf => leafDisplayName(leaf, state.taxonomy)
  * hold encodes to it.
  */
 const leafAttr = leaf => encodeURIComponent(leafKey(leaf))
-const keyAttr = key => encodeURIComponent(key)
 /** The inverse, for a handler reading `data-leaf` off the control it was given. */
 const leafOf = control => decodeURIComponent(control.dataset.leaf || '')
 
@@ -531,7 +542,7 @@ const hasData = () => Boolean(state.entries.length || state.sector || state.food
  */
 function introduction() {
   return `<section class="hero" aria-labelledby="page-title">
-    <div class="hero-copy"><p class="eyebrow">${escapeHtml(t('For New Zealand food businesses'))}</p><h1 id="page-title">${escapeHtml(t('Food Waste Impact Calculator'))}</h1><p class="lead">${escapeHtml(t('Turn your food waste measurements into a clearer view of their potential environmental and financial impact.'))}</p><button class="button button-primary button-large" type="button" data-action="start">${escapeHtml(t('Start calculator'))}</button><p class="privacy-note">${escapeHtml(t('Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.'))}</p></div>
+    <div class="hero-copy"><nav class="intro-navigation" aria-label="${escapeHtml(t('Main pages'))}"><a href="./index.html" aria-current="page">${escapeHtml(t('Calculator'))}</a><a href="./stats.html">${escapeHtml(t('Statistics'))}</a><a href="./methodology.html">${escapeHtml(t('Documentation'))}</a></nav><p class="eyebrow">${escapeHtml(t('For New Zealand food businesses'))}</p><h1 id="page-title">${escapeHtml(t('Food Waste Impact Calculator'))}</h1><p class="lead">${escapeHtml(t('Turn your food waste measurements into a clearer view of their potential environmental and financial impact.'))}</p><button class="button button-primary button-large" type="button" data-action="start">${escapeHtml(t('Start calculator'))}</button><p class="privacy-note">${escapeHtml(t('Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.'))}</p></div>
     <div class="hero-food-pattern" aria-hidden="true"><svg class="food-arch-mask" viewBox="0 0 1500 190" preserveAspectRatio="none"><defs><mask id="food-arch-cutouts"><rect width="1500" height="190" fill="white" />${[150, 450, 750, 1050, 1350].flatMap(centre => [`<ellipse cx="${centre}" cy="190" rx="205" ry="166" fill="none" stroke="black" stroke-width="32"/>`, `<ellipse cx="${centre}" cy="190" rx="151" ry="120" fill="none" stroke="black" stroke-width="28"/>`]).join('')}${[300, 600, 900, 1200].map(x => `<path d="M ${x} 72 L ${x + 36} 126 L ${x} 181 L ${x - 36} 126 Z" fill="black"/>`).join('')}</mask></defs><rect width="1500" height="190" fill="currentColor" mask="url(#food-arch-cutouts)"/></svg></div>
     <div class="hero-support-grid"><div class="needs-panel"><h2>${escapeHtml(t('What you will need'))}</h2><ul class="check-list"><li>${escapeHtml(t('Where the waste occurred in the food supply chain'))}</li><li>${escapeHtml(t('The food category, if known'))}</li><li>${escapeHtml(t('The total waste amount — a weight, or how many containers you fill'))}</li><li>${escapeHtml(t('How that total was distributed across waste destinations'))}</li></ul></div></div>
   </section>`
@@ -876,87 +887,6 @@ function term(text, tipId, paragraphs) {
 }
 
 /**
- * A collapsible card's identity, as a member of `state.openCards`.
- *
- * **The step is part of the id, not just the key.** Steps 3 and 4 both draw one card per
- * leaf, so `leafKey(leaf)` alone would make "dairy open on step 3" and "dairy open on
- * step 4" the same fact — and the two steps are answered minutes apart, with different
- * reasons to be open. NUL-joined for `leafKey`'s own reason: a step number followed by a
- * key that begins with a digit cannot otherwise be told from another pair.
- */
-const cardId = (step, key) => `${step}\u0000${key}`
-
-/**
- * **Whether a step draws so few cards that folding buys nothing**, which is the half of
- * decision 2 the markup needs as well as the open set.
- *
- * `cardIsOpen` asks it to force a lone card open. `collapsibleCard` asks it to leave the
- * header's toggle **out of the markup entirely**: a card that cannot be shut has nothing
- * for a toggle to do, and a chevron that changes nothing when pressed is a worse answer
- * than no chevron — it is reachable by Tab, it carries `aria-expanded="true"` that never
- * becomes `false`, and a keyboard visitor is told a control exists that does not.
- *
- * One expression, asked twice, so the two cannot disagree about which cards are fixed.
- */
-const cardIsFixedOpen = count => count <= 1
-
-/**
- * Whether one collapsible card is open right now.
- *
- * **`count <= 1` is decision 2 of #134, and it lives here so that every consumer of the
- * chrome gets it from one place:** *a single card is not collapsed*, because one food
- * type is the commonest journey and collapsing it opens the step on an empty screen. It
- * is asked before `state.openCards`, so a lone card cannot be closed at all — there is
- * nothing for folding to buy when there is nothing below it to be missed.
- *
- * Otherwise the default is collapsed, which is what an empty `openCards` says, and what
- * #134 asks for: the client's problem is a card below the fold being skipped, so the
- * step has to be short enough to see whole.
- *
- * **It is exercised since #138 and #142, and it was not before.** `leafPanel` returns the
- * plain single-leaf panel before any card is built, so a step-3 card is only ever one of
- * two or more; #134 recorded that replacing this clause with `false` left 27 of step 3's
- * tests green, and left the note that whichever of #138 and #142 landed first would be
- * what put a test under it. Both now draw a card at a count of one — one chosen category
- * on step 2.5, one food type on step 4 — so the clause is live, and
- * `test_card_folding_browser.py` measures it on both of them.
- *
- * @param {number} step The step that owns the card.
- * @param {string} key The card's own key — a `leafKey` on steps 3 and 4.
- * @param {number} count How many cards the step is drawing.
- */
-const cardIsOpen = (step, key, count) => cardIsFixedOpen(count) || (state.openCards || []).includes(cardId(step, key))
-
-/** `state.openCards` with one card added, idempotently. */
-const openedCard = (step, key) => {
-  const id = cardId(step, key)
-  const open = state.openCards || []
-  return open.includes(id) ? open : [...open, id]
-}
-
-/**
- * **What the completion badge says, in one place, because two things render it.**
- *
- * `collapsibleCard` prints it at render time and `updateCardBadges` rewrites it on a
- * keystroke — §7.2's documented exception, taken here for `updateCombinedTotal`'s exact
- * reason: a re-render per keystroke destroys the focused input, and a badge that only
- * moved on Continue would be a tick the visitor could not trust while typing. Two
- * writers, one definition of the two states, so neither can drift into saying something
- * the other does not.
- *
- * **Not colour-only.** A mark, a word, and `data-state` for the stylesheet. The mark is
- * `aria-hidden` and the word is not, so the button's accessible name carries the state in
- * words — a screen reader is told what a sighted reader is shown, which is an acceptance
- * criterion of #134 and not a nicety.
- *
- * `settled` comes from `leafSettled`, which reads `leafProblem` — see there for what the
- * tick promises and why the optional money figures cannot withhold it.
- */
-const cardStatus = settled => (settled
-  ? { state: 'complete', mark: '✓', text: t('Complete') }
-  : { state: 'incomplete', mark: '✕', text: t('Incomplete') })
-
-/**
  * **Step 2.5's badge, and it is a different question from `cardStatus`'s on purpose**
  * (#138).
  *
@@ -988,104 +918,6 @@ const itemStatus = chosen => ({
   mark: chosen ? '✓' : '—',
   text: t('%(count)s selected', { count: chosen }),
 })
-
-/**
- * **The collapsible step card, built once** (#134, and the chrome #138 and #142 consume).
- *
- * One `<fieldset>`, a header that opens and closes it, a status badge, an optional strip
- * that stays visible while the card is shut, and a body that is `hidden` when it is. The
- * decisions below are baked in here rather than at the call sites, so that steps 2.5, 3
- * and 4 cannot land on a different version of any of them:
- *
- * * **`<legend>` carries the group's name and nothing else, and it is `.sr-only`.** The
- *   legend is what gives the `<fieldset>` its accessible name, so it cannot hold the
- *   badge too — the fieldset would then be named "Dairy Complete", and the name of a
- *   group of inputs would change while the visitor typed in them. The name a sighted
- *   reader sees is the header button's, which carries the badge beside it. (It also
- *   keeps `panel.querySelector('legend').textContent` the food's own name, which three
- *   browser tests dereference and one of them compares against the error message's
- *   prose.)
- * * **A `<button>`, not a `<details>`/`<summary>`.** `render()` replaces
- *   `main.innerHTML` on every `setState`, so a native `open` attribute is erased by the
- *   next unrelated update; the open set lives in `state.openCards` and is rendered out
- *   of it. A button is what `aria-expanded` belongs on, it is reached and operated by
- *   the keyboard with no code, and it has a stable `id` so that `main.js`'s subscriber
- *   returns focus to it across the re-render the toggle causes — which is what makes the
- *   state change *announced* rather than merely applied.
- * * **`hidden` rather than `display: none` in a class.** The body's controls must be
- *   unreachable by Tab and unfocusable while the card is shut, which `hidden` is defined
- *   to do; a class is one stylesheet mistake away from a focusable invisible input.
- * * **A lone card has no toggle at all**, because `cardIsFixedOpen` says it can never be
- *   shut. The header is then a plain `<div>` carrying the same name and the same badge,
- *   with no chevron, no `aria-expanded` and nothing in the tab order — see
- *   `cardIsFixedOpen` for why a control that changes nothing is the worse answer. The one
- *   declaration such a header must not inherit from `.step-card__toggle` is
- *   `cursor: pointer`, and it is neutralised by
- *   `.step-card__toggle--static { cursor: default }` in `web/css/styles.css`, beside the
- *   class it modifies. It shipped here as a `style` attribute, because this change was
- *   not permitted to touch that file; #160 moved it and the attribute is gone.
- * * **`always` is the strip the shut card still shows**, between the header and the body
- *   and so outside the `hidden`. #142 needs step 4's Remaining readable without opening
- *   anything; `leafSummary` already renders it with its unit and an `aria-live`, and
- *   `updateLine` already rewrites it in place on a keystroke, so putting the element it
- *   already builds outside the fold is the whole of that criterion and no figure is
- *   computed twice.
- * * **`min-inline-size: 0` on the `<fieldset>`, and it is load-bearing rather than
- *   tidiness.** It is `.form-panel.step-card`'s second declaration in
- *   `web/css/styles.css`; it shipped here as a `style` attribute for the same reason as
- *   the cursor above, and #160 moved it there too.
- *   A fieldset's initial `min-inline-size` is `min-content`, so unlike a
- *   `<div>` it REFUSES to shrink below the widest thing inside it — and step 4's
- *   `.destination-row` is a two-column grid whose minimum is 220 + 24 + 260 = 504px.
- *   Measured on this build: at 500px the card was forced to 588px and the document
- *   scrolled sideways to 608, at every width from 481 (where the row stops being one
- *   column) to about 610 (where 504px fits again). Before #142 those rows lived in a
- *   `<div class="leaf-group">`, which shrinks and lets `.destination-list`'s own
- *   `overflow: hidden` clip; the `<fieldset>` does not, and
- *   `tests/web/test_horizontal_overflow.py` measures only 320 and 390, where the row is
- *   a single column and the band is invisible, so the band has a test of its own in
- *   `tests/web/test_leaf_layout_browser.py`. The stylesheet carries the same fix in
- *   another dimension as `.choice-fieldset { min-width: 0 }`; it carried a third copy on
- *   the matrix's own inputs until #160 deleted the withdrawn grid's rules.
- *
- * **Neither declaration is in a `style` attribute any more.** Both were, while this
- * change was not permitted to touch `web/css/styles.css` — `min-inline-size: 0` above
- * and `cursor: default` on the static header — and v1.84's entry recorded both as owed
- * there. #160 moved them, to `.form-panel.step-card` and
- * `.step-card__toggle--static` respectively, and this function now emits no inline style
- * at all. Nothing else changed: the computed values and the measured boxes are the same
- * either way.
- *
- * **Deliberately plain.** The card's whole ground — background, border, radius — is one
- * element, `.step-card`, and it carries no `backdrop-filter`, no `transform` and no
- * positioned descendant of its own. WP2's frosted-glass token attaches there without
- * re-laying out anything inside it.
- *
- * @param {object} options
- * @param {number} options.step The step that owns the card; half of its id.
- * @param {string} options.key The card's own key; the other half.
- * @param {string} options.anchor A slug unique within the step, for the element ids.
- * @param {string} options.name The card's name, shown and announced.
- * @param {number} options.count How many cards the step is drawing — decision 2's input.
- * @param {boolean} options.forceOpen Open whatever the open set says, because the card
- *   holds a message about itself.
- * @param {{state: string, mark: string, text: string}} options.status What the badge
- *   reads; `cardStatus` on steps 3 and 4, `itemStatus` on step 2.5.
- * @param {string} options.body The card's contents, as HTML, hidden while it is shut.
- * @param {string} options.always HTML that stays visible while it is shut.
- * @param {string} options.extraClass Classes the consumer's own selectors need.
- * @param {string} options.dataAttr Data attributes the consumer's own handlers need.
- */
-function collapsibleCard({ step, key, anchor, name, count, forceOpen = false, status, body, always = '', extraClass = '', dataAttr = '' }) {
-  const bodyId = `card-body--${anchor}`
-  const fixed = cardIsFixedOpen(count)
-  const open = forceOpen || cardIsOpen(step, key, count)
-  const badge = `<span class="step-card__status" data-card-status data-state="${status.state}"><span class="step-card__mark" aria-hidden="true">${status.mark}</span><span data-card-status-text>${escapeHtml(status.text)}</span></span>`
-  const header = fixed
-    ? `<div class="step-card__toggle step-card__toggle--static"><span class="step-card__name">${escapeHtml(name)}</span>${badge}</div>`
-    : `<button id="card-toggle--${anchor}" class="step-card__toggle" type="button" data-action="toggle-card" data-card-step="${step}" data-card="${keyAttr(key)}" aria-expanded="${open ? 'true' : 'false'}" aria-controls="${bodyId}"><span class="step-card__chevron ${open ? 'expanded' : ''}" aria-hidden="true">&#8964;</span><span class="step-card__name">${escapeHtml(name)}</span>${badge}</button>`
-  return `<fieldset class="form-panel step-card ${open ? 'step-card--open' : ''} ${extraClass}" ${dataAttr}><legend class="sr-only">${escapeHtml(name)}</legend>${header}${always}<div class="step-card__body" id="${bodyId}" ${open ? '' : 'hidden'}>${body}</div></fieldset>`
-}
 
 /**
  * Step 3.
@@ -1837,7 +1669,24 @@ function leafSummary(leaf, first) {
   const figures = draftLeafFigures(leaf)
   const total = totalNumber(figures)
   const allocated = allocatedAmount(figures.current, figures.totalUnit)
-  const invalid = exceedsTotal(allocated, total) || (figures.current || []).some(line => line.qtyInput !== '' && Number(line.qtyInput) < 0)
+  //: `invalid` now covers both directions (v1.99). It is what a visitor sees off a
+  //: SHUT card -- #142 put this strip outside the fold precisely so Remaining and its
+  //: state are readable without opening anything -- so a strip that stayed calm while
+  //: Continue refused would be the collapsed card contradicting the button again.
+  //:
+  //: **Short counts only once the visitor has started placing.** An untouched card
+  //: is short of its total by definition, and marking it on arrival turns every
+  //: step-4 card Beetroot before anybody has done anything -- shouting at someone
+  //: for not having acted yet. `test_the_allocation_summary_is_opaque_in_both_states`
+  //: is what reported it: it reads the strip's ordinary ground on arrival, and there
+  //: was no longer an ordinary state to read. The badge already says `Incomplete` for
+  //: an untouched card through `leafProblem`'s first rule, so nothing is hidden by
+  //: waiting. Over-allocation and negatives keep firing unconditionally, because
+  //: both are states the visitor had to type to reach.
+  const started = (figures.current || []).some(line => line.qtyInput !== '')
+  const invalid = exceedsTotal(allocated, total)
+    || (started && fallsShortOfTotal(allocated, total))
+    || (figures.current || []).some(line => line.qtyInput !== '' && Number(line.qtyInput) < 0)
   const unit = unitLabel(figures.totalUnit)
   return `<div class="allocation-summary ${invalid ? 'invalid' : ''}" ${first ? 'id="current-summary"' : ''} data-summary-leaf="${leafAttr(leaf)}" aria-live="polite"><div><span>${escapeHtml(t('Total waste'))}</span><strong>${formatNumber(total, 2)} ${escapeHtml(unit)}</strong></div><div><span>${escapeHtml(t('Allocated'))}</span><strong data-summary="allocated">${formatNumber(allocated, 2)} ${escapeHtml(unit)}</strong></div><div><span>${escapeHtml(t('Remaining'))}</span><strong data-summary="remaining">${formatNumber(remainingAmount(total, allocated), 2)} ${escapeHtml(unit)}</strong></div></div>`
 }
@@ -1908,9 +1757,15 @@ function destinationStep() {
   // one button: any rule added to one of two lists left the other enabling Continue on a
   // state the other had just refused.
   const canContinue = !validateCurrentStep()
-  const excess = leaf => {
+  //: Renamed from `excess` with the rule it reads (v1.99): a card is forced open by an
+  //: allocation that does not match its total, in either direction. While this asked only
+  //: about excess, an under-allocated card could be folded away with its own refusal
+  //: inside it.
+  const misallocated = leaf => {
     const figures = draftLeafFigures(leaf)
-    return exceedsTotal(allocatedAmount(figures.current, figures.totalUnit), totalNumber(figures))
+    const allocated = allocatedAmount(figures.current, figures.totalUnit)
+    const total = totalNumber(figures)
+    return exceedsTotal(allocated, total) || fallsShortOfTotal(allocated, total)
   }
   // A server `VALIDATION_ERROR` names a line by the §9 path `draftLinePaths` builds, and a
   // client-side refusal names a leaf in `state.errorAt`. Either way **a card holding a
@@ -1924,7 +1779,7 @@ function destinationStep() {
     const figures = draftLeafFigures(leaf)
     const key = leafKey(leaf)
     const lines = figures.current || []
-    const rows = lines.map(line => destinationCell(leaf, line, paths, excess(leaf))).join('')
+    const rows = lines.map(line => destinationCell(leaf, line, paths, misallocated(leaf))).join('')
     const errored = (!isApiError && state.errorAt?.leaf === key)
       || lines.some(line => state.fieldErrors[paths.get(line.id)])
     return collapsibleCard({
@@ -2379,6 +2234,20 @@ function leafProblem(step, leaf, food) {
     if (overLine) return fail(t('Enter destination amounts of no more than %(limit)s %(unit)s.', { limit: formatNumber(limitIn(MAX_LINE_KG, unit), 0), unit: unitLabel(unit) }))
     const total = totalNumber(figures)
     const sum = allocatedAmount(lines, unit)
+    //: **Short of the total is as wrong as over it, and it used to be neither.** The
+    //: unallocated remainder is not held back for later and it is not sent: `buildLines`
+    //: sends the destination rows, so an entry under-allocated by a kilogram is an entry
+    //: a kilogram lighter, and every metric, the cost, the equivalences and
+    //: `production_share_percent` are all computed on the smaller mass with nothing on
+    //: screen saying so. Checked before the over-allocation branch for no reason beyond
+    //: reading order; the two are mutually exclusive.
+    if (fallsShortOfTotal(sum, total)) {
+      const short = (total - sum).toFixed(2)
+      const unitName = unit === 'kilograms' ? 'kg' : t('tonnes')
+      return fail(food
+        ? t('%(food)s still has %(short)s %(unit)s to place. Every destination amount together has to add up to the waste you entered.', { food, short, unit: unitName })
+        : t('There is still %(short)s %(unit)s to place. Every destination amount together has to add up to the waste you entered.', { short, unit: unitName }))
+    }
     if (exceedsTotal(sum, total)) {
       const excess = (sum - total).toFixed(2)
       const unitName = unit === 'kilograms' ? 'kg' : t('tonnes')
@@ -2985,7 +2854,24 @@ function updateLine(control) {
   const sum = allocatedAmount(lines, unit)
   const summary = document.querySelector(`[data-summary-leaf="${CSS.escape(keyAttr(key))}"]`)
   const hasNegative = lines.some(line => line.qtyInput !== '' && Number(line.qtyInput) < 0)
-  summary?.classList.toggle('invalid', exceedsTotal(sum, total) || hasNegative)
+  //: **Both directions here, and only one of them below** (v1.99). This strip is the
+  //: whole card's state, so it turns `invalid` for an allocation that misses its total
+  //: either way -- it is what a SHUT card shows, and #142 put it outside the fold for
+  //: exactly that. The row-level marking further down stays `exceedsTotal` only:
+  //: going over is attributable to the row just typed into, while falling short is no
+  //: single row's fault and colouring one would point at an innocent control.
+  //:
+  //: **This is the keystroke path and `leafSummary` is the re-render path, and they
+  //: are two copies of one rule.** Changing only the other one is what the first run
+  //: of `test_under_allocation_is_refused_and_visible_from_a_shut_card` reported:
+  //: Continue refused, the badge read `incomplete`, the message named the food and
+  //: the 40.00 kg -- and the strip stayed calm, because the visitor had typed rather
+  //: than re-rendered.
+  //: See `leafSummary` for why falling short is conditional on having started and
+  //: the other two are not. The two writers state one rule and have already drifted
+  //: once in this revision.
+  const started = lines.some(line => line.qtyInput !== '')
+  summary?.classList.toggle('invalid', exceedsTotal(sum, total) || (started && fallsShortOfTotal(sum, total)) || hasNegative)
   if (summary) {
     summary.querySelector('[data-summary="allocated"]').textContent = `${sum.toFixed(2)} ${unitLabel(unit)}`
     summary.querySelector('[data-summary="remaining"]').textContent = `${remainingAmount(total, sum).toFixed(2)} ${unitLabel(unit)}`

@@ -765,6 +765,26 @@ def test_start_a_new_calculation_on_the_results_page_removes_the_snapshot(page):
     assert page.locator('[data-action="start"]').count() == 1
 
 
+def test_improvement_tip_reaches_its_target_and_dismissal_survives_a_render(page):
+    """The results tip is guidance, with state-backed dismissal rather than DOM removal."""
+    _to_the_results_page(page)
+    tip = page.locator("#results-improvement-tip")
+    assert tip.is_visible()
+    assert page.locator("#results-title + #results-improvement-tip").count() == 1
+    assert "Explore Improvements" in tip.inner_text()
+
+    page.click('[data-action="view-improvements"]')
+    page.wait_for_selector("#improvement-section")
+    page.wait_for_timeout(100)
+    assert page.evaluate("document.activeElement?.id") == "improvement-section"
+
+    page.click('[data-action="dismiss-results-improvement-tip"]')
+    assert page.locator("#results-improvement-tip").count() == 0
+    page.click('[data-action="breakdown-tab"][data-tab="destination"]')
+    page.wait_for_timeout(100)
+    assert page.locator("#results-improvement-tip").count() == 0
+
+
 # ------------------------------------------------- nothing transient is restored
 
 

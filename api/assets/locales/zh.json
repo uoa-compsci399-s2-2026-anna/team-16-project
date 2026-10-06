@@ -118,6 +118,7 @@
     "Destinations entered": "已填写的去向",
     "Destinations entered (share)": "已填写的去向（占比）",
     "Details": "详细信息",
+    "Dismiss": "关闭",
     "Do you know which foods these were?": "您知道这些是哪些食物吗？",
     "Documentation": "文档",
     "Documentation | Kai Commitment Food Waste Impact Calculator": "文档 | Kai Commitment 食物浪费影响计算器",
@@ -465,7 +466,8 @@
     "no change": "无变化",
     "no impact figures were returned": "未返回任何影响数据",
     "saved": "减少",
-    "tonnes": "吨"
+    "tonnes": "吨",
+    "See how a different allocation could change the result in Explore Improvements.": "在“探索改进空间”中查看不同分配方式如何改变结果。"
   },
   "tags": [
     "zh",

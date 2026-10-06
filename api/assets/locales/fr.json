@@ -118,6 +118,7 @@
     "Destinations entered": "Destinations saisies",
     "Destinations entered (share)": "Destinations saisies (part)",
     "Details": "Détails",
+    "Dismiss": "Fermer",
     "Do you know which foods these were?": "Savez-vous de quels aliments il s'agissait ?",
     "Documentation": "Documentation",
     "Documentation | Kai Commitment Food Waste Impact Calculator": "Documentation | Calculateur d'impact du gaspillage alimentaire Kai Commitment",
@@ -465,7 +466,8 @@
     "no change": "aucun changement",
     "no impact figures were returned": "aucun chiffre d'impact n'a été renvoyé",
     "saved": "économisé",
-    "tonnes": "tonnes (t)"
+    "tonnes": "tonnes (t)",
+    "See how a different allocation could change the result in Explore Improvements.": "Découvrez dans « Explorer les améliorations » comment une autre répartition peut modifier le résultat."
   },
   "tags": [
     "fr"

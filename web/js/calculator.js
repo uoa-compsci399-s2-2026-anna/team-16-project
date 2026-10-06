@@ -3686,9 +3686,19 @@ export function bindCalculator(main, retryTaxonomy) {
         requestAnimationFrame(() => target.focus({ preventScroll: true }))
       }
     }
-    if (action === 'dismiss-results-summary') {
-      control.closest('.results-summary-card')?.remove()
-      document.getElementById('results-title')?.focus({ preventScroll: true })
+    if (action === 'view-improvements') {
+      openImprovement(state)
+      requestAnimationFrame(() => {
+        const target = document.getElementById('improvement-section')
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          target.focus({ preventScroll: true })
+        }
+      })
+    }
+    if (action === 'dismiss-results-improvement-tip') {
+      setState({ resultsImprovementTipDismissed: true })
+      requestAnimationFrame(() => document.getElementById('results-title')?.focus({ preventScroll: true }))
     }
     // Round four's two steps. Submit arms a five-second window and sends nothing;
     // Undo cancels it. Neither of them talks to the API directly — see

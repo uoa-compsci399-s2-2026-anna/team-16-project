@@ -467,7 +467,8 @@
     "no change": "لا تغيير",
     "no impact figures were returned": "لم تُرجَع أي أرقام أثر",
     "saved": "تم الحفظ",
-    "tonnes": "أطنان"
+    "tonnes": "أطنان",
+    "See how a different allocation could change the result in Explore Improvements.": "شاهد كيف يمكن لتوزيع مختلف أن يغيّر النتيجة في استكشف التحسينات."
   },
   "tags": [
     "ar"

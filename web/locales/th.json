@@ -466,7 +466,8 @@
     "no change": "ไม่เปลี่ยนแปลง",
     "no impact figures were returned": "ไม่มีตัวเลขผลกระทบส่งกลับมา",
     "saved": "บันทึกแล้ว",
-    "tonnes": "ตัน"
+    "tonnes": "ตัน",
+    "See how a different allocation could change the result in Explore Improvements.": "ดูใน สำรวจแนวทางปรับปรุง ว่าการจัดสรรแบบอื่นจะเปลี่ยนผลลัพธ์ได้อย่างไร"
   },
   "tags": [
     "th"

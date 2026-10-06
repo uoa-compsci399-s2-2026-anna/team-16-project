@@ -118,6 +118,7 @@
     "Destinations entered": "入力された廃棄先",
     "Destinations entered (share)": "入力された廃棄先（割合）",
     "Details": "詳細",
+    "Dismiss": "閉じる",
     "Do you know which foods these were?": "どの食品だったか分かりますか？",
     "Documentation": "ドキュメント",
     "Documentation | Kai Commitment Food Waste Impact Calculator": "ドキュメント | Kai Commitment 食品廃棄インパクト計算ツール",
@@ -465,7 +466,8 @@
     "no change": "変化なし",
     "no impact figures were returned": "影響の数値が返されませんでした",
     "saved": "削減",
-    "tonnes": "トン"
+    "tonnes": "トン",
+    "See how a different allocation could change the result in Explore Improvements.": "改善策を見てみるで、配分を変えると結果がどう変わるか確認できます。"
   },
   "tags": [
     "ja"

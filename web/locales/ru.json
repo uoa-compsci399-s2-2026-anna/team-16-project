@@ -466,7 +466,8 @@
     "no change": "без изменений",
     "no impact figures were returned": "показатели воздействия не получены",
     "saved": "сохранено",
-    "tonnes": "тонны"
+    "tonnes": "тонны",
+    "See how a different allocation could change the result in Explore Improvements.": "Посмотрите в разделе «Посмотреть улучшения», как другое распределение может изменить результат."
   },
   "tags": [
     "ru"

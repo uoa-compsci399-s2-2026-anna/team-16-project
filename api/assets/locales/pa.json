@@ -118,6 +118,7 @@
     "Destinations entered": "ਦਰਜ ਕੀਤੀਆਂ ਮੰਜ਼ਿਲਾਂ",
     "Destinations entered (share)": "ਦਰਜ ਕੀਤੀਆਂ ਮੰਜ਼ਿਲਾਂ (ਹਿੱਸਾ)",
     "Details": "ਵੇਰਵੇ",
+    "Dismiss": "ਰੱਦ ਕਰੋ",
     "Do you know which foods these were?": "ਕੀ ਤੁਸੀਂ ਜਾਣਦੇ ਹੋ ਕਿ ਉਹ ਕਿਹੜੇ ਭੋਜਨ ਸਨ?",
     "Documentation": "ਦਸਤਾਵੇਜ਼",
     "Documentation | Kai Commitment Food Waste Impact Calculator": "ਦਸਤਾਵੇਜ਼ | Kai Commitment ਭੋਜਨ ਬਰਬਾਦੀ ਪ੍ਰਭਾਵ ਕੈਲਕੁਲੇਟਰ",
@@ -465,7 +466,8 @@
     "no change": "ਕੋਈ ਬਦਲਾਅ ਨਹੀਂ",
     "no impact figures were returned": "ਪ੍ਰਭਾਵ ਦੇ ਕੋਈ ਅੰਕੜੇ ਨਹੀਂ ਮਿਲੇ",
     "saved": "ਸੰਭਾਲਿਆ ਗਿਆ",
-    "tonnes": "ਟਨ"
+    "tonnes": "ਟਨ",
+    "See how a different allocation could change the result in Explore Improvements.": "ਸੁਧਾਰ ਵੇਖੋ ਵਿੱਚ ਦੇਖੋ ਕਿ ਵੱਖਰੀ ਵੰਡ ਨਤੀਜੇ ਨੂੰ ਕਿਵੇਂ ਬਦਲ ਸਕਦੀ ਹੈ।"
   },
   "tags": [
     "pa",

@@ -118,6 +118,7 @@
     "Destinations entered": "Ingevoerde bestemmingen",
     "Destinations entered (share)": "Ingevoerde bestemmingen (aandeel)",
     "Details": "Bijzonderheden",
+    "Dismiss": "Sluiten",
     "Do you know which foods these were?": "Weet u om welke voedingsmiddelen het ging?",
     "Documentation": "Documentatie",
     "Documentation | Kai Commitment Food Waste Impact Calculator": "Documentatie | Kai Commitment Rekentool voor het effect van voedselafval",
@@ -465,7 +466,8 @@
     "no change": "geen verandering",
     "no impact figures were returned": "er zijn geen effectcijfers teruggegeven",
     "saved": "bespaard",
-    "tonnes": "ton"
+    "tonnes": "ton",
+    "See how a different allocation could change the result in Explore Improvements.": "Bekijk in Verbeteringen verkennen hoe een andere verdeling het resultaat kan veranderen."
   },
   "tags": [
     "nl"

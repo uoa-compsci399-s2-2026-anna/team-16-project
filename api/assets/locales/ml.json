@@ -118,6 +118,7 @@
     "Destinations entered": "നൽകിയ ലക്ഷ്യസ്ഥാനങ്ങൾ",
     "Destinations entered (share)": "നൽകിയ ലക്ഷ്യസ്ഥാനങ്ങൾ (വിഹിതം)",
     "Details": "വിശദാംശങ്ങൾ",
+    "Dismiss": "അടയ്ക്കുക",
     "Do you know which foods these were?": "ഏതൊക്കെ ഭക്ഷണങ്ങളായിരുന്നു എന്ന് അറിയാമോ?",
     "Documentation": "രേഖകൾ",
     "Documentation | Kai Commitment Food Waste Impact Calculator": "രേഖകൾ | Kai Commitment ഭക്ഷ്യമാലിന്യ ആഘാത കാൽക്കുലേറ്റർ",
@@ -465,7 +466,8 @@
     "no change": "മാറ്റമില്ല",
     "no impact figures were returned": "ആഘാത കണക്കുകളൊന്നും ലഭിച്ചില്ല",
     "saved": "സംരക്ഷിച്ചു",
-    "tonnes": "ടൺ"
+    "tonnes": "ടൺ",
+    "See how a different allocation could change the result in Explore Improvements.": "മെച്ചപ്പെടുത്തലുകൾ പരിശോധിക്കുക എന്നതിൽ മറ്റൊരു വിഭജനം ഫലം എങ്ങനെ മാറ്റുമെന്ന് കാണുക."
   },
   "tags": [
     "ml"

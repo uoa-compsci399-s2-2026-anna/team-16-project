@@ -119,6 +119,7 @@
     "Destinations entered": "درج کردہ منزلیں",
     "Destinations entered (share)": "درج کردہ منزلیں (حصہ)",
     "Details": "تفصیلات",
+    "Dismiss": "بند کریں",
     "Do you know which foods these were?": "کیا آپ جانتے ہیں کہ یہ کون سے کھانے تھے؟",
     "Documentation": "دستاویزات",
     "Documentation | Kai Commitment Food Waste Impact Calculator": "دستاویزات | Kai Commitment کھانے کے ضیاع کے اثر کا کیلکولیٹر",
@@ -466,7 +467,8 @@
     "no change": "کوئی تبدیلی نہیں",
     "no impact figures were returned": "اثر کے کوئی اعداد واپس نہیں آئے",
     "saved": "محفوظ ہو گیا",
-    "tonnes": "ٹن"
+    "tonnes": "ٹن",
+    "See how a different allocation could change the result in Explore Improvements.": "بہتریاں دیکھیں میں دیکھیں کہ مختلف تقسیم نتیجے کو کیسے بدل سکتی ہے۔"
   },
   "tags": [
     "ur"

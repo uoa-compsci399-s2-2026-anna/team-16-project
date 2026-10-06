@@ -118,6 +118,7 @@
     "Destinations entered": "Điểm đến đã nhập",
     "Destinations entered (share)": "Điểm đến đã nhập (tỷ lệ)",
     "Details": "Chi tiết",
+    "Dismiss": "Đóng",
     "Do you know which foods these were?": "Bạn có biết đó là những loại thực phẩm nào không?",
     "Documentation": "Tài liệu",
     "Documentation | Kai Commitment Food Waste Impact Calculator": "Tài liệu | Công cụ tính tác động của thực phẩm bỏ đi Kai Commitment",
@@ -465,7 +466,8 @@
     "no change": "không thay đổi",
     "no impact figures were returned": "không có số liệu tác động nào được trả về",
     "saved": "đã lưu",
-    "tonnes": "tấn"
+    "tonnes": "tấn",
+    "See how a different allocation could change the result in Explore Improvements.": "Xem trong Tìm hiểu các cải thiện cách một phân bổ khác có thể thay đổi kết quả."
   },
   "tags": [
     "vi"

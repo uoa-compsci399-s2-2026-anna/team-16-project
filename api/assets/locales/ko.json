@@ -118,6 +118,7 @@
     "Destinations entered": "입력된 처리 경로",
     "Destinations entered (share)": "입력된 처리 경로(비율)",
     "Details": "세부 정보",
+    "Dismiss": "닫기",
     "Do you know which foods these were?": "어떤 식품이었는지 알고 계신가요?",
     "Documentation": "문서",
     "Documentation | Kai Commitment Food Waste Impact Calculator": "문서 | Kai Commitment 음식물 폐기물 영향 계산기",
@@ -465,7 +466,8 @@
     "no change": "변화 없음",
     "no impact figures were returned": "영향 수치가 오지 않았습니다",
     "saved": "절감",
-    "tonnes": "톤"
+    "tonnes": "톤",
+    "See how a different allocation could change the result in Explore Improvements.": "개선 방안 살펴보기에서 다른 배분이 결과를 어떻게 바꿀 수 있는지 확인하세요."
   },
   "tags": [
     "ko"

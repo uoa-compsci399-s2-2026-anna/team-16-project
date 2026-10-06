@@ -118,6 +118,7 @@
     "Destinations entered": "Mga patutunguhang inilagay",
     "Destinations entered (share)": "Mga patutunguhang inilagay (bahagdan)",
     "Details": "Mga detalye",
+    "Dismiss": "Isara",
     "Do you know which foods these were?": "Alam mo ba kung anong mga pagkain ang mga ito?",
     "Documentation": "Dokumentasyon",
     "Documentation | Kai Commitment Food Waste Impact Calculator": "Dokumentasyon | Pantuos ng Epekto ng Basurang Pagkain ng Kai Commitment",
@@ -465,7 +466,8 @@
     "no change": "walang pagbabago",
     "no impact figures were returned": "walang naibalik na bilang ng epekto",
     "saved": "naitabi",
-    "tonnes": "tonelada"
+    "tonnes": "tonelada",
+    "See how a different allocation could change the result in Explore Improvements.": "Tingnan sa Tuklasin ang mga Pagpapabuti kung paano maaaring baguhin ng ibang alokasyon ang resulta."
   },
   "tags": [
     "tl",

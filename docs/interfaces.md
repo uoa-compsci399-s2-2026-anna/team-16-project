@@ -25,6 +25,18 @@ This document defines **what every person's code receives and what it returns.**
 
 ## 0.1 Change Log
 
+### v1.103 — 2026-10-06 (Results page points visitors to Explore Improvements; affects C and D)
+
+Issue #130 adds a short, dismissible tip immediately below the results title and above the numbered sections. It names **Explore Improvements**, scrolls and focuses the existing `#improvement-section` when activated, and keeps the dismissal in calculator state so a later results-page re-render does not bring it back. The tip is guidance only: it does not copy the Impact summary or create a second results landmark.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | The results tip has one unique sentence, an accessible dismiss button, and an action that opens and focuses `#improvement-section`; the underlying results remain intact | §7.3a, §7.6 |
+| 2 | `resultsImprovementTipDismissed` is transient session UI state, intentionally outside the answer snapshot, and is honoured on every render | §7.2a, §7.3a |
+| 3 | The new sentence is present in all twenty catalogues under both `web/locales/` and `api/assets/locales/`; the two trees remain byte-identical | §7.7 |
+| 4 | Browser coverage clicks the action, checks focus, dismisses the tip, and checks that an unrelated re-render does not restore it | §7.6 |
+| 5 | No API field, fixture, or wire shape changes. Steps one and two of §0's three-step rule, not step three. The owner notifies the team | §0 |
+
 ### v1.102 — 2026-10-06 (CI collected a quarter of the suite and said nothing; affects everybody)
 
 **This took 102 rather than 101 because v1.101 was on an open branch when it was written.** That branch has since merged, so both entries are below and in order; the note is kept rather than deleted because the gap it explains is the kind a reader otherwise takes for a missing revision.

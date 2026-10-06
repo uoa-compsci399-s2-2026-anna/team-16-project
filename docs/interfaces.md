@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-10-06 (v1.101)"
+date: "2026-10-06 (v1.102)"
 ---
 
 # 0. How to Use This Document
@@ -25,6 +25,29 @@ This document defines **what every person's code receives and what it returns.**
 
 ## 0.1 Change Log
 
+### v1.102 — 2026-10-06 (CI collected a quarter of the suite and said nothing; affects everybody)
+
+**This took 102 rather than 101 because v1.101 was on an open branch when it was written.** That branch has since merged, so both entries are below and in order; the note is kept rather than deleted because the gap it explains is the kind a reader otherwise takes for a missing revision.
+
+`_test.yaml` ran `python -m pytest` with no selector, and its own comment said *"No `-m` selector and no `-n`. The whole suite, one process."* That was true of the command and false of the outcome. **Thirty-nine test modules open with `pytest.importorskip("playwright.sync_api")` and `playwright` was not a dev dependency**, so every one of them was skipped **at collection** — and a collection skip is invisible in a pytest summary: not counted as passed, not counted as skipped, not mentioned. The last green run said
+
+```
+3487 passed, 62 skipped in 1667.02s
+```
+
+against **4696** collected on a developer machine. **1,147 cases were never collected, about a quarter of the suite**, and 1,063 of them live in those modules. Every finding of the five reviews run on 4 and 5 October came out of the half CI was not running.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`playwright` joins the dev extra**, with a floor in `pyproject.toml` and no entry in `docker/constraints.txt` — the treatment `pypdf` and `pytest` already get, because that file constrains the RUNTIME set the images install and this is test-only | §0 |
+| 2 | **`_browser.yaml` is a job of its own**: the compose stack built from the commit under test, Chromium with `--with-deps`, and the suite. A machine shape `_test.yaml` does not have — that job is a MySQL service and a pip install and answers in under half an hour; this one needs docker and about forty minutes. Keeping them apart keeps the fast answer fast and makes a failure attributable to one of two kinds of thing | §0 |
+| 3 | **It is batched, by `tests/web/run_browser_suite.py`.** §6.5 caps a caller at 600 `GET`s an hour and `POST /calculate` plus `/export/pdf` at 120, keyed on an HMAC of the client IP, **with no environment override** — so one unbatched run of a thousand browser cases spends the rest of itself failing on 429s that read as code failures. The practice was written in `CLAUDE.md` and carried out by hand; it is a program now, and it is the same program a developer runs. It restarts `api` between batches, never `web`, because `web`'s nginx resolves the api hostname when its configuration loads | §0, §6.5 |
+| 4 | **`_test.yaml` now says `-m "not browser"`, which makes it honest rather than narrower.** With `playwright` installed those modules would otherwise collect there and skip one at a time against a stack that job does not have — measured, **seven such skips take 18.8s**, each a connection timeout, so a thousand of them is tens of minutes added to the job whose whole value is answering quickly. **The two selectors partition the suite exactly: 3698 + 998 = 4696**, no gap and no overlap | §0 |
+| 5 | **`build` needs `browser`.** An image published past a red browser suite is an image whose front end nobody checked, and the front end is most of what this product is. The repository is public, so the minutes are free | §0 |
+| 6 | **The job refuses to run on an empty collection.** No `playwright`, no browser binary, a stack that is down, a renamed marker — all four end in `collected 0 items` and a green job, which is the defect this revision answers arriving by a different door. The count is asserted against a floor of 900 before anything runs (998 today), a floor rather than an exact number because the number grows most weeks | §0 |
+| 7 | **`test_ci_runs_the_browser_suite_and_will_not_publish_past_it`** reads the three workflows as YAML and holds the arrangement: the selector, the batching runner, and `build`'s dependency on `browser`. Mutation-verified on all three — dropping the selector, unbatching the run, and removing the gate each fail it by name | §0 |
+| 8 | `KAICALC_NEWS_ORIGIN` is set in the browser job, because `home.js` removes the news feed when it is empty and four of `test_horizontal_overflow.py`'s cases then wait out their timeout on `#news-feed[aria-busy='false']`. **Three separate reviewers have reported those four as failures of the change they were reviewing** | §0 |
+| 9 | Nothing under `web/`, `api/`, `engine/`, `db/`, `admin/`, `tests/golden/` or `tests/fixtures/` moves. No catalogue moves. Steps one and two of §0's three-step rule, not step three. The owner notifies the team | §0 |
 ### v1.101 — 2026-10-06 (#173's aftermath: a translated accessible name, the statements it falsified, and the guard that could not see it; affects C and D)
 
 #173 merged with its review unanswered. Three of its findings were about things that are now **live on `main`**, and this is them.

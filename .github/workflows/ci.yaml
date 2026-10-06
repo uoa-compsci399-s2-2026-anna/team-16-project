@@ -161,11 +161,32 @@ jobs:
     uses: ./.github/workflows/_test.yaml
 
   # ===========================================================================
+  # The browser suite, which this workflow did not run at all until v1.102.
+  #
+  # `test` above says `python -m pytest` with no selector, which reads as the
+  # whole suite and was not: 39 modules opened with
+  # `pytest.importorskip("playwright.sync_api")`, `playwright` was not a dev
+  # dependency, and a collection skip is invisible in the summary. 3487 passed,
+  # 62 skipped, against 4696 collected on a developer machine.
+  #
+  # It runs beside `test` rather than after it, because neither needs the
+  # other's output and the two answer on very different clocks.
+  # ===========================================================================
+  browser:
+    name: Browser
+    uses: ./.github/workflows/_browser.yaml
+
+  # ===========================================================================
   # The two architecture builds. Independent by construction.
   # ===========================================================================
   build:
     name: Images
-    needs: [version, test]
+    # `browser` is a gate, not an advisory. An image published past a red
+    # browser suite is an image whose front end nobody checked, and the front
+    # end is most of what this product is. The repository is public, so the
+    # minutes this costs are free; if it ever has to be relaxed, relax it here
+    # and say why rather than letting it rot into a job nobody reads.
+    needs: [version, test, browser]
     permissions:
       contents: read
       packages: write

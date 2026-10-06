@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-10-06 (v1.102)"
+date: "2026-10-07 (v1.103)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,36 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.103 — 2026-10-07 (the browser job's first real run: three causes, none of them the clock; affects everybody)
+
+v1.102 added the browser job and said plainly that it had never run. It ran on 2026-10-06, and was **killed at its 75-minute limit with four of eight batches unstarted**, reporting 86 failures and 8 errors. The overrun was a symptom. Batch 1 — the one batch containing no affected module — ran **141 cases in 128 seconds**, and the setup steps took 182. A clean run extrapolates to about 27 minutes.
+
+Three causes, and **78 of the 94 were one wrong environment variable**:
+
+| # | cases | cause |
+| --- | --- | --- |
+| A | **78** | `_browser.yaml` set `KAICALC_WEB_URL` to `http://localhost:18080/index.html`. It takes an **origin**. `tests/web/base_url.py` appends the path, so every address became `/index.html/<path>`, which `docker/nginx.conf` answers with a 302 to `/` — the browser drove the calculator for every test in the suite |
+| B | **12** | `docker/mock-factors.json` priced 3 of 10 food categories, so a fresh stack offered a third of its own form |
+| C | **4** | `test_csp.py` waited for its own container with `for _ in range(40)` and no sleep |
+
+**Not one of the 94 messages named its cause.** A's 42 read as 15-second timeouts on `#news-feed[aria-busy='false']`; its 32 panel failures read as `.gate` being `null`. Each is the shape of a front-end defect in whatever is being reviewed, and the figure that gives it away — `<Page url='http://localhost:18080/'>` in the assertion output — was four thousand log lines in.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`KAICALC_WEB_URL` is an origin — scheme, host, port, no path — and `base_url.py` now refuses anything else**, raising at import so a wrong value is a collection error on every `tests/web` module rather than 78 timeouts spread over 48 minutes. `WebOriginError`, its own class so a meta-test can tell it from an unrelated import failure. A trailing slash is still accepted and a non-localhost host still works: the private-container workflow the module exists for is unchanged, and `test_an_origin_that_merely_parses_is_still_accepted` holds that side | §0 |
+| 2 | **The browser job asks the origin for the five paths the suite navigates before running anything, and treats a redirect as a failure rather than following it.** The defect WAS a 302, and `curl -L` would have reported 200 for all five. Independent of change 1 by design: that one is a static check on the string, this one is the only check that catches an origin which parses and does not serve. `/locales/zh.json` rather than `en.json`, which does not exist — English is the source language and `index.json` names it as the default rather than shipping a catalogue for it; found by running the step against a correct origin and watching it go red | §0 |
+| 3 | **`docker/mock-factors.json` now prices everything `admin/seed.py` creates.** `get_taxonomy` narrows every dimension to what the published set prices and `init.sh` publishes this file, so it decides what a first `docker compose up` can offer: it priced **3 sectors, 3 food categories and 6 destinations against the seed's 6, 10 and 14**, and 0 of 47 food items. Nothing errored — the controls were simply not drawn. 252 upstream rows (120 general triples, each with its O-7 prevention twin at zero, plus the twelve item-level dairy rows) and 43 downstream | §0, §2.2, §5.1 |
+| 4 | **It is generated, by `docker/build_mock_factors.py`, and that is the durable half.** Rows go stale the next time the seed gains a category — v1.72 took the food vocabulary from nineteen names to forty-seven. The generator reads the seed's own constants; `--check` answers the staleness question; `test_the_mock_factor_set_is_what_its_generator_produces` holds the committed bytes against it, and `test_the_mock_factor_set_prices_everything_the_seed_creates` holds the coverage | §0, §5.1 |
+| 5 | **Nothing in it is invented.** The six authored figures are kept byte for byte, and every added row takes one of them by a rule stated on the row: an unauthored category takes the **mixed-waste** figure, an unauthored destination takes the figure of a destination its own **group** already prices. The first is deliberately visible — a fresh install prices a kilogram of meat exactly as it prices a kilogram of fruit, which is the honest appearance of a set with no category data in it. The banner says the data is placeholder; the figures must not contradict it | §2.2 |
+| 6 | **The set's `notes` now cite their sources**, which is where `/methodology.html` can show them: `methodology.js`'s `METADATA_FIELDS` renders exactly §6.3's four fields, and per-row `source_note` prose never reaches that page. Both URLs are already committed elsewhere here. This also restores the precondition `test_horizontal_overflow.py` is built on — measured at 390px, the client draft's Notes carry a 61-character token and MOCK-v0's carried 16 | §6.3 |
+| 7 | **`test_csp.py`'s container wait is a deadline in seconds with an explicit sleep.** `for _ in range(40)` around a 2s `urlopen` and no sleep spends however long forty refused connections take, which is not a constant: **4.03s each on this project's Windows desktop, so 161s**, and immediate on the Linux runner, so the same forty attempts are over in a moment. It passed on every developer machine and failed on the runner, reporting `the unconfigured container never answered` while quoting the entrypoint's FIRST startup line as the evidence. A sweep of every `test_*.py` found this loop and no other | §0 |
+| 8 | **No sharding, and the reason is worth recording.** Splitting the job across runners was considered: each shard brings up its own `api` container and therefore its own §6.5 bucket (`app.state.rate_limiter` is in-process), so a shard under 600 `GET`s needs no internal batching at all. It was not done, because each shard also pays the 182-second setup, eight of them spend 24 minutes of billed time to save wall clock that is not short of budget — and because sharding this run would have produced eight red shards and made the cause no more visible. Revisit if a clean run lands past 45 minutes, and at three shards rather than eight | §0 |
+| 9 | Steps one and two of §0's three-step rule, not step three: **nothing under `tests/fixtures/` changes.** The factor set is seed data loaded into a database, not a fixture any module develops against, and no request or response shape moves. The owner notifies the team | §0 |
+
+**Verified on a throwaway stack** with its own compose project, its own volumes and port 18091, so `kaicalc_db-data` was never opened: migrate published MOCK-v0 under `set -e` with all five of `publish_factor_set`'s guards passing on a fresh volume, and `GET /api/v1/taxonomy` returned 6 sectors, 10 food categories, 14 destinations and 47 food items — the items free, because `_covered_by` makes an item parent-covered. **254 cases green against it**, covering every one of the run's 94: `test_horizontal_overflow.py` 66, `test_i18n_browser.py` 96, `test_leaf_layout_browser.py` 29, `test_csp.py` 15, and 48 across the four improvement and step-card modules.
+
+**One of the tests added here was green for the wrong reason and is recorded rather than quietly corrected.** `test_the_notes_still_cite_a_source_long_enough_to_overflow` first read the per-row `source_note`s, found 34 tokens over 60 characters, and passed while the browser case it exists to protect was still failing. It now reads `notes`, and is verified in both directions — red when `notes` loses its URLs, green when only the row notes lose theirs. The second half is the half that matters, because it is the state the first version called green.
 
 ### v1.102 — 2026-10-06 (CI collected a quarter of the suite and said nothing; affects everybody)
 

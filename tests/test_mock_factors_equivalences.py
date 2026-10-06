@@ -288,22 +288,37 @@ def test_the_notes_still_cite_a_source_long_enough_to_overflow():
     that cites its sources carries long tokens as a matter of course. Both URLs
     the generator now cites are already committed elsewhere in this repository.
 
-    The token has to be in a **downstream** note, because that is what
-    `/methodology.html` renders into `.review-destinations dd`.
+    **The token has to be in the factor set's `notes`, and this assertion got
+    that wrong on its first attempt.** It read the per-row `source_note`s,
+    found 34 tokens over 60 characters, and went green while the browser case
+    it exists to protect stayed red -- which is this repository's standard
+    failure, a test passing for the wrong reason.
+
+    `web/js/methodology.js`'s `METADATA_FIELDS` renders exactly four fields of
+    §6.3 into `.review-destinations`: `version_label`, `published_at`, `notes`
+    and `is_mock`. Row prose never reaches that page. Measured on both stacks
+    at 390px by reading the longest token of each `dd` rather than reasoning
+    about it:
+
+    * dev stack, client draft -- Notes: **61** characters
+      (`data/upstream-factors-draft/public_farm_share_source_data.py.`);
+    * fresh stack, MOCK-v0 -- Notes: **16**.
+
+    So `notes` is what is asserted, and the other three fields are checked to
+    be short, because a version label or a timestamp that happened to be long
+    would satisfy the browser test without the set citing anything.
     """
     data = json.loads(MOCK_FACTORS.read_text(encoding="utf-8"))
-    tokens = [
-        token
-        for row in data["downstream"]
-        for token in (row.get("source_note") or "").split()
-        if len(token) >= UNBREAKABLE_MIN
-    ]
-    longest = max((len(t) for t in tokens), default=0)
+    tokens = [token for token in data["notes"].split()
+              if len(token) >= UNBREAKABLE_MIN]
+    longest = max((len(token) for token in data["notes"].split()), default=0)
     assert tokens, (
-        f"no downstream source_note carries a token of {UNBREAKABLE_MIN} "
-        f"characters or more (longest is {longest}), so /methodology.html has "
-        f"nothing on it that could overflow and "
-        f"test_the_long_token_wraps_instead_of_widening_its_row would pass on a "
+        f"the factor set's `notes` carries no token of {UNBREAKABLE_MIN} "
+        f"characters or more (longest is {longest}). `notes` is one of the four "
+        f"§6.3 fields /methodology.html renders, and the only one of them that "
+        f"can hold a source URL, so without it that page has nothing on it "
+        f"capable of overflowing and "
+        f"test_the_long_token_wraps_instead_of_widening_its_row passes on a "
         f"page that was never capable of the defect it guards. Cite the sources "
         f"in docker/build_mock_factors.py rather than padding a string."
     )

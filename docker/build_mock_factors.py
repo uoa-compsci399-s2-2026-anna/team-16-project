@@ -436,10 +436,49 @@ def _downstream_rows() -> list[dict]:
     return rows
 
 
+#: Appended to the set's `notes`, and the placement is the whole point.
+#:
+#: `web/js/methodology.js`'s `METADATA_FIELDS` renders exactly four fields of
+#: §6.3 into `.review-destinations` -- `version_label`, `published_at`, `notes`
+#: and `is_mock` -- and its own comment says why it is a fixed list rather than
+#: whatever the response carries. The per-row `source_note` prose does NOT
+#: reach that page, so citing sources on the rows alone leaves
+#: `/methodology.html` with no long token on it and
+#: `test_horizontal_overflow.py` measuring a page that cannot overflow.
+#:
+#: Measured on both stacks at a 390px viewport rather than reasoned about, by
+#: reading the longest token of each `dd`:
+#:
+#:     dev stack (client draft)   Notes: 61 chars
+#:                                  data/upstream-factors-draft/public_farm_share_source_data.py.
+#:     fresh stack (MOCK-v0)      Notes: 16 chars   <- before this
+#:
+#: Which is also the honest place for it: a visitor reading the factor-set
+#: panel should be able to see where the numbers came from without opening a
+#: row.
+NOTES_SOURCES = (
+    " Sources for the placeholder figures in it: ReFED's impact-calculator "
+    f"conversion factors, {REFED_SOURCE}, for the proxy-US greenhouse-gas and "
+    "water values; and the New Zealand waste disposal levy, "
+    f"{MFE_LEVY_SOURCE}, for the cost rows. Neither is a New Zealand "
+    "measurement of the quantity it stands in for, which is what O-1 is open "
+    "about."
+)
+
+
 def build() -> dict:
-    """The whole file, with everything but the two factor tables preserved."""
+    """The whole file, with everything but the two factor tables preserved.
+
+    `notes` is the one exception, and it is extended rather than rewritten: the
+    authored paragraph is kept and the source citations are appended to it. See
+    NOTES_SOURCES for why they have to be there and not only on the rows.
+    """
     current = json.loads(TARGET.read_text(encoding="utf-8"))
     built = dict(current)
+    base = current["notes"]
+    if NOTES_SOURCES.strip() in base:
+        base = base[:base.index(NOTES_SOURCES.strip())].rstrip()
+    built["notes"] = base + NOTES_SOURCES
     built["upstream"] = _upstream_rows()
     built["downstream"] = _downstream_rows()
     return built

@@ -2,7 +2,7 @@
   "version_label": "MOCK-v0 - PLACEHOLDER",
   "is_mock": true,
   "item_level_enabled": true,
-  "notes": "Placeholder factor set shipped with the container images so that a first `docker compose up` produces a calculator that answers. Every value in it is a placeholder - open item O-1, the client has not supplied real New Zealand emissions factors. is_mock is true, which is what makes the non-dismissible placeholder-data warning appear on every results view and export. Replace through the admin panel (clone, edit, publish) as soon as real data arrives; this file is never re-applied to a database that already holds a factor set.",
+  "notes": "Placeholder factor set shipped with the container images so that a first `docker compose up` produces a calculator that answers. Every value in it is a placeholder - open item O-1, the client has not supplied real New Zealand emissions factors. is_mock is true, which is what makes the non-dismissible placeholder-data warning appear on every results view and export. Replace through the admin panel (clone, edit, publish) as soon as real data arrives; this file is never re-applied to a database that already holds a factor set. Sources for the placeholder figures in it: ReFED's impact-calculator conversion factors, https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv, for the proxy-US greenhouse-gas and water values; and the New Zealand waste disposal levy, https://environment.govt.nz/what-government-is-doing/areas-of-work/waste/waste-disposal-levy/expansion/, for the cost rows. Neither is a New Zealand measurement of the quantity it stands in for, which is what O-1 is open about.",
   "constants": [
     {
       "code": "GWP_CH4_100",

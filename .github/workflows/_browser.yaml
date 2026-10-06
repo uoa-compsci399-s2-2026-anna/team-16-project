@@ -67,9 +67,16 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          # The same pin as `_test.yaml`, for its reason: a divergence between
-          # CI and the desk produces a failure nobody can reproduce.
-          python-version: '3.12'
+          # 3.11, AND THE COMMENT HERE USED TO SAY 3.12 WAS "the same pin as
+          # `_test.yaml`". It was not. `_test.yaml` pins 3.11 and gives the
+          # reason: "3.11 because that is what the images run
+          # (python:3.11-slim, pinned by digest in docker/*.Dockerfile)." This
+          # job drives those very images through compose, so it had the
+          # strongest claim on that pin of any job here and was the one running
+          # a different interpreter - found by reading a subprocess path in the
+          # suite job's log (`/opt/hostedtoolcache/Python/3.11.16/...`) and
+          # noticing it disagreed with what this file claimed to match.
+          python-version: '3.11'
 
       - name: Install the suite's dependencies
         # `-c docker/constraints.txt` for `_test.yaml`'s reason. `playwright` is

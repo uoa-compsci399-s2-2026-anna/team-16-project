@@ -2,7 +2,7 @@
   "version_label": "MOCK-v0 - PLACEHOLDER",
   "is_mock": true,
   "item_level_enabled": true,
-  "notes": "Placeholder factor set shipped with the container images so that a first `docker compose up` produces a calculator that answers. Every value in it is a placeholder - open item O-1, the client has not supplied real New Zealand emissions factors. is_mock is true, which is what makes the non-dismissible placeholder-data warning appear on every results view and export. Replace through the admin panel (clone, edit, publish) as soon as real data arrives; this file is never re-applied to a database that already holds a factor set.",
+  "notes": "Placeholder factor set shipped with the container images so that a first `docker compose up` produces a calculator that answers. Every value in it is a placeholder - open item O-1, the client has not supplied real New Zealand emissions factors. is_mock is true, which is what makes the non-dismissible placeholder-data warning appear on every results view and export. Replace through the admin panel (clone, edit, publish) as soon as real data arrives; this file is never re-applied to a database that already holds a factor set. Sources for the placeholder figures in it: ReFED's impact-calculator conversion factors, https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv, for the proxy-US greenhouse-gas and water values; and the New Zealand waste disposal levy, https://environment.govt.nz/what-government-is-doing/areas-of-work/waste/waste-disposal-levy/expansion/, for the cost rows. Neither is a New Zealand measurement of the quantity it stands in for, which is what O-1 is open about.",
   "constants": [
     {
       "code": "GWP_CH4_100",
@@ -52,112 +52,1204 @@
   ],
   "upstream": [
     {
-      "sector": "processing",
-      "food_category": "dairy",
-      "destination": null,
-      "metric": "co2e",
-      "value_per_kg": "1.9000000000",
-      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure.",
-      "data_quality": "proxy-US"
-    },
-    {
-      "sector": "processing",
-      "food_category": "dairy",
-      "destination": null,
-      "metric": "water",
-      "value_per_kg": "1020.0000000000",
-      "source_note": "PLACEHOLDER. Order-of-magnitude only.",
-      "data_quality": "modelled"
-    },
-    {
       "sector": "primary_production",
-      "food_category": "vegetables",
-      "destination": null,
-      "metric": "co2e",
-      "value_per_kg": "0.4500000000",
-      "source_note": "PLACEHOLDER derived from ReFED (United States). The Otago 2025 baseline notes that New Zealand primary-production loss rates are largely borrowed from Australian figures.",
-      "data_quality": "proxy-US"
-    },
-    {
-      "sector": "primary_production",
-      "food_category": "vegetables",
-      "destination": null,
-      "metric": "water",
-      "value_per_kg": "322.0000000000",
-      "source_note": "PLACEHOLDER. Order-of-magnitude only.",
-      "data_quality": "modelled"
-    },
-    {
-      "sector": "consumer_hospitality",
       "food_category": "standard_mix",
+      "food_item": null,
       "destination": null,
       "metric": "co2e",
       "value_per_kg": "2.6000000000",
-      "source_note": "PLACEHOLDER. Applies to the standard mix, which is what a null food_category resolves to.",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one co2e figure for standard_mix and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "proxy-US"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "standard_mix",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one water figure for standard_mix and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "modelled"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "fruit",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for fruit, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of fruit exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "fruit",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for fruit, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of fruit exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "vegetables",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "0.4500000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one co2e figure for vegetables and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "proxy-US"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "vegetables",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "322.0000000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one water figure for vegetables and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "modelled"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "nuts_seeds",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for nuts_seeds, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of nuts_seeds exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "nuts_seeds",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for nuts_seeds, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of nuts_seeds exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "meat",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for meat, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of meat exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "meat",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for meat, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of meat exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "seafood",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for seafood, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of seafood exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "seafood",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for seafood, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of seafood exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "dairy",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "1.9000000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one co2e figure for dairy and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "proxy-US"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "dairy",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "1020.0000000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one water figure for dairy and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "modelled"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "bakery_grains",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for bakery_grains, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of bakery_grains exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "bakery_grains",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for bakery_grains, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of bakery_grains exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "staples",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for staples, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of staples exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "staples",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for staples, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of staples exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "beverages",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for beverages, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of beverages exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "beverages",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for beverages, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of beverages exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "processing",
+      "food_category": "standard_mix",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one co2e figure for standard_mix and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "proxy-US"
+    },
+    {
+      "sector": "processing",
+      "food_category": "standard_mix",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one water figure for standard_mix and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "modelled"
+    },
+    {
+      "sector": "processing",
+      "food_category": "fruit",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for fruit, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of fruit exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "processing",
+      "food_category": "fruit",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for fruit, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of fruit exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "processing",
+      "food_category": "vegetables",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "0.4500000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one co2e figure for vegetables and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "proxy-US"
+    },
+    {
+      "sector": "processing",
+      "food_category": "vegetables",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "322.0000000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one water figure for vegetables and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "modelled"
+    },
+    {
+      "sector": "processing",
+      "food_category": "nuts_seeds",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for nuts_seeds, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of nuts_seeds exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "processing",
+      "food_category": "nuts_seeds",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for nuts_seeds, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of nuts_seeds exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "processing",
+      "food_category": "meat",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for meat, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of meat exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "processing",
+      "food_category": "meat",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for meat, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of meat exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "processing",
+      "food_category": "seafood",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for seafood, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of seafood exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "processing",
+      "food_category": "seafood",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for seafood, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of seafood exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "1.9000000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one co2e figure for dairy and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "proxy-US"
+    },
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "1020.0000000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one water figure for dairy and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "modelled"
+    },
+    {
+      "sector": "processing",
+      "food_category": "bakery_grains",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for bakery_grains, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of bakery_grains exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "processing",
+      "food_category": "bakery_grains",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for bakery_grains, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of bakery_grains exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "processing",
+      "food_category": "staples",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for staples, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of staples exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "processing",
+      "food_category": "staples",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for staples, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of staples exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "processing",
+      "food_category": "beverages",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for beverages, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of beverages exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "processing",
+      "food_category": "beverages",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for beverages, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of beverages exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "standard_mix",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one co2e figure for standard_mix and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "proxy-US"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "standard_mix",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one water figure for standard_mix and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "modelled"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "fruit",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for fruit, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of fruit exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "fruit",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for fruit, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of fruit exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "vegetables",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "0.4500000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one co2e figure for vegetables and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "proxy-US"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "vegetables",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "322.0000000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one water figure for vegetables and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "modelled"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "nuts_seeds",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for nuts_seeds, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of nuts_seeds exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "nuts_seeds",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for nuts_seeds, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of nuts_seeds exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "meat",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for meat, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of meat exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "meat",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for meat, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of meat exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "seafood",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for seafood, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of seafood exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "seafood",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for seafood, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of seafood exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "dairy",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "1.9000000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one co2e figure for dairy and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "proxy-US"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "dairy",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "1020.0000000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one water figure for dairy and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "modelled"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "bakery_grains",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for bakery_grains, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of bakery_grains exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "bakery_grains",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for bakery_grains, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of bakery_grains exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "staples",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for staples, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of staples exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "staples",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for staples, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of staples exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "beverages",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for beverages, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of beverages exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "beverages",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for beverages, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of beverages exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "standard_mix",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one co2e figure for standard_mix and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "proxy-US"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "standard_mix",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one water figure for standard_mix and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "modelled"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "fruit",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for fruit, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of fruit exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "fruit",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for fruit, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of fruit exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "vegetables",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "0.4500000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one co2e figure for vegetables and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "proxy-US"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "vegetables",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "322.0000000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one water figure for vegetables and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "modelled"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "nuts_seeds",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for nuts_seeds, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of nuts_seeds exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "nuts_seeds",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for nuts_seeds, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of nuts_seeds exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "meat",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for meat, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of meat exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "meat",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for meat, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of meat exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "seafood",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for seafood, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of seafood exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "seafood",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for seafood, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of seafood exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "dairy",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "1.9000000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one co2e figure for dairy and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "proxy-US"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "dairy",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "1020.0000000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one water figure for dairy and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "modelled"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "bakery_grains",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for bakery_grains, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of bakery_grains exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "bakery_grains",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for bakery_grains, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of bakery_grains exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "staples",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for staples, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of staples exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "staples",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for staples, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of staples exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "beverages",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for beverages, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of beverages exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "beverages",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for beverages, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of beverages exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "standard_mix",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one co2e figure for standard_mix and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
       "data_quality": "proxy-US"
     },
     {
       "sector": "consumer_hospitality",
       "food_category": "standard_mix",
+      "food_item": null,
       "destination": null,
       "metric": "water",
       "value_per_kg": "640.0000000000",
-      "source_note": "PLACEHOLDER. Order-of-magnitude only.",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one water figure for standard_mix and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
       "data_quality": "modelled"
     },
     {
-      "sector": "processing",
-      "food_category": "dairy",
-      "destination": "prevention",
+      "sector": "consumer_hospitality",
+      "food_category": "fruit",
+      "food_item": null,
+      "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.0000000000",
-      "source_note": "O-7: prevented waste was never produced, so no upstream burden is attributable to it. Zero is a modelling decision, not missing data - it is what makes `prevention` a 100% offset (architecture.md 4.1) and keeps the two scenarios mass-conserving.",
-      "data_quality": "definitional"
-    },
-    {
-      "sector": "processing",
-      "food_category": "dairy",
-      "destination": "prevention",
-      "metric": "water",
-      "value_per_kg": "0.0000000000",
-      "source_note": "O-7: prevented waste was never produced, so no upstream burden is attributable to it. Zero is a modelling decision, not missing data - it is what makes `prevention` a 100% offset (architecture.md 4.1) and keeps the two scenarios mass-conserving.",
-      "data_quality": "definitional"
-    },
-    {
-      "sector": "primary_production",
-      "food_category": "vegetables",
-      "destination": "prevention",
-      "metric": "co2e",
-      "value_per_kg": "0.0000000000",
-      "source_note": "O-7: prevented waste was never produced, so no upstream burden is attributable to it. Zero is a modelling decision, not missing data - it is what makes `prevention` a 100% offset (architecture.md 4.1) and keeps the two scenarios mass-conserving.",
-      "data_quality": "definitional"
-    },
-    {
-      "sector": "primary_production",
-      "food_category": "vegetables",
-      "destination": "prevention",
-      "metric": "water",
-      "value_per_kg": "0.0000000000",
-      "source_note": "O-7: prevented waste was never produced, so no upstream burden is attributable to it. Zero is a modelling decision, not missing data - it is what makes `prevention` a 100% offset (architecture.md 4.1) and keeps the two scenarios mass-conserving.",
-      "data_quality": "definitional"
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for fruit, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of fruit exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
     },
     {
       "sector": "consumer_hospitality",
-      "food_category": "standard_mix",
-      "destination": "prevention",
-      "metric": "co2e",
-      "value_per_kg": "0.0000000000",
-      "source_note": "O-7: prevented waste was never produced, so no upstream burden is attributable to it. Zero is a modelling decision, not missing data - it is what makes `prevention` a 100% offset (architecture.md 4.1) and keeps the two scenarios mass-conserving.",
-      "data_quality": "definitional"
+      "food_category": "fruit",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for fruit, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of fruit exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
     },
     {
       "sector": "consumer_hospitality",
-      "food_category": "standard_mix",
-      "destination": "prevention",
+      "food_category": "vegetables",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "0.4500000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one co2e figure for vegetables and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "proxy-US"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "vegetables",
+      "food_item": null,
+      "destination": null,
       "metric": "water",
-      "value_per_kg": "0.0000000000",
-      "source_note": "O-7: prevented waste was never produced, so no upstream burden is attributable to it. Zero is a modelling decision, not missing data - it is what makes `prevention` a 100% offset (architecture.md 4.1) and keeps the two scenarios mass-conserving.",
-      "data_quality": "definitional"
+      "value_per_kg": "322.0000000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one water figure for vegetables and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "modelled"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "nuts_seeds",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for nuts_seeds, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of nuts_seeds exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "nuts_seeds",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for nuts_seeds, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of nuts_seeds exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "meat",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for meat, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of meat exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "meat",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for meat, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of meat exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "seafood",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for seafood, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of seafood exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "seafood",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for seafood, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of seafood exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "dairy",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "1.9000000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one co2e figure for dairy and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "proxy-US"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "dairy",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "1020.0000000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one water figure for dairy and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "modelled"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "bakery_grains",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for bakery_grains, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of bakery_grains exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "bakery_grains",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for bakery_grains, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of bakery_grains exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "staples",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for staples, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of staples exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "staples",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for staples, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of staples exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "beverages",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for beverages, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of beverages exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "beverages",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for beverages, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of beverages exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "standard_mix",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one co2e figure for standard_mix and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "proxy-US"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "standard_mix",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one water figure for standard_mix and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "modelled"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "fruit",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for fruit, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of fruit exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "fruit",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for fruit, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of fruit exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "vegetables",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "0.4500000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one co2e figure for vegetables and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "proxy-US"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "vegetables",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "322.0000000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one water figure for vegetables and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "modelled"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "nuts_seeds",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for nuts_seeds, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of nuts_seeds exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "nuts_seeds",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for nuts_seeds, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of nuts_seeds exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "meat",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for meat, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of meat exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "meat",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for meat, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of meat exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "seafood",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for seafood, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of seafood exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "seafood",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for seafood, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of seafood exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "dairy",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "1.9000000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one co2e figure for dairy and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "proxy-US"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "dairy",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "1020.0000000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure. Applied to every sector: this set holds one water figure for dairy and no sector variation. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "modelled"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "bakery_grains",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for bakery_grains, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of bakery_grains exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "bakery_grains",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for bakery_grains, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of bakery_grains exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "staples",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for staples, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of staples exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "staples",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for staples, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of staples exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "beverages",
+      "food_item": null,
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for beverages, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of beverages exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "beverages",
+      "food_item": null,
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. No figure was authored for beverages, so it takes the mixed-waste one -- which means a fresh install prices a kilogram of beverages exactly as it prices a kilogram of anything else. That is the honest appearance of a set with no category data in it (O-1); a plausible spread here would read as measurement.",
+      "data_quality": "placeholder-undifferentiated"
     },
     {
       "sector": "processing",
@@ -166,7 +1258,7 @@
       "destination": null,
       "metric": "co2e",
       "value_per_kg": "3.5576709797",
-      "source_note": "PLACEHOLDER. The client's own table-1 relativities between the dairy foods, rescaled so their unweighted mean is this set's own dairy figure -- the same mean the client's nine category factors are built from. The RELATIVE differences are the client's; the absolute level is this mock set's, so the item rows and the category row they fall back to never disagree about the same food. Not a New Zealand measurement (open item O-1).",
+      "source_note": "PLACEHOLDER. An item-level row, derived from the relativities in the client's own table rather than from a New Zealand measurement. It exists so that step 2.5 has something to price and so that `item_level_enabled` has rows behind it.",
       "data_quality": "proxy-client-relativities"
     },
     {
@@ -176,7 +1268,7 @@
       "destination": null,
       "metric": "co2e",
       "value_per_kg": "0.5303142329",
-      "source_note": "PLACEHOLDER. The client's own table-1 relativities between the dairy foods, rescaled so their unweighted mean is this set's own dairy figure -- the same mean the client's nine category factors are built from. The RELATIVE differences are the client's; the absolute level is this mock set's, so the item rows and the category row they fall back to never disagree about the same food. Not a New Zealand measurement (open item O-1).",
+      "source_note": "PLACEHOLDER. An item-level row, derived from the relativities in the client's own table rather than from a New Zealand measurement. It exists so that step 2.5 has something to price and so that `item_level_enabled` has rows behind it.",
       "data_quality": "proxy-client-relativities"
     },
     {
@@ -186,7 +1278,7 @@
       "destination": null,
       "metric": "co2e",
       "value_per_kg": "1.7384473198",
-      "source_note": "PLACEHOLDER. The client's own table-1 relativities between the dairy foods, rescaled so their unweighted mean is this set's own dairy figure -- the same mean the client's nine category factors are built from. The RELATIVE differences are the client's; the absolute level is this mock set's, so the item rows and the category row they fall back to never disagree about the same food. Not a New Zealand measurement (open item O-1).",
+      "source_note": "PLACEHOLDER. An item-level row, derived from the relativities in the client's own table rather than from a New Zealand measurement. It exists so that step 2.5 has something to price and so that `item_level_enabled` has rows behind it.",
       "data_quality": "proxy-client-relativities"
     },
     {
@@ -196,7 +1288,7 @@
       "destination": null,
       "metric": "co2e",
       "value_per_kg": "4.0001848429",
-      "source_note": "PLACEHOLDER. The client's own table-1 relativities between the dairy foods, rescaled so their unweighted mean is this set's own dairy figure -- the same mean the client's nine category factors are built from. The RELATIVE differences are the client's; the absolute level is this mock set's, so the item rows and the category row they fall back to never disagree about the same food. Not a New Zealand measurement (open item O-1).",
+      "source_note": "PLACEHOLDER. An item-level row, derived from the relativities in the client's own table rather than from a New Zealand measurement. It exists so that step 2.5 has something to price and so that `item_level_enabled` has rows behind it.",
       "data_quality": "proxy-client-relativities"
     },
     {
@@ -206,7 +1298,7 @@
       "destination": null,
       "metric": "co2e",
       "value_per_kg": "1.1554528651",
-      "source_note": "PLACEHOLDER. The client's own table-1 relativities between the dairy foods, rescaled so their unweighted mean is this set's own dairy figure -- the same mean the client's nine category factors are built from. The RELATIVE differences are the client's; the absolute level is this mock set's, so the item rows and the category row they fall back to never disagree about the same food. Not a New Zealand measurement (open item O-1).",
+      "source_note": "PLACEHOLDER. An item-level row, derived from the relativities in the client's own table rather than from a New Zealand measurement. It exists so that step 2.5 has something to price and so that `item_level_enabled` has rows behind it.",
       "data_quality": "proxy-client-relativities"
     },
     {
@@ -216,7 +1308,7 @@
       "destination": null,
       "metric": "co2e",
       "value_per_kg": "0.4179297597",
-      "source_note": "PLACEHOLDER. The client's own table-1 relativities between the dairy foods, rescaled so their unweighted mean is this set's own dairy figure -- the same mean the client's nine category factors are built from. The RELATIVE differences are the client's; the absolute level is this mock set's, so the item rows and the category row they fall back to never disagree about the same food. Not a New Zealand measurement (open item O-1).",
+      "source_note": "PLACEHOLDER. An item-level row, derived from the relativities in the client's own table rather than from a New Zealand measurement. It exists so that step 2.5 has something to price and so that `item_level_enabled` has rows behind it.",
       "data_quality": "proxy-client-relativities"
     },
     {
@@ -226,7 +1318,7 @@
       "destination": null,
       "metric": "water",
       "value_per_kg": "1453.0293583713",
-      "source_note": "PLACEHOLDER. The client's own table-1 relativities between the dairy foods, rescaled so their unweighted mean is this set's own dairy figure -- the same mean the client's nine category factors are built from. The RELATIVE differences are the client's; the absolute level is this mock set's, so the item rows and the category row they fall back to never disagree about the same food. Not a New Zealand measurement (open item O-1).",
+      "source_note": "PLACEHOLDER. An item-level row, derived from the relativities in the client's own table rather than from a New Zealand measurement. It exists so that step 2.5 has something to price and so that `item_level_enabled` has rows behind it.",
       "data_quality": "proxy-client-relativities"
     },
     {
@@ -236,7 +1328,7 @@
       "destination": null,
       "metric": "water",
       "value_per_kg": "153.9412832575",
-      "source_note": "PLACEHOLDER. The client's own table-1 relativities between the dairy foods, rescaled so their unweighted mean is this set's own dairy figure -- the same mean the client's nine category factors are built from. The RELATIVE differences are the client's; the absolute level is this mock set's, so the item rows and the category row they fall back to never disagree about the same food. Not a New Zealand measurement (open item O-1).",
+      "source_note": "PLACEHOLDER. An item-level row, derived from the relativities in the client's own table rather than from a New Zealand measurement. It exists so that step 2.5 has something to price and so that `item_level_enabled` has rows behind it.",
       "data_quality": "proxy-client-relativities"
     },
     {
@@ -246,7 +1338,7 @@
       "destination": null,
       "metric": "water",
       "value_per_kg": "1453.0293583713",
-      "source_note": "PLACEHOLDER. The client's own table-1 relativities between the dairy foods, rescaled so their unweighted mean is this set's own dairy figure -- the same mean the client's nine category factors are built from. The RELATIVE differences are the client's; the absolute level is this mock set's, so the item rows and the category row they fall back to never disagree about the same food. Not a New Zealand measurement (open item O-1).",
+      "source_note": "PLACEHOLDER. An item-level row, derived from the relativities in the client's own table rather than from a New Zealand measurement. It exists so that step 2.5 has something to price and so that `item_level_enabled` has rows behind it.",
       "data_quality": "proxy-client-relativities"
     },
     {
@@ -256,7 +1348,7 @@
       "destination": null,
       "metric": "water",
       "value_per_kg": "1453.0293583713",
-      "source_note": "PLACEHOLDER. The client's own table-1 relativities between the dairy foods, rescaled so their unweighted mean is this set's own dairy figure -- the same mean the client's nine category factors are built from. The RELATIVE differences are the client's; the absolute level is this mock set's, so the item rows and the category row they fall back to never disagree about the same food. Not a New Zealand measurement (open item O-1).",
+      "source_note": "PLACEHOLDER. An item-level row, derived from the relativities in the client's own table rather than from a New Zealand measurement. It exists so that step 2.5 has something to price and so that `item_level_enabled` has rows behind it.",
       "data_quality": "proxy-client-relativities"
     },
     {
@@ -266,7 +1358,7 @@
       "destination": null,
       "metric": "water",
       "value_per_kg": "1453.0293583713",
-      "source_note": "PLACEHOLDER. The client's own table-1 relativities between the dairy foods, rescaled so their unweighted mean is this set's own dairy figure -- the same mean the client's nine category factors are built from. The RELATIVE differences are the client's; the absolute level is this mock set's, so the item rows and the category row they fall back to never disagree about the same food. Not a New Zealand measurement (open item O-1).",
+      "source_note": "PLACEHOLDER. An item-level row, derived from the relativities in the client's own table rather than from a New Zealand measurement. It exists so that step 2.5 has something to price and so that `item_level_enabled` has rows behind it.",
       "data_quality": "proxy-client-relativities"
     },
     {
@@ -276,8 +1368,1208 @@
       "destination": null,
       "metric": "water",
       "value_per_kg": "153.9412832575",
-      "source_note": "PLACEHOLDER. The client's own table-1 relativities between the dairy foods, rescaled so their unweighted mean is this set's own dairy figure -- the same mean the client's nine category factors are built from. The RELATIVE differences are the client's; the absolute level is this mock set's, so the item rows and the category row they fall back to never disagree about the same food. Not a New Zealand measurement (open item O-1).",
+      "source_note": "PLACEHOLDER. An item-level row, derived from the relativities in the client's own table rather than from a New Zealand measurement. It exists so that step 2.5 has something to price and so that `item_level_enabled` has rows behind it.",
       "data_quality": "proxy-client-relativities"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "standard_mix",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "standard_mix",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "fruit",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "fruit",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "vegetables",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "vegetables",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "nuts_seeds",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "nuts_seeds",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "meat",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "meat",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "seafood",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "seafood",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "dairy",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "dairy",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "bakery_grains",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "bakery_grains",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "staples",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "staples",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "beverages",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "beverages",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "standard_mix",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "standard_mix",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "fruit",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "fruit",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "vegetables",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "vegetables",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "nuts_seeds",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "nuts_seeds",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "meat",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "meat",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "seafood",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "seafood",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "bakery_grains",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "bakery_grains",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "staples",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "staples",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "beverages",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "beverages",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "standard_mix",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "standard_mix",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "fruit",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "fruit",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "vegetables",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "vegetables",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "nuts_seeds",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "nuts_seeds",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "meat",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "meat",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "seafood",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "seafood",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "dairy",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "dairy",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "bakery_grains",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "bakery_grains",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "staples",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "staples",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "beverages",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "beverages",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "standard_mix",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "standard_mix",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "fruit",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "fruit",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "vegetables",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "vegetables",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "nuts_seeds",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "nuts_seeds",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "meat",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "meat",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "seafood",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "seafood",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "dairy",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "dairy",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "bakery_grains",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "bakery_grains",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "staples",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "staples",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "beverages",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "beverages",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "standard_mix",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "standard_mix",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "fruit",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "fruit",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "vegetables",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "vegetables",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "nuts_seeds",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "nuts_seeds",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "meat",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "meat",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "seafood",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "seafood",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "dairy",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "dairy",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "bakery_grains",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "bakery_grains",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "staples",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "staples",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "beverages",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "beverages",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "standard_mix",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "standard_mix",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "fruit",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "fruit",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "vegetables",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "vegetables",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "nuts_seeds",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "nuts_seeds",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "meat",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "meat",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "seafood",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "seafood",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "dairy",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "dairy",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "bakery_grains",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "bakery_grains",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "staples",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "staples",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "beverages",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "beverages",
+      "food_item": null,
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7. Zero against a prevention destination, so a prevented line is not charged its production burden either. `publish_factor_set` refuses a set in which any general upstream row lacks this twin.",
+      "data_quality": "definitional"
     }
   ],
   "downstream": [
@@ -287,35 +2579,116 @@
       "food_category": "dairy",
       "metric": "co2e",
       "value_per_kg": "0.9900000000",
-      "source_note": "PLACEHOLDER. A category-specific row: it wins over the generic landfill row below for dairy.",
+      "source_note": "PLACEHOLDER. A category-specific row: it wins over the generic landfill row below for dairy. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
       "data_quality": "proxy-US"
     },
     {
-      "destination": "landfill",
+      "destination": "prevention",
       "sector": null,
       "food_category": null,
       "metric": "co2e",
-      "value_per_kg": "0.7000000000",
-      "source_note": "PLACEHOLDER. The generic row — a null food_category means it applies to every category that has no row of its own.",
-      "data_quality": "proxy-US"
+      "value_per_kg": "0.0000000000",
+      "source_note": "The 100% offset. Zero by definition, and `refuse_nonzero_prevention_factors` refuses anything else.",
+      "data_quality": "definitional"
     },
     {
-      "destination": "landfill",
+      "destination": "prevention",
       "sector": null,
       "food_category": null,
       "metric": "ch4",
-      "value_per_kg": "0.0270000000",
-      "source_note": "PLACEHOLDER.",
-      "data_quality": "proxy-US"
+      "value_per_kg": "0.0000000000",
+      "source_note": "The 100% offset. Zero by definition, and `refuse_nonzero_prevention_factors` refuses anything else.",
+      "data_quality": "definitional"
     },
     {
-      "destination": "landfill",
+      "destination": "prevention",
       "sector": null,
       "food_category": null,
       "metric": "cost",
-      "value_per_kg": "0.0600000000",
-      "source_note": "The New Zealand waste disposal levy, NZD 60 per tonne for municipal landfill. This is the one number in the set that is a real New Zealand figure — it is a charge, not an emissions factor. Gate fees and haulage are not included.",
-      "data_quality": "measured"
+      "value_per_kg": "0.0000000000",
+      "source_note": "The 100% offset. Zero by definition, and `refuse_nonzero_prevention_factors` refuses anything else.",
+      "data_quality": "definitional"
+    },
+    {
+      "destination": "food_redistribution",
+      "sector": null,
+      "food_category": null,
+      "metric": "co2e",
+      "value_per_kg": "-0.1500000000",
+      "source_note": "PLACEHOLDER. No co2e figure was authored for food_redistribution, so it takes the one its own group carries, from animal_feed. The group is the most this set can distinguish; per-destination data arrives with O-1. Source of the borrowed figure: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "placeholder-by-group"
+    },
+    {
+      "destination": "food_redistribution",
+      "sector": null,
+      "food_category": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero, and meant rather than missing: reuse food is eaten or re-eaten, so it releases no ch4 at a destination it never reaches and pays no levy. Stated as a row because the engine's fall-through to zero cannot tell a meant zero from a hole.",
+      "data_quality": "definitional"
+    },
+    {
+      "destination": "food_redistribution",
+      "sector": null,
+      "food_category": null,
+      "metric": "cost",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero, and meant rather than missing: reuse food is eaten or re-eaten, so it releases no cost at a destination it never reaches and pays no levy. Stated as a row because the engine's fall-through to zero cannot tell a meant zero from a hole.",
+      "data_quality": "definitional"
+    },
+    {
+      "destination": "upcycling",
+      "sector": null,
+      "food_category": null,
+      "metric": "co2e",
+      "value_per_kg": "-0.1500000000",
+      "source_note": "PLACEHOLDER. No co2e figure was authored for upcycling, so it takes the one its own group carries, from animal_feed. The group is the most this set can distinguish; per-destination data arrives with O-1. Source of the borrowed figure: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "placeholder-by-group"
+    },
+    {
+      "destination": "upcycling",
+      "sector": null,
+      "food_category": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero, and meant rather than missing: reuse food is eaten or re-eaten, so it releases no ch4 at a destination it never reaches and pays no levy. Stated as a row because the engine's fall-through to zero cannot tell a meant zero from a hole.",
+      "data_quality": "definitional"
+    },
+    {
+      "destination": "upcycling",
+      "sector": null,
+      "food_category": null,
+      "metric": "cost",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero, and meant rather than missing: reuse food is eaten or re-eaten, so it releases no cost at a destination it never reaches and pays no levy. Stated as a row because the engine's fall-through to zero cannot tell a meant zero from a hole.",
+      "data_quality": "definitional"
+    },
+    {
+      "destination": "animal_feed",
+      "sector": null,
+      "food_category": null,
+      "metric": "co2e",
+      "value_per_kg": "-0.1500000000",
+      "source_note": "PLACEHOLDER. Order-of-magnitude only, and not a New Zealand figure. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "proxy-US"
+    },
+    {
+      "destination": "animal_feed",
+      "sector": null,
+      "food_category": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero, and meant rather than missing: reuse food is eaten or re-eaten, so it releases no ch4 at a destination it never reaches and pays no levy. Stated as a row because the engine's fall-through to zero cannot tell a meant zero from a hole.",
+      "data_quality": "definitional"
+    },
+    {
+      "destination": "animal_feed",
+      "sector": null,
+      "food_category": null,
+      "metric": "cost",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero, and meant rather than missing: reuse food is eaten or re-eaten, so it releases no cost at a destination it never reaches and pays no levy. Stated as a row because the engine's fall-through to zero cannot tell a meant zero from a hole.",
+      "data_quality": "definitional"
     },
     {
       "destination": "compost",
@@ -323,7 +2696,7 @@
       "food_category": null,
       "metric": "co2e",
       "value_per_kg": "0.2100000000",
-      "source_note": "PLACEHOLDER.",
+      "source_note": "PLACEHOLDER. Order-of-magnitude only, and not a New Zealand figure. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
       "data_quality": "proxy-US"
     },
     {
@@ -332,7 +2705,7 @@
       "food_category": null,
       "metric": "ch4",
       "value_per_kg": "0.0002000000",
-      "source_note": "PLACEHOLDER.",
+      "source_note": "PLACEHOLDER. Order-of-magnitude only, and not a New Zealand figure. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
       "data_quality": "proxy-US"
     },
     {
@@ -341,8 +2714,8 @@
       "food_category": null,
       "metric": "cost",
       "value_per_kg": "0.0350000000",
-      "source_note": "PLACEHOLDER gate fee. Not levied.",
-      "data_quality": "modelled"
+      "source_note": "PLACEHOLDER. Order-of-magnitude only, and not a New Zealand figure. Source: https://environment.govt.nz/what-government-is-doing/areas-of-work/waste/waste-disposal-levy/expansion/",
+      "data_quality": "proxy-US"
     },
     {
       "destination": "anaerobic_digestion",
@@ -350,7 +2723,7 @@
       "food_category": null,
       "metric": "co2e",
       "value_per_kg": "0.0700000000",
-      "source_note": "PLACEHOLDER.",
+      "source_note": "PLACEHOLDER. Order-of-magnitude only, and not a New Zealand figure. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
       "data_quality": "proxy-US"
     },
     {
@@ -359,7 +2732,7 @@
       "food_category": null,
       "metric": "ch4",
       "value_per_kg": "0.0010000000",
-      "source_note": "PLACEHOLDER.",
+      "source_note": "PLACEHOLDER. Order-of-magnitude only, and not a New Zealand figure. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
       "data_quality": "proxy-US"
     },
     {
@@ -368,17 +2741,35 @@
       "food_category": null,
       "metric": "cost",
       "value_per_kg": "0.0450000000",
-      "source_note": "PLACEHOLDER gate fee. Not levied.",
-      "data_quality": "modelled"
+      "source_note": "PLACEHOLDER. Order-of-magnitude only, and not a New Zealand figure. Source: https://environment.govt.nz/what-government-is-doing/areas-of-work/waste/waste-disposal-levy/expansion/",
+      "data_quality": "proxy-US"
     },
     {
-      "destination": "animal_feed",
+      "destination": "land_application",
       "sector": null,
       "food_category": null,
       "metric": "co2e",
-      "value_per_kg": "-0.1500000000",
-      "source_note": "PLACEHOLDER, and negative on purpose: feeding surplus food to animals displaces feed that would otherwise have been grown. A negative downstream factor is an offset and charts must render it below the axis.",
-      "data_quality": "proxy-US"
+      "value_per_kg": "0.2100000000",
+      "source_note": "PLACEHOLDER. No co2e figure was authored for land_application, so it takes the one its own group carries, from compost. The group is the most this set can distinguish; per-destination data arrives with O-1. Source of the borrowed figure: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "placeholder-by-group"
+    },
+    {
+      "destination": "land_application",
+      "sector": null,
+      "food_category": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0002000000",
+      "source_note": "PLACEHOLDER. No ch4 figure was authored for land_application, so it takes the one its own group carries, from compost. The group is the most this set can distinguish; per-destination data arrives with O-1. Source of the borrowed figure: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "placeholder-by-group"
+    },
+    {
+      "destination": "land_application",
+      "sector": null,
+      "food_category": null,
+      "metric": "cost",
+      "value_per_kg": "0.0350000000",
+      "source_note": "PLACEHOLDER. No cost figure was authored for land_application, so it takes the one its own group carries, from compost. The group is the most this set can distinguish; per-destination data arrives with O-1. Source of the borrowed figure: https://environment.govt.nz/what-government-is-doing/areas-of-work/waste/waste-disposal-levy/expansion/",
+      "data_quality": "placeholder-by-group"
     },
     {
       "destination": "not_harvested",
@@ -386,35 +2777,188 @@
       "food_category": null,
       "metric": "co2e",
       "value_per_kg": "0.1200000000",
-      "source_note": "PLACEHOLDER.",
+      "source_note": "PLACEHOLDER. Order-of-magnitude only, and not a New Zealand figure. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
       "data_quality": "proxy-US"
     },
     {
-      "destination": "prevention",
-      "sector": null,
-      "food_category": null,
-      "metric": "co2e",
-      "value_per_kg": "0.0000000000",
-      "source_note": "Zero by construction. `prevention` is the destination for waste that did not happen, so it contributes no downstream impact. Since open item O-7 closed (contract v1.8) the upstream half is zero too — this factor set carries a `prevention` upstream row per (sector, food_category), so both terms of the line value vanish and prevention is the whole 100% offset docs/architecture.md §4.1 describes. A prevention figure from this set is quotable, subject to the placeholder-data warning every figure here carries.",
-      "data_quality": null
-    },
-    {
-      "destination": "prevention",
+      "destination": "not_harvested",
       "sector": null,
       "food_category": null,
       "metric": "ch4",
-      "value_per_kg": "0.0000000000",
-      "source_note": "Zero by construction.",
-      "data_quality": null
+      "value_per_kg": "0.0002000000",
+      "source_note": "PLACEHOLDER. No ch4 figure was authored for not_harvested, so it takes the one its own group carries, from compost. The group is the most this set can distinguish; per-destination data arrives with O-1. Source of the borrowed figure: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "placeholder-by-group"
     },
     {
-      "destination": "prevention",
+      "destination": "not_harvested",
       "sector": null,
       "food_category": null,
       "metric": "cost",
-      "value_per_kg": "0.0000000000",
-      "source_note": "Zero by construction.",
-      "data_quality": null
+      "value_per_kg": "0.0350000000",
+      "source_note": "PLACEHOLDER. No cost figure was authored for not_harvested, so it takes the one its own group carries, from compost. The group is the most this set can distinguish; per-destination data arrives with O-1. Source of the borrowed figure: https://environment.govt.nz/what-government-is-doing/areas-of-work/waste/waste-disposal-levy/expansion/",
+      "data_quality": "placeholder-by-group"
+    },
+    {
+      "destination": "bioprocessing",
+      "sector": null,
+      "food_category": null,
+      "metric": "co2e",
+      "value_per_kg": "0.2100000000",
+      "source_note": "PLACEHOLDER. No co2e figure was authored for bioprocessing, so it takes the one its own group carries, from compost. The group is the most this set can distinguish; per-destination data arrives with O-1. Source of the borrowed figure: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "placeholder-by-group"
+    },
+    {
+      "destination": "bioprocessing",
+      "sector": null,
+      "food_category": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0002000000",
+      "source_note": "PLACEHOLDER. No ch4 figure was authored for bioprocessing, so it takes the one its own group carries, from compost. The group is the most this set can distinguish; per-destination data arrives with O-1. Source of the borrowed figure: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "placeholder-by-group"
+    },
+    {
+      "destination": "bioprocessing",
+      "sector": null,
+      "food_category": null,
+      "metric": "cost",
+      "value_per_kg": "0.0350000000",
+      "source_note": "PLACEHOLDER. No cost figure was authored for bioprocessing, so it takes the one its own group carries, from compost. The group is the most this set can distinguish; per-destination data arrives with O-1. Source of the borrowed figure: https://environment.govt.nz/what-government-is-doing/areas-of-work/waste/waste-disposal-levy/expansion/",
+      "data_quality": "placeholder-by-group"
+    },
+    {
+      "destination": "other_recovery",
+      "sector": null,
+      "food_category": null,
+      "metric": "co2e",
+      "value_per_kg": "0.2100000000",
+      "source_note": "PLACEHOLDER. No co2e figure was authored for other_recovery, so it takes the one its own group carries, from compost. The group is the most this set can distinguish; per-destination data arrives with O-1. Source of the borrowed figure: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "placeholder-by-group"
+    },
+    {
+      "destination": "other_recovery",
+      "sector": null,
+      "food_category": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0002000000",
+      "source_note": "PLACEHOLDER. No ch4 figure was authored for other_recovery, so it takes the one its own group carries, from compost. The group is the most this set can distinguish; per-destination data arrives with O-1. Source of the borrowed figure: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "placeholder-by-group"
+    },
+    {
+      "destination": "other_recovery",
+      "sector": null,
+      "food_category": null,
+      "metric": "cost",
+      "value_per_kg": "0.0350000000",
+      "source_note": "PLACEHOLDER. No cost figure was authored for other_recovery, so it takes the one its own group carries, from compost. The group is the most this set can distinguish; per-destination data arrives with O-1. Source of the borrowed figure: https://environment.govt.nz/what-government-is-doing/areas-of-work/waste/waste-disposal-levy/expansion/",
+      "data_quality": "placeholder-by-group"
+    },
+    {
+      "destination": "combustion",
+      "sector": null,
+      "food_category": null,
+      "metric": "co2e",
+      "value_per_kg": "0.7000000000",
+      "source_note": "PLACEHOLDER. No co2e figure was authored for combustion, so it takes the one its own group carries, from landfill. The group is the most this set can distinguish; per-destination data arrives with O-1. Source of the borrowed figure: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "placeholder-by-group"
+    },
+    {
+      "destination": "combustion",
+      "sector": null,
+      "food_category": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0270000000",
+      "source_note": "PLACEHOLDER. No ch4 figure was authored for combustion, so it takes the one its own group carries, from landfill. The group is the most this set can distinguish; per-destination data arrives with O-1. Source of the borrowed figure: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "placeholder-by-group"
+    },
+    {
+      "destination": "combustion",
+      "sector": null,
+      "food_category": null,
+      "metric": "cost",
+      "value_per_kg": "0.0600000000",
+      "source_note": "PLACEHOLDER. No cost figure was authored for combustion, so it takes the one its own group carries, from landfill. The group is the most this set can distinguish; per-destination data arrives with O-1. Source of the borrowed figure: https://environment.govt.nz/what-government-is-doing/areas-of-work/waste/waste-disposal-levy/expansion/",
+      "data_quality": "placeholder-by-group"
+    },
+    {
+      "destination": "landfill",
+      "sector": null,
+      "food_category": null,
+      "metric": "co2e",
+      "value_per_kg": "0.7000000000",
+      "source_note": "PLACEHOLDER. Order-of-magnitude only, and not a New Zealand figure. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "proxy-US"
+    },
+    {
+      "destination": "landfill",
+      "sector": null,
+      "food_category": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0270000000",
+      "source_note": "PLACEHOLDER. Order-of-magnitude only, and not a New Zealand figure. Source: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "proxy-US"
+    },
+    {
+      "destination": "landfill",
+      "sector": null,
+      "food_category": null,
+      "metric": "cost",
+      "value_per_kg": "0.0600000000",
+      "source_note": "PLACEHOLDER. Order-of-magnitude only, and not a New Zealand figure. Source: https://environment.govt.nz/what-government-is-doing/areas-of-work/waste/waste-disposal-levy/expansion/",
+      "data_quality": "proxy-US"
+    },
+    {
+      "destination": "refuse_discard",
+      "sector": null,
+      "food_category": null,
+      "metric": "co2e",
+      "value_per_kg": "0.7000000000",
+      "source_note": "PLACEHOLDER. No co2e figure was authored for refuse_discard, so it takes the one its own group carries, from landfill. The group is the most this set can distinguish; per-destination data arrives with O-1. Source of the borrowed figure: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "placeholder-by-group"
+    },
+    {
+      "destination": "refuse_discard",
+      "sector": null,
+      "food_category": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0270000000",
+      "source_note": "PLACEHOLDER. No ch4 figure was authored for refuse_discard, so it takes the one its own group carries, from landfill. The group is the most this set can distinguish; per-destination data arrives with O-1. Source of the borrowed figure: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "placeholder-by-group"
+    },
+    {
+      "destination": "refuse_discard",
+      "sector": null,
+      "food_category": null,
+      "metric": "cost",
+      "value_per_kg": "0.0600000000",
+      "source_note": "PLACEHOLDER. No cost figure was authored for refuse_discard, so it takes the one its own group carries, from landfill. The group is the most this set can distinguish; per-destination data arrives with O-1. Source of the borrowed figure: https://environment.govt.nz/what-government-is-doing/areas-of-work/waste/waste-disposal-levy/expansion/",
+      "data_quality": "placeholder-by-group"
+    },
+    {
+      "destination": "sewer",
+      "sector": null,
+      "food_category": null,
+      "metric": "co2e",
+      "value_per_kg": "0.7000000000",
+      "source_note": "PLACEHOLDER. No co2e figure was authored for sewer, so it takes the one its own group carries, from landfill. The group is the most this set can distinguish; per-destination data arrives with O-1. Source of the borrowed figure: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "placeholder-by-group"
+    },
+    {
+      "destination": "sewer",
+      "sector": null,
+      "food_category": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0270000000",
+      "source_note": "PLACEHOLDER. No ch4 figure was authored for sewer, so it takes the one its own group carries, from landfill. The group is the most this set can distinguish; per-destination data arrives with O-1. Source of the borrowed figure: https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/impact_calculator/impact_calculator_conversion_factors.csv",
+      "data_quality": "placeholder-by-group"
+    },
+    {
+      "destination": "sewer",
+      "sector": null,
+      "food_category": null,
+      "metric": "cost",
+      "value_per_kg": "0.0600000000",
+      "source_note": "PLACEHOLDER. No cost figure was authored for sewer, so it takes the one its own group carries, from landfill. The group is the most this set can distinguish; per-destination data arrives with O-1. Source of the borrowed figure: https://environment.govt.nz/what-government-is-doing/areas-of-work/waste/waste-disposal-levy/expansion/",
+      "data_quality": "placeholder-by-group"
     }
   ],
   "equivalences": [

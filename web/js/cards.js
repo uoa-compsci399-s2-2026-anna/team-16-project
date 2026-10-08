@@ -100,7 +100,8 @@ export const openedCard = (step, key) => {
  * writers, one definition of the two states, so neither can drift into saying something
  * the other does not.
  *
- * **Not colour-only.** A mark, a word, and `data-state` for the stylesheet. The mark is
+ * **Not colour-only.** A word and `data-state` for both states, plus a tick when
+ * complete. Incomplete has no mark; its empty mark span is hidden. The tick is
  * `aria-hidden` and the word is not, so the button's accessible name carries the state in
  * words — a screen reader is told what a sighted reader is shown, which is an acceptance
  * criterion of #134 and not a nicety.
@@ -110,7 +111,7 @@ export const openedCard = (step, key) => {
  */
 export const cardStatus = settled => (settled
   ? { state: 'complete', mark: '✓', text: t('Complete') }
-  : { state: 'incomplete', mark: '✕', text: t('Incomplete') })
+  : { state: 'incomplete', mark: '', text: t('Incomplete') })
 
 /**
  * **The collapsible step card, built once** (#134, and the chrome #138 and #142 consume).

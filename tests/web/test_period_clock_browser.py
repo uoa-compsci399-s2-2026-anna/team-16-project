@@ -560,11 +560,53 @@ def test_the_face_is_hidden_from_assistive_technology_and_the_value_is_announced
     ) == "true"
     live = page.locator("#period-clock-value")
     assert live.get_attribute("aria-live") == "polite"
-    before = _announced(page)
+    #: **Three taps, each asserted against the value it names, because
+    #: "it changed" depended on the time of day.** This read
+    #: `before = _announced(page)`, tapped 90 degrees, and asserted
+    #: `after != before and after.startswith("03:")`. The dial seeds from the
+    #: period start, which defaults to now, so when the hour already WAS 03
+    #: the tap changed nothing and `after != before` failed - and that is one
+    #: hour in twenty-four, not a random flake. It failed on `main` at
+    #: 03:08 UTC on 2026-10-07 reporting `03:05 -> 03:05`, having passed the
+    #: pull request at 01:29. In New Zealand the hour it cannot survive is
+    #: 16:00-16:59, which is why no developer here ever met it.
+    #:
+    #: The dial's own behaviour, measured rather than assumed: it opens on the
+    #: hours stage and **auto-advances to minutes after the first tap** -
+    #: `08:37` on opening, `03:37` and the minutes stage after tapping 90, then
+    #: `03:45` after tapping 270 because 270 is now forty-five MINUTES. So a
+    #: second hour tap is not available, and the obvious repair of tapping 90
+    #: then 270 and expecting `09:` would have been wrong.
+    #:
+    #: Every value below is fixed by the tap that produces it, so nothing here
+    #: reads the clock. It is also a stronger claim than the one it replaces:
+    #: the region is asserted to follow the hand to three named positions
+    #: rather than merely to differ from an unknown starting value.
+    assert page.evaluate(
+        """() => document.querySelector('[data-action="period-clock-stage"][data-stage="hours"]')
+                 ?.getAttribute('aria-pressed')"""
+    ) == "true", "the dial did not open on the hours stage, so tapping 90 degrees is not an hour"
+
     _tap(page, 90)
-    after = _announced(page)
-    assert after != before and after.startswith("03:"), (
-        f"the live region did not follow the hand: {before} -> {after}"
+    at_three = _announced(page)
+    assert at_three.startswith("03:"), (
+        f"tapping 90 degrees on the hours stage announced {at_three!r}, which "
+        f"is not three o'clock - the live region is not following the hand"
+    )
+
+    #: The first tap moved the stage to minutes, so these two are minutes.
+    _tap(page, 0)
+    on_the_hour = _announced(page)
+    assert on_the_hour == "03:00", (
+        f"tapping straight up on the minutes stage announced {on_the_hour!r} "
+        f"rather than 03:00"
+    )
+
+    _tap(page, 270)
+    quarter_to = _announced(page)
+    assert quarter_to == "03:45", (
+        f"tapping 270 degrees on the minutes stage announced {quarter_to!r} "
+        f"rather than 03:45"
     )
     assert page.evaluate(
         "getComputedStyle(document.querySelector('#period-clock-value')).position"

@@ -100,17 +100,26 @@ export const openedCard = (step, key) => {
  * writers, one definition of the two states, so neither can drift into saying something
  * the other does not.
  *
- * **Not colour-only.** A mark, a word, and `data-state` for the stylesheet. The mark is
- * `aria-hidden` and the word is not, so the button's accessible name carries the state in
- * words — a screen reader is told what a sighted reader is shown, which is an acceptance
- * criterion of #134 and not a nicety.
+ * **Not colour-only — and the word is the whole of it now.** A word and `data-state`,
+ * and no mark at either state: the cross went with #181 and the tick with it, because
+ * half a pair reads as a verdict withheld rather than as a verdict given. `mark` stays
+ * on the returned object because `collapsibleCard` is shared with step 2.5's
+ * `itemStatus`, which still marks its two states; `.step-card__mark:empty` hides the
+ * span here so it does not cost the flex gap.
+ *
+ * The word was always the load-bearing half: it is not `aria-hidden` where the mark was,
+ * so the button's accessible name already carried the state in words — a screen reader
+ * told what a sighted reader is shown, which is an acceptance criterion of #134 and not
+ * a nicety. Removing the glyphs therefore takes nothing away from either reader, and
+ * leaves *Complete* and *Incomplete* conveyed by words plus colour rather than by words
+ * plus colour plus a symbol.
  *
  * `settled` comes from `leafSettled`, which reads `leafProblem` — see there for what the
  * tick promises and why the optional money figures cannot withhold it.
  */
 export const cardStatus = settled => (settled
-  ? { state: 'complete', mark: '✓', text: t('Complete') }
-  : { state: 'incomplete', mark: '✕', text: t('Incomplete') })
+  ? { state: 'complete', mark: '', text: t('Complete') }
+  : { state: 'incomplete', mark: '', text: t('Incomplete') })
 
 /**
  * **The collapsible step card, built once** (#134, and the chrome #138 and #142 consume).

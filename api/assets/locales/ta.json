@@ -321,6 +321,7 @@
     "Sector": "துறை",
     "Sectors selected": "தேர்ந்தெடுக்கப்பட்ட துறைகள்",
     "Sectors selected (share)": "தேர்ந்தெடுக்கப்பட்ட துறைகள் (பங்கு)",
+    "See how a different allocation could change the result in Explore Improvements.": "முன்னேற்றங்களை ஆராயுங்கள் பகுதியில் வேறு ஒதுக்கீடு முடிவை எவ்வாறு மாற்றும் என்பதைப் பாருங்கள்.",
     "Select where in the food supply chain the waste occurred.": "உணவு விநியோகச் சங்கிலியில் இந்தக் கழிவு எங்கு ஏற்பட்டது என்பதைத் தேர்ந்தெடுக்கவும்.",
     "Selected": "தேர்ந்தெடுக்கப்பட்டது",
     "Set the time": "நேரத்தை அமை",
@@ -467,8 +468,7 @@
     "no change": "மாற்றம் இல்லை",
     "no impact figures were returned": "தாக்க எண்கள் எதுவும் வரவில்லை",
     "saved": "சேமிக்கப்பட்டது",
-    "tonnes": "டன்",
-    "See how a different allocation could change the result in Explore Improvements.": "முன்னேற்றங்களை ஆராயுங்கள் பகுதியில் வேறு ஒதுக்கீடு முடிவை எவ்வாறு மாற்றும் என்பதைப் பாருங்கள்."
+    "tonnes": "டன்"
   },
   "tags": [
     "ta"

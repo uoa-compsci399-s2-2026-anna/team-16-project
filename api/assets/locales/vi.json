@@ -321,6 +321,7 @@
     "Sector": "Lĩnh vực",
     "Sectors selected": "Lĩnh vực đã chọn",
     "Sectors selected (share)": "Lĩnh vực đã chọn (tỷ lệ)",
+    "See how a different allocation could change the result in Explore Improvements.": "Xem trong Tìm hiểu các cải thiện cách một phân bổ khác có thể thay đổi kết quả.",
     "Select where in the food supply chain the waste occurred.": "Chọn giai đoạn trong chuỗi cung ứng thực phẩm nơi phát sinh lượng bỏ đi.",
     "Selected": "Đã chọn",
     "Set the time": "Đặt giờ",
@@ -467,8 +468,7 @@
     "no change": "không thay đổi",
     "no impact figures were returned": "không có số liệu tác động nào được trả về",
     "saved": "đã lưu",
-    "tonnes": "tấn",
-    "See how a different allocation could change the result in Explore Improvements.": "Xem trong Tìm hiểu các cải thiện cách một phân bổ khác có thể thay đổi kết quả."
+    "tonnes": "tấn"
   },
   "tags": [
     "vi"

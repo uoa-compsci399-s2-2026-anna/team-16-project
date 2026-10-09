@@ -3733,23 +3733,6 @@ export function bindCalculator(main, retryTaxonomy) {
     if (action === 'start-over' && window.confirm(t('Clear all calculator data and return to the introduction?'))) resetCalculator()
     if (action === 'download-results') downloadResults(state)
     if (action === 'download-pdf') downloadPdf(state)
-    if (action === 'view-result-details') {
-      const target = document.getElementById(control.dataset.target || 'breakdown-section')
-      if (target) {
-        target.scrollIntoView({ behavior: 'smooth', block: 'start' })
-        requestAnimationFrame(() => target.focus({ preventScroll: true }))
-      }
-    }
-    if (action === 'view-improvements') {
-      openImprovement(state)
-      requestAnimationFrame(() => {
-        const target = document.getElementById('improvement-section')
-        if (target) {
-          target.scrollIntoView({ behavior: 'smooth', block: 'start' })
-          target.focus({ preventScroll: true })
-        }
-      })
-    }
     if (action === 'dismiss-results-improvement-tip') {
       setState({ resultsImprovementTipDismissed: true })
       requestAnimationFrame(() => document.getElementById('results-title')?.focus({ preventScroll: true }))

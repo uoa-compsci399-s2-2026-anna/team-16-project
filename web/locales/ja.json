@@ -321,6 +321,7 @@
     "Sector": "業種",
     "Sectors selected": "選択された業種",
     "Sectors selected (share)": "選択された業種（割合）",
+    "See how a different allocation could change the result in Explore Improvements.": "改善策を見てみるで、配分を変えると結果がどう変わるか確認できます。",
     "Select where in the food supply chain the waste occurred.": "食品サプライチェーンのどこで廃棄が発生したかを選んでください。",
     "Selected": "選択済み",
     "Set the time": "時刻を決定",
@@ -467,8 +468,7 @@
     "no change": "変化なし",
     "no impact figures were returned": "影響の数値が返されませんでした",
     "saved": "削減",
-    "tonnes": "トン",
-    "See how a different allocation could change the result in Explore Improvements.": "改善策を見てみるで、配分を変えると結果がどう変わるか確認できます。"
+    "tonnes": "トン"
   },
   "tags": [
     "ja"

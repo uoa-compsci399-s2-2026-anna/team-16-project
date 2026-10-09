@@ -728,7 +728,7 @@ function breakdownSection(state, entryResults) {
     const columns = metricColumns(current.sections)
     panel = `${current.note ? `<p class="breakdown-note">${escapeHtml(current.note)}</p>` : ''}${current.sections.map(section => breakdownTable(section, t(TAB_LABELS[active]), taxonomyForResult(state), scale, columns)).join('')}`
   }
-  return `<section class="results-section" id="breakdown-section" tabindex="-1" aria-labelledby="breakdown-title"><div class="result-section-heading"><span class="section-number">03</span><div><h2 id="breakdown-title">${escapeHtml(t('Breakdown by category'))}</h2><p>${escapeHtml(t('Explore how the recorded waste is distributed.'))}</p></div></div><div class="breakdown-tabs" role="tablist" aria-label="${escapeHtml(t('Waste breakdown'))}">${Object.entries(TAB_LABELS).map(([key, label]) => `<button id="breakdown-tab-${key}" type="button" role="tab" data-action="breakdown-tab" data-tab="${key}" aria-selected="${active === key}" aria-controls="breakdown-panel-${key}" tabindex="${active === key ? 0 : -1}">${escapeHtml(t(label))}</button>`).join('')}</div><div id="breakdown-panel-${active}" class="breakdown-panel" role="tabpanel" aria-labelledby="breakdown-tab-${active}" tabindex="0">${panel}</div></section>`
+  return `<section class="results-section" id="breakdown-section" aria-labelledby="breakdown-title"><div class="result-section-heading"><span class="section-number">03</span><div><h2 id="breakdown-title">${escapeHtml(t('Breakdown by category'))}</h2><p>${escapeHtml(t('Explore how the recorded waste is distributed.'))}</p></div></div><div class="breakdown-tabs" role="tablist" aria-label="${escapeHtml(t('Waste breakdown'))}">${Object.entries(TAB_LABELS).map(([key, label]) => `<button id="breakdown-tab-${key}" type="button" role="tab" data-action="breakdown-tab" data-tab="${key}" aria-selected="${active === key}" aria-controls="breakdown-panel-${key}" tabindex="${active === key ? 0 : -1}">${escapeHtml(t(label))}</button>`).join('')}</div><div id="breakdown-panel-${active}" class="breakdown-panel" role="tabpanel" aria-labelledby="breakdown-tab-${active}" tabindex="0">${panel}</div></section>`
 }
 
 // One metric, worded the way the summary card words it: the taxonomy's name, the figure at
@@ -2313,7 +2313,21 @@ export function renderResults(state) {
   // and "Download results" moved into it; "Start a new calculation" did not,
   // because it is a confirm-guarded reset rather than a step action, and the
   // header's home button already offers it.
-  const improvementTip = state.resultsImprovementTipDismissed ? '' : `<aside class="results-improvement-tip" id="results-improvement-tip" aria-labelledby="results-improvement-tip-title"><div><h2 id="results-improvement-tip-title">${escapeHtml(t('Explore Improvements'))}</h2><p>${escapeHtml(t('See how a different allocation could change the result in Explore Improvements.'))}</p></div><div class="results-improvement-tip__actions"><button class="button button-primary" type="button" data-action="view-improvements" aria-controls="improvement-section">${escapeHtml(t('Explore Improvements'))}</button><button class="results-improvement-tip__dismiss" type="button" data-action="dismiss-results-improvement-tip" aria-label="${escapeHtml(t('Dismiss'))}"><span aria-hidden="true">×</span></button></div></aside>`
+  //: **A sentence and a way to close it — and deliberately no button of its own.**
+  //: #130 asks that the tip not carry "a control with the same accessible name doing
+  //: the same thing", and names v1.97 as the reason. The first version of this had an
+  //: `<h2>` and a primary button both reading *Explore Improvements*, which with the
+  //: floating nav's own link and the panel's own button made **three focusable
+  //: controls of that name on one page, two of them calling `openImprovement(state)`
+  //: with the same argument**.
+  //:
+  //: The way out is not a third wording for the same action. The sentence already
+  //: names the feature, and `#improvement-section` is already one click away in the
+  //: floating navigation that is on the page whatever this tip does — so the tip is a
+  //: tip: it tells a reader the feature is there, and gets out of the way. The
+  //: `<aside>` keeps the name on `aria-label` rather than on an `<h2>`, because a
+  //: landmark's name is not a tab stop and so is not one of the three.
+  const improvementTip = state.resultsImprovementTipDismissed ? '' : `<aside class="results-improvement-tip" id="results-improvement-tip" aria-label="${escapeHtml(t('Explore Improvements'))}"><p>${escapeHtml(t('See how a different allocation could change the result in Explore Improvements.'))}</p><button class="results-improvement-tip__dismiss" type="button" data-action="dismiss-results-improvement-tip" aria-label="${escapeHtml(t('Dismiss'))}"><span aria-hidden="true">×</span></button></aside>`
   return `<section class="content-section wide results-page" aria-labelledby="results-title">${resultsFloatingNavigation(state)}<p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 6 }))}</p><h1 id="results-title" tabindex="-1">${escapeHtml(t('Your estimated impact'))}</h1>${improvementTip}<p class="section-intro">${escapeHtml(entryResults.length === 1
       ? t('Results returned by the calculation service for one supply-chain entry.')
       // **`count` is entries, and an entry is a leaf.** A single forked chain is one
@@ -2322,7 +2336,7 @@ export function renderResults(state) {
       // true. The noun is dropped rather than replaced with a second count nobody asked
       // for; the review step is where the two numbers are reconciled.
       : t('Results returned by the calculation service for %(count)s entries.', { count: entryResults.length }))}</p>${resultsPeriod(state)}${warning}${averagedNotice}
-    ${resultSummaryCard}<section class="results-section" id="impact-summary" tabindex="-1" aria-labelledby="summary-title"><div class="result-section-heading"><span class="section-number">01</span><div><h2 id="summary-title">${escapeHtml(t('Impact summary'))}</h2><p>${escapeHtml(t('A high-level view of the recorded food waste.'))}</p></div></div><div class="results-grid">${summaryCards(totals, taxonomyForResult(state))}</div>${moneySummary(totals)}</section>
+    <section class="results-section" id="impact-summary" aria-labelledby="summary-title"><div class="result-section-heading"><span class="section-number">01</span><div><h2 id="summary-title">${escapeHtml(t('Impact summary'))}</h2><p>${escapeHtml(t('A high-level view of the recorded food waste.'))}</p></div></div><div class="results-grid">${summaryCards(totals, taxonomyForResult(state))}</div>${moneySummary(totals)}</section>
     <section class="results-section" id="tangible-equivalents" aria-labelledby="equivalents-title"><div class="result-section-heading"><span class="section-number">02</span><div><h2 id="equivalents-title">${escapeHtml(t('Tangible equivalents'))}</h2><p>${escapeHtml(t('Plain-language comparisons appear when supplied by the calculation service.'))}</p></div></div>${equivalences(totals)}</section>
     ${breakdownSection(state, entryResults)}
     ${ImprovementScenario(state)}

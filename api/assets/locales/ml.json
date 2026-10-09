@@ -321,6 +321,7 @@
     "Sector": "മേഖല",
     "Sectors selected": "തിരഞ്ഞെടുത്ത മേഖലകൾ",
     "Sectors selected (share)": "തിരഞ്ഞെടുത്ത മേഖലകൾ (വിഹിതം)",
+    "See how a different allocation could change the result in Explore Improvements.": "മെച്ചപ്പെടുത്തലുകൾ പരിശോധിക്കുക എന്നതിൽ മറ്റൊരു വിഭജനം ഫലം എങ്ങനെ മാറ്റുമെന്ന് കാണുക.",
     "Select where in the food supply chain the waste occurred.": "ഭക്ഷ്യ വിതരണ ശൃംഖലയിൽ ഈ മാലിന്യം എവിടെ ഉണ്ടായി എന്ന് തിരഞ്ഞെടുക്കുക.",
     "Selected": "തിരഞ്ഞെടുത്തത്",
     "Set the time": "സമയം സജ്ജമാക്കുക",
@@ -467,8 +468,7 @@
     "no change": "മാറ്റമില്ല",
     "no impact figures were returned": "ആഘാത കണക്കുകളൊന്നും ലഭിച്ചില്ല",
     "saved": "സംരക്ഷിച്ചു",
-    "tonnes": "ടൺ",
-    "See how a different allocation could change the result in Explore Improvements.": "മെച്ചപ്പെടുത്തലുകൾ പരിശോധിക്കുക എന്നതിൽ മറ്റൊരു വിഭജനം ഫലം എങ്ങനെ മാറ്റുമെന്ന് കാണുക."
+    "tonnes": "ടൺ"
   },
   "tags": [
     "ml"

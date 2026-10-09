@@ -321,6 +321,7 @@
     "Sector": "Sector",
     "Sectors selected": "Geselecteerde sectoren",
     "Sectors selected (share)": "Geselecteerde sectoren (aandeel)",
+    "See how a different allocation could change the result in Explore Improvements.": "Bekijk in Verbeteringen verkennen hoe een andere verdeling het resultaat kan veranderen.",
     "Select where in the food supply chain the waste occurred.": "Geef aan waar in de voedselketen het afval is ontstaan.",
     "Selected": "Geselecteerd",
     "Set the time": "Tijd instellen",
@@ -467,8 +468,7 @@
     "no change": "geen verandering",
     "no impact figures were returned": "er zijn geen effectcijfers teruggegeven",
     "saved": "bespaard",
-    "tonnes": "ton",
-    "See how a different allocation could change the result in Explore Improvements.": "Bekijk in Verbeteringen verkennen hoe een andere verdeling het resultaat kan veranderen."
+    "tonnes": "ton"
   },
   "tags": [
     "nl"

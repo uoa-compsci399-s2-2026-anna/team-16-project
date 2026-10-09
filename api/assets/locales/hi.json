@@ -321,6 +321,7 @@
     "Sector": "क्षेत्र",
     "Sectors selected": "चयनित क्षेत्र",
     "Sectors selected (share)": "चयनित क्षेत्र (हिस्सा)",
+    "See how a different allocation could change the result in Explore Improvements.": "सुधार के विकल्प देखें में देखें कि अलग आवंटन परिणाम को कैसे बदल सकता है।",
     "Select where in the food supply chain the waste occurred.": "चुनें कि खाद्य आपूर्ति शृंखला में यह अपशिष्ट कहाँ हुआ।",
     "Selected": "चयनित",
     "Set the time": "समय तय करें",
@@ -467,8 +468,7 @@
     "no change": "कोई बदलाव नहीं",
     "no impact figures were returned": "कोई प्रभाव आँकड़े नहीं मिले",
     "saved": "सहेजा गया",
-    "tonnes": "टन",
-    "See how a different allocation could change the result in Explore Improvements.": "सुधार के विकल्प देखें में देखें कि अलग आवंटन परिणाम को कैसे बदल सकता है।"
+    "tonnes": "टन"
   },
   "tags": [
     "hi"

@@ -3859,10 +3859,7 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
   border-radius: 14px;
   background: rgba(223, 248, 237, 0.52);
 }
-.results-improvement-tip h2 { margin: 2px 0 6px; font-size: 1.2rem; }
 .results-improvement-tip p { margin: 0; color: var(--muted); }
-.results-improvement-tip__actions { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
-.results-improvement-tip__actions .button { flex-shrink: 0; }
 .results-improvement-tip__dismiss {
   inline-size: 44px;
   block-size: 44px;
@@ -3881,7 +3878,6 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 
 @media (max-width: 620px) {
   .results-improvement-tip { align-items: stretch; flex-direction: column; }
-  .results-improvement-tip__actions { justify-content: space-between; }
 }
 
 @media (min-width: 700px) {

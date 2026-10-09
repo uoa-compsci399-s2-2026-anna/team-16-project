@@ -321,6 +321,7 @@
     "Sector": "行业环节",
     "Sectors selected": "已选择的行业环节",
     "Sectors selected (share)": "已选择的行业环节（占比）",
+    "See how a different allocation could change the result in Explore Improvements.": "在“探索改进空间”中查看不同分配方式如何改变结果。",
     "Select where in the food supply chain the waste occurred.": "请选择浪费发生在食物供应链的哪个环节。",
     "Selected": "已选择",
     "Set the time": "确定时间",
@@ -467,8 +468,7 @@
     "no change": "无变化",
     "no impact figures were returned": "未返回任何影响数据",
     "saved": "减少",
-    "tonnes": "吨",
-    "See how a different allocation could change the result in Explore Improvements.": "在“探索改进空间”中查看不同分配方式如何改变结果。"
+    "tonnes": "吨"
   },
   "tags": [
     "zh",

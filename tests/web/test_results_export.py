@@ -593,18 +593,56 @@ def test_the_results_page_renders_every_section_it_composes(tmp_path):
         )
 
 
+#: The tip's own sentence, spelled once so the two claims below cannot drift apart:
+#: that it is on the page, and that it is on the page ONCE.
+IMPROVEMENT_TIP_SENTENCE = (
+    "See how a different allocation could change the result in Explore Improvements."
+)
+
+
 def test_the_results_page_offers_a_dismissible_improvements_tip(tmp_path):
-    """The top tip points at Explore Improvements instead of duplicating results."""
+    """The top tip points at Explore Improvements instead of duplicating results.
+
+    **It carries no control of its own, and that is the requirement rather than an
+    omission.** #130 asks that the tip not carry "a control with the same accessible
+    name doing the same thing", naming v1.97 as the reason; the first version had an
+    `<h2>` and a primary button both reading *Explore Improvements*, which with the
+    floating nav's link and the panel's own button made three focusable controls of
+    that name on one page, two of them calling `openImprovement(state)` with the same
+    argument. So the absence is asserted, not just the presence.
+    """
     screen = screen_for(tmp_path, build_state())
     card = re.search(r'<aside class="results-improvement-tip".*?</aside>', screen, re.S)
     assert card, "the results page has no improvement tip"
     body = card.group(0)
-    assert 'data-action="view-improvements"' in body
-    assert 'aria-controls="improvement-section"' in body
     assert 'data-action="dismiss-results-improvement-tip"' in body
     assert 'aria-label="Dismiss"' in body
     assert screen.index('id="results-improvement-tip"') < screen.index('id="impact-summary"')
-    assert 'id="breakdown-section" tabindex="-1"' in screen
+
+    assert "<button" in body and body.count("<button") == 1, (
+        f"the tip has {body.count('<button')} buttons; it is meant to have exactly one, "
+        f"the dismiss. A second control named for the feature is what #130 forbids: {body}"
+    )
+    assert "Explore Improvements</button>" not in body, (
+        f"the tip carries a control named for the feature again: {body}"
+    )
+
+    #: **#130's load-bearing clause, and nothing asserted it before.** "Its wording
+    #: appears nowhere else on the page." Without this, replacing the tip's sentence
+    #: with a verbatim copy of the section's own
+    #: (`t('Adjust how your food waste is managed...')`) leaves every other assertion
+    #: here green — and a tip that repeats what it points at is the defect that
+    #: parked the first version of this change.
+    #: In this order, so each of the two shapes gets its own message: a tip that has
+    #: lost its own sentence, and a sentence that has spread to a second place.
+    assert IMPROVEMENT_TIP_SENTENCE in body, (
+        f"the tip no longer carries its own sentence, so it is repeating something "
+        f"else on the page rather than saying the one thing it is for: {body}"
+    )
+    assert screen.count(IMPROVEMENT_TIP_SENTENCE) == 1, (
+        f"the tip's sentence appears {screen.count(IMPROVEMENT_TIP_SENTENCE)} times on "
+        f"the page; #130 asks that its wording appear nowhere else"
+    )
 
 
 def test_the_screen_and_the_file_carry_the_same_disclosure(tmp_path):

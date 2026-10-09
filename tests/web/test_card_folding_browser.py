@@ -271,7 +271,9 @@ def test_an_unanswered_category_is_never_marked_wrong(opened, item_level):
     reader would see even if the first two were fixed.
 
     Mutation: passing `cardStatus(false)` instead of `itemStatus(0)` fails all
-    three, the colour assertion included.
+    four — state, words, colour and the mark. Re-checked at #181, which emptied
+    `cardStatus`'s marks and briefly left the fourth unable to fail; see the note
+    beside it.
     """
     categories = _categories_with_foods(item_level, 2)
     page = opened()
@@ -297,7 +299,15 @@ def test_an_unanswered_category_is_never_marked_wrong(opened, item_level):
             f"an unanswered step-2.5 card's badge is coloured away from the header's "
             f"own ink, so it reads as a verdict: {badge}"
         )
-        assert badge["mark"] != "✕", badge
+        #: **`== "—"`, not `!= "✕"`** (#181). The cross was `cardStatus`'s
+        #: incomplete mark, so `!= "✕"` killed the mutation this docstring names
+        #: — until #181 removed both of `cardStatus`'s glyphs, after which
+        #: `cardStatus(false).mark` is `''` and the assertion could no longer
+        #: fail. Asserting step 2.5's OWN mark restores it: `itemStatus(0)`
+        #: gives `'—'` and `cardStatus(false)` gives `''`, so the swap is caught
+        #: again, and by a claim about what this badge IS rather than about what
+        #: it is not.
+        assert badge["mark"] == "—", badge
 
 
 def test_a_card_opens_and_closes_from_the_keyboard_and_says_which_it_is(opened, item_level):

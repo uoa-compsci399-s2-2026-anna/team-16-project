@@ -27,7 +27,7 @@ This document defines **what every person's code receives and what it returns.**
 
 ### v1.105 — 2026-10-09 (step 4 accepted a hundredth over, and which hundredth was decided by float dust; affects C)
 
-**This takes 105 rather than 104 because v1.104 is on #181, which is open.** If the two land out of order the later one renumbers. #170, #171 and #172 each also carry an entry numbered 1.103 and will have to move; the number is contended and should be claimed by announcement rather than by guess.
+**This took 105 rather than 104 because v1.104 was on #181 when it was written.** That has since merged, so both entries are below and in order; the note is kept rather than deleted because a reader meeting the pair otherwise has to work out whether the gap is a missing revision. #170 holds 1.106, and #171 and #172 each still carry an entry numbered 1.103 and will have to move — the next free number after those three is 1.107, and it should be claimed by announcement rather than by guess.
 
 **The client's report:** a food type with a total of **2.00 kg** accepted **2.01 kg** allocated, printed *Remaining 0.00* beside it, and wore a *Complete* badge with Continue enabled.
 
@@ -64,6 +64,24 @@ The identical logical gap, opposite verdicts. **`calculator.js` already carried 
 | 9 | Steps one and two of §0's three-step rule. **Nothing under `tests/fixtures/` moves**, no catalogue moves, and nothing on the wire changes — what changes is which allocations the front end will let through, and those were always sent as the sum of the destination rows. The owner notifies the team | §0 |
 
 **What this changes for a visitor.** An allocation that is a hundredth out is now refused where it used to be accepted — including the case where it was accepted at 2 kg and refused at 1 kg. Three rows of 0.33 against a total of 1.00 now read *Remaining 0.01* and hold Continue, which is correct: they allocate 0.99, and under the old rule the calculator computed on 0.99 under a tick that said otherwise.
+### v1.104 — 2026-10-09 (the step cards lose their tick and their cross; affects C and D)
+
+**#181.** `cardStatus` printed a mark beside its state word — `✓` for *Complete*, `✕` for *Incomplete*. Both are gone; the word and `data-state` remain.
+
+The pull request as opened removed only the cross. Half a pair is worse than either whole: a tick that appears on success with nothing appearing on failure reads as a verdict **withheld** rather than as a verdict **given**, and it makes the badge's width jump by about `1rem + 6px` as a card flips state under `updateCardBadges` on a keystroke, reflowing the header row. So the tick goes too.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`cardStatus` returns `mark: ''` in both states** (`web/js/cards.js`). `mark` stays on the returned object rather than being deleted, because `collapsibleCard` is shared with step 2.5's `itemStatus`, which still marks its own two states (`✓` / `—`) | §7.3a |
+| 2 | **`.step-card__mark:empty { display: none; }`**, because `.step-card__status` is `display: inline-flex` with `gap: 6px` and an empty span would still have cost 6px of leading space before the word. `:empty` matches an element with no children at all, which is what **both** writers produce — `collapsibleCard`'s render-time interpolation and `updateCardBadges`' `textContent` assignment — so the rule fires on both paths | §7.6 |
+| 3 | **Three screens move, not one.** `cardStatus` has four call sites: step 3's amount cards, step 4's destinations, `updateCardBadges` for both, and the improvement panel. Changing the shared helper is deliberate — a per-step mark would be the "two definitions of two states" its own note exists to prevent — but step 3 and the improvement panel change with step 4 | §7.3a |
+| 4 | **Nothing is lost to either reader.** The mark was always inside `aria-hidden="true"` and the word never was, so the accessible name is unchanged and a screen reader is told exactly what it was told before. For a sighted reader the state is now words plus colour rather than words plus colour plus a symbol — still not colour-only, which is what §7.3a requires and what WCAG 1.4.1 asks | §7.3a |
+| 5 | **An assertion that stopped being able to fail, caught and restored.** `test_card_folding_browser.py` guards step 2.5's badge against somebody passing `cardStatus(false)` where `itemStatus(0)` belongs, and did it with `assert badge["mark"] != "✕"`. Emptying `cardStatus`'s marks made that unfalsifiable — the mutation it names now yields `''`, which is also `!= "✕"`. It asserts step 2.5's own mark instead, `== "—"`, which kills the mutation again and is a claim about what the badge **is** rather than what it is not. The docstring's "fails all three" is now "fails all four" and says it was re-checked here | §0 |
+| 6 | §7.3a's prose said step 2.5 has "nothing for a cross to mean", drawing its contrast against a glyph that no longer exists. The distinction it defends is still real — `neutral` against `incomplete`, a count against a verdict — and is now drawn in colour and words | §7.3a |
+| 7 | **No catalogue moves.** The glyph was never inside a translated string: the badge is `<span class="step-card__mark" aria-hidden="true">${status.mark}</span><span data-card-status-text>${escapeHtml(status.text)}</span>`, so the keys are the bare `t('Complete')` / `t('Incomplete')`. Verified: both keys present in all twenty catalogues, and `web/locales/` and `api/assets/locales/` byte-identical across all 21 files by SHA-256. `✕` appears nowhere in `api/`, so the text and PDF exports never carried it and no CJK subset needs re-cutting | §7.7 |
+| 8 | Steps one and two of §0's three-step rule. **Nothing under `tests/fixtures/` moves** and nothing on the wire changes — the badge is browser-only. The owner notifies the team | §0 |
+
+**Known, and left alone.** Step 2.5's `itemStatus` still carries `✓` and `—`, so the calculator now has two badge families with different glyph conventions. That is a deliberate scope line rather than an oversight — `itemStatus` reports a count and not a verdict, which is the whole reason it is a separate helper — but it is worth a decision rather than a drift.
 
 ### v1.103 — 2026-10-07 (the browser job's first real run: three causes, none of them the clock; affects everybody)
 
@@ -5708,10 +5726,13 @@ export function stepNav({step, back, backLabel = 'Back', label = 'Continue',
 > first of the card's thirteen `data-line-field` rows.
 
 > **Step 2.5's badge is `itemStatus`, not `cardStatus` (v1.84).** The step is optional as
-> a whole, so there is no state of it that can be wrong and nothing for a cross to mean:
-> the badge prints how many foods are chosen in that category and its unanswered state is
-> `data-state="neutral"`, which carries no colour rule. *Answered* against *not looked
-> at*, never *invalid*.
+> a whole, so there is no state of it that can be wrong: the badge prints how many foods
+> are chosen in that category and its unanswered state is `data-state="neutral"`, which
+> carries no colour rule. *Answered* against *not looked at*, never *invalid*. The
+> sentence here used to draw that contrast as "nothing for a cross to mean"; v1.104 took
+> both of `cardStatus`'s glyphs away, so the two badges are now told apart by their state
+> word and their colour — `0 selected` in the header's own ink against *Incomplete* in
+> `--error` — and `itemStatus` is the one of the pair that still carries a mark at all.
 >
 > **The badge is live on keystroke** (`updateCardBadges`), taking §7.2's documented
 > re-render exception for `updateCombinedTotal`'s exact reason. It is not optional here:

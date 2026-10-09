@@ -929,7 +929,7 @@ function term(text, tipId, paragraphs) {
  * The step is optional *as a whole*: `entryLeaves` gives a chosen category with no food
  * ticked exactly the leaf it gave before step 2.5 existed, so **"no food chosen" is a
  * legitimate answer and can never be wrong.** `cardStatus`'s second state says *Incomplete*
- * in `--error` with a cross, which is the right thing to say about a step-3 card that
+ * in `--error`, which is the right thing to say about a step-3 card that
  * Continue refuses and the wrong thing to say about an answer nothing refuses. So this
  * badge reports *answered* against *not looked at* and never *invalid*:
  *

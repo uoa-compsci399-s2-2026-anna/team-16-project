@@ -27,7 +27,7 @@ This document defines **what every person's code receives and what it returns.**
 
 ### v1.106 — 2026-10-09 (Step 2.5 separates the skip permission from its calculation consequence; affects C and D)
 
-**This was written as v1.103 and takes 106.** `main` landed its own v1.103 on 2026-10-07 while this branch sat unmerged, and 104 and 105 are on #181 and #182. The number is contended — #171 and #172 each still carry a v1.103 of their own — so it is claimed by announcement rather than by guess.
+**This was written as v1.103 and takes 106.** `main` landed its own v1.103 on 2026-10-07 while this branch sat unmerged, and 104 and 105 went to #181 and #182, both of which have since merged — so the four entries below are in order and the gap this note explains is closed. **#171 and #172 each still carry an entry numbered 1.103**, which is taken; the next free number is **1.107** and it should be claimed by announcement rather than by guess.
 
 Issue #140's no-selection state said two things in one run-on sentence: *"Choose the specific foods you measured, or continue without choosing any. A category with no food chosen is counted as that category."* Permission and consequence, in one paragraph, at one size. It now says them in two places, and the second is the more prominent of the two.
 
@@ -44,6 +44,63 @@ Issue #140's no-selection state said two things in one run-on sentence: *"Choose
 | 9 | No API field, fixture or wire shape changes. Steps one and two of §0's three-step rule, not step three. The owner notifies the team | §0 |
 
 **Left for a follow-up, and named here rather than quietly skipped.** The per-category empty state inside each card still reads *"No specific foods are listed for this category. It is counted as %(category)s."* — the internal shorthand #140 asks the *consequence* copy to avoid, two inches below the plain-language sentence that avoids it. The new notice complies; this neighbouring string does not, and rewording it is twenty translations in two trees plus another CJK coverage check, which is its own change rather than a line of this one.
+### v1.105 — 2026-10-09 (step 4 accepted a hundredth over, and which hundredth was decided by float dust; affects C)
+
+**This took 105 rather than 104 because v1.104 was on #181 when it was written.** That has since merged, so both entries are below and in order; the note is kept rather than deleted because a reader meeting the pair otherwise has to work out whether the gap is a missing revision. #170 holds 1.106, and #171 and #172 each still carry an entry numbered 1.103 and will have to move — the next free number after those three is 1.107, and it should be claimed by announcement rather than by guess.
+
+**The client's report:** a food type with a total of **2.00 kg** accepted **2.01 kg** allocated, printed *Remaining 0.00* beside it, and wore a *Complete* badge with Continue enabled.
+
+```js
+const ALLOCATION_EPSILON = 0.01
+const exceedsTotal = (allocated, total) => allocated - total > ALLOCATION_EPSILON
+```
+
+Two things were wrong, and the second is worse than the first.
+
+**The tolerance was one whole unit in the last place a visitor can type.** The destination input is `step="0.01"`. The constant's own note said it existed so that *"two sums that agree to two decimal places are equal as far as the user is concerned"* — but 2.00 and 2.01 do not agree to two decimal places. It was written for binary floating-point dust and sized to swallow the smallest real error there is, and `>` made it inclusive.
+
+**And which "+0.01" it swallowed was decided by the dust rather than by the figures.** Measured:
+
+| total → allocated | `allocated - total` as a double | old verdict |
+| --- | --- | --- |
+| 1.00 → 1.01 | `0.010000000000000009` | refused |
+| **2.00 → 2.01** | `0.009999999999999787` | **accepted** |
+| 10.00 → 10.01 | `0.009999999999999787` | **accepted** |
+| 100.00 → 100.01 | `0.010000000000005116` | refused |
+
+The identical logical gap, opposite verdicts. **`calculator.js` already carried this diagnosis, in the money dimension, and had already acted on it there:** `moneyCents`' note records that reusing this same epsilon as a money rule let a value *"up to a whole cent over its own total through"* and that *"`0.03 -> 0.04` was refused while `0.07 -> 0.08` was allowed, purely because [they] land on different sides of `0.01` in a double."* Money was given integer cents and zero tolerance. Mass was left on the epsilon.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`exceedsTotal`, `fallsShortOfTotal` and `remainingAmount` compare integer hundredths of a kilogram**, `Math.round(kg * 100)`, and carry **no tolerance at all**. The boundary is now the figure typed. All three read the same `hundredths`, so §7.3a's promise that the rule and the *Remaining* figure beside it can never disagree about zero holds by construction rather than by sharing a constant | §7.3a |
+| 2 | **Rounding BOTH sides to the typed precision is what removes the need for a tolerance**, rather than a smaller epsilon. A total a two-decimal field cannot reach exactly — 23 L of a 0.29 kg/L preset is 6.67, but a hypothetical 0.2857 kg/L would give 6.5711 — lands on the same hundredth as the rows trying to meet it, so it stays reachable by construction. A tolerance on the *difference* would instead have gone on accepting a gap the visitor can see and fix | §7.3a |
+| 3 | **`Remaining` stops lying.** It used to snap anything inside the tolerance to exactly 0, so the strip read *Total 2.00 · Allocated 2.01 · Remaining 0.00* — three numbers that do not add up, on one line. It is now the exact hundredths difference, and an over-allocation reads `-0.01` | §7.3a |
+| 4 | **Safe in a double, checked rather than asserted.** Every input is already at most three decimal places (`lineKgString` ends in `toFixed(3)`), so `x * 100` carries dust of order 1e-13 — `2.01 * 100` is `200.99999999999997` — which `Math.round` absorbs with twelve orders of magnitude to spare. Verified at 2.01, 0.07, 6.667, 1234.5 and 9999999.99, and across a thirteen-row sum | §7.3a |
+| 5 | **`improvement.js`'s `MASS_TOLERANCE_KG` is NOT the same thing and is deliberately untouched.** It mirrors §6.2's server rule about the two scenarios' masses, and that 0.010 kg is **derived rather than chosen** — the front end rounds each alternative line to 3 dp (≤ 0.0005 kg) and §6.2 caps a scenario at 20 lines. The server compares it in `Decimal`, so its boundary was never decided by dust. Step 4's guard had no server counterpart at all, because the step-3 total never crosses the wire | §6.2, §7.3a |
+| 6 | **`test_one_hundredth_over_is_refused_at_every_scale`**, parametrised over 2.00, 10.00, 1.00 and 100.00 — **two the old rule accepted and two it refused, for the identical gap.** The parameters are the test: at one scale it would have passed against the defect at the others. Mutation-verified by restoring the float epsilon and rebuilding the image: it fails at **2.00 and 10.00** and passes at 1.00 and 100.00, which is the dust table above, reproduced through the browser | §0, §7.3a |
+| 7 | The *Remaining* figure is asserted separately from the badge, the strip and the button, because a rule that refused the allocation while still printing `0.00` would satisfy the other three | §0 |
+| 8 | `moneyCents`' note is corrected: it described this defect as one it did **not** share, and the paragraph sat here for two revisions being right about a neighbouring dimension. Kept in the past tense rather than deleted | §7.3a |
+| 9 | Steps one and two of §0's three-step rule. **Nothing under `tests/fixtures/` moves**, no catalogue moves, and nothing on the wire changes — what changes is which allocations the front end will let through, and those were always sent as the sum of the destination rows. The owner notifies the team | §0 |
+
+**What this changes for a visitor.** An allocation that is a hundredth out is now refused where it used to be accepted — including the case where it was accepted at 2 kg and refused at 1 kg. Three rows of 0.33 against a total of 1.00 now read *Remaining 0.01* and hold Continue, which is correct: they allocate 0.99, and under the old rule the calculator computed on 0.99 under a tick that said otherwise.
+### v1.104 — 2026-10-09 (the step cards lose their tick and their cross; affects C and D)
+
+**#181.** `cardStatus` printed a mark beside its state word — `✓` for *Complete*, `✕` for *Incomplete*. Both are gone; the word and `data-state` remain.
+
+The pull request as opened removed only the cross. Half a pair is worse than either whole: a tick that appears on success with nothing appearing on failure reads as a verdict **withheld** rather than as a verdict **given**, and it makes the badge's width jump by about `1rem + 6px` as a card flips state under `updateCardBadges` on a keystroke, reflowing the header row. So the tick goes too.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`cardStatus` returns `mark: ''` in both states** (`web/js/cards.js`). `mark` stays on the returned object rather than being deleted, because `collapsibleCard` is shared with step 2.5's `itemStatus`, which still marks its own two states (`✓` / `—`) | §7.3a |
+| 2 | **`.step-card__mark:empty { display: none; }`**, because `.step-card__status` is `display: inline-flex` with `gap: 6px` and an empty span would still have cost 6px of leading space before the word. `:empty` matches an element with no children at all, which is what **both** writers produce — `collapsibleCard`'s render-time interpolation and `updateCardBadges`' `textContent` assignment — so the rule fires on both paths | §7.6 |
+| 3 | **Three screens move, not one.** `cardStatus` has four call sites: step 3's amount cards, step 4's destinations, `updateCardBadges` for both, and the improvement panel. Changing the shared helper is deliberate — a per-step mark would be the "two definitions of two states" its own note exists to prevent — but step 3 and the improvement panel change with step 4 | §7.3a |
+| 4 | **Nothing is lost to either reader.** The mark was always inside `aria-hidden="true"` and the word never was, so the accessible name is unchanged and a screen reader is told exactly what it was told before. For a sighted reader the state is now words plus colour rather than words plus colour plus a symbol — still not colour-only, which is what §7.3a requires and what WCAG 1.4.1 asks | §7.3a |
+| 5 | **An assertion that stopped being able to fail, caught and restored.** `test_card_folding_browser.py` guards step 2.5's badge against somebody passing `cardStatus(false)` where `itemStatus(0)` belongs, and did it with `assert badge["mark"] != "✕"`. Emptying `cardStatus`'s marks made that unfalsifiable — the mutation it names now yields `''`, which is also `!= "✕"`. It asserts step 2.5's own mark instead, `== "—"`, which kills the mutation again and is a claim about what the badge **is** rather than what it is not. The docstring's "fails all three" is now "fails all four" and says it was re-checked here | §0 |
+| 6 | §7.3a's prose said step 2.5 has "nothing for a cross to mean", drawing its contrast against a glyph that no longer exists. The distinction it defends is still real — `neutral` against `incomplete`, a count against a verdict — and is now drawn in colour and words | §7.3a |
+| 7 | **No catalogue moves.** The glyph was never inside a translated string: the badge is `<span class="step-card__mark" aria-hidden="true">${status.mark}</span><span data-card-status-text>${escapeHtml(status.text)}</span>`, so the keys are the bare `t('Complete')` / `t('Incomplete')`. Verified: both keys present in all twenty catalogues, and `web/locales/` and `api/assets/locales/` byte-identical across all 21 files by SHA-256. `✕` appears nowhere in `api/`, so the text and PDF exports never carried it and no CJK subset needs re-cutting | §7.7 |
+| 8 | Steps one and two of §0's three-step rule. **Nothing under `tests/fixtures/` moves** and nothing on the wire changes — the badge is browser-only. The owner notifies the team | §0 |
+
+**Known, and left alone.** Step 2.5's `itemStatus` still carries `✓` and `—`, so the calculator now has two badge families with different glyph conventions. That is a deliberate scope line rather than an oversight — `itemStatus` reports a count and not a verdict, which is the whole reason it is a separate helper — but it is worth a decision rather than a drift.
 
 ### v1.103 — 2026-10-07 (the browser job's first real run: three causes, none of them the clock; affects everybody)
 
@@ -5688,10 +5745,13 @@ export function stepNav({step, back, backLabel = 'Back', label = 'Continue',
 > first of the card's thirteen `data-line-field` rows.
 
 > **Step 2.5's badge is `itemStatus`, not `cardStatus` (v1.84).** The step is optional as
-> a whole, so there is no state of it that can be wrong and nothing for a cross to mean:
-> the badge prints how many foods are chosen in that category and its unanswered state is
-> `data-state="neutral"`, which carries no colour rule. *Answered* against *not looked
-> at*, never *invalid*.
+> a whole, so there is no state of it that can be wrong: the badge prints how many foods
+> are chosen in that category and its unanswered state is `data-state="neutral"`, which
+> carries no colour rule. *Answered* against *not looked at*, never *invalid*. The
+> sentence here used to draw that contrast as "nothing for a cross to mean"; v1.104 took
+> both of `cardStatus`'s glyphs away, so the two badges are now told apart by their state
+> word and their colour — `0 selected` in the header's own ink against *Incomplete* in
+> `--error` — and `itemStatus` is the one of the pair that still carries a mark at all.
 >
 > **The badge is live on keystroke** (`updateCardBadges`), taking §7.2's documented
 > re-render exception for `updateCombinedTotal`'s exact reason. It is not optional here:

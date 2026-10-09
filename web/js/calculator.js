@@ -18,12 +18,47 @@ const decimalPattern = /^\d+(\.\d{1,2})?$/
 // from `metric.unit` on the API response and are international notation.
 const unitLabel = unit => (unit === 'tonnes' ? t('tonnes') : t('kilograms'))
 
-// Destination amounts are entered to two decimal places, so two sums that agree to
-// two decimal places are equal as far as the user is concerned. Binary floating point
-// does not agree: 0.1 + 0.2 > 0.3. Same tolerance as improvement.js's 100% check.
-const ALLOCATION_EPSILON = 0.01
-const exceedsTotal = (allocated, total) => allocated - total > ALLOCATION_EPSILON
-const remainingAmount = (total, allocated) => (Math.abs(total - allocated) <= ALLOCATION_EPSILON ? 0 : total - allocated)
+// **Integer hundredths, and no tolerance at all** (v1.105). This was
+//
+//     const ALLOCATION_EPSILON = 0.01
+//     const exceedsTotal = (allocated, total) => allocated - total > ALLOCATION_EPSILON
+//
+// whose own note said "two sums that agree to two decimal places are equal as far as
+// the user is concerned". 2.00 and 2.01 do not agree to two decimal places. The
+// tolerance was exactly one unit in the last place a visitor can type, so it swallowed
+// not the floating-point dust it was written for but the smallest real error there is,
+// and `>` made it inclusive: a total of 2.00 with 2.01 allocated showed *Allocated 2.01*
+// beside *Remaining 0.00* under a tick reading *Complete*.
+//
+// **And which "+0.01" it swallowed was decided by the dust rather than by the figures.**
+// Measured:
+//
+//     1.00 -> 1.01    0.010000000000000009   refused
+//     2.00 -> 2.01    0.009999999999999787   ACCEPTED
+//    10.00 -> 10.01   0.009999999999999787   ACCEPTED
+//   100.00 -> 100.01  0.010000000000005116   refused
+//
+// The identical logical gap, opposite verdicts. `calculator.js`'s own money rule
+// already records this defect one dimension over -- "`0.03 -> 0.04` was refused while
+// `0.07 -> 0.08` was allowed, purely because [they] land on different sides of `0.01`
+// in a double" -- and fixed it with `moneyCents`: parse to integers, compare integers,
+// no floating point anywhere. This is that decision for mass.
+//
+// **Rounding BOTH sides to the typed precision is what removes the need for a
+// tolerance**, rather than a smaller epsilon. A total that a two-decimal field cannot
+// reach exactly -- 23 L of a 0.29 kg/L preset is 6.67, but a hypothetical 0.2857 kg/L
+// would give 6.5711 -- lands on the same hundredth as the rows that try to meet it, so
+// it is reachable by construction. What a tolerance on the DIFFERENCE would have done
+// instead is accept a gap the visitor can see and fix.
+//
+// Safe in a double: every input here is already at most three decimal places
+// (`lineKgString` ends in `toFixed(3)`), so `x * 100` carries dust of order 1e-13 --
+// `2.01 * 100` is `200.99999999999997` -- which `Math.round` absorbs with twelve orders
+// of magnitude to spare, at every scale up to `MAX_LINE_KG`. Checked at 2.01, 0.07,
+// 6.667, 1234.5 and 9999999.99.
+const hundredths = kilograms => Math.round((Number(kilograms) || 0) * 100)
+const exceedsTotal = (allocated, total) => hundredths(allocated) > hundredths(total)
+const remainingAmount = (total, allocated) => (hundredths(total) - hundredths(allocated)) / 100
 // **Step 4's allocation has to account for all of the waste, not at most all of it**
 // (v1.99). Until then the rules bounded the allocation from above and said nothing
 // below it, and §7.3a recorded that as deliberate -- so a card with 3 of 4 kg placed
@@ -33,8 +68,9 @@ const remainingAmount = (total, allocated) => (Math.abs(total - allocated) <= AL
 // refused by the API, and not visible on the results page -- every figure was simply
 // computed on three quarters of what the visitor had typed, under a tick that said
 // otherwise. The same epsilon as `remainingAmount`, so the rule and the Remaining
-// figure beside it can never disagree about zero.
-const fallsShortOfTotal = (allocated, total) => total - allocated > ALLOCATION_EPSILON
+// figure beside it can never disagree about zero -- which is now true by construction
+// rather than by sharing a constant, because all three read the same `hundredths`.
+const fallsShortOfTotal = (allocated, total) => hundredths(allocated) < hundredths(total)
 
 // crypto.randomUUID() is [SecureContext] and so is undefined over plain http:// to a
 // LAN IP. crypto.getRandomValues() is not. These ids never leave the browser.
@@ -893,7 +929,7 @@ function term(text, tipId, paragraphs) {
  * The step is optional *as a whole*: `entryLeaves` gives a chosen category with no food
  * ticked exactly the leaf it gave before step 2.5 existed, so **"no food chosen" is a
  * legitimate answer and can never be wrong.** `cardStatus`'s second state says *Incomplete*
- * in `--error` with a cross, which is the right thing to say about a step-3 card that
+ * in `--error`, which is the right thing to say about a step-3 card that
  * Continue refuses and the wrong thing to say about an answer nothing refuses. So this
  * badge reports *answered* against *not looked at* and never *invalid*:
  *
@@ -2071,10 +2107,10 @@ function amountOnlyValidation(figures, food) {
 }
 
 /**
- * **Money's own rule — not `exceedsTotal`'s mass tolerance borrowed.**
- * `ALLOCATION_EPSILON` is 0.01 *kilograms*, a tolerance built because a scale does not
- * agree with itself to the gram; reusing it as a money rule let a wasted value up to a
- * whole cent over its own total through — the client's own defect, one cent smaller —
+ * **Money's own rule, and the one the mass guard was eventually rebuilt on.**
+ * `exceedsTotal` used to carry a 0.01-*kilogram* tolerance, written because a scale does
+ * not agree with itself to the gram; reusing it as a money rule let a wasted value up to
+ * a whole cent over its own total through — the client's own defect, one cent smaller —
  * and even that boundary was decided by binary floating-point error rather than by the
  * figure typed: `0.03 -> 0.04` (a whole cent over) was refused while `0.07 -> 0.08` (the
  * identical logical gap) was allowed, purely because `0.04 - 0.03` and `0.08 - 0.07`
@@ -2084,6 +2120,14 @@ function amountOnlyValidation(figures, food) {
  * integer comparison that cannot be decided by dust: both figures are parsed directly
  * into integer cents by `moneyCents`, with no floating-point arithmetic anywhere in the
  * decision.
+ *
+ * **The paragraph above was written about money and was true of mass the whole time.**
+ * It sat here for two revisions describing, in the money dimension, the defect the mass
+ * guard still had — the client reported the mass version of it at v1.105 (a total of
+ * 2.00 kg accepting 2.01), and the fix was this one: `hundredths`, integers, no
+ * tolerance. Kept in the past tense rather than deleted, because a diagnosis that was
+ * right about a neighbouring dimension and not acted on there is worth leaving where
+ * the next reader of either rule will find it.
  *
  * @param {string} value  A money field's typed string.
  * @returns {number|null} Integer cents, or `null` when `value` is not a plain decimal

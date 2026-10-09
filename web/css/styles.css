@@ -2795,6 +2795,7 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
   white-space: nowrap;
 }
 .step-card__mark { font-size: 1rem; line-height: 1; }
+.step-card__mark:empty { display: none; }
 .step-card__status[data-state='complete'] { color: var(--green-rule); }
 .step-card__status[data-state='incomplete'] { color: var(--error); }
 /* The body's own padding is the panel's, moved off `.form-panel` and onto the one

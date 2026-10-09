@@ -167,6 +167,68 @@ def test_continuing_from_a_chosen_category_opens_the_food_panel(page, released):
     assert page.locator("#item-title").count() == 1
 
 
+def test_zero_selected_state_explains_category_level_calculation(page, released):
+    """The permission and the category-average consequence are separate copy, and
+    the consequence is the more prominent of the two.
+
+    **#140's criterion is a measurement, not a look** — "visibly more prominent than
+    ordinary body text" — so the figure is asserted rather than the weight alone.
+    The first round of this change measured `fontWeight` and `borderInlineStartWidth`
+    and not `fontSize`, and shipped a notice at `.field-hint`'s **14.72px** against
+    `.section-intro`'s **17.92px**: the consequence rendered smaller than the
+    permission it is meant to outrank, and smaller than ordinary 16px body text, with
+    a green suite. Mutating `.field-hint` from `0.92rem` to `0.5rem` would not have
+    been caught.
+
+    It is asserted as a comparison against the two sizes on the same screen rather
+    than against a literal `17.92`, because a root font-size change should move all
+    three together and is not this test's business.
+    """
+    category = _category_with_foods(released)
+    _to_food_step(page)
+    _tick_category(page, category["code"])
+    _continue(page)
+    page.wait_for_selector('input[name="food-item"]')
+
+    assert page.locator(".choice-count").inner_text() == "0 selected"
+    assert page.locator(".section-intro").inner_text() == (
+        "Choose the specific foods you measured, or continue without choosing any."
+    )
+    notice = page.locator(".item-step__no-selection")
+    assert notice.is_visible()
+    assert notice.get_attribute("role") == "note"
+    assert "average figures for the whole category" in notice.inner_text()
+    measured = page.evaluate(
+        """() => {
+            const px = value => parseFloat(value)
+            const notice = getComputedStyle(document.querySelector('.item-step__no-selection'))
+            const intro = getComputedStyle(document.querySelector('.section-intro'))
+            return {
+              weight: notice.fontWeight,
+              border: notice.borderInlineStartWidth,
+              size: px(notice.fontSize),
+              introSize: px(intro.fontSize),
+              bodySize: px(getComputedStyle(document.body).fontSize),
+            }
+        }"""
+    )
+    assert measured["weight"] == "700", (
+        f"the notice is not bold: {measured}. `font-weight` belongs on the element "
+        f"— a rule on a `strong` inside it leaves the paragraph at 400, which is "
+        f"what this assertion could not see before."
+    )
+    assert measured["border"] == "6px", measured
+    assert measured["size"] > measured["bodySize"], (
+        f"the consequence renders at {measured['size']}px against {measured['bodySize']}px "
+        f"of ordinary body text, so it is not 'visibly more prominent' as #140 asks: "
+        f"{measured}"
+    )
+    assert measured["size"] >= measured["introSize"], (
+        f"the consequence ({measured['size']}px) is smaller than the permission it is "
+        f"meant to outrank ({measured['introSize']}px): {measured}"
+    )
+
+
 def test_the_panel_groups_the_foods_under_the_category_that_was_chosen(page, released):
     """One group per chosen category, the category's own name as its legend,
     and only the foods §6.1 offers under it."""

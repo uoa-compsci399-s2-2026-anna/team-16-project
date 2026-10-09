@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-10-09 (v1.105)"
+date: "2026-10-09 (v1.106)"
 ---
 
 # 0. How to Use This Document
@@ -25,6 +25,25 @@ This document defines **what every person's code receives and what it returns.**
 
 ## 0.1 Change Log
 
+### v1.106 — 2026-10-09 (Step 2.5 separates the skip permission from its calculation consequence; affects C and D)
+
+**This was written as v1.103 and takes 106.** `main` landed its own v1.103 on 2026-10-07 while this branch sat unmerged, and 104 and 105 went to #181 and #182, both of which have since merged — so the four entries below are in order and the gap this note explains is closed. **#171 and #172 each still carry an entry numbered 1.103**, which is taken; the next free number is **1.107** and it should be claimed by announcement rather than by guess.
+
+Issue #140's no-selection state said two things in one run-on sentence: *"Choose the specific foods you measured, or continue without choosing any. A category with no food chosen is counted as that category."* Permission and consequence, in one paragraph, at one size. It now says them in two places, and the second is the more prominent of the two.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **Two keys, two blocks.** `.section-intro` keeps the permission — *"Choose the specific foods you measured, or continue without choosing any."* — and a new `.item-step__no-selection`, rendered only while nothing is ticked, carries the consequence: *"If you continue without choosing a specific food, the calculation uses the average figures for the whole category."* `role="note"`, not a live region: it is present on arrival rather than announced | §7.3a |
+| 2 | **#140's criterion is a measurement, and the first round of this change did not meet it.** The notice carries `field-hint` for its margins, and `.field-hint` is `0.92rem` = **14.72px** — so the consequence rendered *smaller* than the permission it is meant to outrank (`.section-intro`, 1.12rem = **17.92px**) and smaller than ordinary body text (16px). It now sets `font-size: 1.12rem` explicitly | §7.6 |
+| 3 | **`font-weight: 700` is on the element, not on a `strong` inside it.** It was `.item-step__no-selection strong { font-weight: 700 }`, which is a no-op — every UA stylesheet already makes `strong` bold — while the `<p>` itself stayed at 400. The markup no longer wraps the sentence in `strong`, which was the wrong tool for bold text in any case | §7.6 |
+| 4 | **The ground is Banana at 28%, the palette's own.** It was `rgba(255, 183, 0, 0.12)`; RGB(255, 183, 0) is not Banana `#FFD76E` = RGB(255, 215, 110), nor any other listed colour, and it appeared nowhere else on the sheet. The precedent is `.comparison-estimate-note` twenty rules up — same job, same ground, same Kale ink. The Orange bar stays | §7.6, brand |
+| 5 | **The test measures the size, and could not before.** It asserted `fontWeight` and `borderInlineStartWidth` and not `fontSize`, so mutating `.field-hint` from `0.92rem` to `0.5rem` would have left it green — and because the weight rule was on a descendant, `getComputedStyle(p).fontWeight` was `"400"` and the assertion could not pass at all. It now compares the notice against the two sizes on the same screen rather than against a literal, so a root font-size change moves all three together. Mutation-verified: removing the `font-size` line fails it with *"the consequence renders at 14.72px against 16px of ordinary body text"* | §0, §7.6 |
+| 6 | **Three Korean syllables had no glyph in the embedded subsets** — `특` U+D2B9, `카` U+CE74, `테` U+D14C, two of them pulled in by the new translation reaching for `카테고리` where the old string said `분류`. `test_no_character_in_any_catalogue_would_print_as_a_box` fails on them. The four faces are re-cut with `api/assets/fonts/noto/recut_cjk_subsets.py`, the documented command, in a throwaway container with `fonts-noto-cjk` installed | §7.7 |
+| 7 | **The Japanese face moved too, and it is unrelated to this change.** Re-cutting takes all four from today's catalogues, and `NotoSansCJKjp-Regular.woff2` came out 580 bytes *smaller* — the committed face carried a character no catalogue uses any more. Keeping the regenerated file rather than reverting it is deliberate: committing one output of a four-face script leaves the tree in a state the documented command does not reproduce, which is the drift `PROVENANCE.md` exists to record. `sc` and `tc` came out byte-identical | §7.7 |
+| 8 | **Both catalogue trees are sorted again.** The two new keys were appended after `"tonnes"`; every catalogue on `main` is strictly sorted. Nothing in the suite asserts the ordering, so this was diff noise rather than a red build — three lines a file, forty files. Verified byte-identical across the two trees afterwards by SHA-256, all 21 files | §7.7 |
+| 9 | No API field, fixture or wire shape changes. Steps one and two of §0's three-step rule, not step three. The owner notifies the team | §0 |
+
+**Left for a follow-up, and named here rather than quietly skipped.** The per-category empty state inside each card still reads *"No specific foods are listed for this category. It is counted as %(category)s."* — the internal shorthand #140 asks the *consequence* copy to avoid, two inches below the plain-language sentence that avoids it. The new notice complies; this neighbouring string does not, and rewording it is twenty translations in two trees plus another CJK coverage check, which is its own change rather than a line of this one.
 ### v1.105 — 2026-10-09 (step 4 accepted a hundredth over, and which hundredth was decided by float dust; affects C)
 
 **This took 105 rather than 104 because v1.104 was on #181 when it was written.** That has since merged, so both entries are below and in order; the note is kept rather than deleted because a reader meeting the pair otherwise has to work out whether the gap is a missing revision. #170 holds 1.106, and #171 and #172 each still carry an entry numbered 1.103 and will have to move — the next free number after those three is 1.107, and it should be claimed by announcement rather than by guess.

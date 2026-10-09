@@ -479,7 +479,13 @@ def test_the_review_step_shows_each_row_in_the_unit_it_was_typed_in(page_at):
     what they typed.
     """
     page = to_amount_step(page_at(1278, 983, 1.25))
-    page.fill("#total-waste", "5")
+    #: 0.25 tonnes is 250 kg, which is exactly what the one row below allocates
+    #: (v1.99). It was "5" tonnes against a single 250 kg row - 4,750 kg short,
+    #: which step 4 used to accept and now refuses, leaving this on a disabled
+    #: Continue. The total stays in TONNES while the row is in kilograms,
+    #: because a differing pair is the whole point: it is what proves the row
+    #: does not inherit `state.totalUnit`.
+    page.fill("#total-waste", "0.25")
     page.select_option("#total-unit", "tonnes")
     press_continue(page)
     page.wait_for_selector(".destination-row")
@@ -507,7 +513,11 @@ def test_two_rows_in_different_units_convert_to_different_kilograms(page_at):
     repeated twice.
     """
     page = to_amount_step(page_at(1278, 983, 1.25))
-    page.fill("#total-waste", "6000")
+    #: 5,005 kg is 5 kg plus 5 tonnes, which is exactly what the two rows below
+    #: allocate (v1.99). It was "6000" - 995 kg short, which step 4 used to
+    #: accept and now refuses. The figure is unlovely on purpose: the point of
+    #: the test is the two rows disagreeing, and the total has to be their sum.
+    page.fill("#total-waste", "5005")
     page.select_option("#total-unit", "kilograms")
     press_continue(page)
     page.wait_for_selector(".destination-row")

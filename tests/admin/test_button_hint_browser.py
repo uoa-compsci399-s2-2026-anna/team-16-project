@@ -55,7 +55,18 @@ import pyotp
 
 pytestmark = pytest.mark.browser
 
-BASE = "http://localhost:18080"
+from tests.web.base_url import ORIGIN, compose_stack_mismatch
+
+#: v1.103. **An origin, read from the one place the suite declares it.** This
+#: was the literal `"http://localhost:18080"`, one of the three
+#: `tests/web/base_url.py` left out of scope at v1.91 as "a one-line import
+#: each away from this module". The cost of leaving it: a full
+#: `run_browser_suite.py` against a throwaway stack on 18091 produced 60
+#: errors, all of them here, because `_docker_exec` below honours
+#: `COMPOSE_PROJECT_NAME` and this did not -- the account was created in one
+#: stack and the login attempted against another. `compose_stack_mismatch`
+#: guards the half an import cannot.
+BASE = ORIGIN
 COMPOSE = ["docker", "compose", "-f", "docker/compose.yaml"]
 CSS_PATH = Path(__file__).resolve().parents[2] / "admin" / "static" / "brand.css"
 
@@ -75,6 +86,10 @@ def _stack_is_up() -> bool:
 
 
 pytest.importorskip("playwright.sync_api", reason="playwright is not installed")
+
+_SPLIT = compose_stack_mismatch(COMPOSE)
+if _SPLIT:  # pragma: no cover - environment guard
+    pytest.skip(_SPLIT, allow_module_level=True)
 
 if not _stack_is_up():  # pragma: no cover - environment guard
     pytest.skip(

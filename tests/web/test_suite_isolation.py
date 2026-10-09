@@ -441,6 +441,85 @@ def test_an_environment_variable_redirects_every_module():
     assert api == "http://localhost:18094", api
 
 
+def test_a_page_in_the_variable_is_refused_rather_than_appended_to():
+    """**The defect of 2026-10-06, as a test.**
+
+    `.github/workflows/_browser.yaml` set `KAICALC_WEB_URL` to
+    `http://localhost:18080/index.html`. The variable takes an ORIGIN -- that is
+    what `base_url.py` was written to settle, and the module's own docstring
+    records the ten files that used to spell it as a page. `base_url` appends
+    the path, so every address the suite built became `/index.html/<path>`,
+    which `docker/nginx.conf` answers with a 302 to `/`.
+
+    The browser therefore loaded the calculator for every test in the suite, and
+    the job reported **74 failures naming the cause in none of them**: 42
+    timeouts in `test_horizontal_overflow.py` waiting 15s for
+    `#news-feed[aria-busy='false']` on a page that was never `/home.html`, and
+    32 in `test_i18n_browser.py` whose `.gate` was `null` because
+    `/index.html/admin/login` is not the panel. Each one reads as a front-end
+    defect of whatever was being reviewed. The job spent its 75 minutes on those
+    timeouts and was killed with four of eight batches unrun.
+
+    Three things are asserted, and the third is the one that keeps the guard
+    useful rather than merely present:
+
+    * the bad value is **refused**, not appended to;
+    * the refusal is a `WebOriginError`, so this test cannot be satisfied by
+      some unrelated import failure that also stops collection;
+    * the message **names the origin to use**, because a guard that says only
+      "invalid" leaves the reader to rediscover what this docstring records.
+
+    A subprocess, for the reason the test above it gives: `base_url` reads the
+    environment once at import, and this process has already imported it.
+    """
+    probe = "import tests.web.base_url"
+    completed = subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=REPO, capture_output=True, text=True, timeout=120,
+        env={**_clean_env(), "KAICALC_WEB_URL": "http://localhost:18080/index.html"},
+    )
+    assert completed.returncode != 0, (
+        "a page in KAICALC_WEB_URL was accepted. base_url.py appends the path, "
+        "so the suite would ask for /index.html/home.html and nginx would 302 "
+        "it to / -- every browser test driving the calculator and failing on a "
+        "selector of the page it meant. That cost 74 failures and a killed job "
+        f"on 2026-10-06. stdout={completed.stdout!r}"
+    )
+    assert "WebOriginError" in completed.stderr, (
+        "the import failed for some other reason than the origin guard, so "
+        f"this test would pass with the guard deleted. stderr={completed.stderr!r}"
+    )
+    assert "http://localhost:18080" in completed.stderr, (
+        "the refusal does not name the origin to use instead, which is the "
+        f"one thing the reader needs. stderr={completed.stderr!r}"
+    )
+
+
+def test_an_origin_that_merely_parses_is_still_accepted():
+    """The guard refuses a path and nothing else.
+
+    Its own test because the cheapest way to make the test above pass is a
+    guard that refuses too much -- a regex on `localhost`, a check that the
+    value equals the default -- and either would break the private-container
+    workflow `base_url.py` exists to support, which a reader would then
+    discover from a red suite rather than from here.
+
+    A host that is not localhost, a port that is not 18080, and a trailing
+    slash: all three are things somebody legitimately sets, and none of them is
+    a path.
+    """
+    probe = "import tests.web.base_url as b; print(b.ORIGIN, b.CALCULATOR)"
+    completed = subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=REPO, capture_output=True, text=True, timeout=120,
+        env={**_clean_env(), "KAICALC_WEB_URL": "http://web.example:9999/"},
+    )
+    assert completed.returncode == 0, completed.stderr
+    origin, calculator = completed.stdout.split()
+    assert origin == "http://web.example:9999", origin
+    assert calculator == "http://web.example:9999/index.html", calculator
+
+
 # ---------------------------------------------------------------------------
 # What the two rules are for: the stack-free run
 # ---------------------------------------------------------------------------

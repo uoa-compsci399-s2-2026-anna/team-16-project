@@ -45,42 +45,72 @@ on:
       # `moving_tag` in the `version` job), so `alpha` never points at anything
       # that is not on main.
       - 'build/**'
-  # THERE IS DELIBERATELY NO `pull_request:` TRIGGER. Removed 2026-08-12.
+  # THE `pull_request:` TRIGGER IS BACK, 2026-10-07. It was removed on
+  # 2026-08-12 and the removal's own note is kept below, because the thing it
+  # gave up is exactly what then happened.
   #
-  # The suite against MySQL 8 takes 18 minutes and is the whole cost of a run:
-  # a pull request publishes nothing, so its image jobs finish in seconds and
-  # `Alpha tag` skips entirely. Eighteen minutes is therefore what every pull
-  # request cost, merged or not. In the second half of the semester five people
-  # open pull requests continuously and not all of them are headed for `main`,
-  # which spends that allowance on branches that never merge.
+  # WHY IT WAS REMOVED: "The suite against MySQL 8 takes 18 minutes and is the
+  # whole cost of a run: a pull request publishes nothing, so its image jobs
+  # finish in seconds and `Alpha tag` skips entirely. Eighteen minutes is
+  # therefore what every pull request cost, merged or not. In the second half
+  # of the semester five people open pull requests continuously and not all of
+  # them are headed for `main`, which spends that allowance on branches that
+  # never merge."
   #
-  # WHAT THIS GIVES UP, plainly: a change that breaks the suite is now found on
-  # `main` instead of before it, so `main` goes red rather than the pull
-  # request. `workflow_dispatch` is the mitigation and it works on any branch -
-  # run it by hand before merging anything you want verified first.
+  # WHY THAT NO LONGER HOLDS: the allowance was the whole argument, and this
+  # repository is now PUBLIC, so Actions minutes on standard runners are free.
+  # Nothing about the shape of the pipeline had to change to bring this back -
+  # `build` is still called with `push: github.event_name != 'pull_request'`
+  # and `_build-images.yaml` still gates every push step on `inputs.push`, and
+  # `manifest` still carries `github.event_name != 'pull_request'`. A pull
+  # request publishes nothing, exactly as the note above says. The
+  # infrastructure never left; only the trigger did.
+  #
+  # AND WHAT THE REMOVAL ACCEPTED CAME TRUE. Its own words: "a change that
+  # breaks the suite is now found on `main` instead of before it, so `main`
+  # goes red rather than the pull request. `workflow_dispatch` is the
+  # mitigation" - and a mitigation that depends on somebody remembering is not
+  # one. v1.102 added the browser job in #178. Because this trigger was absent
+  # the job never ran on the branch, its FIRST run was the merge commit on
+  # `main`, and it was killed at 75 minutes having reported 94 failures of
+  # which not one named its cause: `KAICALC_WEB_URL` had been set to a page
+  # rather than an origin, so every test in the suite drove the calculator.
+  # Finding that took a four-thousand-line log. On a pull request it would have
+  # been one red check before the merge.
+  #
+  # The rule this is an instance of: **a workflow that has never run is not
+  # finished**, which is the same sentence the `build/**` entry above gives for
+  # its own existence.
+  pull_request:
   workflow_dispatch:
 
-# One run per ref, and NOTHING IS EVER CANCELLED.
+# One run per ref. A RUN THAT CAN PUBLISH IS NEVER CANCELLED; A PULL REQUEST'S
+# IS, and the condition below is that distinction and nothing more.
 #
-# Cancellation used to be allowed on pull requests, where it was safe for one
-# reason: a PR published nothing, so interrupting one cost a rebuild and no
-# more. With the `pull_request` trigger gone every remaining run - a push to
-# `main` or to `build/**`, or a manual dispatch - can publish, and cancelling
-# one can land inside the same `imagetools create` -> push window that
-# release.yaml protects for the same reason. A run killed mid-publish leaves
-# the moving tag torn, pointing at one architecture or at nothing. The blast
-# radius is only ever a disposable alpha tag that the next run republishes -
-# but "it heals itself shortly" is not a property worth relying on when the
-# alternative is queueing.
+# A run that publishes must not be interrupted: cancelling one can land inside
+# the same `imagetools create` -> push window that release.yaml protects for
+# the same reason, and a run killed mid-publish leaves the moving tag torn,
+# pointing at one architecture or at nothing. The blast radius is only ever a
+# disposable alpha tag that the next run republishes - but "it heals itself
+# shortly" is not a property worth relying on when the alternative is queueing.
+# So a push to `main` or `build/**`, and a manual dispatch, QUEUE.
 #
-# So runs QUEUE. The group is per-ref, so a second push waits for the first
-# rather than running beside it - which also keeps two pytest processes off one
-# database, the deadlock tests/admin's shared-database fixtures hit when two
-# runs overlap. Each run does get its own MySQL service container, so that was
-# already safe, but queueing makes it safe by construction.
+# A pull request publishes nothing - `build` is called with
+# `push: github.event_name != 'pull_request'` and `manifest` skips outright -
+# so interrupting one costs a rebuild and no more. Cancelling is what should
+# happen there: five people pushing corrections to open branches would
+# otherwise queue a 45-minute run behind every superseded one. This is how it
+# behaved before 2026-08-12, when the note here read "Cancellation used to be
+# allowed on pull requests, where it was safe for one reason: a PR published
+# nothing"; restoring the trigger restores the reason with it.
+#
+# The group stays per-ref either way, which also keeps two pytest processes off
+# one database - the deadlock `tests/admin`'s shared-database fixtures hit when
+# two runs overlap. Each run gets its own MySQL service container, so that was
+# already safe; a per-ref group makes it safe by construction.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read

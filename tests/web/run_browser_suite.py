@@ -33,11 +33,19 @@ import sys
 import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
+#: Run as a script, so the repository is not importable unless it is put there.
+#: Needed for `tests.web.base_url`, which is where the origin's spelling lives -
+#: reading `KAICALC_WEB_URL` again here would recreate the second default that
+#: module exists to abolish.
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 COMPOSE = ["docker", "compose", "-f", str(ROOT / "docker" / "compose.yaml")]
 #: Cases per batch. 150 is measured rather than chosen: `test_results_export.py`
 #: (148) and `test_step_navigation.py` (127) each run clean on a fresh window,
 #: and the batches that have hit 429 in this project were larger than either.
 DEFAULT_CAP = 150
+
+from tests.web.base_url import ORIGIN  # noqa: E402 - after the sys.path insert
 
 
 def browser_modules(paths: list[str]) -> list[pathlib.Path]:
@@ -93,6 +101,32 @@ def batches(modules: list[pathlib.Path], cap: int) -> list[list[pathlib.Path]]:
     return packed
 
 
+def which_api() -> str:
+    """The `api` container this run will restart, resolved rather than assumed.
+
+    **It is not necessarily the stack `KAICALC_WEB_URL` points at, and that
+    asymmetry has a cost this project has already paid.** `COMPOSE` carries no
+    `-p`, so the project comes from `docker/compose.yaml`'s `name: kaicalc`
+    unless `COMPOSE_PROJECT_NAME` overrides it -- measured: the environment
+    variable wins over the file. Pointing the suite at a private container with
+    `KAICALC_WEB_URL` alone therefore leaves this function restarting the
+    SHARED api, which `tests/web/base_url.py` records as having cost four
+    tests: "a restart anybody performs lands inside whoever is mid-batch: four
+    502s on GET /api/v1/taxonomy arrived during three batches here and each one
+    cost exactly one test, failing as a timeout on `[data-action="start"]`
+    rather than as anything that names the cause."
+
+    Nothing here can prevent that -- restarting the right container is the
+    operator's choice, made with `COMPOSE_PROJECT_NAME`. What it can do is say
+    which one, once, before the first batch, so the choice is visible instead
+    of implicit.
+    """
+    done = subprocess.run([*COMPOSE, "ps", "--format", "{{.Name}}", "api"],
+                          cwd=ROOT, capture_output=True, text=True, check=False)
+    name = done.stdout.strip().splitlines()
+    return name[0] if name else "(no running api container)"
+
+
 def restart_api() -> None:
     subprocess.run([*COMPOSE, "restart", "api"], cwd=ROOT,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
@@ -118,6 +152,14 @@ def main() -> int:
         return 1
 
     print(f"{len(modules)} browser module(s), cap {args.cap} cases a batch", flush=True)
+    print(f"origin under test: {ORIGIN}", flush=True)
+    if args.no_restart:
+        print("api will NOT be restarted between batches (--no-restart); §6.5's "
+              "600 GETs an hour are shared across the whole run", flush=True)
+    else:
+        print(f"api restarted between batches: {which_api()}  "
+              f"(set COMPOSE_PROJECT_NAME to restart a different stack's)",
+              flush=True)
     plan = batches(modules, args.cap)
     print(f"{len(plan)} batch(es)\n", flush=True)
 

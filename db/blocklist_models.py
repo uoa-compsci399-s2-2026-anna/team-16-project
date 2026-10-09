@@ -26,11 +26,36 @@ from db.base import Base
 def utcnow() -> datetime:
     """Naive UTC, matching every other timestamp column in this schema.
 
-    A deliberate duplicate of ``admin.models.utcnow``. ``db/`` may not import
-    ``admin/`` — see the layering note in CLAUDE.md — so this three-line
-    helper is copied rather than shared. Change both together.
+    A deliberate duplicate of ``admin.models.utcnow`` and ``db.models.utcnow``
+    — there are THREE, not two, which is the first thing this note got wrong.
+    ``db/`` may not import ``admin/`` — see the layering note in CLAUDE.md — so
+    the helper is copied rather than shared. Change all three together;
+    ``test_all_three_utcnows_agree`` is what notices if one is missed.
+
+    **Microseconds are dropped, and not for tidiness.** Every ``DATETIME``
+    column in this schema carries zero digits of fractional-seconds precision
+    (asserted in ``tests/test_migrations.py``), and MySQL **rounds** rather
+    than truncates when it stores one: measured,
+    ``CAST('2026-10-06 22:26:59.700000' AS DATETIME)`` is
+    ``2026-10-06 22:27:00``. So a value with microseconds is, in
+    ``api/schemas.py``'s words about the same problem on the request path, "a
+    value that changes when it is stored" - and it can change by a whole
+    displayed minute.
+
+    That is not hypothetical. ``test_the_list_page_shows_the_published_set``
+    wrote ``utcnow()``, committed, and asserted the panel printed
+    ``published_at.strftime('%d %b %Y, %H:%M')``. On 2026-10-06 the write
+    landed in the last half-second of a minute, MySQL rounded it up, the page
+    rendered 22:27 and the test expected 22:26. It is a 0.5-in-60 window, so
+    roughly one run in a hundred and twenty, which is exactly often enough to
+    be dismissed as a flake and never fixed.
+
+    ``api/schemas.py`` already does this on the request path and says why:
+    dropped "where the caller can be told it happened, rather than in MySQL,
+    where nobody is". This is the same decision at the other source of
+    timestamps.
     """
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0)
 
 
 class IpBlock(Base):

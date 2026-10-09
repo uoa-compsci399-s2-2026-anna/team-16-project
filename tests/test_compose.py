@@ -556,3 +556,77 @@ def test_ci_runs_the_browser_suite_and_will_not_publish_past_it():
         f"`build` does not wait for `browser` ({ci['build']['needs']}), so an "
         f"image can be published past a red browser suite"
     )
+
+
+def test_ci_runs_on_pull_requests_and_a_pull_request_publishes_nothing():
+    """Contract v1.103. **A workflow that has never run is not finished.**
+
+    The `pull_request:` trigger was removed on 2026-08-12 to save Actions
+    minutes on a private repository, and the removal's own note recorded what
+    it was giving up: "a change that breaks the suite is now found on `main`
+    instead of before it, so `main` goes red rather than the pull request.
+    `workflow_dispatch` is the mitigation."
+
+    That came true in the most expensive available way. v1.102 added the
+    browser job in #178; with no pull-request trigger the job never ran on the
+    branch, its FIRST run was the merge commit on `main`, and it was killed at
+    75 minutes having reported 94 failures of which not one named its cause.
+    One red check before the merge would have cost nothing. A mitigation that
+    depends on somebody remembering is not one.
+
+    The repository is now public, so the minutes the removal was protecting are
+    free, and **two things are asserted here rather than one**:
+
+    * the trigger exists;
+    * and a pull-request run still **publishes nothing** - which is the
+      property that made the trigger affordable in the first place and the one
+      that would make restoring it reckless if it had been lost. `build` is
+      called with `push: github.event_name != 'pull_request'`, every push step
+      in `_build-images.yaml` is gated on `inputs.push`, and `manifest` carries
+      the same condition.
+
+    If this has to be removed again - a runner shortage, a billing change -
+    remove it here and say why, rather than leaving a test nobody can explain.
+    """
+    import yaml
+
+    ci = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+    # `on:` is parsed by PyYAML as the boolean True, which is the one place
+    # YAML 1.1's truthy keys reach this repository.
+    triggers = ci[True] if True in ci else ci["on"]
+    assert "pull_request" in triggers, (
+        f"ci.yaml no longer runs on pull requests ({sorted(triggers)}), so a "
+        f"change to the suite or to the workflows is first exercised by the "
+        f"merge commit on `main`. That is how v1.102's browser job came to "
+        f"report 94 failures on `main` with its cause named in none of them."
+    )
+
+    jobs = ci["jobs"]
+    pushes = str(jobs["build"]["with"]["push"])
+    assert "pull_request" in pushes, (
+        f"`build` is called with push={pushes!r}, which no longer excludes a "
+        f"pull request - so every pull request would publish images. That, and "
+        f"not the minutes, is the reason a pull-request trigger needs a "
+        f"condition here."
+    )
+
+    manifest_if = str(jobs["manifest"].get("if", ""))
+    assert "pull_request" in manifest_if, (
+        f"`manifest` has if={manifest_if!r}, which no longer excludes a pull "
+        f"request, so a pull request would move a multi-architecture tag"
+    )
+
+    build = yaml.safe_load(
+        (REPO / ".github" / "workflows" / "_build-images.yaml").read_text(encoding="utf-8")
+    )
+    pushing_steps = [
+        step for job in build["jobs"].values() for step in job["steps"]
+        if "--push" in str(step.get("run", "")) or "push: true" in str(step.get("with", ""))
+    ]
+    ungated = [step.get("name", "<unnamed>") for step in pushing_steps
+               if "inputs.push" not in str(step.get("if", ""))]
+    assert not ungated, (
+        f"{len(ungated)} step(s) in _build-images.yaml push without being "
+        f"gated on `inputs.push`, so a pull request would publish through "
+        f"them: {ungated}"
+    )

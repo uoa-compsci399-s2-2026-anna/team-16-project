@@ -68,7 +68,7 @@ def review(browser):
     """
     contexts = []
 
-    def open_page(lang="en", width=1278, height=983, reduced_motion=None, time_frame="custom"):
+    def open_page(lang="en", width=1278, height=983, reduced_motion=None, time_frame="custom", total="1000", allocated=None):
         options = {"viewport": {"width": width, "height": height}, "locale": "en-NZ"}
         if reduced_motion is not None:
             options["reduced_motion"] = reduced_motion
@@ -89,10 +89,22 @@ def review(browser):
         press_continue(page)
         press_continue(page)
         page.wait_for_selector("#total-waste")
-        page.fill("#total-waste", "1000")
+        page.fill("#total-waste", total)
         press_continue(page)
         page.wait_for_selector('[data-line-field="amount"]')
-        page.locator('[data-line-field="amount"]').first.fill("500")
+        #: **`allocated` defaults to the whole total, and v1.99 is why it has
+        #: to.** This filled "500" against a total of "1000" - a 500 kg short
+        #: allocation that step 4 used to let through and has refused since
+        #: v1.99 - so the helper sat on a disabled Continue for thirty seconds.
+        #: 92 cases across the four `test_period_*` modules failed that way,
+        #: and nothing reported it because CI was killed before it reached the
+        #: batch they are in. `test_session_restore_browser.py` and
+        #: `test_step_history_browser.py` were corrected at v1.99 in this same
+        #: shape; these four were missed for want of a run.
+        #:
+        #: The parameter stays, so a test that wants a short allocation can
+        #: still ask for one and expect to be refused.
+        page.locator('[data-line-field="amount"]').first.fill(allocated or total)
         press_continue(page)
         page.wait_for_selector("#time-frame", timeout=10000)
         page.select_option("#time-frame", time_frame)
@@ -548,11 +560,53 @@ def test_the_face_is_hidden_from_assistive_technology_and_the_value_is_announced
     ) == "true"
     live = page.locator("#period-clock-value")
     assert live.get_attribute("aria-live") == "polite"
-    before = _announced(page)
+    #: **Three taps, each asserted against the value it names, because
+    #: "it changed" depended on the time of day.** This read
+    #: `before = _announced(page)`, tapped 90 degrees, and asserted
+    #: `after != before and after.startswith("03:")`. The dial seeds from the
+    #: period start, which defaults to now, so when the hour already WAS 03
+    #: the tap changed nothing and `after != before` failed - and that is one
+    #: hour in twenty-four, not a random flake. It failed on `main` at
+    #: 03:08 UTC on 2026-10-07 reporting `03:05 -> 03:05`, having passed the
+    #: pull request at 01:29. In New Zealand the hour it cannot survive is
+    #: 16:00-16:59, which is why no developer here ever met it.
+    #:
+    #: The dial's own behaviour, measured rather than assumed: it opens on the
+    #: hours stage and **auto-advances to minutes after the first tap** -
+    #: `08:37` on opening, `03:37` and the minutes stage after tapping 90, then
+    #: `03:45` after tapping 270 because 270 is now forty-five MINUTES. So a
+    #: second hour tap is not available, and the obvious repair of tapping 90
+    #: then 270 and expecting `09:` would have been wrong.
+    #:
+    #: Every value below is fixed by the tap that produces it, so nothing here
+    #: reads the clock. It is also a stronger claim than the one it replaces:
+    #: the region is asserted to follow the hand to three named positions
+    #: rather than merely to differ from an unknown starting value.
+    assert page.evaluate(
+        """() => document.querySelector('[data-action="period-clock-stage"][data-stage="hours"]')
+                 ?.getAttribute('aria-pressed')"""
+    ) == "true", "the dial did not open on the hours stage, so tapping 90 degrees is not an hour"
+
     _tap(page, 90)
-    after = _announced(page)
-    assert after != before and after.startswith("03:"), (
-        f"the live region did not follow the hand: {before} -> {after}"
+    at_three = _announced(page)
+    assert at_three.startswith("03:"), (
+        f"tapping 90 degrees on the hours stage announced {at_three!r}, which "
+        f"is not three o'clock - the live region is not following the hand"
+    )
+
+    #: The first tap moved the stage to minutes, so these two are minutes.
+    _tap(page, 0)
+    on_the_hour = _announced(page)
+    assert on_the_hour == "03:00", (
+        f"tapping straight up on the minutes stage announced {on_the_hour!r} "
+        f"rather than 03:00"
+    )
+
+    _tap(page, 270)
+    quarter_to = _announced(page)
+    assert quarter_to == "03:45", (
+        f"tapping 270 degrees on the minutes stage announced {quarter_to!r} "
+        f"rather than 03:45"
     )
     assert page.evaluate(
         "getComputedStyle(document.querySelector('#period-clock-value')).position"

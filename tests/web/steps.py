@@ -102,20 +102,85 @@ def expand_step_cards(page, *, settle: int = 120, ceiling: int = 40) -> int:
     return opened
 
 
+#: Read in one round trip when Continue will not take a press, because the
+#: thirty seconds Playwright spends waiting produce only "element is not
+#: enabled" while the page has been displaying the reason the whole time.
+#: `CONTINUE` is interpolated rather than written out again, so a change to the
+#: selector cannot leave this looking at a different button.
+#: A RAW string: the `\s` in the regex is a Python escape otherwise, and
+#: Python 3.12 warns about it on every import of this module.
+_WHY_REFUSED = r"""
+() => {
+  const button = document.querySelector(%r);
+  if (!button || !button.disabled) return null;
+  const invalid = [...document.querySelectorAll('.invalid, [aria-invalid="true"]')]
+    .map(element => (element.className || element.tagName) + ': '
+         + (element.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 160));
+  const heading = document.querySelector('main h2, main h1');
+  return {step: heading ? heading.textContent.trim() : '(no heading)', invalid};
+}
+""" % CONTINUE
+
+
+def _refuse_a_disabled_continue(page) -> None:
+    """Fail at once, naming the step and its complaint, rather than in 30s.
+
+    **What this replaces.** `page.click` waits for the control to become
+    enabled and then raises `TimeoutError: Page.click: Timeout 30000ms
+    exceeded` with a call log whose entire content is `element is not enabled`.
+    Thirty seconds per case, naming neither the step nor the reason -- while
+    `.allocation-summary.invalid` has been reading `Total waste 1,000.00
+    kilograms Allocated 500.00 kilograms Remaining 500.00 kilograms` the whole
+    time.
+
+    Measured: v1.99 made step 4 refuse an allocation short of the total, four
+    `test_period_*` helpers filled half of it, and the result was **92 failures
+    taking 50 minutes** -- one batch spending two thirds of the browser job's
+    whole budget waiting for a button that was never going to enable. CI never
+    reported it, having been killed three batches earlier.
+
+    **It cannot break a test that passes today.** The sentence this replaces in
+    `press_continue` said a refused press "goes through here unchanged: nothing
+    moves" -- true while Continue was merely ineffective, false since v1.99
+    made it `disabled`, because `page.click` then throws. Every caller that
+    reaches here with Continue disabled is therefore already failing, and the
+    only change is how fast and how legibly. A test that wants to observe the
+    refusal reads `el.disabled` directly, as `test_amount_limits_browser.py`
+    does, and never comes through here.
+    """
+    why = page.evaluate(_WHY_REFUSED)
+    if why is None:
+        return
+    complaint = "; ".join(why["invalid"]) or "nothing on the page is marked invalid"
+    raise AssertionError(
+        f"Continue is disabled on the step headed {why['step']!r}, so this "
+        f"press cannot land. The page's own complaint: {complaint}. A helper "
+        f"walking the form has to satisfy the step's rule, and the usual cause "
+        f"is a step 4 allocation short of the total, which v1.99 made a "
+        f"refusal. Pressing anyway costs 30 seconds and reports only 'element "
+        f"is not enabled'."
+    )
+
+
 def press_continue(page, *, settle: int = 150) -> bool:
     """Press the step bar's Continue, and press it again if the food panel answered.
 
     Returns whether the panel was there, so a caller that cares can assert on
     it. Almost none do: they want to be on the next step.
 
-    A press that the page refuses -- Continue disabled, or a validation error
-    holding the visitor on the step -- goes through here unchanged: nothing
-    moves, the panel is not showing, and the helper returns having pressed once.
+    A press refused because **Continue is disabled** fails here at once, naming
+    the step and the page's own complaint -- see `_refuse_a_disabled_continue`
+    for the 92 cases and 50 minutes that bought. A press refused by a
+    validation error that leaves Continue enabled still goes through unchanged:
+    nothing moves, the panel is not showing, and the helper returns having
+    pressed once.
     """
+    _refuse_a_disabled_continue(page)
     page.click(CONTINUE)
     page.wait_for_timeout(settle)
     if not food_panel_is_showing(page):
         return False
+    _refuse_a_disabled_continue(page)
     page.click(CONTINUE)
     page.wait_for_timeout(settle)
     return True

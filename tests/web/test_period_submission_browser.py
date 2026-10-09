@@ -89,7 +89,7 @@ def journey(browser):
         (_fixtures() / "calculate_response.json").read_text(encoding="utf-8")
     )
 
-    def open_page():
+    def open_page(total="1000", allocated=None):
         context = browser.new_context(viewport={"width": 1278, "height": 983}, locale="en-NZ")
         contexts.append(context)
         page = context.new_page()
@@ -128,10 +128,22 @@ def journey(browser):
         press_continue(page)
         press_continue(page)
         page.wait_for_selector("#total-waste")
-        page.fill("#total-waste", "1000")
+        page.fill("#total-waste", total)
         press_continue(page)
         page.wait_for_selector('[data-line-field="amount"]')
-        page.locator('[data-line-field="amount"]').first.fill("500")
+        #: **`allocated` defaults to the whole total, and v1.99 is why it has
+        #: to.** This filled "500" against a total of "1000" - a 500 kg short
+        #: allocation that step 4 used to let through and has refused since
+        #: v1.99 - so the helper sat on a disabled Continue for thirty seconds.
+        #: 92 cases across the four `test_period_*` modules failed that way,
+        #: and nothing reported it because CI was killed before it reached the
+        #: batch they are in. `test_session_restore_browser.py` and
+        #: `test_step_history_browser.py` were corrected at v1.99 in this same
+        #: shape; these four were missed for want of a run.
+        #:
+        #: The parameter stays, so a test that wants a short allocation can
+        #: still ask for one and expect to be refused.
+        page.locator('[data-line-field="amount"]').first.fill(allocated or total)
         press_continue(page)
         page.wait_for_selector("#time-frame", timeout=10000)
         return page, sent

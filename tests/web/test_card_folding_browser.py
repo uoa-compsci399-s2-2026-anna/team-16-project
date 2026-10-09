@@ -30,6 +30,8 @@ Requires the stack, with the published set releasing the item level::
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 import pytest
 
 from tests.web.base_url import ORIGIN
@@ -269,7 +271,9 @@ def test_an_unanswered_category_is_never_marked_wrong(opened, item_level):
     reader would see even if the first two were fixed.
 
     Mutation: passing `cardStatus(false)` instead of `itemStatus(0)` fails all
-    three, the colour assertion included.
+    four — state, words, colour and the mark. Re-checked at #181, which emptied
+    `cardStatus`'s marks and briefly left the fourth unable to fail; see the note
+    beside it.
     """
     categories = _categories_with_foods(item_level, 2)
     page = opened()
@@ -295,7 +299,15 @@ def test_an_unanswered_category_is_never_marked_wrong(opened, item_level):
             f"an unanswered step-2.5 card's badge is coloured away from the header's "
             f"own ink, so it reads as a verdict: {badge}"
         )
-        assert badge["mark"] != "✕", badge
+        #: **`== "—"`, not `!= "✕"`** (#181). The cross was `cardStatus`'s
+        #: incomplete mark, so `!= "✕"` killed the mutation this docstring names
+        #: — until #181 removed both of `cardStatus`'s glyphs, after which
+        #: `cardStatus(false).mark` is `''` and the assertion could no longer
+        #: fail. Asserting step 2.5's OWN mark restores it: `itemStatus(0)`
+        #: gives `'—'` and `cardStatus(false)` gives `''`, so the swap is caught
+        #: again, and by a claim about what this badge IS rather than about what
+        #: it is not.
+        assert badge["mark"] == "—", badge
 
 
 def test_a_card_opens_and_closes_from_the_keyboard_and_says_which_it_is(opened, item_level):
@@ -666,6 +678,85 @@ def test_over_allocation_is_visible_from_a_shut_card(opened):
     assert folded["summaryDrawn"] is True, folded
     assert folded["badge"] == "incomplete", folded
     assert folded["continueDisabled"] is True, folded
+
+
+@pytest.mark.parametrize("total", ("2.00", "10.00", "1.00", "100.00"))
+def test_one_hundredth_over_is_refused_at_every_scale(opened, total):
+    """Contract v1.105. **The owner's report: 2.00 kilograms accepting 2.01.**
+
+    `exceedsTotal` was `allocated - total > ALLOCATION_EPSILON` with the epsilon at
+    0.01, in doubles. Two things were wrong with that and the second is the one this
+    test is shaped around.
+
+    The tolerance was **one whole unit in the last place a visitor can type** — the
+    destination input is `step="0.01"` — so it swallowed not the floating-point dust
+    its note described but the smallest real error there is, and `>` made it
+    inclusive. The screen said *Total 2.00*, *Allocated 2.01*, *Remaining 0.00*, under
+    a badge reading *Complete*, with Continue enabled. And because the step-3 total
+    never crosses the wire, the calculator then computed on 2.01.
+
+    **Which "+0.01" it swallowed was decided by the dust rather than by the figures:**
+
+        1.00 -> 1.01     0.010000000000000009   refused
+        2.00 -> 2.01     0.009999999999999787   ACCEPTED
+       10.00 -> 10.01    0.009999999999999787   ACCEPTED
+      100.00 -> 100.01   0.010000000000005116   refused
+
+    So the four totals here are not arbitrary and are not padding: **two of them the
+    old rule refused and two it accepted, for the identical logical gap.** A test at
+    one scale would have passed against the defect at the other two. That is the
+    property under test — one gap, one verdict, whatever the magnitude — and it is why
+    the parameters are spelled out rather than generated.
+
+    One leaf, not two: with a second unallocated leaf on the page Continue is disabled
+    by v1.99's own rule and this test's `continueDisabled` would pass without the card
+    under measurement contributing anything.
+
+    It finishes by allocating the total exactly, so it cannot be satisfied by a rule
+    that refuses everything.
+    """
+    over = f"{Decimal(total) + Decimal('0.01'):.2f}"
+    page = opened()
+    _to_step_four(page, 1, amount=total)
+    #: No toggle to click: `cardIsFixedOpen` holds a lone card open, so a one-leaf
+    #: chain has no `.step-card__toggle` at all. The two tests below use two leaves
+    #: because folding is what they measure; this one measures the verdict, and the
+    #: second leaf would disable Continue on its own.
+    first_row = page.evaluate(
+        "() => document.querySelector('.step-card [data-line-field=amount]').id")
+
+    page.fill(f"#{first_row}", over)
+    page.wait_for_timeout(220)
+    verdict = page.evaluate(VERDICT)
+    assert verdict["badge"] == "incomplete", (
+        f"{over} against a {total} leaf wears a {verdict['badge']!r} badge: {verdict}"
+    )
+    assert verdict["summaryInvalid"] is True, (
+        f"the allocation strip is not marked for {over} against {total}: {verdict}"
+    )
+    assert verdict["continueDisabled"] is True, (
+        f"Continue is live with {over} allocated against {total}: {verdict}"
+    )
+    #: **The figure beside the badge lied too, and it is asserted separately.** The old
+    #: `remainingAmount` snapped anything inside the tolerance to exactly 0, so the
+    #: strip read `Total 2.00  Allocated 2.01  Remaining 0.00` — three numbers that do
+    #: not add up, on one line. A rule that refuses the allocation while still printing
+    #: `0.00` would pass the three assertions above.
+    assert verdict["remaining"].startswith("-0.01"), (
+        f"Remaining reads {verdict['remaining']!r} for an allocation 0.01 over its "
+        f"total, so the strip still says the books balance: {verdict}"
+    )
+
+    page.fill(f"#{first_row}", total)
+    page.wait_for_timeout(220)
+    settled = page.evaluate(VERDICT)
+    assert settled["badge"] == "complete", (
+        f"allocating exactly {total} is still refused, so the rule refuses "
+        f"everything: {settled}"
+    )
+    assert settled["summaryInvalid"] is False, settled
+    assert settled["continueDisabled"] is False, settled
+    assert settled["remaining"].startswith("0.00"), settled
 
 
 def test_under_allocation_is_refused_and_visible_from_a_shut_card(opened):

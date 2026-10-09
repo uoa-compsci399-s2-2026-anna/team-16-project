@@ -35,7 +35,45 @@ jobs:
   test:
     name: Tests (MySQL 8)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 60, RAISED FROM 30 ON 2026-10-07 BECAUSE THE JOB HAD STOPPED
+    # FINISHING. It is not a performance fix and it is not pretending to be
+    # one; a job that is killed at 53% reports nothing at all, and the first
+    # thing needed here was a run that gets to its own summary line.
+    #
+    # The measurement, from this workflow's own history:
+    #
+    #   fffa001  before v1.102   4 failed, 3537 passed, 63 skipped in 1158.72s
+    #   bfa7726  v1.102 on main  killed at 30 minutes
+    #   f0e0ff2  v1.102 + fixes  killed at 30 minutes, having reached 53%
+    #
+    # So v1.102 roughly doubled this job, and v1.102 is the revision that made
+    # `playwright` a dev dependency and gave this job `-m "not browser"`.
+    # Extrapolating the progress markers of the last run (1% at 19:39:10, 19%
+    # at 19:48:31, 39% at 20:01:57, 53% at 20:07) puts a full run near 53
+    # minutes, hence 60 rather than 45.
+    #
+    # WHERE THE TIME GOES, from the first run that reached its own summary:
+    # `3634 passed, 11 skipped, 694 deselected in 1995.69s (0:33:15)`, and the
+    # `--durations=25` below is **entirely `tests/admin` setup** - 2.3s to 2.8s
+    # per case, on `_create_onboarded_account` and the fixtures around it,
+    # which create a staff account and walk the TOTP enrolment for real. The
+    # cost is bcrypt and it is deliberate. `tests/admin` holds **1,710 cases**.
+    #
+    # So there is no single culprit to remove: the suite grew past half an hour
+    # a few hundred admin cases ago and nobody saw it, because 30 minutes was
+    # enough until it was not. Anyone wanting this faster should look at the
+    # SCOPE of those account fixtures, not at a number in this file.
+    #
+    # Three candidates were measured and are not it, so nobody repeats them:
+    # the 119 cases `-m "not browser"` newly selects out of the 40 browser
+    # modules (10s for all of them, slowest 0.44s, and still that fast with the
+    # origin pointed at a dead port); `test_suite_isolation.py`'s
+    # `--collect-only` subprocesses (6s for the module); and the larger
+    # `docker/mock-factors.json` - no conftest loads it, one test parses it.
+    #
+    # `--durations=25` stays, because that is what answered this and it is what
+    # will answer it next time instead of somebody guessing again.
+    timeout-minutes: 60
 
     services:
       # A REAL MySQL 8, not SQLite and not `-m "not db"`.
@@ -254,4 +292,4 @@ jobs:
           # render, "skipped" is not an available outcome - see
           # tests/support/pdf.py.
           KAICALC_PDF_REQUIRED: '1'
-        run: python -m pytest -m "not browser"
+        run: python -m pytest -m "not browser" --durations=25

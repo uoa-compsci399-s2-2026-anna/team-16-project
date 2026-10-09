@@ -307,6 +307,11 @@ export const state = {
   // without consulting this list at all — see the note there.
   openCards: [],
   resultBreakdownTab: 'stage',
+  // **A session-level result-page preference.** The improvement tip is guidance,
+  // not a result field, so it is deliberately not part of the persisted answer
+  // snapshot. Keeping the dismissal in state does mean every re-render honours it;
+  // removing the DOM node alone would make it return on the next tab or input update.
+  resultsImprovementTipDismissed: false,
   lastChangedDestination: null,
   improvementOpen: false,
   // **One allocation PER LEAF, in submission order** (`design.md` §10, owner decision

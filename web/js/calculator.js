@@ -3733,6 +3733,10 @@ export function bindCalculator(main, retryTaxonomy) {
     if (action === 'start-over' && window.confirm(t('Clear all calculator data and return to the introduction?'))) resetCalculator()
     if (action === 'download-results') downloadResults(state)
     if (action === 'download-pdf') downloadPdf(state)
+    if (action === 'dismiss-results-improvement-tip') {
+      setState({ resultsImprovementTipDismissed: true })
+      requestAnimationFrame(() => document.getElementById('results-title')?.focus({ preventScroll: true }))
+    }
     // Round four's two steps. Submit arms a five-second window and sends nothing;
     // Undo cancels it. Neither of them talks to the API directly — see
     // `CONTRIBUTE_GRACE_MS` in `results.js` for why the window is spent before the

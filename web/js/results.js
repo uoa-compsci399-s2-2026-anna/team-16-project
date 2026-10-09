@@ -2313,7 +2313,22 @@ export function renderResults(state) {
   // and "Download results" moved into it; "Start a new calculation" did not,
   // because it is a confirm-guarded reset rather than a step action, and the
   // header's home button already offers it.
-  return `<section class="content-section wide results-page" aria-labelledby="results-title">${resultsFloatingNavigation(state)}<p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 6 }))}</p><h1 id="results-title">${escapeHtml(t('Your estimated impact'))}</h1><p class="section-intro">${escapeHtml(entryResults.length === 1
+  //: **A sentence and a way to close it — and deliberately no button of its own.**
+  //: #130 asks that the tip not carry "a control with the same accessible name doing
+  //: the same thing", and names v1.97 as the reason. The first version of this had an
+  //: `<h2>` and a primary button both reading *Explore Improvements*, which with the
+  //: floating nav's own link and the panel's own button made **three focusable
+  //: controls of that name on one page, two of them calling `openImprovement(state)`
+  //: with the same argument**.
+  //:
+  //: The way out is not a third wording for the same action. The sentence already
+  //: names the feature, and `#improvement-section` is already one click away in the
+  //: floating navigation that is on the page whatever this tip does — so the tip is a
+  //: tip: it tells a reader the feature is there, and gets out of the way. The
+  //: `<aside>` keeps the name on `aria-label` rather than on an `<h2>`, because a
+  //: landmark's name is not a tab stop and so is not one of the three.
+  const improvementTip = state.resultsImprovementTipDismissed ? '' : `<aside class="results-improvement-tip" id="results-improvement-tip" aria-label="${escapeHtml(t('Explore Improvements'))}"><p>${escapeHtml(t('See how a different allocation could change the result in Explore Improvements.'))}</p><button class="results-improvement-tip__dismiss" type="button" data-action="dismiss-results-improvement-tip" aria-label="${escapeHtml(t('Dismiss'))}"><span aria-hidden="true">×</span></button></aside>`
+  return `<section class="content-section wide results-page" aria-labelledby="results-title">${resultsFloatingNavigation(state)}<p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 6 }))}</p><h1 id="results-title" tabindex="-1">${escapeHtml(t('Your estimated impact'))}</h1>${improvementTip}<p class="section-intro">${escapeHtml(entryResults.length === 1
       ? t('Results returned by the calculation service for one supply-chain entry.')
       // **`count` is entries, and an entry is a leaf.** A single forked chain is one
       // supply-chain entry rendered as several, so the old wording — "for 3 supply-chain

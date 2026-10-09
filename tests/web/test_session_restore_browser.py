@@ -765,6 +765,36 @@ def test_start_a_new_calculation_on_the_results_page_removes_the_snapshot(page):
     assert page.locator('[data-action="start"]').count() == 1
 
 
+def test_the_improvement_tips_dismissal_survives_a_render(page):
+    """The results tip is guidance, with state-backed dismissal rather than DOM removal.
+
+    **It used to press a button the tip no longer has.** The first version carried its
+    own *Explore Improvements* control, which #130 forbids — the floating nav and the
+    panel already have one each, and two of the three called the same function. The tip
+    is a sentence and a dismiss now, so the half of this test that pressed it and
+    followed the focus is gone with it.
+
+    What is left is the half that was always the valuable one: dismissal is held in
+    state rather than by removing the node, so a later render cannot bring the tip
+    back. That is the regression the previous round of review found, and pressing a
+    breakdown tab is what forces the render that would expose it.
+    """
+    _to_the_results_page(page)
+    tip = page.locator("#results-improvement-tip")
+    assert tip.is_visible()
+    assert page.locator("#results-title + #results-improvement-tip").count() == 1
+    assert "Explore Improvements" in tip.inner_text()
+    assert tip.locator("button").count() == 1, (
+        "the tip has more than the dismiss button, which is what #130 forbids"
+    )
+
+    page.click('[data-action="dismiss-results-improvement-tip"]')
+    assert page.locator("#results-improvement-tip").count() == 0
+    page.click('[data-action="breakdown-tab"][data-tab="destination"]')
+    page.wait_for_timeout(100)
+    assert page.locator("#results-improvement-tip").count() == 0
+
+
 # ------------------------------------------------- nothing transient is restored
 
 

@@ -1693,7 +1693,13 @@ function destinationCell(leaf, line, paths, allocationExcess) {
   const figures = draftLeafFigures(leaf)
   const destination = selected(state.taxonomy.destinations, line.destination)
   const serverError = state.fieldErrors[paths.get(line.id)]
-  const invalid = Boolean(serverError) || (line.qtyInput !== '' && Number(line.qtyInput) < 0) || (allocationExcess && state.lastChangedDestination === line.destination)
+  //: **`lastChangedLeaf` as well as `lastChangedDestination`, and the pair is the fix
+  //: for a row that went red in a card nobody had touched** (v1.109). The destination
+  //: code alone is not an identity: every leaf's card draws the same thirteen
+  //: destinations, so "the row I last edited" matched that destination's row in EVERY
+  //: card. Typing into *Landfill* on the dairy card and then opening the fruit card
+  //: marked the fruit card's *Landfill* row, which the visitor had never seen.
+  const invalid = Boolean(serverError) || (line.qtyInput !== '' && Number(line.qtyInput) < 0) || (allocationExcess && state.lastChangedLeaf === leafKey(leaf) && state.lastChangedDestination === line.destination)
   const rowUnit = line.unit || figures.totalUnit
   const name = destination?.name || line.destination
   return `<div class="destination-row ${invalid ? 'invalid' : ''}"><label for="destination-${line.id}">${escapeHtml(name)}${destination?.description ? `<small>${escapeHtml(destination.description)}</small>` : ''}</label><div class="amount-with-unit"><input id="destination-${line.id}" data-line-field="amount" data-line-id="${line.id}" data-leaf="${leafAttr(leaf)}" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(line.qtyInput)}" ${invalid ? 'aria-invalid="true"' : ''} aria-label="${escapeHtml(t('%(destination)s amount in %(unit)s', { destination: name, unit: rowUnitLabel(rowUnit) }))}"><select data-line-field="unit" data-line-id="${line.id}" data-leaf="${leafAttr(leaf)}" aria-label="${escapeHtml(t('Unit'))}">${unitOptionsHtml(rowUnit, containerPresets())}</select></div>${serverError ? `<p class="field-error" role="alert">${escapeHtml(serverError)}</p>` : ''}</div>`
@@ -1807,11 +1813,22 @@ function destinationStep() {
   //: allocation that does not match its total, in either direction. While this asked only
   //: about excess, an under-allocated card could be folded away with its own refusal
   //: inside it.
+  //: **`started` here too** (v1.109). `leafSummary` has waited for the visitor to have
+  //: typed something before calling an allocation short since v1.99, and says why:
+  //: "falling short is the state every card is in before it is filled, so marking it
+  //: on arrival is telling somebody off for not having acted yet." This predicate did
+  //: not, so a card the visitor had never opened was already `misallocated` and its
+  //: rows were eligible to be marked. The two writers of this one rule had drifted
+  //: again, which is the thing `leafSummary`'s own note warns about.
+  //:
+  //: Over-allocation stays unconditional, exactly as it is in the strip: a card can
+  //: only be over its total if somebody typed a figure into it.
   const misallocated = leaf => {
     const figures = draftLeafFigures(leaf)
     const allocated = allocatedAmount(figures.current, figures.totalUnit)
     const total = totalNumber(figures)
-    return exceedsTotal(allocated, total) || fallsShortOfTotal(allocated, total)
+    const started = (figures.current || []).some(line => line.qtyInput !== '')
+    return exceedsTotal(allocated, total) || (started && fallsShortOfTotal(allocated, total))
   }
   // A server `VALIDATION_ERROR` names a line by the §9 path `draftLinePaths` builds, and a
   // client-side refusal names a leaf in `state.errorAt`. Either way **a card holding a
@@ -2903,6 +2920,10 @@ function updateLine(control) {
   // neighbouring row; the highlights they drew are cleared below with the rest.
   state.fieldErrors = {}
   state.lastChangedDestination = lines.find(line => line.id === lineId)?.destination || null
+  //: The leaf the destination belongs to. Written beside it and reset with it, because
+  //: a destination code is drawn thirteen times on every card and is not an identity on
+  //: its own — see `destinationCell`.
+  state.lastChangedLeaf = key
   const unit = figures.totalUnit
   const total = totalNumber(state.leafFigures[key])
   const sum = allocatedAmount(lines, unit)
@@ -2987,6 +3008,7 @@ const entryPatch = entry => ({
   errorAt: null,
   fieldErrors: {},
   lastChangedDestination: null,
+  lastChangedLeaf: null,
 })
 
 function loadEntry(entry) {
@@ -3182,7 +3204,7 @@ function clearDraft() {
   // a card id left behind from the chain just committed would decide the open state of a
   // card for a food this one may not even name. The stated default is all collapsed, so
   // an empty list is what a fresh chain starts on.
-  setState({ ...EMPTY_DRAFT, step: 0, error: null, errorAt: null, fieldErrors: {}, expandedSectors: [], openCards: [], lastChangedDestination: null })
+  setState({ ...EMPTY_DRAFT, step: 0, error: null, errorAt: null, fieldErrors: {}, expandedSectors: [], openCards: [], lastChangedDestination: null, lastChangedLeaf: null })
 }
 
 /**

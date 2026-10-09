@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-10-09 (v1.108)"
+date: "2026-10-10 (v1.109)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,21 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.109 — 2026-10-10 (a red row in a card nobody had filled; affects C)
+
+**The client's report:** a step 4 card with nothing typed in it and a calm strip — *Total 2.00 · Allocated 0.00 · Remaining 2.00* — showing **one row marked in Beetroot**.
+
+Two defects compounded, and the second is why the first was not noticed sooner.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`misallocated` gains the `started` guard the strip has had since v1.99.** It asked `exceedsTotal(...) || fallsShortOfTotal(...)` with nothing in front of it, so a card the visitor had never opened was already "misallocated" — an empty allocation is short of any total. `leafSummary` has waited for a typed figure since v1.99 and its own note says why: falling short "is the state every card is in before it is filled, so marking it on arrival is telling somebody off for not having acted yet". **The two writers of one rule had drifted again**, which is the thing that note warns about. Over-allocation stays unconditional in both, because a card can only exceed its total if somebody typed a figure | §7.3a |
+| 2 | **`state.lastChangedDestination` is not an identity on its own, and now travels with `state.lastChangedLeaf`.** The row to mark was chosen by `lastChangedDestination === line.destination` — a bare destination code. Every leaf's card draws the same thirteen destinations, so *the row I last edited* matched that destination's row in **every card at once**. Typing into *Landfill* on one card and opening another marked the other card's *Landfill* row, which the visitor had never seen | §7.3a |
+| 3 | **The keystroke path was always right, which is why this needed a re-render to see.** `updateLine` clears every `.invalid` and then marks only the control it was handed; the wrong rule lives in `destinationCell`, which runs only when the page is redrawn. The client met it by opening a second card | §7.3a |
+| 4 | **Either half alone hides the other, measured rather than assumed**, so the test separates them into three phases. Reverting one half leaves the reported symptom gone, and a test written only against the screenshot would have passed on half a fix | §0 |
+| 5 | Invalid rows per card, two leaves at 2.00 and 4.00: fixed `[0, 0]` and `[1, 0]`; without the `started` guard `[1, 0]` and `[1, 0]`; without the leaf check `[0, 0]` and `[1, 1]`. **Each phase kills exactly one mutation**, and the last assertion — that the row the visitor *did* change is still marked, in both directions — is what stops the test passing on a build that marks nothing at all | §0 |
+| 6 | Steps one and two of §0's three-step rule. Nothing under `tests/fixtures/` moves, no catalogue moves, nothing on the wire changes | §0 |
 
 ### v1.108 — 2026-10-09 (Published methodology tables stay readable on narrow screens; affects D)
 

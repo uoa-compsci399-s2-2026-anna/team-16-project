@@ -336,10 +336,15 @@ h1, h2, h3, .brand, .eyebrow { font-family: var(--font-heading); font-weight: 70
    this is a plain block-level `<h1>`, not a shrink-to-fit context, so the two would
    break the same word in the same place (`break-word`'s difference from `anywhere`
    only shows up when it changes an element's own preferred/min-content size, which
-   a block box sized by its container never asks it to). `anywhere` is used simply
+   a block box sized by its container never asks it to). `anywhere` is used here simply
    because it is what every other long-content rule on this sheet already uses
    (`.destination-group__name`, `.review-destinations dd`, `.home-page .home-hero h1`)
-   - one property for "this text may need to break mid-word", not two. Every step's
+   - one property for "this text may need to break mid-word", not two. **That is a
+   house style for block boxes and not a rule for the sheet**: `.methodology-page td`
+   takes `break-word` instead, because a table column IS sized by its min-content
+   contribution and `anywhere` collapsed it to one character wide (#129). The
+   sentence above - "only shows up when it changes an element's own
+   preferred/min-content size" - is the reason, and the table is the case it names. Every step's
    own `<h1>` shares this rule (`amountStep()` and its four siblings all render a
    plain `<h1>`, styled only here), and German is why it is not optional: "Welche Art
    von Lebensmittelabfall erfassen Sie?" at 320px puts `Lebensmittelabfall` alone past
@@ -3839,8 +3844,37 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
    under `dir="rtl"` is exactly the half-mirrored page that rule exists to stop. */
 .methodology-page caption { padding: 14px 16px; color: var(--muted); text-align: start; font-size: 0.9rem; }
 .methodology-page th,
+/* **`break-word`, not `anywhere`, and in a table that difference is the whole bug**
+   (#129). The two values break the same word in the same place in a block box — see
+   the note on `h1` near the top of this sheet, which says so and is right about the
+   case it was written for. They differ only where an element's own min-content
+   contribution decides its size, and a table column is exactly that: `anywhere`
+   drops a cell's min-content width to ONE CHARACTER, so a shrink-to-fit column
+   collapsed to about a glyph wide and the text stacked down it, one or two
+   characters a line. `break-word` breaks a word only when it cannot fit a line of
+   its own, so the column keeps its longest word's width as its floor.
+
+   §7.6 rule 8 prescribes `anywhere` for a long value and is right for the shape it
+   describes — a value in a flex row beside its own label. A table cell is both label
+   and value AND a shrink-to-fit context, which is why the rule now carries a
+   sentence about tables; a reader following it in here re-created #129.
+
+   `word-break: normal` is the initial value and is written out because this rule
+   used to carry `anywhere`, and `anywhere` is the one value whose behaviour people
+   reach for `word-break: break-all` to get back. Stating it stops the next edit
+   adding one. */
 .methodology-page td { padding: 13px 16px; border-top: 1px solid var(--border); text-align: start; vertical-align: top; overflow-wrap: break-word; word-break: normal; }
-.methodology-page thead th { color: var(--kai-white); background: var(--kai-kale); white-space: nowrap; overflow-wrap: normal; word-break: normal; }
+/* `white-space: nowrap` on the headings alone, and it is safe ONLY because
+   `.table-scroll` is `overflow-x: auto` (see its own rule): a heading that refuses
+   to wrap widens the table, and the table is allowed to widen because it scrolls
+   inside its own labelled region rather than the page. Without that container this
+   would trade #129's stacked glyphs for a document that scrolls sideways, which
+   `test_horizontal_overflow.py` would refuse.
+
+   No wrap properties here: they do not apply when soft wraps are forbidden, and the
+   `overflow-wrap: normal; word-break: normal` this rule was written with were dead
+   declarations saying so twice. */
+.methodology-page thead th { color: var(--kai-white); background: var(--kai-kale); white-space: nowrap; }
 .methodology-page tbody th { font-weight: 700; }
 .methodology-page code { color: inherit; white-space: pre-wrap; }
 .methodology-page .methodology-warning { align-items: flex-start; }

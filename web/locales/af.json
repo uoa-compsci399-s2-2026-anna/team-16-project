@@ -75,6 +75,7 @@
     "Choose the end time": "Kies die eindtyd",
     "Choose the hour": "Kies die uur",
     "Choose the minute": "Kies die minuut",
+    "Choose the specific foods you measured, or continue without choosing any.": "Kies die spesifieke kosse wat jy gemeet het, of gaan voort sonder om enige te kies.",
     "Choose the stage that best describes where the food waste was generated.": "Kies die fase wat die beste beskryf waar die voedselafval ontstaan het.",
     "Choose the start date": "Kies die begindatum",
     "Choose the start time": "Kies die begintyd",
@@ -203,6 +204,7 @@
     "How this figure was worked out": "Hoe hierdie syfer bereken is",
     "I do not know, or my waste is not broken down by type": "Ek weet nie, of my afval is nie volgens soort uiteengesit nie",
     "I would like to contribute to the Kai Commitment": "Ek wil graag tot die Kai Commitment bydra",
+    "If you continue without choosing a specific food, the calculation uses the average figures for the whole category.": "As jy voortgaan sonder om 'n spesifieke kos te kies, gebruik die berekening die gemiddelde syfers vir die hele kategorie.",
     "Impact by destination": "Impak per bestemming",
     "Impact calculator": "Impakberekener",
     "Impact for this entry": "Impak vir hierdie inskrywing",
@@ -464,9 +466,7 @@
     "no change": "geen verandering",
     "no impact figures were returned": "geen impaksyfers is teruggegee nie",
     "saved": "gestoor",
-    "tonnes": "ton",
-    "Choose the specific foods you measured, or continue without choosing any.": "Kies die spesifieke kosse wat jy gemeet het, of gaan voort sonder om enige te kies.",
-    "If you continue without choosing a specific food, the calculation uses the average figures for the whole category.": "As jy voortgaan sonder om 'n spesifieke kos te kies, gebruik die berekening die gemiddelde syfers vir die hele kategorie."
+    "tonnes": "ton"
   },
   "tags": [
     "af"

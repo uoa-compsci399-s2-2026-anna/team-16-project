@@ -1393,8 +1393,15 @@ function itemStep() {
   //: criterion that the `MAX_LEAVES` message stays visible whether the cards are open or
   //: shut: the boxes it explains are inside the cards and go dark there, so a message
   //: folded away with them would leave a visitor looking at nothing.
+  //: **`chosen === 0`, and the notice is about the whole step rather than one card.**
+  //: It states the consequence of skipping step 2.5, which is only the visitor's
+  //: situation while nothing at all is ticked; tick one food and the sentence would
+  //: be describing a choice they have already made. The categories left empty still
+  //: fall through to their own averages, and `#140`'s own answer to that is the
+  //: per-category empty state inside each card rather than a second copy of this
+  //: sentence above them all.
   const noSelectionNotice = chosen === 0
-    ? `<p class="field-hint item-step__no-selection" role="note"><strong>${escapeHtml(t('If you continue without choosing a specific food, the calculation uses the average figures for the whole category.'))}</strong></p>`
+    ? `<p class="field-hint item-step__no-selection" role="note">${escapeHtml(t('If you continue without choosing a specific food, the calculation uses the average figures for the whole category.'))}</p>`
     : ''
   const content = `<div class="item-step__content"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 2 }))} &middot; ${escapeHtml(t('Optional'))}</p><h1 id="item-title">${escapeHtml(t('Do you know which foods these were?'))}</h1><p class="section-intro">${escapeHtml(t('Choose the specific foods you measured, or continue without choosing any.'))}</p><p class="choice-count" aria-live="polite">${escapeHtml(t('%(count)s selected', { count: chosen }))}</p>${noSelectionNotice}${state.foodCategories.map(group).join('')}${atCeiling ? `<p class="field-hint choice-ceiling" role="status">${escapeHtml(t('You can enter at most %(limit)s food types in one calculation. Untick one, or calculate what you have.', { limit: MAX_LEAVES }))}</p>` : ''}${chosen ? `<button type="button" class="text-button" data-action="clear-items">${escapeHtml(t('Clear all selections'))}</button>` : ''}</div>`
   return `<section class="content-section item-step" aria-labelledby="item-title">${itemFloatingNavigation()}${content}${stepNav({ step: 1, back: 1, backAction: 'back-to-categories' })}</section>`

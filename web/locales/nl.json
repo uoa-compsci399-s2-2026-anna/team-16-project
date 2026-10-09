@@ -75,6 +75,7 @@
     "Choose the end time": "Eindtijd kiezen",
     "Choose the hour": "Het uur kiezen",
     "Choose the minute": "De minuut kiezen",
+    "Choose the specific foods you measured, or continue without choosing any.": "Kies de specifieke voedingsmiddelen die je hebt gemeten, of ga door zonder iets te kiezen.",
     "Choose the stage that best describes where the food waste was generated.": "Kies de schakel die het beste beschrijft waar het voedselafval is ontstaan.",
     "Choose the start date": "Begindatum kiezen",
     "Choose the start time": "Begintijd kiezen",
@@ -203,6 +204,7 @@
     "How this figure was worked out": "Hoe dit cijfer tot stand komt",
     "I do not know, or my waste is not broken down by type": "Ik weet het niet, of mijn afval is niet per soort uitgesplitst",
     "I would like to contribute to the Kai Commitment": "Ik wil graag bijdragen aan de Kai Commitment",
+    "If you continue without choosing a specific food, the calculation uses the average figures for the whole category.": "Als je doorgaat zonder een specifiek voedingsmiddel te kiezen, gebruikt de berekening de gemiddelde cijfers voor de hele categorie.",
     "Impact by destination": "Effect per bestemming",
     "Impact calculator": "Effectrekentool",
     "Impact for this entry": "Effect van deze invoerregel",
@@ -464,9 +466,7 @@
     "no change": "geen verandering",
     "no impact figures were returned": "er zijn geen effectcijfers teruggegeven",
     "saved": "bespaard",
-    "tonnes": "ton",
-    "Choose the specific foods you measured, or continue without choosing any.": "Kies de specifieke voedingsmiddelen die je hebt gemeten, of ga door zonder iets te kiezen.",
-    "If you continue without choosing a specific food, the calculation uses the average figures for the whole category.": "Als je doorgaat zonder een specifiek voedingsmiddel te kiezen, gebruikt de berekening de gemiddelde cijfers voor de hele categorie."
+    "tonnes": "ton"
   },
   "tags": [
     "nl"

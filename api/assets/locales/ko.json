@@ -75,6 +75,7 @@
     "Choose the end time": "종료 시각 선택",
     "Choose the hour": "시 선택",
     "Choose the minute": "분 선택",
+    "Choose the specific foods you measured, or continue without choosing any.": "측정한 특정 식품을 선택하거나 아무것도 선택하지 않고 계속하세요.",
     "Choose the stage that best describes where the food waste was generated.": "음식물 폐기물이 발생한 지점을 가장 잘 설명하는 단계를 선택하세요.",
     "Choose the start date": "시작 날짜 선택",
     "Choose the start time": "시작 시각 선택",
@@ -203,6 +204,7 @@
     "How this figure was worked out": "이 수치를 구한 방법",
     "I do not know, or my waste is not broken down by type": "모르거나, 폐기물을 종류별로 나누지 않았습니다",
     "I would like to contribute to the Kai Commitment": "Kai Commitment에 기여하고 싶습니다",
+    "If you continue without choosing a specific food, the calculation uses the average figures for the whole category.": "특정 식품을 선택하지 않고 계속하면 계산에서 전체 카테고리의 평균 수치를 사용합니다.",
     "Impact by destination": "처리 경로별 영향",
     "Impact calculator": "영향 계산기",
     "Impact for this entry": "이 항목의 영향",
@@ -464,9 +466,7 @@
     "no change": "변화 없음",
     "no impact figures were returned": "영향 수치가 오지 않았습니다",
     "saved": "절감",
-    "tonnes": "톤",
-    "Choose the specific foods you measured, or continue without choosing any.": "측정한 특정 식품을 선택하거나 아무것도 선택하지 않고 계속하세요.",
-    "If you continue without choosing a specific food, the calculation uses the average figures for the whole category.": "특정 식품을 선택하지 않고 계속하면 계산에서 전체 카테고리의 평균 수치를 사용합니다."
+    "tonnes": "톤"
   },
   "tags": [
     "ko"

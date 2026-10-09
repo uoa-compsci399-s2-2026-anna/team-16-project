@@ -2550,6 +2550,31 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
    Logical properties throughout: twenty locales, two of them right-to-left. */
 
 .choice-count { margin: 0 0 12px; font-weight: 700; color: var(--muted); }
+/* **The consequence of skipping step 2.5, and #140's criterion for it is a
+   measurement rather than a look**: "visibly more prominent than ordinary body
+   text". Three of the declarations here are that criterion and the fourth is the
+   palette.
+
+   `font-size: 1.12rem` is `.section-intro`'s own size, and it is the whole point.
+   This note carries `field-hint` for its margins, and `.field-hint` is `0.92rem` =
+   14.72px, so without this line the CONSEQUENCE rendered smaller than the
+   PERMISSION it is meant to outrank (17.92px) and smaller than ordinary body text
+   (16px) — on a screen whose reader the client has told us is 65. That is the defect
+   the first round of this change shipped.
+
+   `font-weight: 700` is on the element and not on a `strong` inside it. It was
+   `.item-step__no-selection strong { font-weight: 700 }`, which is a no-op — every
+   UA stylesheet already makes `strong` bold — while the `<p>` itself stayed at 400,
+   so the test measuring the paragraph's own weight could not pass. `strong` around
+   a whole paragraph is the wrong tool for bold text anyway; the markup no longer
+   wraps it.
+
+   Banana at 28% is the palette, and the precedent is `.comparison-estimate-note`
+   twenty rules up: the same job, the same ground, the same Kale ink. The colour here
+   was `rgba(255, 183, 0, 0.12)` — RGB(255, 183, 0) is not Banana `#FFD76E` =
+   RGB(255, 215, 110), nor any other listed colour, and it appears nowhere else on
+   this sheet. The Orange bar stays: it is the accent that catches the eye, and
+   Orange on a Banana ground is a listed pairing. */
 .item-step__no-selection {
   max-width: 760px;
   margin: 14px 0 20px;
@@ -2557,11 +2582,12 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
   border: 1px solid var(--kai-orange);
   border-inline-start: 6px solid var(--kai-orange);
   border-radius: 10px;
-  color: var(--ink);
-  background: rgba(255, 183, 0, 0.12);
+  color: var(--kai-kale);
+  background: rgba(255, 215, 110, 0.28);
+  font-size: 1.12rem;
+  font-weight: 700;
   line-height: 1.5;
 }
-.item-step__no-selection strong { font-weight: 700; }
 .choice-ceiling { margin: 12px 0 0; }
 .simple-choice--unspecified { border-style: dashed; }
 .simple-choice input:disabled { cursor: not-allowed; opacity: 0.45; }

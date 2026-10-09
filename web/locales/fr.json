@@ -75,6 +75,7 @@
     "Choose the end time": "Choisir l'heure de fin",
     "Choose the hour": "Choisir l'heure",
     "Choose the minute": "Choisir la minute",
+    "Choose the specific foods you measured, or continue without choosing any.": "Choisissez les aliments précis que vous avez mesurés, ou continuez sans en choisir.",
     "Choose the stage that best describes where the food waste was generated.": "Choisissez l'étape qui décrit le mieux l'endroit où le gaspillage alimentaire a été produit.",
     "Choose the start date": "Choisir la date de début",
     "Choose the start time": "Choisir l'heure de début",
@@ -203,6 +204,7 @@
     "How this figure was worked out": "Comment ce chiffre est obtenu",
     "I do not know, or my waste is not broken down by type": "Je ne sais pas, ou mes déchets ne sont pas ventilés par type",
     "I would like to contribute to the Kai Commitment": "Je souhaite contribuer au Kai Commitment",
+    "If you continue without choosing a specific food, the calculation uses the average figures for the whole category.": "Si vous continuez sans choisir d'aliment précis, le calcul utilise les valeurs moyennes de toute la catégorie.",
     "Impact by destination": "Impact par destination",
     "Impact calculator": "Calculateur d'impact",
     "Impact for this entry": "Impact de cette entrée",
@@ -464,9 +466,7 @@
     "no change": "aucun changement",
     "no impact figures were returned": "aucun chiffre d'impact n'a été renvoyé",
     "saved": "économisé",
-    "tonnes": "tonnes (t)",
-    "Choose the specific foods you measured, or continue without choosing any.": "Choisissez les aliments précis que vous avez mesurés, ou continuez sans en choisir.",
-    "If you continue without choosing a specific food, the calculation uses the average figures for the whole category.": "Si vous continuez sans choisir d'aliment précis, le calcul utilise les valeurs moyennes de toute la catégorie."
+    "tonnes": "tonnes (t)"
   },
   "tags": [
     "fr"

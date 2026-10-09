@@ -75,6 +75,7 @@
     "Choose the end time": "เลือกเวลาสิ้นสุด",
     "Choose the hour": "เลือกชั่วโมง",
     "Choose the minute": "เลือกนาที",
+    "Choose the specific foods you measured, or continue without choosing any.": "เลือกอาหารที่วัดไว้โดยเฉพาะ หรือดำเนินการต่อโดยไม่เลือกอะไร",
     "Choose the stage that best describes where the food waste was generated.": "เลือกขั้นตอนที่ตรงที่สุดกับจุดที่เกิดขยะอาหาร",
     "Choose the start date": "เลือกวันที่เริ่มต้น",
     "Choose the start time": "เลือกเวลาเริ่มต้น",
@@ -203,6 +204,7 @@
     "How this figure was worked out": "ตัวเลขนี้คำนวณมาอย่างไร",
     "I do not know, or my waste is not broken down by type": "ไม่ทราบ หรือขยะของฉันไม่ได้แยกตามประเภท",
     "I would like to contribute to the Kai Commitment": "ฉันต้องการสนับสนุน Kai Commitment",
+    "If you continue without choosing a specific food, the calculation uses the average figures for the whole category.": "หากดำเนินการต่อโดยไม่เลือกอาหารที่เฉพาะเจาะจง การคำนวณจะใช้ค่าเฉลี่ยของทั้งหมวดหมู่",
     "Impact by destination": "ผลกระทบแยกตามปลายทาง",
     "Impact calculator": "เครื่องคำนวณผลกระทบ",
     "Impact for this entry": "ผลกระทบของรายการนี้",
@@ -464,9 +466,7 @@
     "no change": "ไม่เปลี่ยนแปลง",
     "no impact figures were returned": "ไม่มีตัวเลขผลกระทบส่งกลับมา",
     "saved": "บันทึกแล้ว",
-    "tonnes": "ตัน",
-    "Choose the specific foods you measured, or continue without choosing any.": "เลือกอาหารที่วัดไว้โดยเฉพาะ หรือดำเนินการต่อโดยไม่เลือกอะไร",
-    "If you continue without choosing a specific food, the calculation uses the average figures for the whole category.": "หากดำเนินการต่อโดยไม่เลือกอาหารที่เฉพาะเจาะจง การคำนวณจะใช้ค่าเฉลี่ยของทั้งหมวดหมู่"
+    "tonnes": "ตัน"
   },
   "tags": [
     "th"

@@ -76,6 +76,7 @@
     "Choose the end time": "اختتام کا وقت منتخب کریں",
     "Choose the hour": "گھنٹہ منتخب کریں",
     "Choose the minute": "منٹ منتخب کریں",
+    "Choose the specific foods you measured, or continue without choosing any.": "آپ نے جن مخصوص کھانوں کی پیمائش کی ہے انہیں منتخب کریں، یا کچھ منتخب کیے بغیر آگے بڑھیں۔",
     "Choose the stage that best describes where the food waste was generated.": "وہ مرحلہ منتخب کریں جو بہتر بتاتا ہو کہ کھانے کا ضیاع کہاں ہوا۔",
     "Choose the start date": "آغاز کی تاریخ منتخب کریں",
     "Choose the start time": "آغاز کا وقت منتخب کریں",
@@ -204,6 +205,7 @@
     "How this figure was worked out": "یہ عدد کیسے نکالا گیا",
     "I do not know, or my waste is not broken down by type": "مجھے معلوم نہیں، یا میرا ضیاع قسم کے لحاظ سے تقسیم نہیں ہے",
     "I would like to contribute to the Kai Commitment": "میں Kai Commitment میں تعاون کرنے پر رضامند ہوں",
+    "If you continue without choosing a specific food, the calculation uses the average figures for the whole category.": "اگر آپ کسی مخصوص کھانے کو منتخب کیے بغیر آگے بڑھتے ہیں تو حساب پوری قسم کے اوسط اعداد استعمال کرتا ہے۔",
     "Impact by destination": "منزل کے لحاظ سے اثر",
     "Impact calculator": "اثر کا کیلکولیٹر",
     "Impact for this entry": "اس اندراج کا اثر",
@@ -465,9 +467,7 @@
     "no change": "کوئی تبدیلی نہیں",
     "no impact figures were returned": "اثر کے کوئی اعداد واپس نہیں آئے",
     "saved": "محفوظ ہو گیا",
-    "tonnes": "ٹن",
-    "Choose the specific foods you measured, or continue without choosing any.": "آپ نے جن مخصوص کھانوں کی پیمائش کی ہے انہیں منتخب کریں، یا کچھ منتخب کیے بغیر آگے بڑھیں۔",
-    "If you continue without choosing a specific food, the calculation uses the average figures for the whole category.": "اگر آپ کسی مخصوص کھانے کو منتخب کیے بغیر آگے بڑھتے ہیں تو حساب پوری قسم کے اوسط اعداد استعمال کرتا ہے۔"
+    "tonnes": "ٹن"
   },
   "tags": [
     "ur"

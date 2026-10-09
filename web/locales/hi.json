@@ -75,6 +75,7 @@
     "Choose the end time": "समाप्ति समय चुनें",
     "Choose the hour": "घंटा चुनें",
     "Choose the minute": "मिनट चुनें",
+    "Choose the specific foods you measured, or continue without choosing any.": "आपने जिन खास खाद्य पदार्थों को मापा है उन्हें चुनें, या बिना कुछ चुने आगे बढ़ें।",
     "Choose the stage that best describes where the food waste was generated.": "वह चरण चुनें जो सबसे अच्छी तरह बताता हो कि खाद्य अपशिष्ट कहाँ उत्पन्न हुआ।",
     "Choose the start date": "प्रारंभ तिथि चुनें",
     "Choose the start time": "प्रारंभ समय चुनें",
@@ -203,6 +204,7 @@
     "How this figure was worked out": "यह आँकड़ा कैसे निकाला गया",
     "I do not know, or my waste is not broken down by type": "मुझे पता नहीं, या मेरा अपशिष्ट प्रकार के अनुसार अलग नहीं किया गया है",
     "I would like to contribute to the Kai Commitment": "मैं Kai Commitment को योगदान देने के लिए सहमत हूँ",
+    "If you continue without choosing a specific food, the calculation uses the average figures for the whole category.": "अगर आप कोई खास खाद्य पदार्थ चुने बिना आगे बढ़ते हैं, तो गणना पूरी श्रेणी के औसत आंकड़ों का उपयोग करती है।",
     "Impact by destination": "गंतव्य के अनुसार प्रभाव",
     "Impact calculator": "प्रभाव कैलकुलेटर",
     "Impact for this entry": "इस प्रविष्टि का प्रभाव",
@@ -464,9 +466,7 @@
     "no change": "कोई बदलाव नहीं",
     "no impact figures were returned": "कोई प्रभाव आँकड़े नहीं मिले",
     "saved": "सहेजा गया",
-    "tonnes": "टन",
-    "Choose the specific foods you measured, or continue without choosing any.": "आपने जिन खास खाद्य पदार्थों को मापा है उन्हें चुनें, या बिना कुछ चुने आगे बढ़ें।",
-    "If you continue without choosing a specific food, the calculation uses the average figures for the whole category.": "अगर आप कोई खास खाद्य पदार्थ चुने बिना आगे बढ़ते हैं, तो गणना पूरी श्रेणी के औसत आंकड़ों का उपयोग करती है।"
+    "tonnes": "टन"
   },
   "tags": [
     "hi"

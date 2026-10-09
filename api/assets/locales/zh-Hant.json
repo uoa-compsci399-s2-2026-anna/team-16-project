@@ -75,6 +75,7 @@
     "Choose the end time": "選擇結束時間",
     "Choose the hour": "選擇小時",
     "Choose the minute": "選擇分鐘",
+    "Choose the specific foods you measured, or continue without choosing any.": "請選擇您量測的具體食物，或不選任何一項繼續。",
     "Choose the stage that best describes where the food waste was generated.": "請選擇最能描述食物浪費產生環節的階段。",
     "Choose the start date": "選擇開始日期",
     "Choose the start time": "選擇開始時間",
@@ -203,6 +204,7 @@
     "How this figure was worked out": "這個數字是如何得出的",
     "I do not know, or my waste is not broken down by type": "我不知道，或我的浪費沒有依類型區分",
     "I would like to contribute to the Kai Commitment": "我願意貢獻給 Kai Commitment",
+    "If you continue without choosing a specific food, the calculation uses the average figures for the whole category.": "如果不選擇具體食物就繼續，計算會使用整個類別的平均數據。",
     "Impact by destination": "依去向劃分的影響",
     "Impact calculator": "影響計算機",
     "Impact for this entry": "這筆記錄的影響",
@@ -464,9 +466,7 @@
     "no change": "無變化",
     "no impact figures were returned": "未回傳任何影響數據",
     "saved": "減少",
-    "tonnes": "公噸",
-    "Choose the specific foods you measured, or continue without choosing any.": "請選擇您量測的具體食物，或不選任何一項繼續。",
-    "If you continue without choosing a specific food, the calculation uses the average figures for the whole category.": "如果不選擇具體食物就繼續，計算會使用整個類別的平均數據。"
+    "tonnes": "公噸"
   },
   "tags": [
     "zh-Hant",

@@ -75,6 +75,7 @@
     "Choose the end time": "Выбрать время окончания",
     "Choose the hour": "Выбрать час",
     "Choose the minute": "Выбрать минуту",
+    "Choose the specific foods you measured, or continue without choosing any.": "Выберите конкретные продукты, которые вы измеряли, или продолжите без выбора.",
     "Choose the stage that best describes where the food waste was generated.": "Выберите этап, который точнее всего описывает, где образовались пищевые отходы.",
     "Choose the start date": "Выбрать дату начала",
     "Choose the start time": "Выбрать время начала",
@@ -203,6 +204,7 @@
     "How this figure was worked out": "Как получено это число",
     "I do not know, or my waste is not broken down by type": "Не знаю, или мои отходы не разделены по видам",
     "I would like to contribute to the Kai Commitment": "Я хочу внести свой вклад в Kai Commitment",
+    "If you continue without choosing a specific food, the calculation uses the average figures for the whole category.": "Если продолжить без выбора конкретного продукта, расчёт использует средние показатели всей категории.",
     "Impact by destination": "Воздействие по способам утилизации",
     "Impact calculator": "Калькулятор воздействия",
     "Impact for this entry": "Воздействие по этой записи",
@@ -464,9 +466,7 @@
     "no change": "без изменений",
     "no impact figures were returned": "показатели воздействия не получены",
     "saved": "сохранено",
-    "tonnes": "тонны",
-    "Choose the specific foods you measured, or continue without choosing any.": "Выберите конкретные продукты, которые вы измеряли, или продолжите без выбора.",
-    "If you continue without choosing a specific food, the calculation uses the average figures for the whole category.": "Если продолжить без выбора конкретного продукта, расчёт использует средние показатели всей категории."
+    "tonnes": "тонны"
   },
   "tags": [
     "ru"

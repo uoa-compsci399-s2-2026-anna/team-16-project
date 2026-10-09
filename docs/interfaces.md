@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-10-09 (v1.104)"
+date: "2026-10-09 (v1.105)"
 ---
 
 # 0. How to Use This Document
@@ -25,6 +25,45 @@ This document defines **what every person's code receives and what it returns.**
 
 ## 0.1 Change Log
 
+### v1.105 — 2026-10-09 (step 4 accepted a hundredth over, and which hundredth was decided by float dust; affects C)
+
+**This took 105 rather than 104 because v1.104 was on #181 when it was written.** That has since merged, so both entries are below and in order; the note is kept rather than deleted because a reader meeting the pair otherwise has to work out whether the gap is a missing revision. #170 holds 1.106, and #171 and #172 each still carry an entry numbered 1.103 and will have to move — the next free number after those three is 1.107, and it should be claimed by announcement rather than by guess.
+
+**The client's report:** a food type with a total of **2.00 kg** accepted **2.01 kg** allocated, printed *Remaining 0.00* beside it, and wore a *Complete* badge with Continue enabled.
+
+```js
+const ALLOCATION_EPSILON = 0.01
+const exceedsTotal = (allocated, total) => allocated - total > ALLOCATION_EPSILON
+```
+
+Two things were wrong, and the second is worse than the first.
+
+**The tolerance was one whole unit in the last place a visitor can type.** The destination input is `step="0.01"`. The constant's own note said it existed so that *"two sums that agree to two decimal places are equal as far as the user is concerned"* — but 2.00 and 2.01 do not agree to two decimal places. It was written for binary floating-point dust and sized to swallow the smallest real error there is, and `>` made it inclusive.
+
+**And which "+0.01" it swallowed was decided by the dust rather than by the figures.** Measured:
+
+| total → allocated | `allocated - total` as a double | old verdict |
+| --- | --- | --- |
+| 1.00 → 1.01 | `0.010000000000000009` | refused |
+| **2.00 → 2.01** | `0.009999999999999787` | **accepted** |
+| 10.00 → 10.01 | `0.009999999999999787` | **accepted** |
+| 100.00 → 100.01 | `0.010000000000005116` | refused |
+
+The identical logical gap, opposite verdicts. **`calculator.js` already carried this diagnosis, in the money dimension, and had already acted on it there:** `moneyCents`' note records that reusing this same epsilon as a money rule let a value *"up to a whole cent over its own total through"* and that *"`0.03 -> 0.04` was refused while `0.07 -> 0.08` was allowed, purely because [they] land on different sides of `0.01` in a double."* Money was given integer cents and zero tolerance. Mass was left on the epsilon.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`exceedsTotal`, `fallsShortOfTotal` and `remainingAmount` compare integer hundredths of a kilogram**, `Math.round(kg * 100)`, and carry **no tolerance at all**. The boundary is now the figure typed. All three read the same `hundredths`, so §7.3a's promise that the rule and the *Remaining* figure beside it can never disagree about zero holds by construction rather than by sharing a constant | §7.3a |
+| 2 | **Rounding BOTH sides to the typed precision is what removes the need for a tolerance**, rather than a smaller epsilon. A total a two-decimal field cannot reach exactly — 23 L of a 0.29 kg/L preset is 6.67, but a hypothetical 0.2857 kg/L would give 6.5711 — lands on the same hundredth as the rows trying to meet it, so it stays reachable by construction. A tolerance on the *difference* would instead have gone on accepting a gap the visitor can see and fix | §7.3a |
+| 3 | **`Remaining` stops lying.** It used to snap anything inside the tolerance to exactly 0, so the strip read *Total 2.00 · Allocated 2.01 · Remaining 0.00* — three numbers that do not add up, on one line. It is now the exact hundredths difference, and an over-allocation reads `-0.01` | §7.3a |
+| 4 | **Safe in a double, checked rather than asserted.** Every input is already at most three decimal places (`lineKgString` ends in `toFixed(3)`), so `x * 100` carries dust of order 1e-13 — `2.01 * 100` is `200.99999999999997` — which `Math.round` absorbs with twelve orders of magnitude to spare. Verified at 2.01, 0.07, 6.667, 1234.5 and 9999999.99, and across a thirteen-row sum | §7.3a |
+| 5 | **`improvement.js`'s `MASS_TOLERANCE_KG` is NOT the same thing and is deliberately untouched.** It mirrors §6.2's server rule about the two scenarios' masses, and that 0.010 kg is **derived rather than chosen** — the front end rounds each alternative line to 3 dp (≤ 0.0005 kg) and §6.2 caps a scenario at 20 lines. The server compares it in `Decimal`, so its boundary was never decided by dust. Step 4's guard had no server counterpart at all, because the step-3 total never crosses the wire | §6.2, §7.3a |
+| 6 | **`test_one_hundredth_over_is_refused_at_every_scale`**, parametrised over 2.00, 10.00, 1.00 and 100.00 — **two the old rule accepted and two it refused, for the identical gap.** The parameters are the test: at one scale it would have passed against the defect at the others. Mutation-verified by restoring the float epsilon and rebuilding the image: it fails at **2.00 and 10.00** and passes at 1.00 and 100.00, which is the dust table above, reproduced through the browser | §0, §7.3a |
+| 7 | The *Remaining* figure is asserted separately from the badge, the strip and the button, because a rule that refused the allocation while still printing `0.00` would satisfy the other three | §0 |
+| 8 | `moneyCents`' note is corrected: it described this defect as one it did **not** share, and the paragraph sat here for two revisions being right about a neighbouring dimension. Kept in the past tense rather than deleted | §7.3a |
+| 9 | Steps one and two of §0's three-step rule. **Nothing under `tests/fixtures/` moves**, no catalogue moves, and nothing on the wire changes — what changes is which allocations the front end will let through, and those were always sent as the sum of the destination rows. The owner notifies the team | §0 |
+
+**What this changes for a visitor.** An allocation that is a hundredth out is now refused where it used to be accepted — including the case where it was accepted at 2 kg and refused at 1 kg. Three rows of 0.33 against a total of 1.00 now read *Remaining 0.01* and hold Continue, which is correct: they allocate 0.99, and under the old rule the calculator computed on 0.99 under a tick that said otherwise.
 ### v1.104 — 2026-10-09 (the step cards lose their tick and their cross; affects C and D)
 
 **#181.** `cardStatus` printed a mark beside its state word — `✓` for *Complete*, `✕` for *Incomplete*. Both are gone; the word and `data-state` remain.

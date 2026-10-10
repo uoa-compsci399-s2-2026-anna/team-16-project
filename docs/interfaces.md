@@ -27,7 +27,7 @@ This document defines **what every person's code receives and what it returns.**
 
 ### v1.110 — 2026-10-10 (the improvement tip reads like a person wrote it; affects C and D)
 
-**This takes 110 rather than 109 because v1.109 is on an open branch.** If the two land out of order the later one renumbers.
+**This took 110 rather than 109 because v1.109 was on an open branch when it was written.** That has since merged, so both entries are below and in order.
 
 The client's reading of the tip v1.107 shipped: *"文案有点怪怪的"* — the wording is odd. It was
 
@@ -46,6 +46,20 @@ which states a capability at somebody rather than inviting them to use it, and b
 | 5 | The old key is **deleted** from all twenty catalogues in both trees rather than left beside the new one, which `test_no_catalogue_carries_a_key_the_front_end_never_asks_for` requires rather than permits. Both trees byte-identical by SHA-256 across all 21 files, and both still strictly sorted | §7.7 |
 | 6 | **No PDF risk, checked rather than assumed.** The key appears nowhere in `api/`, so `Catalogue.gettext` is never asked for it and a non-English download cannot 500 on it. `test_results_export.py`'s `IMPROVEMENT_TIP_SENTENCE` is spelled once and moves with the string, so v1.107's "appears nowhere else on the page" assertion keeps measuring the sentence that is actually there | §0, §6.4 |
 | 7 | Steps one and two of §0's three-step rule. Nothing under `tests/fixtures/` moves and nothing on the wire changes | §0 |
+### v1.109 — 2026-10-10 (a red row in a card nobody had filled; affects C)
+
+**The client's report:** a step 4 card with nothing typed in it and a calm strip — *Total 2.00 · Allocated 0.00 · Remaining 2.00* — showing **one row marked in Beetroot**.
+
+Two defects compounded, and the second is why the first was not noticed sooner.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`misallocated` gains the `started` guard the strip has had since v1.99.** It asked `exceedsTotal(...) || fallsShortOfTotal(...)` with nothing in front of it, so a card the visitor had never opened was already "misallocated" — an empty allocation is short of any total. `leafSummary` has waited for a typed figure since v1.99 and its own note says why: falling short "is the state every card is in before it is filled, so marking it on arrival is telling somebody off for not having acted yet". **The two writers of one rule had drifted again**, which is the thing that note warns about. Over-allocation stays unconditional in both, because a card can only exceed its total if somebody typed a figure | §7.3a |
+| 2 | **`state.lastChangedDestination` is not an identity on its own, and now travels with `state.lastChangedLeaf`.** The row to mark was chosen by `lastChangedDestination === line.destination` — a bare destination code. Every leaf's card draws the same thirteen destinations, so *the row I last edited* matched that destination's row in **every card at once**. Typing into *Landfill* on one card and opening another marked the other card's *Landfill* row, which the visitor had never seen | §7.3a |
+| 3 | **The keystroke path was always right, which is why this needed a re-render to see.** `updateLine` clears every `.invalid` and then marks only the control it was handed; the wrong rule lives in `destinationCell`, which runs only when the page is redrawn. The client met it by opening a second card | §7.3a |
+| 4 | **Either half alone hides the other, measured rather than assumed**, so the test separates them into three phases. Reverting one half leaves the reported symptom gone, and a test written only against the screenshot would have passed on half a fix | §0 |
+| 5 | Invalid rows per card, two leaves at 2.00 and 4.00: fixed `[0, 0]` and `[1, 0]`; without the `started` guard `[1, 0]` and `[1, 0]`; without the leaf check `[0, 0]` and `[1, 1]`. **Each phase kills exactly one mutation**, and the last assertion — that the row the visitor *did* change is still marked, in both directions — is what stops the test passing on a build that marks nothing at all | §0 |
+| 6 | Steps one and two of §0's three-step rule. Nothing under `tests/fixtures/` moves, no catalogue moves, nothing on the wire changes | §0 |
 
 ### v1.108 — 2026-10-09 (Published methodology tables stay readable on narrow screens; affects D)
 

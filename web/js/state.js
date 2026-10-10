@@ -313,6 +313,7 @@ export const state = {
   // removing the DOM node alone would make it return on the next tab or input update.
   resultsImprovementTipDismissed: false,
   lastChangedDestination: null,
+  lastChangedLeaf: null,
   improvementOpen: false,
   // **One allocation PER LEAF, in submission order** (`design.md` §10, owner decision
   // 6). It was one submission-wide `{destinationCode: percentString}` map applied to
@@ -695,6 +696,7 @@ export function resetCalculator() {
     openCards: [],
     resultBreakdownTab: 'stage',
     lastChangedDestination: null,
+  lastChangedLeaf: null,
     improvementOpen: false,
     improvedAllocations: [],
     improvementChartExpanded: null,

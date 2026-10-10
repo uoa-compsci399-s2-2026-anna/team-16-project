@@ -680,6 +680,127 @@ def test_over_allocation_is_visible_from_a_shut_card(opened):
     assert folded["continueDisabled"] is True, folded
 
 
+#: Every card's own marked rows. `VERDICT` reports the FIRST card only, and "the
+#: card I filled is right and the one I never opened is wrong" is the whole shape of
+#: the defect below, so it cannot be measured with that.
+PER_CARD = """() => [...document.querySelectorAll('.step-card')].map(card => {
+  const rows = [...card.querySelectorAll('.destination-row')];
+  const summary = card.querySelector(':scope > .allocation-summary');
+  return {
+    summaryInvalid: summary ? summary.classList.contains('invalid') : null,
+    invalid: rows.filter(row => row.classList.contains('invalid'))
+                 .map(row => row.querySelector('label')?.textContent.trim().slice(0, 30)),
+    filled: rows.filter(row => row.querySelector('input')?.value !== '').length,
+  };
+})"""
+
+
+def _rerender(page):
+    """Shut a card and open it again, which is a `setState` and a full redraw.
+
+    **The defect was invisible without one.** `updateLine` clears every `.invalid`
+    and then marks only the control it was handed, so the keystroke path was always
+    right; the wrong rule lives in `destinationCell`, which only runs when the page
+    is redrawn. The owner met it by opening a second card.
+    """
+    page.locator('.step-card__toggle[aria-expanded="true"]').first.click()
+    page.wait_for_timeout(250)
+    page.locator('.step-card__toggle[aria-expanded="false"]').first.click()
+    page.wait_for_timeout(300)
+
+
+def test_a_row_is_marked_only_in_the_card_whose_figure_was_changed(opened):
+    """Contract v1.109. **The owner's report: a red row in a card they had not filled.**
+
+    Two defects compounded, and the three phases below separate them because **either
+    one alone is enough to hide the other**. That is measured, not assumed: reverting
+    just one half leaves the reported symptom gone, so a test written only against
+    the screenshot would have passed on half a fix.
+
+    *The `started` half.* `misallocated` decided whether a card's rows were eligible
+    to be marked and asked `exceedsTotal(...) || fallsShortOfTotal(...)` with no
+    `started` guard — so a card nobody had opened was already misallocated, because
+    an empty allocation is short of any total. `leafSummary` has had that guard since
+    v1.99 and says why: falling short "is the state every card is in before it is
+    filled, so marking it on arrival is telling somebody off for not having acted
+    yet". The two writers of one rule had drifted again.
+
+    *The leaf half.* The row chosen was `state.lastChangedDestination ===
+    line.destination` — a bare destination code with **no leaf**. Every card draws
+    the same thirteen destinations, so "the row I last edited" matched that
+    destination's row in every card at once.
+
+    Measured, two leaves at 2.00 and 4.00, invalid rows per card:
+
+    ======================  ==================  ================
+    build                   phase 2 (`started`)  phase 3 (leaf)
+    ======================  ==================  ================
+    fixed                   ``[0, 0]``           ``[1, 0]``
+    no ``started`` guard    ``[1, 0]``           ``[1, 0]``
+    no leaf check           ``[0, 0]``           ``[1, 1]``
+    ======================  ==================  ================
+
+    Each phase kills exactly one mutation, and phase 3's second assertion is what
+    stops the whole thing passing on a build that never marks anything.
+    """
+    page = opened()
+    #: An int, because `_to_step_four` builds each leaf's total as
+    #: `str(amount * (index + 1))` — a string would be repeated rather than
+    #: multiplied. The two cards hold 2 and 4, which is better than equal totals: it
+    #: rules out a leak that only looks like one because the two cards agree.
+    _to_step_four(page, 2, amount=2)
+    for _ in range(2):
+        shut = page.locator('.step-card__toggle[aria-expanded="false"]')
+        if shut.count():
+            shut.first.click()
+            page.wait_for_timeout(220)
+    rows = page.evaluate("""() => [...document.querySelectorAll('.step-card')].map(card =>
+        [...card.querySelectorAll('[data-line-field=amount]')].map(input => input.id))""")
+    assert len(rows) == 2 and all(rows), rows
+
+    # -- phase 1: nothing typed anywhere. The plain form of the report. -----------
+    arrived = page.evaluate(PER_CARD)
+    assert all(card["invalid"] == [] for card in arrived), (
+        f"a row is marked before anything has been typed anywhere: {arrived}"
+    )
+    assert all(card["summaryInvalid"] is False for card in arrived), arrived
+
+    # -- phase 2: a card with a history and no figures. Kills the `started` half. --
+    #: Typing and then clearing leaves `lastChangedLeaf` and `lastChangedDestination`
+    #: pointing at this card's row while the card holds nothing, which is the one
+    #: state that asks `misallocated` the question on its own.
+    page.fill(f"#{rows[0][0]}", "1")
+    page.wait_for_timeout(200)
+    page.fill(f"#{rows[0][0]}", "")
+    page.wait_for_timeout(200)
+    _rerender(page)
+    emptied = page.evaluate(PER_CARD)
+    assert emptied[0]["filled"] == 0, emptied
+    assert emptied[0]["invalid"] == [], (
+        f"a card the visitor emptied again is marked as though it were wrong: "
+        f"{emptied[0]}. Falling short is the state every card is in before it is "
+        f"filled; `misallocated` has to wait for `started` as the strip does."
+    )
+    assert emptied[0]["summaryInvalid"] is False, emptied[0]
+
+    # -- phase 3: both cards started, one of them last changed. Kills the leaf half.
+    page.fill(f"#{rows[1][0]}", "1")
+    page.wait_for_timeout(200)
+    page.fill(f"#{rows[0][0]}", "1")
+    page.wait_for_timeout(200)
+    _rerender(page)
+    both = page.evaluate(PER_CARD)
+    assert both[0]["invalid"], (
+        f"the row the visitor actually changed is NOT marked, so this test would "
+        f"pass on a build that marks nothing at all: {both[0]}"
+    )
+    assert both[1]["invalid"] == [], (
+        f"changing a figure in one card marked a row in another: {both[1]}. The two "
+        f"cards draw the same thirteen destinations, so a destination code is not an "
+        f"identity — `lastChangedLeaf` is the other half of it."
+    )
+
+
 @pytest.mark.parametrize("total", ("2.00", "10.00", "1.00", "100.00"))
 def test_one_hundredth_over_is_refused_at_every_scale(opened, total):
     """Contract v1.105. **The owner's report: 2.00 kilograms accepting 2.01.**

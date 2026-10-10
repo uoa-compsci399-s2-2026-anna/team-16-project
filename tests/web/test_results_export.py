@@ -596,7 +596,7 @@ def test_the_results_page_renders_every_section_it_composes(tmp_path):
 #: The tip's own sentence, spelled once so the two claims below cannot drift apart:
 #: that it is on the page, and that it is on the page ONCE.
 IMPROVEMENT_TIP_SENTENCE = (
-    "See how a different allocation could change the result in Explore Improvements."
+    "Curious what a different allocation would do? Scroll down to Explore Improvements and try one."
 )
 
 

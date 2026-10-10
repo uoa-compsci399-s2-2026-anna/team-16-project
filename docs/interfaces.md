@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-10-09 (v1.108)"
+date: "2026-10-10 (v1.110)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,28 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.110 — 2026-10-10 (the improvement tip reads like a person wrote it; affects C and D)
+
+**This takes 110 rather than 109 because v1.109 is on an open branch.** If the two land out of order the later one renumbers.
+
+The client's reading of the tip v1.107 shipped: *"文案有点怪怪的"* — the wording is odd. It was
+
+> See how a different allocation could change the result in Explore Improvements.
+
+which states a capability at somebody rather than inviting them to use it, and buries *where* the feature is behind the name of it. It now reads
+
+> **Curious what a different allocation would do? Scroll down to Explore Improvements and try one.**
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | A question, then a direction, then an invitation — and **the direction is the part that was missing**. The tip's whole job is to tell a reader that something further down the page exists; naming the feature without saying it is *below* leaves them looking for a button | §7.3a |
+| 2 | **Each language's sentence is built around that language's own label for the feature**, taken from its catalogue rather than written again, so the tip and the control it points at name the same thing. `ja` reads 「改善策を見てみる」 and `fr` reads *Explorer les améliorations*, which is what each already calls it | §7.7 |
+| 3 | **Nineteen are machine translations and one is not.** `index.json` flags nineteen catalogues `machine_translated` and `zh` alone as not; `zh` is written rather than machined here, for the same reason it is flagged — it is the catalogue this team reads. The other nineteen are in the condition the file already records for them | §7.7 |
+| 4 | **The new wording introduced five characters with no glyph** — `往` `怎` `滑` in `zh` and `zh-Hant`, `気` in `ja`, `궁` in `ko` — and all four faces are re-cut with `recut_cjk_subsets.py`. Checked with `api.pdf_render._is_drawable` before and after: five undrawable, then none. This is the trap `CLAUDE.md` names, met head-on by a sentence that reads perfectly well on screen | §7.7 |
+| 5 | The old key is **deleted** from all twenty catalogues in both trees rather than left beside the new one, which `test_no_catalogue_carries_a_key_the_front_end_never_asks_for` requires rather than permits. Both trees byte-identical by SHA-256 across all 21 files, and both still strictly sorted | §7.7 |
+| 6 | **No PDF risk, checked rather than assumed.** The key appears nowhere in `api/`, so `Catalogue.gettext` is never asked for it and a non-English download cannot 500 on it. `test_results_export.py`'s `IMPROVEMENT_TIP_SENTENCE` is spelled once and moves with the string, so v1.107's "appears nowhere else on the page" assertion keeps measuring the sentence that is actually there | §0, §6.4 |
+| 7 | Steps one and two of §0's three-step rule. Nothing under `tests/fixtures/` moves and nothing on the wire changes | §0 |
 
 ### v1.108 — 2026-10-09 (Published methodology tables stay readable on narrow screens; affects D)
 

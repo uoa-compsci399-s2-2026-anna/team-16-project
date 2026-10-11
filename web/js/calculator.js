@@ -1,12 +1,12 @@
 import { calculate } from './api.js'
-import { state, setState, resetCalculator, entryResultsFrom, draftEntry, draftLeafFigures, EMPTY_LEAF, entryLeaves, leafDisplayName, leafFigures, leafKey } from './state.js'
+import { state, setState, calculatorGeneration, resetCalculator, entryResultsFrom, draftEntry, draftLeafFigures, EMPTY_LEAF, entryLeaves, leafDisplayName, leafFigures, leafKey } from './state.js'
 import { containerKg, countLimit, entryTotal, isPlainDecimal, isPresetUnit, kgToTonnes, massToKg, PRESET_UNIT, presetUnitCode, rowKgString, unitDisplayPrecision } from './units.js'
 import { requestLines, submissionLeaves, submissionPayload } from './submission.js'
 import { escapeHtml, formatNumber, slug, stepNav } from './view.js'
 import { cardId, cardIsFixedOpen, cardIsOpen, cardStatus, collapsibleCard, keyAttr, openedCard } from './cards.js'
 import { t } from './i18n.js'
 import { armContribute, bindResultsSectionSpy, cancelContribute, downloadPdf, downloadResults, renderResults, resultsNavIsDocked } from './results.js'
-import { compareImprovement, openImprovement, resetImprovement, updateImprovementInput } from './improvement.js'
+import { cancelImprovement, compareImprovement, openImprovement, resetImprovement, updateImprovementInput } from './improvement.js'
 import { handlePeriodBlur, handlePeriodClick, handlePeriodComposition, handlePeriodInput, handlePeriodKeydown, handlePeriodPointer, PeriodField, periodProblem, timeFrameChanged } from './period.js'
 import { DROPPED_DESTINATION, DROPPED_FOOD_CATEGORY, DROPPED_FOOD_ITEM, DROPPED_SECTOR, DROPPED_UNIT_PRESET, writeResultSnapshot, writeSnapshot } from './snapshot.js'
 
@@ -2858,6 +2858,17 @@ async function submitCalculation() {
   // goes out lighter than the totals the visitor typed, and §2.3 makes that one
   // calculation one submission: the reduced figure reaches the public statistics.
   if (refuseIncompleteSubmission()) return
+  //: **The calculation this call belongs to** (v1.113). Everything below writes to the
+  //: state after an `await`, and until this was here none of it asked whether the state it
+  //: was writing to was still the one that asked. The header's Clear is on screen at this
+  //: step -- `renderChrome` hides it only when `hasData()` is false -- so "press Calculate,
+  //: press Clear, confirm" is an ordinary sequence, not a contrived one.
+  //:
+  //: No `state.loading` guard beside the rate-limit one: `calculateOtherwiseDisabled()` is
+  //: `state.loading || ...`, this function has exactly one caller, and that caller is the
+  //: dispatcher behind that disabled button. A second guard there would be unreachable, and
+  //: an unreachable guard is a line no test can ever justify.
+  const generation = calculatorGeneration()
   setState({ loading: true, error: null, errorAt: null, errorCode: null, fieldErrors: {} })
   try {
     // §6.2: the whole submission travels in one call. One request per entry would let
@@ -2874,6 +2885,12 @@ async function submitCalculation() {
     // re-sends the whole submission under this same token. Two builders is how the four
     // round-two fields came to be silently dropped by the second call.
     const response = await calculate(submissionPayload(state, chains))
+    //: Measured on `6ef309a`: without this line a Clear confirmed between the press and the
+    //: response left the visitor on the introduction screen for an instant and then threw
+    //: them onto the results page at `step: 5` -- and `writeSnapshot`/`writeResultSnapshot`
+    //: below re-created all three storage keys `clearSnapshot` had just removed, the §5.3
+    //: dedup token among them. "Clear all calculator data" was a false statement.
+    if (generation !== calculatorGeneration()) return
     const token = response.token || state.token
     if (token) sessionStorage.setItem('kaiCalculatorToken', token)
     setState({ result: { ...response, entry_results: entryResultsFrom(leaves, response) }, resultTaxonomy: state.taxonomy, token, loading: false, step: 5, error: null, errorAt: null, errorCode: null, fieldErrors: {}, returnTo: null })
@@ -2893,8 +2910,20 @@ async function submitCalculation() {
     writeSnapshot(state)
     writeResultSnapshot(state)
   } catch (error) {
+    //: **Two generation checks in this block, and the one in the middle is why.** This
+    //: first one is not about the message -- the second would suppress that on its own --
+    //: it is about not doing the work: `reloadTaxonomy` is a second `GET /taxonomy`, and
+    //: firing it on behalf of a request nobody is waiting for spends one of §6.5's 600 an
+    //: hour for nothing. Measured: with this line removed the state stays correct and the
+    //: reload fires anyway, which is exactly the shape a single mutation cannot
+    //: distinguish from a line that does nothing. `test_an_abandoned_unknown_code_does_not_refetch_the_taxonomy`
+    //: is the assertion that tells them apart.
+    if (generation !== calculatorGeneration()) return
     const rateLimitedUntil = error.code === 'RATE_LIMITED' ? Date.now() + 60000 : state.rateLimitedUntil
     if (error.code === 'UNKNOWN_CODE' && reloadTaxonomy) await reloadTaxonomy({ preserveError: true })
+    //: And the second one, because the line above is awaited: a Clear pressed while the
+    //: taxonomy is being refetched arrives after the first check has already passed.
+    if (generation !== calculatorGeneration()) return
     // A VALIDATION_ERROR names a field, and the field is what says which step it belongs
     // on — `detailStep` derives that from where each field is actually rendered. The first
     // detail with a locatable step wins; falling back to step 3 keeps this the form's own
@@ -2917,7 +2946,9 @@ async function submitCalculation() {
     // it is still the rate-limit one: another failure may have replaced it inside the minute,
     // and that message is about something the wait does not fix.
     if (error.code === 'RATE_LIMITED') {
-      setTimeout(() => setState(state.errorCode === 'RATE_LIMITED'
+      //: A minute is long enough for the visitor to have cleared and started again, and
+      //: this patch would land on whatever is on screen then.
+      setTimeout(() => generation === calculatorGeneration() && setState(state.errorCode === 'RATE_LIMITED'
         ? { rateLimitedUntil: 0, error: null, errorAt: null, errorCode: null }
         : { rateLimitedUntil: 0 }), 60000)
     }
@@ -3962,7 +3993,9 @@ export function bindCalculator(main, retryTaxonomy) {
     // and index 0 is a real answer, which is why the state is not a boolean.
     if (action === 'expand-improvement-chart') setState({ improvementChartExpanded: Number(control.dataset.leaf || 0) })
     if (action === 'close-improvement-chart') setState({ improvementChartExpanded: null })
-    if (action === 'cancel-improvement') setState({ improvementOpen: false, improvementChartExpanded: null, improvementResult: null, improvementError: null })
+    //: `cancelImprovement` rather than the patch that stood here: the other half of Cancel
+    //: is disowning the request, and `improvement.js` is where the counter for that lives.
+    if (action === 'cancel-improvement') cancelImprovement()
     // §9's code-to-copy map travels with the call. `improvement.js` cannot import it —
     // this module already imports that one — and without it the improvement panel showed
     // raw backend prose for the codes the main flow words carefully.

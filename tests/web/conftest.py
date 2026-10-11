@@ -144,6 +144,10 @@ NOT_A_BROWSER_SUITE = {
         "replaced by a recorder - the subject is what the request body carries "
         "when a `unit_preset` has been retired, which a served page answers no "
         "more directly and far more slowly",
+    "test_stale_response_regressions.py":
+        "drives `state.js`, `calculator.js`, `improvement.js` and `results.js` under "
+        "Node with a fetch it holds open and an in-memory sessionStorage; the defect is "
+        "a window between a request and its response, and no page is involved",
     "test_step_three_copy_truth.py":
         "runs `calculator.js`'s `render()` and `results.js`'s "
         "`buildResultsReport()` in one Node process over a response fixture, "

@@ -1,5 +1,5 @@
 import { calculate } from './api.js'
-import { setState, storeToken, draftEntry, leafDisplayName } from './state.js'
+import { setState, storeToken, calculatorGeneration, draftEntry, leafDisplayName } from './state.js'
 import { entryTotal, massToKg, rowKgString, percentageToKg, kgToPercentage, kgToUnitAmount, unitAmountToKg, unitDisplayPrecision, isPresetUnit, presetUnitCode, PRESET_UNIT } from './units.js'
 import { requestLines, submissionLeaves, submissionPayload } from './submission.js'
 import { escapeHtml, formatNumber, slug } from './view.js'
@@ -49,6 +49,7 @@ const PIE_COLOURS = ['#003223', '#28c882', '#87005a', '#ffd76e', '#005ae6', '#e6
 // §6.2 rejects an entry whose two scenarios differ in mass by more than this, and it
 // rejects the whole submission rather than the entry.
 const MASS_TOLERANCE_KG = 0.01
+let comparisonRequest = 0
 
 // **The panel's one display unit** (#74). `state.improvementMode` holds `'percentage'`,
 // `'kilograms'`, `'tonnes'`, or `preset:<unit_preset.code>` — the same value space
@@ -373,6 +374,7 @@ export function openImprovement(state) {
 // there is nothing here to return *to*. It is kept as a shortcut to the current shares,
 // and the button says so: `t('Match the current allocation')`, not `t('Reset to Current')`.
 export function resetImprovement(state) {
+  if (state.improvementLoading) return
   // **An identity on a forked chain, and that is the whole point of it.** One
   // submission-wide split applied to every leaf's own mass could satisfy this only when
   // the leaves happened to agree; `currentAllocationPercentages` is per leaf now, so
@@ -477,6 +479,7 @@ function rangeStep(unit, totalKg, presets) {
  * else's.
  */
 export function updateImprovementInput(control, state) {
+  if (state.improvementLoading) return
   const code = control.dataset.improvementCode
   // **Which leaf's allocation this control edits.** Absent on a single-leaf panel, where
   // the markup is unchanged by the fork and leaf zero is the only leaf there is.
@@ -569,7 +572,7 @@ export function updateImprovementInput(control, state) {
     errorElement.hidden = !error
   }
   const compareButton = document.querySelector('[data-action="compare-improvement"]')
-  if (compareButton) compareButton.disabled = Boolean(error)
+  if (compareButton) compareButton.disabled = Boolean(error) || state.improvementLoading
 }
 
 export function allocationTotal(allocations) {
@@ -665,7 +668,17 @@ function improvedLines(entry, allocations, presets) {
  * @param {object} state
  * @param {(error: Error & {code?: string}) => string} [toPublicMessage]
  */
+export function cancelImprovement() {
+  comparisonRequest += 1
+  setState({ improvementOpen: false, improvementLoading: false,
+    improvementChartExpanded: null, improvementResult: null, improvementError: null })
+}
+
 export async function compareImprovement(state, toPublicMessage = error => error.message || t('The improvement comparison could not be completed.')) {
+  if (state.improvementLoading) return
+  const generation = calculatorGeneration()
+  const request = ++comparisonRequest
+  const current = () => generation === calculatorGeneration() && request === comparisonRequest
   const validationError = improvementValidation(state)
   if (validationError) {
     setState({ improvementError: validationError })
@@ -696,6 +709,7 @@ export async function compareImprovement(state, toPublicMessage = error => error
       // could not be improved at all.
       submissionPayload(state, [...state.entries, draftEntry()], (leaf, index) => improvedLines(leaf, allocations[index] || {}, presets)),
     )
+    if (!current()) return
     const token = response.token || state.token
     storeToken(token)
     // The per-entry pairing `comparisons` held was read by exactly one thing — the
@@ -704,6 +718,7 @@ export async function compareImprovement(state, toPublicMessage = error => error
     setState({ improvementLoading: false, improvementResult: response, token })
     requestAnimationFrame(() => document.getElementById('comparison-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
   } catch (error) {
+    if (!current()) return
     setState({ improvementLoading: false, improvementError: toPublicMessage(error) })
   }
 }
@@ -716,7 +731,7 @@ export async function compareImprovement(state, toPublicMessage = error => error
 //
 // **`rowUnit` is gone and `unit` is the panel's** (#74): the row no longer carries a unit of
 // its own, so there is no longer a pair here that could disagree.
-function DestinationAllocationRow({ destination, current, improved, unit, totalKg, presets, leafIndex }) {
+function DestinationAllocationRow({ destination, current, improved, unit, totalKg, presets, leafIndex, disabled }) {
   // The one interpolation on the branch that reached an attribute through neither
   // `escapeHtml` nor `slug`. `destination.code` is `VARCHAR(64)` with no pattern constraint
   // in `db/`, `api/` or `admin/`, and staff edit it through sqladmin's generic CRUD, so a
@@ -815,7 +830,7 @@ function DestinationAllocationRow({ destination, current, improved, unit, totalK
   // it has always been there, and there is no second unit to choose when the figure already
   // is the unit.
   const unitSuffix = unitMode ? '' : `<span>%</span>`
-  return `<div class="improvement-allocation-row"><div><label for="${id}">${escapeHtml(destination.name)}</label><span>${escapeHtml(t('Current'))}: ${formatNumber(current, 2)}%</span></div><div class="improvement-control"><input id="${id}" type="range" min="0" max="${ceiling}" step="any" value="${escapeHtml(value)}" data-improvement-code="${escapeHtml(destination.code)}"${leafAttr} aria-label="${escapeHtml(rangeLabel)}"><div class="percentage-input"><input type="number" min="0" max="${numberMax}" step="${boxStep}" inputmode="decimal" value="${escapeHtml(value)}" data-improvement-code="${escapeHtml(destination.code)}"${leafAttr} aria-label="${escapeHtml(boxLabel)}">${unitSuffix}</div></div></div>`
+  return `<div class="improvement-allocation-row"><div><label for="${id}">${escapeHtml(destination.name)}</label><span>${escapeHtml(t('Current'))}: ${formatNumber(current, 2)}%</span></div><div class="improvement-control"><input id="${id}" type="range" min="0" max="${ceiling}" step="any" value="${escapeHtml(value)}" data-improvement-code="${escapeHtml(destination.code)}"${leafAttr} ${disabled ? 'disabled' : ''} aria-label="${escapeHtml(rangeLabel)}"><div class="percentage-input"><input type="number" min="0" max="${numberMax}" step="${boxStep}" inputmode="decimal" value="${escapeHtml(value)}" data-improvement-code="${escapeHtml(destination.code)}"${leafAttr} ${disabled ? 'disabled' : ''} aria-label="${escapeHtml(boxLabel)}">${unitSuffix}</div></div></div>`
 }
 
 /**
@@ -854,6 +869,7 @@ function LeafAllocationEditor({ state, leaf, index, count, single, current, allo
     totalKg,
     presets,
     leafIndex,
+    disabled: state.improvementLoading,
   })).join('')
   const editor = `<div class="improvement-editor"><div class="improvement-pie-wrap"><div class="improvement-pie-content" data-improvement-pie="${index}">${PieChart(state, sorted(state.taxonomy.destinations), allocation, totalKg)}</div><button class="button button-secondary improvement-expand-chart" type="button" data-action="expand-improvement-chart" data-leaf="${index}"><span aria-hidden="true">&#9974;</span> ${escapeHtml(t('Total allocation'))}</button></div><div class="improvement-allocation-list">${rows}</div></div>`
   // **A one-leaf panel keeps the singleton ids**, for the reason step 3's fields do: it
@@ -960,7 +976,7 @@ export function ImprovementScenario(state) {
     ? `<div class="improvement-chart-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(t('Total allocation'))}"><div class="improvement-chart-expanded"><button class="improvement-chart-close" type="button" data-action="close-improvement-chart" aria-label="${escapeHtml(t('Cancel'))}">×</button>${single ? '' : `<h3 class="improvement-leaf__heading">${escapeHtml(leafDisplayName(expandedLeaf, state.taxonomy))}</h3>`}${PieChart(state, sorted(state.taxonomy.destinations), allocations[expanded] || {}, leafAllocatableKg(expandedLeaf, presets))}</div></div>`
     : ''
   const submissionMass = single ? '' : `<p class="improvement-submission-mass">${escapeHtml(t('Total mass'))}: <strong id="improvement-total-kg">${formatNumber(totalKg, 2)}</strong> kg</p>`
-  return `<section class="improvement-scenario" id="improvement-section" tabindex="-1" aria-labelledby="improvement-title"><h2 id="improvement-title">${escapeHtml(t('Create an Improvement Scenario'))}</h2><p>${escapeHtml(intro)}</p>${unitField}${editors}${submissionMass}<p class="field-error" id="improvement-inline-error" role="alert" ${error ? '' : 'hidden'}>${escapeHtml(error)}</p>${state.improvementError ? `<p class="field-error" role="alert">${escapeHtml(state.improvementError)}</p>` : ''}<div class="improvement-actions"><button class="button button-secondary" type="button" data-action="reset-improvement">${escapeHtml(t('Match the current allocation'))}</button><button class="button button-secondary" type="button" data-action="cancel-improvement">${escapeHtml(t('Cancel'))}</button><button class="button button-primary" type="button" data-action="compare-improvement" ${error || state.improvementLoading ? 'disabled' : ''}>${escapeHtml(state.improvementLoading ? t('Comparing…') : t('Compare Impact'))}</button></div>${modal}</section>`
+  return `<section class="improvement-scenario" id="improvement-section" tabindex="-1" aria-labelledby="improvement-title"><h2 id="improvement-title">${escapeHtml(t('Create an Improvement Scenario'))}</h2><p>${escapeHtml(intro)}</p>${unitField}${editors}${submissionMass}<p class="field-error" id="improvement-inline-error" role="alert" ${error ? '' : 'hidden'}>${escapeHtml(error)}</p>${state.improvementError ? `<p class="field-error" role="alert">${escapeHtml(state.improvementError)}</p>` : ''}<div class="improvement-actions"><button class="button button-secondary" type="button" data-action="reset-improvement" ${state.improvementLoading ? 'disabled' : ''}>${escapeHtml(t('Match the current allocation'))}</button><button class="button button-secondary" type="button" data-action="cancel-improvement">${escapeHtml(t('Cancel'))}</button><button class="button button-primary" type="button" data-action="compare-improvement" ${error || state.improvementLoading ? 'disabled' : ''}>${escapeHtml(state.improvementLoading ? t('Comparing…') : t('Compare Impact'))}</button></div>${modal}</section>`
 }
 
 /**

@@ -650,7 +650,13 @@ export function subscribe(fn) {
   return () => subscribers.delete(fn)
 }
 
+// Requests capture this generation. Clear starts a new calculation, so an old
+// response must not restore its token, result, error or contribution state.
+let generation = 0
+export const calculatorGeneration = () => generation
+
 export function resetCalculator() {
+  generation += 1
   try {
     sessionStorage.removeItem('kaiCalculatorToken')
   } catch {
@@ -673,6 +679,7 @@ export function resetCalculator() {
   unwindStepHistory()
   setState({
     token: null,
+    loading: !state.taxonomy,
     sector: null,
     foodCategories: [],
     foodUnspecified: false,

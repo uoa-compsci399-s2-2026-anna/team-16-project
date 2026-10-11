@@ -1,12 +1,12 @@
 import { calculate } from './api.js'
-import { state, setState, storeToken, resetCalculator, entryResultsFrom, draftEntry, draftLeafFigures, EMPTY_LEAF, entryLeaves, leafDisplayName, leafFigures, leafKey } from './state.js'
+import { state, setState, storeToken, calculatorGeneration, resetCalculator, entryResultsFrom, draftEntry, draftLeafFigures, EMPTY_LEAF, entryLeaves, leafDisplayName, leafFigures, leafKey } from './state.js'
 import { containerKg, countLimit, entryTotal, isPlainDecimal, isPresetUnit, kgToTonnes, massToKg, PRESET_UNIT, presetUnitCode, rowKgString } from './units.js'
 import { requestLines, submissionLeaves, submissionPayload } from './submission.js'
 import { escapeHtml, formatNumber, slug, stepNav } from './view.js'
 import { cardId, cardIsFixedOpen, cardIsOpen, cardStatus, collapsibleCard, keyAttr, openedCard } from './cards.js'
 import { t } from './i18n.js'
 import { armContribute, bindResultsSectionSpy, cancelContribute, downloadPdf, downloadResults, renderResults, resultsNavIsDocked } from './results.js'
-import { compareImprovement, openImprovement, resetImprovement, updateImprovementInput } from './improvement.js'
+import { cancelImprovement, compareImprovement, openImprovement, resetImprovement, updateImprovementInput } from './improvement.js'
 import { handlePeriodBlur, handlePeriodClick, handlePeriodComposition, handlePeriodInput, handlePeriodKeydown, handlePeriodPointer, PeriodField, periodProblem, timeFrameChanged } from './period.js'
 import { DROPPED_DESTINATION, DROPPED_FOOD_CATEGORY, DROPPED_FOOD_ITEM, DROPPED_SECTOR, DROPPED_UNIT_PRESET, writeResultSnapshot, writeSnapshot } from './snapshot.js'
 
@@ -2646,7 +2646,8 @@ function fieldErrorMap(error) {
 }
 
 async function submitCalculation() {
-  if (Date.now() < state.rateLimitedUntil) return
+  if (state.loading || Date.now() < state.rateLimitedUntil) return
+  const generation = calculatorGeneration()
   // A restored review may contain rows cleared by taxonomy revalidation. Check
   // saved chains too: they do not pass through the draft's Continue buttons.
   let leafIndex = 0
@@ -2688,6 +2689,7 @@ async function submitCalculation() {
     // re-sends the whole submission under this same token. Two builders is how the four
     // round-two fields came to be silently dropped by the second call.
     const response = await calculate(submissionPayload(state, chains))
+    if (generation !== calculatorGeneration()) return
     const token = response.token || state.token
     storeToken(token)
     setState({ result: { ...response, entry_results: entryResultsFrom(leaves, response) }, resultTaxonomy: state.taxonomy, token, loading: false, step: 5, error: null, errorAt: null, errorCode: null, fieldErrors: {}, returnTo: null })
@@ -2707,8 +2709,10 @@ async function submitCalculation() {
     writeSnapshot(state)
     writeResultSnapshot(state)
   } catch (error) {
+    if (generation !== calculatorGeneration()) return
     const rateLimitedUntil = error.code === 'RATE_LIMITED' ? Date.now() + 60000 : state.rateLimitedUntil
     if (error.code === 'UNKNOWN_CODE' && reloadTaxonomy) await reloadTaxonomy({ preserveError: true })
+    if (generation !== calculatorGeneration()) return
     // A VALIDATION_ERROR names a field, and the field is what says which step it belongs
     // on — `detailStep` derives that from where each field is actually rendered. The first
     // detail with a locatable step wins; falling back to step 3 keeps this the form's own
@@ -2731,7 +2735,7 @@ async function submitCalculation() {
     // it is still the rate-limit one: another failure may have replaced it inside the minute,
     // and that message is about something the wait does not fix.
     if (error.code === 'RATE_LIMITED') {
-      setTimeout(() => setState(state.errorCode === 'RATE_LIMITED'
+      setTimeout(() => generation === calculatorGeneration() && setState(state.errorCode === 'RATE_LIMITED'
         ? { rateLimitedUntil: 0, error: null, errorAt: null, errorCode: null }
         : { rateLimitedUntil: 0 }), 60000)
     }
@@ -3771,7 +3775,7 @@ export function bindCalculator(main, retryTaxonomy) {
     // and index 0 is a real answer, which is why the state is not a boolean.
     if (action === 'expand-improvement-chart') setState({ improvementChartExpanded: Number(control.dataset.leaf || 0) })
     if (action === 'close-improvement-chart') setState({ improvementChartExpanded: null })
-    if (action === 'cancel-improvement') setState({ improvementOpen: false, improvementChartExpanded: null, improvementResult: null, improvementError: null })
+    if (action === 'cancel-improvement') cancelImprovement()
     // §9's code-to-copy map travels with the call. `improvement.js` cannot import it —
     // this module already imports that one — and without it the improvement panel showed
     // raw backend prose for the codes the main flow words carefully.

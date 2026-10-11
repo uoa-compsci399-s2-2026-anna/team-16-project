@@ -19,9 +19,10 @@ globalThis.CSS = { escape: value => value }
 globalThis.requestAnimationFrame = () => {}
 const stored = new Map()
 globalThis.sessionStorage = { getItem: key => stored.get(key) || null, setItem: (key, value) => stored.set(key, value), removeItem: key => stored.delete(key) }
-const { state, setState, leafKey } = await import(new URL('state.js', root))
+const { state, setState, leafKey, resetCalculator } = await import(new URL('state.js', root))
 const { bindCalculator } = await import(new URL('calculator.js', root))
-const { compareImprovement } = await import(new URL('improvement.js', root))
+const { compareImprovement, updateImprovementInput, ImprovementScenario } = await import(new URL('improvement.js', root))
+const { contributeCalculation } = await import(new URL('results.js', root))
 const { pruneAnswers } = await import(new URL('snapshot.js', root))
 const taxonomy = JSON.parse(readFileSync(new URL('../../tests/fixtures/taxonomy.json', root)))
 const key = leafKey({ foodCategory: 'dairy' })
@@ -50,7 +51,64 @@ globalThis.fetch = async (url, options) => {
     : { ok: true, json: async () => ({ token: 'accepted-token', totals: {}, entries: [{}] }) }
 }
 let dropped = []
-if (input.probe === 'allocation') {
+let locked = null
+let inputDisabled = null
+let resolveRequest, rejectRequest
+const deferred = []
+const deferFetch = () => {
+  globalThis.fetch = (url, options) => {
+    requests.push(JSON.parse(options.body))
+    return new Promise((resolve, reject) => {
+      resolveRequest = resolve; rejectRequest = reject
+      deferred.push({ resolve, reject })
+    })
+  }
+}
+const finishRequest = async failure => {
+  if (failure) rejectRequest(new Error('late failure'))
+  else resolveRequest({ ok: true, json: async () => ({ token: 'late-token', totals: {}, entries: [{}] }) })
+  await new Promise(resolve => setTimeout(resolve, 0))
+}
+if (input.probe === 'asyncReset') {
+  deferFetch()
+  setState({ token: 'old-token' })
+  if (input.kind === 'calculate') press('calculate')
+  else if (input.kind === 'compare') compareImprovement(state)
+  else contributeCalculation(state)
+  resetCalculator()
+  if (input.restart) setState({ ...chain, token: 'new-token', step: 0, result: null })
+  await finishRequest(input.failure)
+} else if (input.probe === 'compareCancel') {
+  deferFetch()
+  const old = compareImprovement(state)
+  press('cancel-improvement')
+  if (input.reopen) {
+    press('explore-improvements')
+    compareImprovement(state)
+  }
+  if (input.failure) deferred[0].reject(new Error('cancelled request failed'))
+  else deferred[0].resolve({ ok: true, json: async () => ({ token: 'cancelled-token', totals: {} }) })
+  await old
+  locked = state.improvementLoading
+  if (input.reopen) {
+    deferred[1].resolve({ ok: true, json: async () => ({ token: 'new-token', totals: {} }) })
+    await new Promise(resolve => setTimeout(resolve, 0))
+  }
+} else if (input.probe === 'compareBusy') {
+  deferFetch()
+  const button = { disabled: true }
+  document.querySelector = selector => selector === '[data-action="compare-improvement"]' ? button : null
+  const pending = compareImprovement(state)
+  const html = ImprovementScenario(state)
+  inputDisabled = [...html.matchAll(/<input\b[^>]*data-improvement-code[^>]*>/g)].every(hit => /\bdisabled\b/.test(hit[0]))
+  for (const [code, value] of [['compost','50'],['landfill','50']]) {
+    updateImprovementInput({ dataset: { improvementCode: code }, type: 'number', value }, state)
+  }
+  locked = button.disabled
+  const duplicate = compareImprovement(state)
+  for (const deferredRequest of deferred) deferredRequest.resolve({ ok: true, json: async () => ({ token: 'late-token', totals: {} }) })
+  await Promise.all([pending, duplicate])
+} else if (input.probe === 'allocation') {
   const figures = state.leafFigures[key]
   figures.totalUnit = input.unit
   figures.totalAmount = input.unit === 'tonnes' ? '0.01' : '10'
@@ -79,8 +137,11 @@ if (input.probe === 'allocation') {
 }
 console.log(JSON.stringify({ step: state.step, error: state.error, fieldErrors: state.fieldErrors,
   result: state.result, token: state.token, storedToken: stored.get('kaiCalculatorToken') || null, improvementError: state.improvementError,
-  improvementResult: state.improvementResult, dropped, requests,
-  current: input.saved ? state.entries[0].leafFigures[key].current : state.leafFigures[key].current }))
+  improvementResult: state.improvementResult, improvedAllocations: state.improvedAllocations,
+  loading: state.loading, improvementLoading: state.improvementLoading, improvementOpen: state.improvementOpen, contributing: state.contributing,
+  contributed: state.contributed, contributeError: state.contributeError,
+  storedKeys: [...stored.keys()], locked, inputDisabled, dropped, requests,
+  current: input.saved ? state.entries[0].leafFigures[key].current : state.leafFigures[key]?.current }))
 """
 
 
@@ -167,3 +228,49 @@ def test_api_failure_is_not_hidden_by_storage_recovery(tmp_path, compare):
     else:
         assert result['result'] is None
         assert result['error']
+
+
+@pytest.mark.parametrize('kind', ['calculate', 'compare', 'contribute'])
+@pytest.mark.parametrize('failure', [False, True])
+@pytest.mark.parametrize('restart', [False, True])
+def test_late_response_cannot_restore_a_cleared_calculation(tmp_path, kind, failure, restart):
+    result = probe(tmp_path, probe='asyncReset', kind=kind, failure=failure, restart=restart)
+    assert len(result['requests']) == 1
+    assert result['step'] == (0 if restart else -1)
+    assert result['token'] == ('new-token' if restart else None)
+    assert result['result'] is None
+    assert result['improvementResult'] is None
+    assert result['error'] is None
+    assert result['improvementError'] is None
+    assert result['contributeError'] is None
+    assert not result['contributed']
+    assert not result['loading']
+    assert not result['improvementLoading']
+    assert not result['contributing']
+    assert result['storedKeys'] == []
+
+
+def test_pending_comparison_keeps_its_inputs_and_submit_locked(tmp_path):
+    result = probe(tmp_path, probe='compareBusy')
+    assert result['locked']
+    assert result['inputDisabled']
+    assert len(result['requests']) == 1
+    assert result['improvedAllocations'] == [{'compost': 100}]
+    assert result['improvementResult'] is not None
+
+
+@pytest.mark.parametrize('failure', [False, True])
+@pytest.mark.parametrize('reopen', [False, True])
+def test_cancelled_comparison_cannot_replace_a_reopened_panel(tmp_path, failure, reopen):
+    result = probe(tmp_path, probe='compareCancel', failure=failure, reopen=reopen)
+    assert result['improvementError'] is None
+    assert not result['improvementLoading']
+    if reopen:
+        assert result['locked'], 'The old response cleared the new request loading state'
+        assert result['token'] == 'new-token'
+        assert result['improvementResult']['token'] == 'new-token'
+        assert result['improvementOpen']
+    else:
+        assert result['token'] is None
+        assert result['improvementResult'] is None
+        assert not result['improvementOpen']

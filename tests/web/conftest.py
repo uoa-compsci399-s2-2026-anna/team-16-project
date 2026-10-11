@@ -96,6 +96,9 @@ HERE = pathlib.Path(__file__).resolve().parent
 #: `test_suite_isolation.py` fails on an entry whose file does in fact reach
 #: Playwright - so the list cannot outlive the reason it was written for.
 NOT_A_BROWSER_SUITE = {
+    "test_calculator_recovery_regressions.py":
+        "runs the calculator event handlers, submission and recovery modules "
+        "under Node with in-memory storage and fetch; no page or stack is needed",
     "test_class_rules.py":
         "reads `web/*.html`, `web/js/*.js` and `web/css/*.css` off disk and "
         "compares the class names one side emits with the ones the other "

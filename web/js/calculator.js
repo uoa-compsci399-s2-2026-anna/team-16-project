@@ -1,5 +1,5 @@
 import { calculate } from './api.js'
-import { state, setState, resetCalculator, entryResultsFrom, draftEntry, draftLeafFigures, EMPTY_LEAF, entryLeaves, leafDisplayName, leafFigures, leafKey } from './state.js'
+import { state, setState, storeToken, resetCalculator, entryResultsFrom, draftEntry, draftLeafFigures, EMPTY_LEAF, entryLeaves, leafDisplayName, leafFigures, leafKey } from './state.js'
 import { containerKg, countLimit, entryTotal, isPlainDecimal, isPresetUnit, kgToTonnes, massToKg, PRESET_UNIT, presetUnitCode, rowKgString } from './units.js'
 import { requestLines, submissionLeaves, submissionPayload } from './submission.js'
 import { escapeHtml, formatNumber, slug, stepNav } from './view.js'
@@ -18,59 +18,16 @@ const decimalPattern = /^\d+(\.\d{1,2})?$/
 // from `metric.unit` on the API response and are international notation.
 const unitLabel = unit => (unit === 'tonnes' ? t('tonnes') : t('kilograms'))
 
-// **Integer hundredths, and no tolerance at all** (v1.105). This was
-//
-//     const ALLOCATION_EPSILON = 0.01
-//     const exceedsTotal = (allocated, total) => allocated - total > ALLOCATION_EPSILON
-//
-// whose own note said "two sums that agree to two decimal places are equal as far as
-// the user is concerned". 2.00 and 2.01 do not agree to two decimal places. The
-// tolerance was exactly one unit in the last place a visitor can type, so it swallowed
-// not the floating-point dust it was written for but the smallest real error there is,
-// and `>` made it inclusive: a total of 2.00 with 2.01 allocated showed *Allocated 2.01*
-// beside *Remaining 0.00* under a tick reading *Complete*.
-//
-// **And which "+0.01" it swallowed was decided by the dust rather than by the figures.**
-// Measured:
-//
-//     1.00 -> 1.01    0.010000000000000009   refused
-//     2.00 -> 2.01    0.009999999999999787   ACCEPTED
-//    10.00 -> 10.01   0.009999999999999787   ACCEPTED
-//   100.00 -> 100.01  0.010000000000005116   refused
-//
-// The identical logical gap, opposite verdicts. `calculator.js`'s own money rule
-// already records this defect one dimension over -- "`0.03 -> 0.04` was refused while
-// `0.07 -> 0.08` was allowed, purely because [they] land on different sides of `0.01`
-// in a double" -- and fixed it with `moneyCents`: parse to integers, compare integers,
-// no floating point anywhere. This is that decision for mass.
-//
-// **Rounding BOTH sides to the typed precision is what removes the need for a
-// tolerance**, rather than a smaller epsilon. A total that a two-decimal field cannot
-// reach exactly -- 23 L of a 0.29 kg/L preset is 6.67, but a hypothetical 0.2857 kg/L
-// would give 6.5711 -- lands on the same hundredth as the rows that try to meet it, so
-// it is reachable by construction. What a tolerance on the DIFFERENCE would have done
-// instead is accept a gap the visitor can see and fix.
-//
-// Safe in a double: every input here is already at most three decimal places
-// (`lineKgString` ends in `toFixed(3)`), so `x * 100` carries dust of order 1e-13 --
-// `2.01 * 100` is `200.99999999999997` -- which `Math.round` absorbs with twelve orders
-// of magnitude to spare, at every scale up to `MAX_LINE_KG`. Checked at 2.01, 0.07,
-// 6.667, 1234.5 and 9999999.99.
-const hundredths = kilograms => Math.round((Number(kilograms) || 0) * 100)
-const exceedsTotal = (allocated, total) => hundredths(allocated) > hundredths(total)
-const remainingAmount = (total, allocated) => (hundredths(total) - hundredths(allocated)) / 100
-// **Step 4's allocation has to account for all of the waste, not at most all of it**
-// (v1.99). Until then the rules bounded the allocation from above and said nothing
-// below it, and §7.3a recorded that as deliberate -- so a card with 3 of 4 kg placed
-// wore a `Complete` badge and let Continue through. **The step-3 total never crosses
-// the wire** (see the note over `MAX_LINE_KG`): an entry's waste IS the sum of its
-// destination lines, so the unallocated kilogram was not carried anywhere, not
-// refused by the API, and not visible on the results page -- every figure was simply
-// computed on three quarters of what the visitor had typed, under a tick that said
-// otherwise. The same epsilon as `remainingAmount`, so the rule and the Remaining
-// figure beside it can never disagree about zero -- which is now true by construction
-// rather than by sharing a constant, because all three read the same `hundredths`.
-const fallsShortOfTotal = (allocated, total) => hundredths(allocated) < hundredths(total)
+// Compare integer hundredths of a kilogram, regardless of the display unit.
+// A tonne total may have destination rows in kilograms or containers: rounding
+// in tonnes would hide up to five kilograms and could mark an incomplete
+// allocation complete. The remainder is converted back only for display.
+const allocationPrecision = unit => unit === 'tonnes' ? 5 : 2
+const hundredths = (amount, unit = 'kilograms') => Math.round((massToKg(amount, unit) || 0) * 100)
+const exceedsTotal = (allocated, total, unit) => hundredths(allocated, unit) > hundredths(total, unit)
+const fallsShortOfTotal = (allocated, total, unit) => hundredths(allocated, unit) < hundredths(total, unit)
+const remainingAmount = (total, allocated, unit) =>
+  (hundredths(total, unit) - hundredths(allocated, unit)) / (unit === 'tonnes' ? 100000 : 100)
 
 // crypto.randomUUID() is [SecureContext] and so is undefined over plain http:// to a
 // LAN IP. crypto.getRandomValues() is not. These ids never leave the browser.
@@ -1736,11 +1693,11 @@ function leafSummary(leaf, first) {
   //: waiting. Over-allocation and negatives keep firing unconditionally, because
   //: both are states the visitor had to type to reach.
   const started = (figures.current || []).some(line => line.qtyInput !== '')
-  const invalid = exceedsTotal(allocated, total)
-    || (started && fallsShortOfTotal(allocated, total))
+  const invalid = exceedsTotal(allocated, total, figures.totalUnit)
+    || (started && fallsShortOfTotal(allocated, total, figures.totalUnit))
     || (figures.current || []).some(line => line.qtyInput !== '' && Number(line.qtyInput) < 0)
   const unit = unitLabel(figures.totalUnit)
-  return `<div class="allocation-summary ${invalid ? 'invalid' : ''}" ${first ? 'id="current-summary"' : ''} data-summary-leaf="${leafAttr(leaf)}" aria-live="polite"><div><span>${escapeHtml(t('Total waste'))}</span><strong>${formatNumber(total, 2)} ${escapeHtml(unit)}</strong></div><div><span>${escapeHtml(t('Allocated'))}</span><strong data-summary="allocated">${formatNumber(allocated, 2)} ${escapeHtml(unit)}</strong></div><div><span>${escapeHtml(t('Remaining'))}</span><strong data-summary="remaining">${formatNumber(remainingAmount(total, allocated), 2)} ${escapeHtml(unit)}</strong></div></div>`
+  return `<div class="allocation-summary ${invalid ? 'invalid' : ''}" ${first ? 'id="current-summary"' : ''} data-summary-leaf="${leafAttr(leaf)}" aria-live="polite"><div><span>${escapeHtml(t('Total waste'))}</span><strong>${formatNumber(total, 2)} ${escapeHtml(unit)}</strong></div><div><span>${escapeHtml(t('Allocated'))}</span><strong data-summary="allocated">${formatNumber(allocated, allocationPrecision(figures.totalUnit))} ${escapeHtml(unit)}</strong></div><div><span>${escapeHtml(t('Remaining'))}</span><strong data-summary="remaining">${formatNumber(remainingAmount(total, allocated, figures.totalUnit), allocationPrecision(figures.totalUnit))} ${escapeHtml(unit)}</strong></div></div>`
 }
 
 /**
@@ -1828,7 +1785,7 @@ function destinationStep() {
     const allocated = allocatedAmount(figures.current, figures.totalUnit)
     const total = totalNumber(figures)
     const started = (figures.current || []).some(line => line.qtyInput !== '')
-    return exceedsTotal(allocated, total) || (started && fallsShortOfTotal(allocated, total))
+    return exceedsTotal(allocated, total, figures.totalUnit) || (started && fallsShortOfTotal(allocated, total, figures.totalUnit))
   }
   // A server `VALIDATION_ERROR` names a line by the §9 path `draftLinePaths` builds, and a
   // client-side refusal names a leaf in `state.errorAt`. Either way **a card holding a
@@ -2264,8 +2221,7 @@ function massContradictionValidation(figures) {
  *   `null` where there is one — which is what decides whether a message names a food.
  * @returns {{message: string, field?: string}}
  */
-function leafProblem(step, leaf, food) {
-  const figures = draftLeafFigures(leaf)
+function leafProblem(step, leaf, food, figures = draftLeafFigures(leaf)) {
   if (step === 2) {
     // **Today's three rules.** The first problem wins, and it carries the field it
     // belongs to so that `amountStep` can highlight the right box without comparing
@@ -2312,15 +2268,15 @@ function leafProblem(step, leaf, food) {
     //: `production_share_percent` are all computed on the smaller mass with nothing on
     //: screen saying so. Checked before the over-allocation branch for no reason beyond
     //: reading order; the two are mutually exclusive.
-    if (fallsShortOfTotal(sum, total)) {
-      const short = (total - sum).toFixed(2)
+    if (fallsShortOfTotal(sum, total, unit)) {
+      const short = (total - sum).toFixed(allocationPrecision(unit))
       const unitName = unit === 'kilograms' ? 'kg' : t('tonnes')
       return fail(food
         ? t('%(food)s still has %(short)s %(unit)s to place. Every destination amount together has to add up to the waste you entered.', { food, short, unit: unitName })
         : t('There is still %(short)s %(unit)s to place. Every destination amount together has to add up to the waste you entered.', { short, unit: unitName }))
     }
-    if (exceedsTotal(sum, total)) {
-      const excess = (sum - total).toFixed(2)
+    if (exceedsTotal(sum, total, unit)) {
+      const excess = (sum - total).toFixed(allocationPrecision(unit))
       const unitName = unit === 'kilograms' ? 'kg' : t('tonnes')
       return fail(food
         ? t('Allocated waste for %(food)s exceeds its amount by %(excess)s %(unit)s.', { food, excess, unit: unitName })
@@ -2691,6 +2647,31 @@ function fieldErrorMap(error) {
 
 async function submitCalculation() {
   if (Date.now() < state.rateLimitedUntil) return
+  // A restored review may contain rows cleared by taxonomy revalidation. Check
+  // saved chains too: they do not pass through the draft's Continue buttons.
+  let leafIndex = 0
+  for (const [chainIndex, chain] of [...state.entries, draftEntry()].entries()) {
+    const leaves = entryLeaves(chain)
+    for (const step of GATED_STEPS) {
+      for (const leaf of leaves) {
+        const problem = step === 0 && !chain.sector
+          ? { message: t('Select where in the food supply chain the waste occurred.') }
+          : leafProblem(step, leaf, leaves.length > 1 ? leafName(leaf) : null, leafFigures(chain, leaf))
+        if (!problem.message) continue
+        if (chainIndex < state.entries.length) {
+          setState({ error: problem.message, errorAt: null, errorCode: null,
+            fieldErrors: { [`entries[${leafIndex}]`]: problem.message } })
+        } else {
+          const at = { leaf: leafKey(leaf), field: problem.field }
+          setState({ step, error: problem.message, errorAt: at, errorCode: null,
+            fieldErrors: {}, openCards: openedCard(step, at.leaf), returnTo: { from: step, step: 4 } })
+          focusLeafField(at)
+        }
+        return
+      }
+    }
+    leafIndex += leaves.length
+  }
   setState({ loading: true, error: null, errorAt: null, errorCode: null, fieldErrors: {} })
   try {
     // §6.2: the whole submission travels in one call. One request per entry would let
@@ -2708,7 +2689,7 @@ async function submitCalculation() {
     // round-two fields came to be silently dropped by the second call.
     const response = await calculate(submissionPayload(state, chains))
     const token = response.token || state.token
-    if (token) sessionStorage.setItem('kaiCalculatorToken', token)
+    storeToken(token)
     setState({ result: { ...response, entry_results: entryResultsFrom(leaves, response) }, resultTaxonomy: state.taxonomy, token, loading: false, step: 5, error: null, errorAt: null, errorCode: null, fieldErrors: {}, returnTo: null })
     // **§7.2a's second checkpoint, and it is the response rather than the press.** The
     // click handler already wrote the answers when Calculate was pressed — before this
@@ -2946,10 +2927,10 @@ function updateLine(control) {
   //: the other two are not. The two writers state one rule and have already drifted
   //: once in this revision.
   const started = lines.some(line => line.qtyInput !== '')
-  summary?.classList.toggle('invalid', exceedsTotal(sum, total) || (started && fallsShortOfTotal(sum, total)) || hasNegative)
+  summary?.classList.toggle('invalid', exceedsTotal(sum, total, unit) || (started && fallsShortOfTotal(sum, total, unit)) || hasNegative)
   if (summary) {
-    summary.querySelector('[data-summary="allocated"]').textContent = `${sum.toFixed(2)} ${unitLabel(unit)}`
-    summary.querySelector('[data-summary="remaining"]').textContent = `${remainingAmount(total, sum).toFixed(2)} ${unitLabel(unit)}`
+    summary.querySelector('[data-summary="allocated"]').textContent = `${sum.toFixed(allocationPrecision(unit))} ${unitLabel(unit)}`
+    summary.querySelector('[data-summary="remaining"]').textContent = `${remainingAmount(total, sum, unit).toFixed(allocationPrecision(unit))} ${unitLabel(unit)}`
   }
   const error = validateCurrentStep()
   document.getElementById('allocation-error').textContent = error
@@ -2959,7 +2940,7 @@ function updateLine(control) {
   // discarded. Dropping only the highlight left the sentence sitting under an unhighlighted
   // row, still naming a line position the request no longer has.
   document.querySelectorAll('.destination-row .field-error').forEach(message => message.remove())
-  if (exceedsTotal(sum, total) || Number(control.value) < 0) {
+  if (exceedsTotal(sum, total, unit) || Number(control.value) < 0) {
     control.closest('.destination-row')?.classList.add('invalid')
     control.setAttribute('aria-invalid', 'true')
   }

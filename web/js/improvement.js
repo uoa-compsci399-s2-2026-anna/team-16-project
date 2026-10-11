@@ -1,6 +1,6 @@
 import { calculate } from './api.js'
-import { setState, draftEntry, leafDisplayName } from './state.js'
-import { rowKgString, percentageToKg, kgToPercentage, kgToUnitAmount, unitAmountToKg, unitDisplayPrecision, isPresetUnit, presetUnitCode, PRESET_UNIT } from './units.js'
+import { setState, storeToken, draftEntry, leafDisplayName } from './state.js'
+import { entryTotal, massToKg, rowKgString, percentageToKg, kgToPercentage, kgToUnitAmount, unitAmountToKg, unitDisplayPrecision, isPresetUnit, presetUnitCode, PRESET_UNIT } from './units.js'
 import { requestLines, submissionLeaves, submissionPayload } from './submission.js'
 import { escapeHtml, formatNumber, slug } from './view.js'
 import { cardStatus, collapsibleCard } from './cards.js'
@@ -624,6 +624,17 @@ export function improvementValidation(state) {
     const mismatch = t('Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.', { total: total.toFixed(2) })
     if (Math.abs(total - 100) > 0.01) return named(leaf, mismatch)
     const currentKg = leafAllocatableKg(leaf, presets)
+    const declared = entryTotal(leaf, presets)
+    const declaredKg = massToKg(declared.amount, declared.unit)
+    // A restored result can still show historical figures after its form rows
+    // were pruned. Never compare or persist a smaller current scenario silently.
+    if (declaredKg === null || declaredKg <= 0) return named(leaf, t('Waste amount must be greater than zero.'))
+    if (Math.round(currentKg * 100) < Math.round(declaredKg * 100)) {
+      return named(leaf, t('There is still %(short)s %(unit)s to place. Every destination amount together has to add up to the waste you entered.', { short: (declaredKg - currentKg).toFixed(2), unit: 'kg' }))
+    }
+    if (Math.round(currentKg * 100) > Math.round(declaredKg * 100)) {
+      return named(leaf, t('Allocated waste exceeds total waste by %(excess)s %(unit)s.', { excess: (currentKg - declaredKg).toFixed(2), unit: 'kg' }))
+    }
     const improvedKg = sumQtyKg(improvedLines(leaf, mine, presets))
     if (Math.abs(improvedKg - currentKg) > MASS_TOLERANCE_KG) return named(leaf, mismatch)
   }
@@ -686,7 +697,7 @@ export async function compareImprovement(state, toPublicMessage = error => error
       submissionPayload(state, [...state.entries, draftEntry()], (leaf, index) => improvedLines(leaf, allocations[index] || {}, presets)),
     )
     const token = response.token || state.token
-    if (token) sessionStorage.setItem('kaiCalculatorToken', token)
+    storeToken(token)
     // The per-entry pairing `comparisons` held was read by exactly one thing — the
     // `landfill_diverted` card's cross-entry `by_destination` sum — and that card is gone.
     // Every figure this screen renders now comes from `totals`.

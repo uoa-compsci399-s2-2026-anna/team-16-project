@@ -634,6 +634,16 @@ export function pruneAnswers(answers, taxonomy) {
           if (offeredDestinations.has(line?.destination)) return true
           drop(DROPPED_DESTINATION, line?.destination)
           return false
+        }).map(line => {
+          const code = typeof line.unit === 'string' && line.unit.startsWith('preset:')
+            ? line.unit.slice('preset:'.length) : null
+          if (code !== null && !presets.has(code)) {
+            drop(DROPPED_UNIT_PRESET, code)
+            // A container count cannot be reinterpreted as a weight. Keep the
+            // destination, but require a fresh amount in an available unit.
+            return { ...line, qtyInput: '', unit: 'kilograms' }
+          }
+          return line
         }),
       }
     }

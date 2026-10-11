@@ -629,6 +629,17 @@ export function entryResultsFrom(entries, response) {
 
 const subscribers = new Set()
 
+/** Keep the token across reloads when storage is available. The live result
+ *  and token must still work when site data is blocked or its quota is full. */
+export function storeToken(token) {
+  if (!token) return
+  try {
+    sessionStorage.setItem('kaiCalculatorToken', token)
+  } catch {
+    // Persistence is optional; callers keep the token on state either way.
+  }
+}
+
 export function setState(patch) {
   Object.assign(state, patch)
   subscribers.forEach(subscriber => subscriber(state))

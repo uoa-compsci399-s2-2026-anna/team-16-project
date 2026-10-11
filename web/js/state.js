@@ -639,7 +639,23 @@ export function subscribe(fn) {
   return () => subscribers.delete(fn)
 }
 
+// **The generation a request belongs to, and it exists because "Clear all calculator data"
+// could not keep that promise** (v1.113). Every in-flight call reads this before it awaits
+// and compares it afterwards; `resetCalculator` below bumps it, so a response to a
+// calculation the visitor has abandoned has no way to write itself onto the one they are
+// looking at now. **Three doors share that reset** -- the header's Clear (`main.js`), the
+// brand button beside it, and the results page's *Start over* -- which is why the counter
+// lives here with the function they all call rather than in `calculator.js`.
+//
+// A counter rather than an `AbortController`: nothing here cancels the request. It still
+// goes out, still counts against §6.5, and -- because §5.3 persists on arrival -- still
+// writes its row. What this prevents is the *interface* acting on it. Aborting the fetch
+// as well would be a larger change and is noted in §10 rather than taken here.
+let generation = 0
+export const calculatorGeneration = () => generation
+
 export function resetCalculator() {
+  generation += 1
   try {
     sessionStorage.removeItem('kaiCalculatorToken')
   } catch {
@@ -662,6 +678,19 @@ export function resetCalculator() {
   unwindStepHistory()
   setState({
     token: null,
+    // **`loading` has to be cleared here, and leaving it out stranded the form** (v1.113).
+    // `calculateOtherwiseDisabled()` is `state.loading || ...`, so a Clear pressed while a
+    // calculation was in flight left the flag set with nothing on the way to clear it: the
+    // visitor refilled every step and met a Calculate button still disabled and still
+    // reading *Calculating…*, for the rest of the session. Measured on `6ef309a`: `loading`
+    // true after Clear, still true after the whole form was entered again.
+    //
+    // **`!state.taxonomy` rather than `false`**, because this one field carries two
+    // meanings -- `calculator.js:3280` reads it as "the taxonomy has not arrived" and
+    // `calculator.js:2025` as "a calculation is in flight". A Clear before the first
+    // `GET /taxonomy` answers must leave the introduction screen waiting, not tell it the
+    // options are ready. After a normal reset the taxonomy is kept, so this is `false`.
+    loading: !state.taxonomy,
     sector: null,
     foodCategories: [],
     foodUnspecified: false,

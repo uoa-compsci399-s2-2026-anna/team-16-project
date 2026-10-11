@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-10-11 (v1.112)"
+date: "2026-10-11 (v1.113)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,39 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.113 — 2026-10-11 (a cleared calculation came back when its response landed; affects B, C and D)
+
+**This is one of four fixes that arrived together as a single pull request and are landing separately.** A tonnes allocation compared in the wrong unit is **v1.111** and a retired `unit_preset` dropping a destination row off the wire is **v1.112**; the fourth — a blocked `sessionStorage` discarding a successful result — **has no entry because it is not fixed anywhere yet**, and the original pull request stays open for it. Nothing here depends on any of the three. The diagnosis of all four is rhua798's.
+
+Every call the calculator makes writes to the state **after** an `await`, and none of them asked whether the state they were writing to was still the one that had asked. **The sequence is ordinary, not contrived:** `renderChrome` hides the header's *Clear all data* only when `hasData()` is false, so from the moment a visitor has typed anything it is on screen at every step, including the review step with Calculate on it. Press Calculate, press Clear, confirm, wait.
+
+Measured on `6ef309a`, three distinct symptoms from one cause:
+
+| press | what the late response did |
+| --- | --- |
+| Calculate, then Clear, then a 200 | `step` -1 → **5**: the visitor is thrown onto the results page for the calculation they just cleared. `writeSnapshot` and `writeResultSnapshot` re-create **all three** storage keys `clearSnapshot` had removed — `kaiCalculatorAnswers` holding the emptied answers, `kaiCalculatorResult` holding a full result, and `kaiCalculatorToken` holding §5.3's dedup token |
+| Calculate, then Clear, then a network failure | *The calculator service could not be reached* on the introduction screen |
+| Calculate, then Clear, then `UNKNOWN_CODE` | `step` -1 → **0**, under *Calculator options have changed*, plus a second `GET /taxonomy` fired for a request nobody is waiting for |
+| Calculate, then Clear, and **no response at all** | `loading` stays `true` for the rest of the session. `calculateOtherwiseDisabled()` is `state.loading \|\| …`, so the visitor re-enters the whole form and meets a Calculate button still disabled and still reading *Calculating…* |
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`state.js` owns a generation counter, because `resetCalculator` is what three doors share.** `calculatorGeneration()` is read before every await and compared after it; `resetCalculator` bumps it. The counter lives beside that function rather than in `calculator.js` because *Start over* (`results.js`), the header's *Clear all data* and the brand button beside it (both `main.js`) all call it — and **only the first of those is a `data-action`**, which is why a reader who greps the dispatcher concludes this window cannot be reached | §7.2a |
+| 2 | **`resetCalculator` clears `loading`, which it never did.** `loading: !state.taxonomy` rather than `false`: the field carries two meanings — `calculator.js:3280` reads it as "the taxonomy has not arrived", `calculator.js:2025` as "a calculation is in flight" — and a Clear pressed before the first `GET /taxonomy` answers must leave the introduction screen waiting rather than tell it the options are ready. After a normal reset the taxonomy is kept, so the value is `false` | §7.2a |
+| 3 | **`submitCalculation` checks the generation three times, and the two in the `catch` block are not duplicates.** The first is not about the message — the second suppresses that on its own — it is about not doing the work: `reloadTaxonomy` is a second `GET /taxonomy`, and §6.5 allows a caller 600 an hour before answering 429. The second exists **because the line between them is awaited**, so a Clear can arrive after the first check has passed. Measured, with one removed at a time: removing the first leaves the state correct and fires the reload anyway; removing the second leaves it correct; removing both brings the error back. A single mutation cannot tell a redundant guard from a useless one, which is why `test_an_abandoned_unknown_code_does_not_refetch_the_taxonomy` asserts the reload count rather than the state | §7.3a |
+| 4 | **The deferred rate-limit clear is pinned too.** `setTimeout(… , 60000)` is long enough for the visitor to have cleared and started again, and the patch would have landed on whatever was on screen then | §7.3a |
+| 5 | **`cancelImprovement` is a function in `improvement.js`, not a `setState` in the dispatcher.** The patch was only half of what Cancel means; the other half is disowning the request. Without it a cancelled comparison still wrote `improvementResult` and `token` on arrival — a comparison sitting under a closed panel — and if the visitor reopened and compared again, **the older answer replaced the newer one**, because both wrote the same two fields and the slower one won | §7.3a |
+| 6 | **A second counter, `comparisonRequest`, and the panel needs both.** Cancel and reopen change no generation, so `calculatorGeneration` alone cannot separate two comparisons within one calculation. `compareImprovement` captures the pair and checks both | §7.3a |
+| 7 | **The panel draws itself inert while a comparison is in flight** — the range and number inputs, *Match the current allocation*, and *Compare Impact*. On `6ef309a` the allocation could be edited and Compare pressed again, so **two requests went out for one panel** and the figures on screen described neither. `updateImprovementInput` carries its own guard as well as the attribute, because it patches the live DOM in place without re-rendering | §7.3a |
+| 8 | **`contributeCalculation` compares the token as well as the generation.** §5.3 keys the stored row on the token, so a reset followed by a fresh calculation has a new one; without that half, a 204 arriving after Clear-then-recalculate marked the **new** result as already contributed — a tick on a figure nobody had offered | §5.3, §7.3a |
+| 9 | **Nothing here aborts the request.** The call still goes out, still spends one of §6.5's 600, and — because §5.3 persists on arrival — still writes its row. What is prevented is the *interface* acting on it. An `AbortController` would be a larger change; it is noted in `docs/architecture.md` §10 rather than taken here, and the Cancel button's copy is not changed to claim more than it does | §6.5, §10 |
+| 10 | **Two unreachable guards from the original change are left out, and the same ruling covers both.** No `state.loading` beside the rate-limit check in `submitCalculation`: `calculateOtherwiseDisabled()` already includes it, the function has exactly one caller, and that caller is the dispatcher behind that disabled button. And no `|| state.improvementLoading` on the `compareButton.disabled` assignment at the end of `updateImprovementInput`, because that function's own guard has already returned by the time the line runs, so the clause could only ever write `false` — the reachable half is the `disabled` attribute `ImprovementScenario` draws, which is what the test reads. No test can justify an unreachable guard, and one that no test can justify is one the next reader deletes for the wrong reason | §7.3a |
+| 11 | **`tests/web/test_stale_response_regressions.py`**, 21 cases, registered in `conftest.py`'s `NOT_A_BROWSER_SUITE` with its reason. It drives the real modules under Node with a `fetch` the test holds open, because the defect **is** the gap between a request and its response and a throttled Playwright route cannot hold that gap still. What a Node harness cannot see is a real pointer meeting a `disabled` attribute, and the one case that touches it says so in its own docstring | §0 |
+| 12 | **One of the original assertions passed for the wrong reason and is corrected rather than carried over.** It handed `document.querySelector` a `{ disabled: true }` double and watched `updateImprovementInput` set it — but that function's own `improvementLoading` guard returns above the line that patches a live button, so the double reported `true` for a build that does nothing at all. Measured: initialised to `false` it stays `false` on the fixed build. The attribute is read off `ImprovementScenario`'s own markup instead | §0 |
+| 13 | No API field, request shape, response shape or fixture changes. Steps one and two of §0's three-step rule, not step three. The owner notifies the team | §0 |
+
+**Not fixed here, and worth naming.** `main.js:139` binds the brand button to `resetCalculator()` with **no confirmation at all**, while its own `aria-label` reads *Clear calculator data and return to the introduction*. One click destroys every answer. That is either a deliberate choice nobody wrote down or a missing `window.confirm`, and it is the owner's call rather than this entry's.
 
 ### v1.112 — 2026-10-11 (a retired `unit_preset` made a destination row vanish off the wire; affects B and C)
 

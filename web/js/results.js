@@ -16,7 +16,7 @@ import { formatInstant } from './period.js'
 // visitor has cleared or recalculated. `setState` mutates this object in place, so the
 // module binding is always the current state — and every renderer here still takes its
 // `state` as a parameter, so nothing else in this file reads the global by accident.
-import { leafDisplayName, setState, state as liveState, taxonomyForResult } from './state.js'
+import { calculatorGeneration, leafDisplayName, setState, state as liveState, taxonomyForResult } from './state.js'
 
 const DEMONSTRATION_NOTICE = 'Demonstration only — verified calculation factors have not yet been supplied.'
 
@@ -1381,9 +1381,21 @@ export function cancelContribute() {
  */
 export async function contributeCalculation(state, toPublicMessage = error => error.message || t('The calculator service could not be reached. Check your connection and try again.')) {
   if (state.contributing || state.contributed || !state.token) return
+  // **The calculation this contribution is for, pinned before the await** (v1.113).
+  // `contributeCalculation` writes `contributed: true` and then `writeResultSnapshot`, and
+  // both were unconditional: press Contribute, press the header's Clear, start a second
+  // calculation, and the first call's 204 marked the *new* result as already contributed --
+  // a tick on a figure nobody had offered. The token is compared as well as the generation
+  // because §5.3 keys the row on it: a reset that is followed by a fresh calculation has a
+  // new token, and "this answer is still the one I asked about" is the question both halves
+  // answer.
+  const generation = calculatorGeneration()
+  const token = state.token
+  const current = () => generation === calculatorGeneration() && state.token === token
   setState({ contributing: true, contributeError: null })
   try {
-    await contribute(state.token)
+    await contribute(token)
+    if (!current()) return
     setState({ contributing: false, contributed: true, contributeCelebrating: true })
     // **§7.2a: the choice has to outlive the page load, or the interface forgets it.** A
     // visitor who contributed, left for the methodology page and pressed Back must not be
@@ -1394,8 +1406,12 @@ export async function contributeCalculation(state, toPublicMessage = error => er
     // `contributeCelebrating` is deliberately not in `RESULT_KEYS`, so the flower does not
     // travel with the flag.
     writeResultSnapshot(liveState)
-    setTimeout(() => setState({ contributeCelebrating: false }), CONTRIBUTE_CELEBRATE_MS)
+    setTimeout(() => current() && setState({ contributeCelebrating: false }), CONTRIBUTE_CELEBRATE_MS)
   } catch (error) {
+    // The failure message belongs to the calculation that asked for it too: a network error
+    // from an abandoned contribution must not appear beside a result the visitor has since
+    // produced.
+    if (!current()) return
     setState({ contributing: false, contributed: false, contributeTicked: false, contributeError: toPublicMessage(error) })
   }
 }

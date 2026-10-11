@@ -86,6 +86,17 @@ const press = action => {
 }
 const flush = () => new Promise(resolve => setTimeout(resolve, 0))
 
+// §6.5's minute, held rather than waited for. `submitCalculation` schedules exactly one
+// 60,000 ms timer -- the deferred clear of `rateLimitedUntil` -- so capturing that delay
+// and firing it by hand is the whole of the fake clock this needs, and `flush` above keeps
+// using the real one.
+const minuteTimers = []
+const realSetTimeout = globalThis.setTimeout
+globalThis.setTimeout = (fn, delay, ...rest) => {
+  if (delay === 60000) return minuteTimers.push(fn)
+  return realSetTimeout(fn, delay, ...rest)
+}
+
 const requests = []
 const deferred = []
 let settle = null
@@ -104,11 +115,17 @@ const settleUnknownCode = () => deferred[0].resolve({
   ok: false, status: 422,
   json: async () => ({ error: { code: 'UNKNOWN_CODE', message: 'A code in the request is not published.', details: [] } }),
 })
+const settleRateLimited = index => deferred[index].resolve({
+  ok: false, status: 429,
+  json: async () => ({ error: { code: 'RATE_LIMITED', message: 'Too many requests.', details: [] } }),
+})
 
 let locked = null
 let inputsDisabled = null
 let inputsSeen = null
 let loadingAfterReset = null
+let rateLimitedWhileWaiting = null
+let errorWhileWaiting = null
 
 if (input.probe === 'asyncReset') {
   setState({ token: 'old-token' })
@@ -134,6 +151,23 @@ if (input.probe === 'asyncReset') {
   // Execution is now parked inside the awaited `reloadTaxonomy`.
   resetCalculator()
   releaseReload()
+  await flush()
+} else if (input.probe === 'rateLimitRetimer') {
+  // Rate-limited once, cleared, rate-limited again -- then the FIRST minute's timer fires
+  // while the second minute is still running.
+  press('calculate')
+  await flush()
+  settleRateLimited(0)
+  await flush()
+  resetCalculator()
+  setState({ ...chain(), step: 4 })
+  press('calculate')
+  await flush()
+  settleRateLimited(1)
+  await flush()
+  rateLimitedWhileWaiting = state.rateLimitedUntil > Date.now()
+  errorWhileWaiting = state.error
+  minuteTimers[0]()
   await flush()
 } else if (input.probe === 'stuckLoading') {
   press('calculate')
@@ -194,6 +228,8 @@ console.log(JSON.stringify({
   contributing: state.contributing, contributed: state.contributed,
   contributeError: state.contributeError,
   requests: requests.length, reloads, locked, inputsDisabled, inputsSeen,
+  rateLimitedUntilFuture: state.rateLimitedUntil > Date.now(),
+  rateLimitedWhileWaiting, errorWhileWaiting, minuteTimers: minuteTimers.length,
 }))
 """
 
@@ -401,3 +437,34 @@ def test_pending_comparison_locks_its_inputs_and_submit(tmp_path):
         'the allocation moved under a comparison that had already been sent'
     )
     assert result['improvementResult'] is not None
+
+
+def test_a_stale_rate_limit_timer_cannot_lift_the_current_one(tmp_path):
+    """§6.5's minute is deferred by a `setTimeout`, and a minute is a long time.
+
+    `submitCalculation` schedules the clear of `rateLimitedUntil` sixty seconds out. The
+    visitor has every opportunity to press Clear and start again inside that minute, and on
+    a second 429 a **second** timer is scheduled with its own minute to run.
+
+    The first timer then fires while the second window is still open. Unguarded it takes the
+    `errorCode === 'RATE_LIMITED'` branch — which is true again, for the new failure — and
+    clears `rateLimitedUntil` and the message together: **the current block is lifted early
+    and the sentence explaining it disappears**, roughly half a minute before the API will
+    actually answer anything.
+
+    Measured: with the generation check removed from that `setTimeout`, this case fails on
+    both assertions below and nothing else in this file notices, which is why it exists.
+    The minute is held rather than waited for — the harness captures callbacks scheduled at
+    exactly 60,000 ms, and `submitCalculation` schedules no other timer at that delay.
+    """
+    result = probe(tmp_path, probe='rateLimitRetimer')
+    assert result['requests'] == 2
+    assert result['minuteTimers'] == 2, result['minuteTimers']
+    #: The preconditions, so neither assertion below can pass by the window never opening.
+    assert result['rateLimitedWhileWaiting'] is True
+    assert result['errorWhileWaiting']
+    assert result['rateLimitedUntilFuture'] is True, (
+        "the first failure's timer lifted the second failure's rate-limit window"
+    )
+    assert result['errorCode'] == 'RATE_LIMITED'
+    assert result['error'], 'the message explaining the current block was cleared by a stale timer'

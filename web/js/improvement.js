@@ -1,6 +1,6 @@
 import { calculate } from './api.js'
 import { setState, draftEntry, leafDisplayName } from './state.js'
-import { rowKgString, percentageToKg, kgToPercentage, kgToUnitAmount, unitAmountToKg, unitDisplayPrecision, isPresetUnit, presetUnitCode, PRESET_UNIT } from './units.js'
+import { entryTotal, massToKg, rowKgString, percentageToKg, kgToPercentage, kgToUnitAmount, unitAmountToKg, unitDisplayPrecision, isPresetUnit, presetUnitCode, PRESET_UNIT } from './units.js'
 import { requestLines, submissionLeaves, submissionPayload } from './submission.js'
 import { escapeHtml, formatNumber, slug } from './view.js'
 import { cardStatus, collapsibleCard } from './cards.js'
@@ -624,6 +624,30 @@ export function improvementValidation(state) {
     const mismatch = t('Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.', { total: total.toFixed(2) })
     if (Math.abs(total - 100) > 0.01) return named(leaf, mismatch)
     const currentKg = leafAllocatableKg(leaf, presets)
+    // **The panel must not redistribute a mass smaller than the one the visitor
+    // declared.** Every figure below this line is a share of `currentKg`, which is the
+    // sum of the rows that can actually be sent — so a row the taxonomy revalidation has
+    // emptied (a retired `unit_preset`, §7.2a) takes the sliders, the *Total mass* line
+    // and the whole alternative scenario down with it, and Compare Impact upserts on the
+    // same token under §5.3. **Reachable**: `restoredPatch` restores step 5 when there is
+    // a result to draw, so Explore Improvements is one press from a pruned form.
+    //
+    // Step 4 is gated on the allocation matching the declared total exactly (v1.99), so
+    // in a form the visitor has walked through these two agree by construction and this
+    // can only fire on a chain something changed underneath. `MASS_TOLERANCE_KG` is the
+    // tolerance already derived for this comparison in this module — each line is rounded
+    // to 3 dp and §6.2 caps a scenario at 20 lines — and it is one-directional, because
+    // only the shortfall direction is reachable by pruning.
+    //
+    // The message is step 3's own, already in all twenty catalogues: no new key, which
+    // is what keeps this clear of §7.7's `Catalogue.gettext` trap. It is reported through
+    // `improvementValidation`, so Compare Impact is **disabled** rather than merely
+    // failing on press — the refusal is the guarantee, the sentence is the explanation.
+    const declared = entryTotal(leaf, presets)
+    const declaredKg = massToKg(declared.amount, declared.unit)
+    if (declaredKg !== null && declaredKg - currentKg > MASS_TOLERANCE_KG) {
+      return named(leaf, t('There is still %(short)s %(unit)s to place. Every destination amount together has to add up to the waste you entered.', { short: (declaredKg - currentKg).toFixed(2), unit: 'kg' }))
+    }
     const improvedKg = sumQtyKg(improvedLines(leaf, mine, presets))
     if (Math.abs(improvedKg - currentKg) > MASS_TOLERANCE_KG) return named(leaf, mismatch)
   }

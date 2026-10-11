@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-10-11 (v1.111)"
+date: "2026-10-11 (v1.112)"
 ---
 
 # 0. How to Use This Document
@@ -25,6 +25,47 @@ This document defines **what every person's code receives and what it returns.**
 
 ## 0.1 Change Log
 
+### v1.112 — 2026-10-11 (a retired `unit_preset` made a destination row vanish off the wire; affects B and C)
+
+**`unit_preset` has no `factor_set_id`.** It is a global table like `food_item` (§2.1), it carries `active: Boolean`, staff edit it through sqladmin's generic CRUD, and `get_taxonomy` filters `.where(UnitPreset.active.is_(True))` (§5.2). So **one unticked checkbox in the admin panel removes a preset code from §6.1's response at the next page load**, with no factor-set publish involved — and O-6 says plainly that this table is expected to be edited, because the `0.29 kg/L` behind the ten seeded presets is a published overseas figure standing in for a New Zealand measurement nobody has taken.
+
+**§6.1 and `rowKgString` were both already right.** §6.1 says a consumer must not assume a `unit_preset` code survives a publish, and `rowKgString` honours it: `''` for a row the visitor has not filled, `null` for a preset the taxonomy no longer carries. The defect was one line downstream of both:
+
+```js
+// web/js/submission.js — before
+.filter(line => Number(line.qty_kg) > 0)
+```
+
+`Number(null) === 0`, so **`null` ("this preset no longer exists") was indistinguishable from `''` ("the visitor left this row blank") and from a legitimate `0`.** The `null` was produced correctly and then thrown away.
+
+**Measured on `origin/main`** — a 10 kg leaf, `2 × preset:retired_bin` to landfill and `5 kg` to compost, restored through `pruneAnswers` and then Calculate:
+
+```
+dropped: []            step: 5   error: null
+requests: 1
+entries[0].current: [ { "destination": "compost", "qty_kg": "5.000" } ]
+```
+
+Half the mass gone, no notice of any kind, a result on screen computed on it — and because one calculation is one submission (§2.3), **that halved figure lands in the public statistics.** Compare Impact did the same and upserted over the same token (§5.3): its request carried `current: 5.000` against `alternative: 5.000`, with the button enabled.
+
+**Why the step-3 gate did not catch it.** `step` is in `ANSWER_KEYS`, `restorableStep` keeps a stored 5 when there is a result to redraw, and §7.2a's own note at `snapshot.js` states the consequence: *"`restoredPatch` clamps the step back to the review screen, and Calculate is one press."* A saved chain's Continue is not on that path, so its allocation is never re-checked.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`submission.js` stops conflating the three cases, and that is the cause-level fix.** `rowKilograms` is spelled once; `requestLines`' filter tests the string (`''`, `null`) rather than `Number(...)`; and **`unconvertibleRows(entry, presets)` is the half that used to be discarded.** Honest measurement: rewriting the filter alone is **behaviourally equivalent** — `Number('')` and `Number(null)` are both `0` — so the filter is a clarity change and `unconvertibleRows` is what carries the distinction | §7.3, §7.3b |
+| 2 | **`submissionPayload` refuses rather than building a shorter list**, throwing `UnconvertibleRowError`. It is the one builder both buttons go through and **it is never called from a render**, which is why the refusal can be a throw here and must not be one inside `rowKgString` — whose own note records that both of *its* callers run inside a render, where a throw blanks the screen. This is the only layer that holds for a row the revalidation never saw: `reloadTaxonomy` does not re-run `pruneAnswers`, because `pendingRestore` is consumed by the first load | §7.3b |
+| 3 | **No new catalogue key, and that was a design constraint rather than a happy accident.** The error carries **no `message`**, so `publicError`'s `default` answers with the existing `t('The calculation could not be completed.')`, and `improvement.js` is handed that same function. It carries no `code`, so `submitCalculation`'s `catch` leaves the visitor on the screen they pressed from. §7.7's three traps are the reason: the extractor reads the source and cannot see a string it was not written to see, `Catalogue.gettext` **raises** where `t()` falls back — one missing key is a 500 on every non-English PDF — and a new CJK character prints as a box until the subsets are re-cut | §7.7, §9 |
+| 4 | **`pruneAnswers` empties a destination row whose container is gone, and reports it** as `DROPPED_UNIT_PRESET` — which puts "Containers" in §7.2a's restore notice. The count goes with the code (a count cannot be reinterpreted as a weight, and the `kg_per_unit` that told them apart is exactly what has gone) and the **destination stays**, so step 4 draws the row with a blank box the visitor can answer. `isPresetUnit` / `presetUnitCode` are imported from `units.js` rather than `startsWith('preset:')` and `slice(7)` re-typed: **no cycle, checked rather than assumed** — `units.js` imports nothing, so `state.js → snapshot.js → units.js` is acyclic, and `snapshot.js`'s module note is corrected to say it imports exactly one module and why that is safe | §7.2a, §7.3 |
+| 5 | **§7.2a's retired-versus-unticked distinction now has a row-level statement, which it did not have.** `pruneAnswers`' header documented it for a category and an item — a retired one takes its figures, an unticked one's are parked — and said nothing about `current[].unit`, which has carried a unit of its own since item ⑥. A retired container can be named by a *row* while the leaf's own `unitPreset` is `null`, and that is the **ordinary** case: the leaf is measured as a mass and one of its thirteen rows counted bins | §7.2a |
+| 6 | **`submitCalculation` re-runs the allocation gate over every chain, draft and saved alike.** Necessary *because* of #4: once the row is emptied it is a legitimately blank row, so #2 has nothing to object to — the submission is simply 5 kg short of a 10 kg total, which is v1.99's rule, which only the step-3 gate states. `chainAllocationProblem` is `stepProblemAt`'s step-3 question asked of a chain that is not the draft, through the **same** `leafProblem` with the chain's own figures handed in (its new fourth parameter) rather than a second list of rules. **Step 3 and no other step**, deliberately: the chain's earlier answers are either repaired by the prune itself or still exactly as Continue accepted them | §7.3a |
+| 7 | **Where the refusal is said depends on where the chain lives.** The draft has form screens of its own, so the visitor is taken to the allocation step with the right card opened and the field focused — the same `{leaf, field}` pair `bindCalculator`'s Continue uses. A saved chain has no screen of its own, so the message goes into `state.fieldErrors` under §9's `entries[N]` path, which is what `entryProblem` reads to print it on that card; `N` is the **leaf** index, because that is what §9 counts | §7.3a, §9 |
+| 8 | **It cannot refuse something the API would take** (§7.6.1). Every rule is one Continue already enforces, and §6.2's `current: Field(min_length=1)` refuses an entry with no destination line outright. Measured control: one saved chain of `4 × 23 L bin + 3.32 kg` against a 30 kg total plus a complete draft chain still sends both entries, `26.680` and `3.320` and `2.000` | §6.2, §7.3a |
+| 9 | **`improvementValidation` refuses a comparison whose leaf cannot allocate its declared total.** `leafAllocatableKg` is `sumQtyKg(requestLines(...))`, so the panel's sliders, its *Total mass* line and the whole alternative scenario were on the reduced mass too, and the comparison upserts over the same token. It is reported **through the validator**, so Compare Impact is rendered `disabled` rather than failing on press, and with step 3's existing sentence rather than a new key. One-directional and guarded by `MASS_TOLERANCE_KG`, the tolerance this module already derived for this comparison, so an intact panel is untouched | §7.3a |
+| 10 | **`tests/web/test_retired_unit_preset.py`, eleven cases, of which four pass on `origin/main`.** Those four are **controls**, labelled as such: an intact container row must still reach the wire whole, a blank row and a legitimate zero must not be mistaken for an unconvertible one, a complete submission must still be sent, and an intact panel must still compare. The first of them is the half that matters most — a fix that refused or emptied **every** `preset:` row would satisfy every other assertion in the file while destroying the figures of every visitor who measured in containers. Two cases are added to `test_snapshot.py`, where the prune's other rules live, and the second of those is the same control one level down | §0, §7.2a |
+| 11 | **Mutation-verified, seven mutations, and one of them is reported as equivalent rather than as a pass.** `no-builder-throw` and `blind-unconvertible-rows` each fail 2; `no-row-prune` fails 5; `prune-every-preset-row` fails 3 (all three controls); `no-preflight-gate` fails 2; `no-panel-guard` fails 1. **`conflate-again` — the filter back on one `Number()` — fails nothing**, which is the measurement behind change #1's admission: the three layers are independent and the filter is not one of them. Two weak shapes the original work had were avoided: `.every()` over a match list is `true` on zero matches, so the Compare button's match count is asserted non-zero beside it; and no probe is initialised to the value being asserted | §0 |
+| 12 | Steps one and two of §0's three-step rule. **Nothing on the wire changes** — no API field, no error code, no response shape, and nothing under `tests/fixtures/` moves. What changes is which submissions the front end will build, and the ones it now refuses were the ones carrying less mass than the visitor had entered. The owner notifies the team | §0, §6.1 |
+
+**Not done, and recorded rather than forgotten.** With the row still carrying the retired code — the path where the prune has not run — `leafProblem`'s per-line ceiling check fires first, because `lineKilograms` answers `null` and `null` is treated as over the limit (its own note explains why that is right for an infinite mass). The allocation is correctly refused, but the message names the 50,000,000 kg ceiling rather than the container. That path is already a refusal and no mass is lost, so it is left as it is rather than widened here.
 ### v1.111 — 2026-10-11 (a tonnes leaf compared hundredths of a tonne, and hid five kilograms; affects C)
 
 **v1.105's rule was right and the figures handed to it were not.** §0.1 v1.105 change #1 states that `exceedsTotal`, `fallsShortOfTotal` and `remainingAmount` *"compare integer hundredths of a kilogram, `Math.round(kg * 100)`"*, and all three do. The call sites handed them the leaf's figures in its **display** unit instead: `allocatedAmount` sums its lines in kilograms and then converts the sum **back** to that unit before returning it, and `totalNumber` is the typed total in it. On a kilograms leaf the two spellings are the same number. On a **tonnes** leaf the comparison granularity was 0.01 tonne, which is **10 kg**.

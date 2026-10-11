@@ -74,15 +74,82 @@ export function submissionLeaves(chains) {
 }
 
 /**
+ * One row's kilograms, as `rowKgString` answers it: a decimal string, `''` for a row the
+ * visitor has not filled, or `null` for a row whose own unit this taxonomy can no longer
+ * convert (§6.1 — a `unit_preset` code is not guaranteed to survive a publish).
+ *
+ * Spelled once because **the three answers are three different facts** and the two
+ * functions below have to agree about which is which.
+ */
+const rowKilograms = (entry, line, presets) =>
+  rowKgString(line.qtyInput, line.unit || entry.totalUnit, presets)
+
+/**
+ * The rows of this entry whose own unit **no longer converts**, in `current[]` order.
+ *
+ * **This is the half of `requestLines` that used to be thrown away, and throwing it away
+ * was the defect.** `unit_preset` carries no `factor_set_id` — it is a global table like
+ * `food_item` — so staff retiring a container through the admin panel's `active` checkbox
+ * removes its code from §6.1's response at the next page load, with no factor-set publish
+ * involved (O-6 says plainly that this table is expected to be edited: the `0.29 kg/L`
+ * behind the ten seeded presets is a published overseas figure standing in for a New
+ * Zealand measurement nobody has taken). `rowKgString` correctly answers `null` for such
+ * a row, and `requestLines` then asked `Number(line.qty_kg) > 0` — but `Number(null)` is
+ * `0`, so **"this row's unit no longer exists" was indistinguishable from "the visitor
+ * left this row blank" and from a legitimate zero.** The row was dropped, the submission
+ * went out lighter, and because one calculation is one submission (§2.3) the reduced
+ * figure reached the public statistics.
+ *
+ * Measured on a 10 kg leaf (`2 × preset:retired_bin` → landfill, `5 kg` → compost),
+ * restored from the §7.2a snapshot and submitted: `lines` carried one row of `"5.000"`,
+ * `dropped` was empty, `error` was `null`, and the results screen rendered on half the
+ * mass.
+ *
+ * @param {object} entry
+ * @param {Array} presets  taxonomy.unit_presets
+ * @returns {Array<object>} the offending rows, as they sit on the entry
+ */
+export const unconvertibleRows = (entry, presets) =>
+  (entry.current || []).filter(line => rowKilograms(entry, line, presets) === null)
+
+/**
+ * **The one submission the request builder refuses to build.**
+ *
+ * It carries no `message`, deliberately: `calculator.js`'s `publicError` answers a
+ * message-less error with its own `t('The calculation could not be completed.')`, and
+ * `improvement.js` is handed that same function — so this needs no catalogue key, which
+ * is what keeps it clear of §7.7's three traps (a key missing from any of the twenty
+ * catalogues makes `Catalogue.gettext` answer 500 for every non-English PDF). It carries
+ * no `code` either, so `submitCalculation`'s `catch` leaves the visitor on the screen
+ * they pressed from rather than teleporting them to the step an §9 code names.
+ *
+ * **It is a structural guarantee rather than the visitor's path.** The reachable
+ * refusal is the step-3 gate, which `submitCalculation` re-runs over every chain before
+ * it builds anything and which names the leaf and the mass; this is what makes the
+ * silent loss impossible if some future path reaches the builder without it.
+ */
+export class UnconvertibleRowError extends Error {
+  constructor(rows) {
+    super('')
+    this.name = 'UnconvertibleRowError'
+    this.rows = rows
+  }
+}
+
+/**
  * The `current` scenario's lines, as §6.2 wants them.
  *
  * **Each row converts with its own `unit`**, falling back to the entry's total unit for a
  * row saved before rows could carry one — the unit those figures were actually typed
  * against, so an older entry is never silently reinterpreted.
  *
- * A blank row and a row whose container preset has left the taxonomy both convert to
- * something `Number()` reads as zero, and §6.2 has no use for a zero line, so both are
- * dropped — which is what `buildLines` did before this moved here.
+ * **Three cases, told apart rather than collapsed into one `Number()`.** `''` is a row
+ * the visitor has not filled and is skipped; a legitimate `0` is skipped too, because
+ * §6.2 has no use for a zero line; and `null` — a row whose unit no longer converts — is
+ * **not** a quiet zero. It is skipped here only because a `null` `qty_kg` is not
+ * something §6.2 can carry, and `submissionPayload` refuses the whole request when
+ * `unconvertibleRows` finds one, so no caller ever sees the shortened list. That is the
+ * distinction this filter used to lack; see `unconvertibleRows` for what it cost.
  *
  * @param {object} entry
  * @param {Array} presets  taxonomy.unit_presets
@@ -90,8 +157,8 @@ export function submissionLeaves(chains) {
  */
 export function requestLines(entry, presets) {
   return (entry.current || [])
-    .map(line => ({ destination: line.destination, qty_kg: rowKgString(line.qtyInput, line.unit || entry.totalUnit, presets) }))
-    .filter(line => Number(line.qty_kg) > 0)
+    .map(line => ({ destination: line.destination, qty_kg: rowKilograms(entry, line, presets) }))
+    .filter(line => line.qty_kg !== '' && line.qty_kg !== null && Number(line.qty_kg) > 0)
 }
 
 /**
@@ -197,6 +264,15 @@ export function submissionPayload(state, chains, alternativeFor = () => null) {
   // leaf's own mass or the alternative will not conserve mass against the leaf's current
   // scenario — which §6.2 rejects for the whole submission.
   const leaves = submissionLeaves(chains)
+  // **The one place a request can be refused for a reason the wire cannot express.**
+  // Both buttons go through this function — Calculate and Compare Impact — and neither
+  // calls it from a render, which is why the refusal can be a throw here and must not be
+  // one inside `rowKgString` (its own note: both of its callers run inside a render,
+  // where a throw blanks the screen). A row whose unit no longer converts cannot be sent
+  // and must not be silently left out, so nothing is sent at all.
+  const unconvertible = leaves.flatMap((leaf, index) =>
+    unconvertibleRows(leaf, presets).map(line => ({ entry: index, destination: line.destination, unit: line.unit || leaf.totalUnit })))
+  if (unconvertible.length) throw new UnconvertibleRowError(unconvertible)
   return {
     token: state.token || null,
     gwp_horizon: state.gwpHorizon,

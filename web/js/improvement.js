@@ -585,7 +585,11 @@ export function updateImprovementInput(control, state) {
     errorElement.hidden = !error
   }
   const compareButton = document.querySelector('[data-action="compare-improvement"]')
-  if (compareButton) compareButton.disabled = Boolean(error) || state.improvementLoading
+  //: `Boolean(error)` alone, with no `|| state.improvementLoading`. The guard at the top of
+  //: this function has already returned by the time anything here runs, so that half could
+  //: only ever write `false`. `ImprovementScenario` is where the button is drawn `disabled`
+  //: while a comparison is in flight, and that is the line the test reads.
+  if (compareButton) compareButton.disabled = Boolean(error)
 }
 
 export function allocationTotal(allocations) {

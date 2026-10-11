@@ -1,5 +1,5 @@
 import { calculate } from './api.js'
-import { state, setState, calculatorGeneration, resetCalculator, entryResultsFrom, draftEntry, draftLeafFigures, EMPTY_LEAF, entryLeaves, leafDisplayName, leafFigures, leafKey } from './state.js'
+import { state, setState, calculatorGeneration, storeToken, resetCalculator, entryResultsFrom, draftEntry, draftLeafFigures, EMPTY_LEAF, entryLeaves, leafDisplayName, leafFigures, leafKey } from './state.js'
 import { containerKg, countLimit, entryTotal, isPlainDecimal, isPresetUnit, kgToTonnes, massToKg, PRESET_UNIT, presetUnitCode, rowKgString, unitDisplayPrecision } from './units.js'
 import { requestLines, submissionLeaves, submissionPayload } from './submission.js'
 import { escapeHtml, formatNumber, slug, stepNav } from './view.js'
@@ -2892,7 +2892,7 @@ async function submitCalculation() {
     //: dedup token among them. "Clear all calculator data" was a false statement.
     if (generation !== calculatorGeneration()) return
     const token = response.token || state.token
-    if (token) sessionStorage.setItem('kaiCalculatorToken', token)
+    storeToken(token)
     setState({ result: { ...response, entry_results: entryResultsFrom(leaves, response) }, resultTaxonomy: state.taxonomy, token, loading: false, step: 5, error: null, errorAt: null, errorCode: null, fieldErrors: {}, returnTo: null })
     // **§7.2a's second checkpoint, and it is the response rather than the press.** The
     // click handler already wrote the answers when Calculate was pressed — before this

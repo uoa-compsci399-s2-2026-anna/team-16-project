@@ -165,12 +165,18 @@
  * browser refuses storage gets the calculator exactly as it behaved before this module
  * existed.
  *
- * This module imports nothing, which is what lets `state.js` import it — `state.js` is
- * the module every other one may import, and that is only true while what it imports
- * imports nothing back.
+ * This module imports **only `units.js`**, which is what lets `state.js` import it —
+ * `state.js` is the module every other one may import, and that is only true while what
+ * it imports imports nothing back. `units.js` imports nothing at all (it is §7.3's leaf:
+ * the front end's one arithmetic module), so the graph `state.js -> snapshot.js ->
+ * units.js` has no cycle in it. **Checked rather than assumed**, because the note below
+ * on `leafKey` records one line copied here specifically to avoid a cycle that is real —
+ * `state.js` is the module that would close it, and `units.js` is not that module.
  *
  * @module snapshot
  */
+
+import { isPresetUnit, presetUnitCode } from './units.js'
 
 /** The answers key, beside `kaiCalculatorToken`. */
 export const SNAPSHOT_KEY = 'kaiCalculatorAnswers'
@@ -549,6 +555,11 @@ export function restoredPatch(answers, result = null) {
  *   * `unitPreset` against `unit_presets`. A container whose preset is gone falls back to
  *     a mass measurement, because the count alone means nothing without the `kg_per_unit`
  *     that converted it.
+ *   * **every `current[].unit` against `unit_presets` too**, for the same reason one step
+ *     down. Since item ⑥ a destination row carries a unit of its own, so a retired
+ *     container can be named by a *row* while the leaf's own `unitPreset` is `null` —
+ *     which is the ordinary case, because the leaf is usually measured as a mass and only
+ *     one of its thirteen rows counted bins.
  *
  * ## What happens to what is left
  *
@@ -561,6 +572,16 @@ export function restoredPatch(answers, result = null) {
  *     exactly as it is in memory, and survives the page load with everything else.
  *     Getting this the wrong way round loses money figures a visitor typed, silently,
  *     for a category that is still priced.
+ *   * **The same distinction now applies at ROW level, and it had no statement here
+ *     before.** A destination row measured in a container the taxonomy has retired keeps
+ *     its destination and loses its amount: `qtyInput` is emptied and `unit` falls back
+ *     to `'kilograms'`, and the drop is reported as `unit_preset`. A count cannot be
+ *     reinterpreted as a weight — "2" bins is not 2 kg, and the `kg_per_unit` that told
+ *     the two apart is the thing that has gone — so the figure goes with the code,
+ *     exactly as a retired category's figures do. There is nothing to park, because a
+ *     code the vocabulary no longer has can never be chosen again. The row is kept rather
+ *     than removed so that step 4 draws it with a blank box the visitor can answer, and
+ *     the step-3 gate is what refuses the allocation until they do.
  *   * **A committed entry whose sector is gone is dropped whole.** `sector` is the one
  *     answer an entry cannot be without — `submission_entry.sector_id` is NOT NULL — so
  *     an entry with a null sector is an entry that can only ever be refused. Its loss is
@@ -634,6 +655,19 @@ export function pruneAnswers(answers, taxonomy) {
           if (offeredDestinations.has(line?.destination)) return true
           drop(DROPPED_DESTINATION, line?.destination)
           return false
+        }).map(line => {
+          // **A row's own unit, checked the way the leaf's `unitPreset` already is.**
+          // `isPresetUnit`/`presetUnitCode` rather than `startsWith('preset:')` and
+          // `slice(7)` re-typed here: `units.js` exports the prefix and both readers of
+          // it precisely so that a third spelling of the rule cannot drift (§7.3).
+          if (!isPresetUnit(line?.unit)) return line
+          const code = presetUnitCode(line.unit)
+          if (presets.has(code)) return line
+          drop(DROPPED_UNIT_PRESET, code)
+          // The count goes with the code — see the header. Kilograms rather than the
+          // leaf's own `totalUnit` because kilograms is what the box is labelled in by
+          // default and what §6.2 compares; an empty box carries no mass either way.
+          return { ...line, qtyInput: '', unit: 'kilograms' }
         }),
       }
     }

@@ -138,6 +138,12 @@ NOT_A_BROWSER_SUITE = {
         "number was copied onto the other side",
     "test_period_rules.py":
         "calls `period.js`'s rules directly under Node",
+    "test_retired_unit_preset.py":
+        "runs `submission.js`'s request builder, `snapshot.js`'s revalidation "
+        "and `calculator.js`'s Calculate handler under Node, with `fetch` "
+        "replaced by a recorder - the subject is what the request body carries "
+        "when a `unit_preset` has been retired, which a served page answers no "
+        "more directly and far more slowly",
     "test_step_three_copy_truth.py":
         "runs `calculator.js`'s `render()` and `results.js`'s "
         "`buildResultsReport()` in one Node process over a response fixture, "

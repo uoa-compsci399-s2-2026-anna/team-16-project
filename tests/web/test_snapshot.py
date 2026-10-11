@@ -813,6 +813,59 @@ def test_a_retired_container_falls_back_to_a_weight_and_is_reported(tmp_path):
 
 
 @node
+def test_a_destination_row_measured_in_a_retired_container_loses_its_count(tmp_path):
+    """Contract v1.112. **The same rule one level down, and it had no reader.**
+
+    Since item ⑥ a destination row carries a unit of its own, so a retired
+    container can be named by a *row* while the leaf's own `unitPreset` is
+    `None` -- which is the ordinary case, because the leaf is usually measured
+    as a mass and only one of its thirteen rows counted bins. The test above
+    covered the leaf and nothing covered the row, so the row survived the prune
+    with a count the taxonomy can no longer convert; `rowKgString` then answered
+    `null` for it, `requestLines` read `Number(null)` as `0`, and the row left
+    the submission with no notice of any kind.
+
+    The count goes with the code for the same reason the leaf's does, and the
+    *destination* stays: step 4 draws the row with a blank box the visitor can
+    answer, and the step-3 gate refuses the allocation until they do. The second
+    row is here as the control -- a prune that cleared the wrong row, or every
+    row, would pass the first three assertions on its own.
+    """
+    answers = _state()
+    answers["leafFigures"][_key("fruit", "apples")]["current"] = [
+        {"id": "row-1", "destination": "landfill", "qtyInput": "2", "unit": "preset:crate_30l_full"},
+        {"id": "row-2", "destination": "compost", "qtyInput": "5", "unit": "kilograms"},
+    ]
+    result = probe(tmp_path, "prune", answers=answers, taxonomy=TAXONOMY)
+    rows = result["patch"]["leafFigures"][_key("fruit", "apples")]["current"]
+    assert {"kind": "unit_preset", "code": "crate_30l_full"} in result["dropped"]
+    assert len(rows) == 2, f"the row was removed rather than emptied: {rows}"
+    assert rows[0]["destination"] == "landfill"
+    assert rows[0]["qtyInput"] == ""
+    assert rows[0]["unit"] == "kilograms"
+    assert rows[1] == {"id": "row-2", "destination": "compost", "qtyInput": "5", "unit": "kilograms"}
+
+
+@node
+def test_a_row_whose_container_is_still_offered_is_left_exactly_as_it_was(tmp_path):
+    """The control for the case above, and the half that matters more: a prune
+    that emptied every `preset:` row would satisfy it while silently destroying
+    the figures of every visitor who measured in containers.
+
+    `wheelie_bin_120l` is the one preset `TAXONOMY` carries, so this row is
+    untouched and nothing is reported.
+    """
+    answers = _state()
+    answers["leafFigures"][_key("fruit", "apples")]["current"] = [
+        {"id": "row-1", "destination": "landfill", "qtyInput": "2", "unit": "preset:wheelie_bin_120l"}
+    ]
+    result = probe(tmp_path, "prune", answers=answers, taxonomy=TAXONOMY)
+    rows = result["patch"]["leafFigures"][_key("fruit", "apples")]["current"]
+    assert rows == answers["leafFigures"][_key("fruit", "apples")]["current"], rows
+    assert result["dropped"] == [], result["dropped"]
+
+
+@node
 def test_a_draft_whose_sector_is_gone_is_sent_back_to_step_zero(tmp_path):
     """The sector is the one answer an entry cannot be without
     (`submission_entry.sector_id` is NOT NULL), and steps 3 and 4 are laid out

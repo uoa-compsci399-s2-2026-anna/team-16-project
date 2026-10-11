@@ -2327,10 +2327,14 @@ function massContradictionValidation(figures) {
  * @param {object} leaf
  * @param {string|null} food The leaf's own name where there is more than one leaf, and
  *   `null` where there is one — which is what decides whether a message names a food.
+ * @param {object} [figures]  the leaf's figures. Defaults to the **draft's**, which is
+ *   every caller but one: `chainProblem` asks these same rules of a chain already on
+ *   `state.entries`, whose figures are not the draft's. A second copy of the rules for
+ *   the saved list is the defect `destinationStep`'s own note is about, one list further
+ *   out.
  * @returns {{message: string, field?: string}}
  */
-function leafProblem(step, leaf, food) {
-  const figures = draftLeafFigures(leaf)
+function leafProblem(step, leaf, food, figures = draftLeafFigures(leaf)) {
   if (step === 2) {
     // **Today's three rules.** The first problem wins, and it carries the field it
     // belongs to so that `amountStep` can highlight the right box without comparing
@@ -2479,6 +2483,91 @@ const GATED_STEPS = [0, 2, 3]
  * nothing shows to anybody.
  */
 const draftIsComplete = () => GATED_STEPS.every(step => !stepProblem(step))
+
+/** The step whose rules decide whether a chain's allocation accounts for its own waste. */
+const ALLOCATION_STEP = 3
+
+/**
+ * **What is wrong with ONE chain's allocation, or `null`** — `stepProblemAt`'s step-3
+ * question asked of a chain that is not the draft.
+ *
+ * `stepProblemAt` reads `draftLeaves()` and `draftLeafFigures`, so it can only ask about
+ * the chain the visitor is currently editing. Every other chain on the review screen was
+ * validated when its own Continue was pressed and **never again** — which is why this
+ * exists: §7.2a's note at `snapshot.js` says it plainly, *"`restoredPatch` clamps the
+ * step back to the review screen, and Calculate is one press"*, and `step` is in
+ * `ANSWER_KEYS`, so a restore can land on the review screen — or on the results screen,
+ * when there is a result to redraw — with the saved chains' gates behind it. A chain
+ * whose figures the taxonomy revalidation changed underneath it then goes to the API
+ * without its own gate ever running again.
+ *
+ * **Step 3 and no other step**, deliberately. The rule this is here for is the one that
+ * compares the allocation against the total the visitor typed, and it is the rule a
+ * prune can break: `pruneAnswers` empties a destination row whose container is gone, so
+ * the sum falls short of a total that did not change. The chain's earlier answers are
+ * either repaired by the prune itself (a retired category or a dropped sector takes its
+ * chain or its figures with it) or still exactly as Continue accepted them, so asking
+ * about them here would be a new refusal with nothing behind it.
+ *
+ * It is the same `leafProblem`, handed the chain's own figures, rather than a second
+ * list of rules — `destinationStep`'s note is the reason: *"One list of rules for one
+ * button: any rule added to one of two lists left the other enabling Continue on a state
+ * the other had just refused."*
+ *
+ * @param {object} chain
+ * @returns {{message: string, field?: string, leaf: string, leafIndex: number}|null}
+ */
+function chainAllocationProblem(chain) {
+  const leaves = entryLeaves(chain)
+  const named = leaves.length > 1
+  for (const [leafIndex, leaf] of leaves.entries()) {
+    const problem = leafProblem(ALLOCATION_STEP, leaf, named ? leafName(leaf) : null, leafFigures(chain, leaf))
+    if (problem.message) return { ...problem, leaf: leafKey(leaf), leafIndex }
+  }
+  return null
+}
+
+/**
+ * **Refuse the submission before anything is built, and say where.** `true` when it was
+ * refused, in which case the state already carries the message and nothing was sent.
+ *
+ * The draft and the saved chains are refused differently because they are reachable
+ * differently. The draft has form screens of its own, so the visitor is taken to the
+ * allocation step, the right card is opened and the field is focused — exactly what
+ * `bindCalculator`'s own Continue handler does with the same `{leaf, field}`. A saved
+ * chain has no screen of its own: it is a card on the review step, so the message goes
+ * into `state.fieldErrors` under §9's `entries[N]` path, which is what `entryProblem`
+ * reads to print it on that card. `N` is the **leaf** index, because that is what §9
+ * counts and what `submissionLeafMap` resolves back to a chain.
+ *
+ * **It cannot refuse something the API would take.** Every rule here is one Continue
+ * already enforces, and §6.2's `current: Field(min_length=1)` refuses an entry with no
+ * destination line outright — so this is §7.6.1's "earlier and more kindly", never a
+ * second opinion.
+ */
+function refuseIncompleteSubmission() {
+  const chains = [...state.entries, draftEntry()]
+  let leafIndex = 0
+  for (const [chainIndex, chain] of chains.entries()) {
+    const problem = chainAllocationProblem(chain)
+    if (problem) {
+      if (chainIndex < state.entries.length) {
+        const path = `entries[${leafIndex + problem.leafIndex}]`
+        setState({ error: problem.message, errorAt: null, errorCode: null, fieldErrors: { [path]: problem.message } })
+      } else {
+        const at = { leaf: problem.leaf, field: problem.field }
+        setState({
+          step: ALLOCATION_STEP, error: problem.message, errorAt: at, errorCode: null, fieldErrors: {},
+          openCards: openedCard(ALLOCATION_STEP, at.leaf), returnTo: { from: ALLOCATION_STEP, step: 4 },
+        })
+        focusLeafField(at)
+      }
+      return true
+    }
+    leafIndex += entryLeaves(chain).length
+  }
+  return false
+}
 
 // Items ④/⑤/⑦ and every destination row: the request body is built by
 // `submission.js`, because `improvement.js` builds one too and the two disagreed. See the
@@ -2760,6 +2849,15 @@ function fieldErrorMap(error) {
 
 async function submitCalculation() {
   if (Date.now() < state.rateLimitedUntil) return
+  // **Every chain's own gate, re-run here, because a restored review never re-runs it.**
+  // §7.2a's note at `pruneAnswers` is the whole reason: the revalidation can change a
+  // saved chain's figures — a destination row measured in a retired container loses its
+  // amount — while `restoredPatch` puts the visitor back on the review screen, or on the
+  // results screen when there is a result to redraw, with Calculate one press away. The
+  // saved chains' Continue buttons are not on that path, so without this the submission
+  // goes out lighter than the totals the visitor typed, and §2.3 makes that one
+  // calculation one submission: the reduced figure reaches the public statistics.
+  if (refuseIncompleteSubmission()) return
   setState({ loading: true, error: null, errorAt: null, errorCode: null, fieldErrors: {} })
   try {
     // §6.2: the whole submission travels in one call. One request per entry would let

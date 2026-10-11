@@ -96,6 +96,13 @@ HERE = pathlib.Path(__file__).resolve().parent
 #: `test_suite_isolation.py` fails on an entry whose file does in fact reach
 #: Playwright - so the list cannot outlive the reason it was written for.
 NOT_A_BROWSER_SUITE = {
+    "test_allocation_unit_granularity.py":
+        "runs `calculator.js`'s own `render()` and `bindCalculator` click "
+        "handler under Node over a leaf it sets up itself, and reads the "
+        "allocation strip back out of the emitted markup; the subject is which "
+        "unit two numbers are compared in, so nothing is served and no page is "
+        "opened. `updateLine`'s half of the same rule needs a real keystroke "
+        "and lives in `test_card_folding_browser.py`",
     "test_class_rules.py":
         "reads `web/*.html`, `web/js/*.js` and `web/css/*.css` off disk and "
         "compares the class names one side emits with the ones the other "

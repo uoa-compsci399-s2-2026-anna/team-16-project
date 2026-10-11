@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-10-10 (v1.110)"
+date: "2026-10-11 (v1.111)"
 ---
 
 # 0. How to Use This Document
@@ -25,6 +25,38 @@ This document defines **what every person's code receives and what it returns.**
 
 ## 0.1 Change Log
 
+### v1.111 — 2026-10-11 (a tonnes leaf compared hundredths of a tonne, and hid five kilograms; affects C)
+
+**v1.105's rule was right and the figures handed to it were not.** §0.1 v1.105 change #1 states that `exceedsTotal`, `fallsShortOfTotal` and `remainingAmount` *"compare integer hundredths of a kilogram, `Math.round(kg * 100)`"*, and all three do. The call sites handed them the leaf's figures in its **display** unit instead: `allocatedAmount` sums its lines in kilograms and then converts the sum **back** to that unit before returning it, and `totalNumber` is the typed total in it. On a kilograms leaf the two spellings are the same number. On a **tonnes** leaf the comparison granularity was 0.01 tonne, which is **10 kg**.
+
+**This is a residual defect of v1.105, not a regression from it.** Every figure v1.105 measured was in kilograms — 2.01, 0.07, 6.667, 1234.5, 9999999.99 — and the mixed-unit case was never put to it. Nothing in that entry is withdrawn here.
+
+**Reproduced, measured on `origin/main` under Node** — step 3 unit *tonnes*, total `0.01` (= 10 kg); step 4 one destination row, unit *kilograms*. Every destination row carries its own unit select (`destinationRows` calls `unitOptionsHtml(rowUnit, containerPresets())`), so this is an ordinary answer rather than a contrivance:
+
+| row amount | mass out of place | old verdict |
+| --- | --- | --- |
+| 5.01 kg | 4.99 kg short | **step 4, no error, strip calm, *Remaining 0.00 tonnes*** |
+| 9.99 kg | 0.01 kg short | **accepted** |
+| 10.01 kg | 0.01 kg over | **accepted** |
+| 14.99 kg | 4.99 kg over | **accepted** |
+| 995 kg against a 1.00 t total | 5 kg short | **accepted, *Remaining 0.00 tonnes*** |
+
+The card wore a *Complete* badge with Continue enabled, which is the v1.99 defect intact three orders of magnitude up — and **the step-3 total never crosses the wire**, so the unallocated mass is not held back for later: `requestLines` sends the destination rows, and every metric, the cost, the equivalences and `production_share_percent` would have been computed on the smaller figure.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **The three predicates are untouched — their arguments changed.** `hundredths`, `exceedsTotal`, `fallsShortOfTotal` and `remainingAmount` keep the exact bodies and signatures v1.105 gave them, and v1.105's own forty-line rationale is kept **verbatim** with an amendment appended beneath it. What they are now handed is kilograms on both sides, from `allocatedKilograms` and `totalKilograms` | §7.3a |
+| 2 | **`allocatedAmount` is split in two, and the kilogram half is the one the rules read.** `allocatedKilograms(lines, unit)` is the sum it already computed internally; `allocatedAmount` is that sum put back into the display unit through `limitIn`, and is **display only**. The conversion back was never wrong — it is what the strip is labelled in — it was simply being compared | §7.3a |
+| 3 | **Four call sites, all of them.** `leafSummary`, `destinationStep`'s `misallocated`, `leafProblem`'s step-3 branch and `updateLine`. `leafSummary` and `updateLine` are the **two independent writers of one rule** that v1.99 and v1.109 both record as having drifted, so they are changed in the same way in the same breath; `massContradictionValidation`'s `exceedsTotal(wasteKg, producedKg)` is the one caller that was already passing kilograms and is left alone | §7.3a |
+| 4 | **No new rounding helper, and no second round-trip.** `limitIn` is `units.js`'s `kgToTonnes` in one place and already served a difference rather than a ceiling (`massContradictionValidation`); the alternative of converting inside the predicates would have made `hundredths(allocated, 'tonnes')` compute `massToKg(kgToTonnes(kg), 'tonnes')` — kg ÷ 1000 × 1000. That round-trip is exactly lossless at 0.001, 2.01, 6.667, 1234.5, 9999999.99, 49999999.999, 0.005 and 10.005, measured, so it was not a defect; comparing the kilogram sum removes it anyway | §7.3, §7.3a |
+| 5 | **The derived figures print to `unitDisplayPrecision(unit)`, which is the house rule this document already carries** (§7.3, added 2026-09-05). It answers 5 for tonnes and its own note gives the reason: *"Five places keeps the same 0.01 kg underneath a tonnes figure that a visitor did not type to begin with."* That 0.01 kg is the resolution these rules compare at, so *Allocated*, *Remaining* and the `short`/`excess` figures in `leafProblem`'s two messages are stated to it. **`Total waste` keeps 2 places**, because it is the figure the visitor typed rather than one the form derived. The presets argument is not passed: `figures.totalUnit` is only ever `'kilograms'` or `'tonnes'` — a container pins it to kilograms and `entryTotal` answers `'kilograms'` for container mode — which is the binary domain `unitLabel` and `limitIn` already rely on | §7.3, §7.3a |
+| 6 | **What a visitor on a tonnes leaf now sees, stated rather than landed quietly.** The strip reads *Total waste 1.00 tonnes · Allocated 0.99500 tonnes · Remaining 0.00500 tonnes* — the typed figure at two places beside two derived ones at five. v1.105 change #3 promised that *"an over-allocation reads `-0.01`"*; in kilograms it still does, and in tonnes the same 0.01 kg now reads `-0.00001`. A kilograms leaf is **byte-identical** to v1.110 in every figure | §7.3a |
+| 7 | **`tests/web/test_allocation_unit_granularity.py`, fifteen cases, and seven of them pass on `origin/main`.** Those seven are v1.105's **control**, not seven more defects: every kilograms parameter and every exactly-met allocation is there to measure that this change refuses nothing it should accept and moves only the mixed-unit case. Their parameter ids carry `CONTROL` and the module docstring says so, because a reader meeting a green row would otherwise read it as a defect that was fixed. The eight failures on `origin/main` are exactly the eight `tonnes` assertions | §0, §7.3a |
+| 8 | **Mutation-verified, five mutations, each watched to fail.** Restoring the display-unit comparison (`allocatedKilograms` wrapped in `limitIn`, the four totals back to `totalNumber`) fails 8 of 15 — the same eight, which is `origin/main` reproduced inside the branch. Pinning the derived precision back to 2 fails 8. `fallsShortOfTotal → false` fails 5, including the kilograms control; `exceedsTotal → false` fails 4; `exceedsTotal → true` fails all four exactly-met cases, which is what stops the module passing against a rule that refuses everything | §0 |
+| 9 | **One browser case, because `updateLine`'s half has no other reader.** `test_a_kilograms_row_under_a_tonnes_total_is_still_compared_in_kilograms` in `test_card_folding_browser.py` moves the step-3 select to tonnes, the row's own select to kilograms, and types — so the strip it reads is the keystroke path's, precision included. v1.105 mutation-verified its own guard through the browser for the same reason. The new Node module is registered in `tests/web/conftest.py`'s `NOT_A_BROWSER_SUITE` with its reason, without which `test_suite_isolation.py` fails and `-m "not browser"` would silently skip all fifteen cases | §0 |
+| 10 | Steps one and two of §0's three-step rule. **No API field, no error code, no fixture and no wire shape changes** — the step-3 total has never crossed the wire and `requestLines` has always sent the destination rows, so step three of that rule is a no-op here. No catalogue key is added, removed or reworded, so there is no PDF or CJK-subset exposure. The owner notifies the team | §0 |
+
+**What this changes for a visitor.** On a kilograms leaf, nothing. On a tonnes leaf, an allocation that is out by as little as **0.01 kg** is now refused where up to **10 kg** used to pass, and the two derived figures beside it gain three decimal places so they can state what the rule refused them for.
 ### v1.110 — 2026-10-10 (the improvement tip reads like a person wrote it; affects C and D)
 
 **This took 110 rather than 109 because v1.109 was on an open branch when it was written.** That has since merged, so both entries are below and in order.

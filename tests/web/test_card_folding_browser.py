@@ -880,6 +880,106 @@ def test_one_hundredth_over_is_refused_at_every_scale(opened, total):
     assert settled["remaining"].startswith("0.00"), settled
 
 
+def test_a_kilograms_row_under_a_tonnes_total_is_still_compared_in_kilograms(opened):
+    """Contract v1.111. **v1.105's rule was right and what it was handed was not.**
+
+    §0.1 v1.105 change #1 states that the three allocation predicates *"compare
+    integer hundredths of a kilogram"*, and they do. The call sites handed them the
+    leaf's figures in its **display** unit instead: `allocatedAmount` sums its lines
+    in kilograms and converts the sum back before returning it, and `totalNumber` is
+    the typed total. On a tonnes leaf the comparison granularity was therefore 0.01
+    **tonne = 10 kg**, so 995 kg placed against a 1.00 t total was *Complete*, with
+    *Remaining 0.00 tonnes* and Continue live, and five kilograms went nowhere. Every
+    figure v1.105 itself measured was in kilograms, which is why nothing reported it.
+
+    **Measured under Node against `origin/main`** (0.01 t total, one kilograms row):
+    5.01, 9.99 and 14.99 kg were each accepted at step 4 with the strip calm.
+    `tests/web/test_allocation_unit_granularity.py` is that measurement, fifteen
+    cases, seven of which pass on `origin/main` as v1.105's control.
+
+    **This case is here and not in that module because the keystroke path is the one
+    that module cannot reach.** `leafSummary` draws the strip on a re-render and
+    `updateLine` rewrites it on every keystroke — two independent writers of one rule
+    that `CLAUDE.md` and the v1.99 and v1.109 entries record as having drifted three
+    times. Everything below reaches the strip through `page.fill`, so it is
+    `updateLine`'s copy under measurement, including the precision it prints to.
+
+    **Why the numbers read as they do.** The two derived figures carry
+    `unitDisplayPrecision(unit)` — `units.js`'s own rule, five places for tonnes,
+    because *"Five places keeps the same 0.01 kg underneath a tonnes figure that a
+    visitor did not type to begin with"* — and that 0.01 kg is the resolution the
+    rule compares at. *Total waste* keeps two places; it is the figure the visitor
+    typed. So 995 kg of a tonne reads *Remaining 0.00500 tonnes*, which is 5 kg.
+
+    It finishes by allocating the tonne exactly, so it cannot be satisfied by a rule
+    that refuses everything, and the final *Remaining* is asserted as an equality so
+    that a reverted precision — `0.00` for `0.00000` — fails here rather than passing
+    on a prefix.
+    """
+    page = opened()
+    boxes = page.locator('input[name="food-category"]')
+    assert boxes.count() >= 1, "step 2 offers no food category to tick"
+    boxes.nth(0).click()
+    page.wait_for_timeout(55)
+    press_continue(page)
+    page.wait_for_selector('[data-leaf-field="amount"], #total-waste', state="attached")
+    expand_step_cards(page)
+    #: **Tonnes first, then the amount.** The `[data-leaf-field="unit"]` handler clears
+    #: `current` and `totalInputKg` because the figures in them were entered against a
+    #: unit that is no longer in force — so an amount typed before the select is moved
+    #: is an amount re-read as tonnes, which is a different mass.
+    page.locator('[data-leaf-field="unit"]').first.select_option("tonnes")
+    page.wait_for_timeout(140)
+    amount = page.evaluate(
+        "() => document.querySelector('[data-leaf-field=amount]').id")
+    page.fill(f"#{amount}", "1")
+    page.wait_for_timeout(140)
+    press_continue(page)
+    page.wait_for_selector('[data-line-field="amount"]', state="attached")
+
+    #: Every row carries its own unit select (`destinationRows` calls
+    #: `unitOptionsHtml(rowUnit, containerPresets())`), so a kilograms row under a
+    #: tonnes total is an ordinary answer rather than a contrivance. Moving the select
+    #: is a `setState`, and `render()` replaces `main.innerHTML` — so the row's id is
+    #: read *after* it, not before.
+    page.locator('select[data-line-field="unit"]').first.select_option("kilograms")
+    page.wait_for_timeout(160)
+    row = page.evaluate(
+        "() => document.querySelector('.step-card [data-line-field=amount]').id")
+
+    page.fill(f"#{row}", "995")
+    page.wait_for_timeout(220)
+    short = page.evaluate(VERDICT)
+    assert short["summaryInvalid"] is True, (
+        f"995 kg against a 1.00 t total is not marked, so 5 kg goes nowhere under a "
+        f"calm strip: {short}"
+    )
+    assert short["badge"] == "incomplete", (
+        f"the card calls itself complete with 5 kg unplaced: {short}"
+    )
+    assert short["continueDisabled"] is True, (
+        f"Continue is live with 995 kg placed against a tonne, so the submission "
+        f"carries 995 kg and every figure is computed on it: {short}"
+    )
+    #: Asserted separately from the three readers above, for v1.105's own reason: a
+    #: rule that refuses the allocation while still printing `0.00` leaves three
+    #: numbers on one line that do not add up.
+    assert short["remaining"] == "0.00500 tonnes", (
+        f"Remaining does not state the 5 kg that is out of place: {short}"
+    )
+
+    page.fill(f"#{row}", "1000")
+    page.wait_for_timeout(220)
+    settled = page.evaluate(VERDICT)
+    assert settled["badge"] == "complete", (
+        f"a tonne placed exactly against a tonne is refused, so the rule refuses "
+        f"everything: {settled}"
+    )
+    assert settled["summaryInvalid"] is False, settled
+    assert settled["continueDisabled"] is False, settled
+    assert settled["remaining"] == "0.00000 tonnes", settled
+
+
 def test_under_allocation_is_refused_and_visible_from_a_shut_card(opened):
     """Contract v1.99. **Short of the total is as wrong as over it.**
 

@@ -1,6 +1,6 @@
 import { calculate } from './api.js'
 import { state, setState, resetCalculator, entryResultsFrom, draftEntry, draftLeafFigures, EMPTY_LEAF, entryLeaves, leafDisplayName, leafFigures, leafKey } from './state.js'
-import { containerKg, countLimit, entryTotal, isPlainDecimal, isPresetUnit, kgToTonnes, massToKg, PRESET_UNIT, presetUnitCode, rowKgString } from './units.js'
+import { containerKg, countLimit, entryTotal, isPlainDecimal, isPresetUnit, kgToTonnes, massToKg, PRESET_UNIT, presetUnitCode, rowKgString, unitDisplayPrecision } from './units.js'
 import { requestLines, submissionLeaves, submissionPayload } from './submission.js'
 import { escapeHtml, formatNumber, slug, stepNav } from './view.js'
 import { cardId, cardIsFixedOpen, cardIsOpen, cardStatus, collapsibleCard, keyAttr, openedCard } from './cards.js'
@@ -56,6 +56,47 @@ const unitLabel = unit => (unit === 'tonnes' ? t('tonnes') : t('kilograms'))
 // `2.01 * 100` is `200.99999999999997` -- which `Math.round` absorbs with twelve orders
 // of magnitude to spare, at every scale up to `MAX_LINE_KG`. Checked at 2.01, 0.07,
 // 6.667, 1234.5 and 9999999.99.
+//
+// ---------------------------------------------------------------------------------
+//
+// **Amendment (v1.111): the rule above was right and the figures handed to it were
+// not.** All three of these take *kilograms* and have said so since v1.105. The call
+// sites handed them the leaf's figures in its DISPLAY unit instead — `allocatedAmount`
+// below sums in kilograms and then converts the sum back to that unit before returning
+// it, and `totalNumber` is the typed total in it — so on a tonnes leaf the comparison
+// granularity was 0.01 **tonne = 10 kg**.
+//
+// **Measured on a tonnes leaf:** step 3 unit *tonnes*, total `0.01`; step 4 one
+// destination row, unit *kilograms*, amount `5.01`. The card wore a `Complete` badge,
+// the strip read *Remaining 0.00* and Continue went through, with **4.99 kg unplaced** —
+// the v1.99 defect intact, three orders of magnitude up. A kilograms row under a tonnes
+// total is an ordinary thing to enter: `destinationRows` gives every row its own unit
+// select (`unitOptionsHtml(rowUnit, containerPresets())`).
+//
+// **This was a residual defect of v1.105, not a regression from it.** Every figure
+// v1.105 measured was in kilograms — 2.01, 0.07, 6.667, 1234.5, 9999999.99 — and the
+// mixed-unit case was never put to it. Nothing above is withdrawn.
+//
+// **So the fix is at the call sites and not here.** `allocatedKilograms` is the sum
+// `allocatedAmount` takes before it converts, `totalKilograms` is the total in
+// kilograms, and these four keep exactly the bodies and the signatures v1.105 gave
+// them. Only their arguments changed. One consequence of comparing the kilogram sum
+// directly is that `massToKg(kgToTonnes(kg), 'tonnes')` — kg ÷ 1000 × 1000 — never
+// happens: it is lossless at 0.001, 2.01, 6.667, 1234.5, 9999999.99, 49999999.999,
+// 0.005 and 10.005, so it was not a defect, but a sum that is already kilograms has no
+// reason to make the trip.
+//
+// **The derived figures are printed to `unitDisplayPrecision`, which is `units.js`'s
+// own house rule and not a number invented here.** It answers 5 for tonnes, and its
+// note says why: *"Five places keeps the same 0.01 kg underneath a tonnes figure that a
+// visitor did not type to begin with."* That 0.01 kg is exactly the resolution these
+// rules compare at, so *Allocated*, *Remaining* and the `short`/`excess` figures in
+// `leafProblem`'s messages are printed to it. **`Total waste` keeps 2 places**, because
+// it is the figure the visitor typed rather than one this file derived. The presets
+// argument is not passed: `figures.totalUnit` is only ever `'kilograms'` or `'tonnes'`
+// — a container pins it to kilograms (the `[data-leaf-field="unit"]` handler) and
+// `entryTotal` answers `'kilograms'` for container mode — which is the same binary
+// domain `unitLabel` and `limitIn` already rely on.
 const hundredths = kilograms => Math.round((Number(kilograms) || 0) * 100)
 const exceedsTotal = (allocated, total) => hundredths(allocated) > hundredths(total)
 const remainingAmount = (total, allocated) => (hundredths(total) - hundredths(allocated)) / 100
@@ -189,6 +230,13 @@ const MAX_LINE_KG = 50000000
 // A ceiling stated in the unit the visitor is typing in. "50,000 tonnes" is a number they
 // can act on; "50,000,000 kg" on a field labelled tonnes is a conversion they have to do
 // themselves to find out how far over they are.
+//
+// **It is the only conversion of a kilogram figure into the typed unit, and it has never
+// only been used on ceilings** — `massContradictionValidation`'s excess is a difference,
+// and since v1.111 the allocation strip's *Allocated* and *Remaining* and
+// `leafProblem`'s `short`/`excess` take the same trip, for the same reason: the rules
+// behind them all compare kilograms and the screen is labelled in the visitor's unit.
+// One function, so a tonnes conversion re-typed at a call site cannot differ from it.
 const limitIn = (kilograms, unit) => (unit === 'tonnes' ? kgToTonnes(kilograms) : kilograms)
 
 // Half a wheelie bin is a reasonable thing to say; two hundred and forty thousand of them
@@ -537,11 +585,17 @@ const normaliseLines = (lines, unit) => (lines || []).map(line => ({ ...line, qt
 // values directly was correct only because every row shared one unit; once a row can carry
 // its own, "5" typed in tonnes and "5" typed in kilograms are not the same five, so the sum
 // has to happen in kilograms first and only the *total* is converted back for display —
-// with `kgToTonnes`, `units.js`'s own conversion, rather than a division re-typed here.
-const allocatedAmount = (lines, unit) => {
-  const kilograms = (lines || []).reduce((sum, line) => sum + (lineKilograms(line.qtyInput, line.unit || unit) || 0), 0)
-  return unit === 'tonnes' ? kgToTonnes(kilograms) : kilograms
-}
+// with `limitIn`, which is `units.js`'s own `kgToTonnes` in one place, rather than a
+// division re-typed here.
+//
+// **Split in two at v1.111, and the kilogram half is the one the rules read.** The
+// conversion back is display, and only display: `exceedsTotal`, `fallsShortOfTotal` and
+// `remainingAmount` compare hundredths of a *kilogram*, so handing them the converted
+// figure made the comparison 0.01 t = 10 kg wide on a tonnes leaf. See the amendment
+// over `hundredths`. Nothing below this line may compare `allocatedAmount` against a
+// total; that is what `allocatedKilograms` is for.
+const allocatedKilograms = (lines, unit) => (lines || []).reduce((sum, line) => sum + (lineKilograms(line.qtyInput, line.unit || unit) || 0), 0)
+const allocatedAmount = (lines, unit) => limitIn(allocatedKilograms(lines, unit), unit)
 // `unitPreset` and `unitCount` are here for the same reason `totalAmount` is: they are
 // something the visitor entered, so the Clear button has to appear once either exists.
 // `totalInputKg` joins them for the same reason.
@@ -1719,8 +1773,14 @@ function destinationCell(leaf, line, paths, allocationExcess) {
  */
 function leafSummary(leaf, first) {
   const figures = draftLeafFigures(leaf)
+  //: **Four figures, two of them in kilograms and two in the leaf's own unit** (v1.111).
+  //: `total`/`allocated` are what the strip prints; `totalKg`/`allocatedKg` are what the
+  //: rules compare, because the rules compare hundredths of a kilogram and this leaf may
+  //: be labelled in tonnes. They are the same quantities, not two measurements of it.
   const total = totalNumber(figures)
+  const totalKg = totalKilograms(figures)
   const allocated = allocatedAmount(figures.current, figures.totalUnit)
+  const allocatedKg = allocatedKilograms(figures.current, figures.totalUnit)
   //: `invalid` now covers both directions (v1.99). It is what a visitor sees off a
   //: SHUT card -- #142 put this strip outside the fold precisely so Remaining and its
   //: state are readable without opening anything -- so a strip that stayed calm while
@@ -1736,11 +1796,14 @@ function leafSummary(leaf, first) {
   //: waiting. Over-allocation and negatives keep firing unconditionally, because
   //: both are states the visitor had to type to reach.
   const started = (figures.current || []).some(line => line.qtyInput !== '')
-  const invalid = exceedsTotal(allocated, total)
-    || (started && fallsShortOfTotal(allocated, total))
+  const invalid = exceedsTotal(allocatedKg, totalKg)
+    || (started && fallsShortOfTotal(allocatedKg, totalKg))
     || (figures.current || []).some(line => line.qtyInput !== '' && Number(line.qtyInput) < 0)
   const unit = unitLabel(figures.totalUnit)
-  return `<div class="allocation-summary ${invalid ? 'invalid' : ''}" ${first ? 'id="current-summary"' : ''} data-summary-leaf="${leafAttr(leaf)}" aria-live="polite"><div><span>${escapeHtml(t('Total waste'))}</span><strong>${formatNumber(total, 2)} ${escapeHtml(unit)}</strong></div><div><span>${escapeHtml(t('Allocated'))}</span><strong data-summary="allocated">${formatNumber(allocated, 2)} ${escapeHtml(unit)}</strong></div><div><span>${escapeHtml(t('Remaining'))}</span><strong data-summary="remaining">${formatNumber(remainingAmount(total, allocated), 2)} ${escapeHtml(unit)}</strong></div></div>`
+  //: The derived figures carry `units.js`'s own precision for this unit and the typed one
+  //: keeps two places — see the amendment over `hundredths` for why they differ.
+  const places = unitDisplayPrecision(figures.totalUnit)
+  return `<div class="allocation-summary ${invalid ? 'invalid' : ''}" ${first ? 'id="current-summary"' : ''} data-summary-leaf="${leafAttr(leaf)}" aria-live="polite"><div><span>${escapeHtml(t('Total waste'))}</span><strong>${formatNumber(total, 2)} ${escapeHtml(unit)}</strong></div><div><span>${escapeHtml(t('Allocated'))}</span><strong data-summary="allocated">${formatNumber(allocated, places)} ${escapeHtml(unit)}</strong></div><div><span>${escapeHtml(t('Remaining'))}</span><strong data-summary="remaining">${formatNumber(limitIn(remainingAmount(totalKg, allocatedKg), figures.totalUnit), places)} ${escapeHtml(unit)}</strong></div></div>`
 }
 
 /**
@@ -1825,8 +1888,10 @@ function destinationStep() {
   //: only be over its total if somebody typed a figure into it.
   const misallocated = leaf => {
     const figures = draftLeafFigures(leaf)
-    const allocated = allocatedAmount(figures.current, figures.totalUnit)
-    const total = totalNumber(figures)
+    // Kilograms on both sides (v1.111): this is the same rule `leafSummary` applies and
+    // the two must not differ in what they compare, let alone in what unit.
+    const allocated = allocatedKilograms(figures.current, figures.totalUnit)
+    const total = totalKilograms(figures)
     const started = (figures.current || []).some(line => line.qtyInput !== '')
     return exceedsTotal(allocated, total) || (started && fallsShortOfTotal(allocated, total))
   }
@@ -2303,8 +2368,12 @@ function leafProblem(step, leaf, food) {
       return kilograms === null || kilograms > MAX_LINE_KG
     })
     if (overLine) return fail(t('Enter destination amounts of no more than %(limit)s %(unit)s.', { limit: formatNumber(limitIn(MAX_LINE_KG, unit), 0), unit: unitLabel(unit) }))
-    const total = totalNumber(figures)
-    const sum = allocatedAmount(lines, unit)
+    //: Kilograms, because that is what the three rules below compare — and `places` is
+    //: the precision `units.js` gives this unit, so a shortfall stated in tonnes still
+    //: resolves the 0.01 kg the rule refused it for (v1.111).
+    const total = totalKilograms(figures) || 0
+    const sum = allocatedKilograms(lines, unit)
+    const places = unitDisplayPrecision(unit)
     //: **Short of the total is as wrong as over it, and it used to be neither.** The
     //: unallocated remainder is not held back for later and it is not sent: `buildLines`
     //: sends the destination rows, so an entry under-allocated by a kilogram is an entry
@@ -2313,14 +2382,14 @@ function leafProblem(step, leaf, food) {
     //: screen saying so. Checked before the over-allocation branch for no reason beyond
     //: reading order; the two are mutually exclusive.
     if (fallsShortOfTotal(sum, total)) {
-      const short = (total - sum).toFixed(2)
+      const short = limitIn(total - sum, unit).toFixed(places)
       const unitName = unit === 'kilograms' ? 'kg' : t('tonnes')
       return fail(food
         ? t('%(food)s still has %(short)s %(unit)s to place. Every destination amount together has to add up to the waste you entered.', { food, short, unit: unitName })
         : t('There is still %(short)s %(unit)s to place. Every destination amount together has to add up to the waste you entered.', { short, unit: unitName }))
     }
     if (exceedsTotal(sum, total)) {
-      const excess = (sum - total).toFixed(2)
+      const excess = limitIn(sum - total, unit).toFixed(places)
       const unitName = unit === 'kilograms' ? 'kg' : t('tonnes')
       return fail(food
         ? t('Allocated waste for %(food)s exceeds its amount by %(excess)s %(unit)s.', { food, excess, unit: unitName })
@@ -2925,8 +2994,13 @@ function updateLine(control) {
   //: its own — see `destinationCell`.
   state.lastChangedLeaf = key
   const unit = figures.totalUnit
-  const total = totalNumber(state.leafFigures[key])
-  const sum = allocatedAmount(lines, unit)
+  //: **Kilograms for the rules, the leaf's unit for the strip** (v1.111) — the same split
+  //: `leafSummary` makes, because these two are one rule written twice and drifting here
+  //: is what the note below is about. `limitIn` converts the two derived figures back for
+  //: display, to `units.js`'s own precision for this unit.
+  const total = totalKilograms(state.leafFigures[key])
+  const sum = allocatedKilograms(lines, unit)
+  const places = unitDisplayPrecision(unit)
   const summary = document.querySelector(`[data-summary-leaf="${CSS.escape(keyAttr(key))}"]`)
   const hasNegative = lines.some(line => line.qtyInput !== '' && Number(line.qtyInput) < 0)
   //: **Both directions here, and only one of them below** (v1.99). This strip is the
@@ -2948,8 +3022,8 @@ function updateLine(control) {
   const started = lines.some(line => line.qtyInput !== '')
   summary?.classList.toggle('invalid', exceedsTotal(sum, total) || (started && fallsShortOfTotal(sum, total)) || hasNegative)
   if (summary) {
-    summary.querySelector('[data-summary="allocated"]').textContent = `${sum.toFixed(2)} ${unitLabel(unit)}`
-    summary.querySelector('[data-summary="remaining"]').textContent = `${remainingAmount(total, sum).toFixed(2)} ${unitLabel(unit)}`
+    summary.querySelector('[data-summary="allocated"]').textContent = `${limitIn(sum, unit).toFixed(places)} ${unitLabel(unit)}`
+    summary.querySelector('[data-summary="remaining"]').textContent = `${limitIn(remainingAmount(total, sum), unit).toFixed(places)} ${unitLabel(unit)}`
   }
   const error = validateCurrentStep()
   document.getElementById('allocation-error').textContent = error

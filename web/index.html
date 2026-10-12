@@ -35,20 +35,13 @@
          their navigation when scripting is off. `web/js/drawer.js` adds `Escape` and
          syncs `aria-expanded`; neither is load-bearing.
 
-         **It overlays and never compresses.** `position: fixed`, pinned to the page's
-         inline-start edge and vertically centred, so it takes no width from the
-         document. Horizontal space is the binding constraint on this interface - the
-         owner's laptop is a 938px CSS viewport, already under the 960 breakpoint, and
-         a destination row has a 544px floor. A 240px sidebar in flow would leave
-         698px and break the step this team measured and fixed.
+         **It overlays and never compresses.** `position: fixed`, pinned to the top edge
+         and centred, so it takes no width or height from the document. The compact tab
+         keeps the three links available without competing with the calculator controls.
 
-         It is also **not in the header row**, which is a measured budget: 93px holding
-         a 67px logo and a 44px language chooser, defended by
-         `test_a_short_step_is_not_floored_by_a_stale_min_height`. A strip of its own
-         was tried once and cost 57px. And it is vertically centred rather than pinned
-         to the bottom, because the calculator's `position: sticky; bottom: 0` step bar
-         owns the bottom edge and is what put every step's primary action above the
-         fold.
+         It is now a compact tab fixed to the top edge. The panel overlays the page when
+         opened, so it does not add a header row, move the language chooser, or change
+         the calculator's measured vertical space.
 
          **No `aria-current` in this FILE**, and since #173 that is a narrower claim
          than it used to be. The header navigation on the two content pages carries it,
@@ -56,13 +49,9 @@
          pages. `tests/test_d_statistics_content.py` asserts the absence here, by parsing
          this file.
 
-         **The rendered introduction screen does carry one**, on the hero navigation
-         `calculator.js` injects, pointing at `index.html` itself. That is correct and
-         there is still exactly one per page — but it is invisible to the assertion
-         above, which reads the static HTML and cannot see anything a renderer adds. The
-         claim about the rendered page is `test_site_drawer.py`'s, which drives a browser.
-         Until v1.101 this comment said "on the calculator nothing claims it", which had
-         been false since #173 merged.
+         **The rendered introduction screen uses the drawer only.** The hero no longer
+         repeats the three links; the top tab is the single navigation affordance on
+         this page, and opening it exposes the same destinations as the other pages.
 
          **The page you are already on keeps its row**, as a link to itself. Dropping it
          would make this block three different blocks and lose the one property the whole

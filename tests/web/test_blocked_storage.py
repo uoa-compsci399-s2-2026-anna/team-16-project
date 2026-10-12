@@ -27,11 +27,14 @@ would satisfy every refusal case in this file.
 are what separate a fix from a deletion, and the mutation `store-nothing` is in the matrix
 for exactly that reason.
 
-**Out of scope, deliberately.** With the write refused the visitor keeps working and loses
-only the reload-restore -- the same degradation `writeSnapshot` has always had for the
-answers -- and **nothing tells them so**. Saying it needs a string in all twenty
-catalogues, or `api.i18n.Catalogue.gettext` answers 500 to every non-English PDF; that is
-its own change and not this one.
+**And the visitor is now told, which v1.114 left open.** With the write refused the
+calculator keeps working and loses only the reload-restore -- the degradation
+`writeSnapshot` has always had -- and for one revision nothing said so. v1.115 adds the
+sentence and the detection behind it, and the cases from `v1.115` onwards below are that
+half. Two things about it are worth knowing before reading them: the detection is a
+**write** probe and not a read, because a browser can answer every `getItem` and still
+refuse a `setItem`; and the control -- a browser that allows storage being told nothing --
+is the only assertion separating a notice from a decoration.
 """
 import json
 import shutil
@@ -64,16 +67,40 @@ const working = {
   setItem: (key, value) => stored.set(key, value),
   removeItem: key => stored.delete(key),
 }
+// `refuse-answers` and `refuse-result` are the **quota**, and they are the shapes the
+// module-load probe cannot see: one character goes in, so the probe is told yes, and the
+// document that is actually refused is the few hundred bytes of answers or the 32 KB of
+// result. They are separated by key because the two writes happen on different screens
+// and the notice's placement rule means only one of them is visible where it is made.
+//
+// `refuse-cleanup` is the narrow case that keeps the probe honest: the write lands and the
+// `removeItem` that takes the sentinel back out is what throws. Nothing was refused, so
+// nothing may be reported — which is only true while the two calls have a `try` each.
+const SNAPSHOT_KEY = 'kaiCalculatorAnswers'
+const RESULT_KEY = 'kaiCalculatorResult'
+const PROBE_KEY = 'kaiCalculatorStorageProbe'
 if (input.storage === 'refuse-access') {
   Object.defineProperty(globalThis, 'sessionStorage', { get() { throw denied() } })
 } else if (input.storage === 'refuse-write') {
   globalThis.sessionStorage = { ...working, setItem: () => { throw denied() } }
+} else if (input.storage === 'refuse-answers') {
+  globalThis.sessionStorage = { ...working,
+    setItem: (key, value) => { if (key === SNAPSHOT_KEY) throw denied(); stored.set(key, value) } }
+} else if (input.storage === 'refuse-result') {
+  globalThis.sessionStorage = { ...working,
+    setItem: (key, value) => { if (key === RESULT_KEY) throw denied(); stored.set(key, value) } }
+} else if (input.storage === 'refuse-cleanup') {
+  globalThis.sessionStorage = { ...working,
+    removeItem: key => { if (key === PROBE_KEY) throw denied(); stored.delete(key) } }
 } else {
   globalThis.sessionStorage = working
 }
 
-globalThis.window = { location: { search: '' }, scrollTo() {} }
-globalThis.document = { getElementById: () => null, querySelector: () => null, querySelectorAll: () => [] }
+globalThis.window = { location: { search: '' }, scrollTo() {}, addEventListener() {} }
+globalThis.document = {
+  getElementById: () => null, querySelector: () => null, querySelectorAll: () => [],
+  addEventListener() {}, removeEventListener() {},
+}
 globalThis.CSS = { escape: value => value }
 globalThis.requestAnimationFrame = () => {}
 
@@ -82,11 +109,13 @@ globalThis.requestAnimationFrame = () => {}
 // file would otherwise be assuming rather than testing.
 let loaded = true
 let loadError = null
-let state, setState, leafKey, storeToken, bindCalculator, compareImprovement
+let state, setState, leafKey, storeToken, bindCalculator, render, compareImprovement
+let storageRefusesToPersist, persistenceHasBeenRefused
 try {
   ;({ state, setState, leafKey, storeToken } = await import(new URL('state.js', root)))
-  ;({ bindCalculator } = await import(new URL('calculator.js', root)))
+  ;({ bindCalculator, render } = await import(new URL('calculator.js', root)))
   ;({ compareImprovement } = await import(new URL('improvement.js', root)))
+  ;({ storageRefusesToPersist, persistenceHasBeenRefused } = await import(new URL('snapshot.js', root)))
 } catch (error) {
   loaded = false
   loadError = `${error.name}: ${error.message}`
@@ -129,12 +158,22 @@ globalThis.fetch = (url, options) => {
 
 const handlers = {}
 bindCalculator({ addEventListener: (type, fn) => { handlers[type] = fn } }, async () => {})
-const press = action => handlers.click({
-  target: { closest: selector => (selector === '[data-action]' ? { dataset: { action } } : null) },
+const press = (action, dataset = {}) => handlers.click({
+  target: { closest: selector => (selector === '[data-action]' ? { dataset: { action, ...dataset } } : null) },
 })
 const flush = () => new Promise(resolve => setTimeout(resolve, 0))
 
+// **`render()` against a stand-in for `<main>`, which is all it writes to.** The two hooks
+// it calls on every exit are inert here on purpose and not by luck:
+// `bindStepSectionNavigation` returns at its first line because `querySelector` answers
+// null, and `bindResultsSectionSpy` takes its `!sections.length` branch for the same
+// reason. So what comes back is the markup and nothing else.
+const main = { className: '', innerHTML: '' }
+const draw = () => { render(main); return main.innerHTML }
+
 let threwOnFalsy = null
+let stepAfterCalculate = null
+const html = {}
 if (input.probe === 'calculate') {
   press('calculate')
   await flush()
@@ -159,6 +198,27 @@ if (input.probe === 'calculate') {
   } catch {
     threwOnFalsy = true
   }
+} else if (input.probe === 'notice') {
+  // One render per form step, plus the two screens the notice must stay off.
+  for (const step of [-1, 0, 1, 2, 3, 4]) {
+    setState({ step })
+    html[step] = draw()
+  }
+} else if (input.probe === 'noticeAfterRefusedWrite') {
+  // The quota path. The probe said yes, so nothing is reported until a real write is
+  // refused -- and the press is the real call site (`continue`/`calculate` are what call
+  // `writeSnapshot`), not a hand call to the module.
+  setState({ step: 4 })
+  html.before = draw()
+  press('calculate')
+  await flush()
+  await flush()
+  stepAfterCalculate = state.step
+  // Back into the form the way the results page offers it: *Edit your data* is
+  // `data-action="go-step"` with `data-step="4"` (`stepNav` in `view.js`).
+  html.atResults = draw()
+  press('go-step', { step: '4' })
+  html.backInForm = draw()
 }
 
 console.log(JSON.stringify({
@@ -169,6 +229,8 @@ console.log(JSON.stringify({
   storedToken: stored.get('kaiCalculatorToken') || null,
   storedKeys: [...stored.keys()].sort(),
   calls, sentTokens, threwOnFalsy,
+  storageRefusesToPersist, persistenceRefused: persistenceHasBeenRefused(), stepAfterCalculate,
+  html,
 }))
 """
 
@@ -279,3 +341,143 @@ def test_a_falsy_token_is_a_silent_no_op_rather_than_a_stored_string(tmp_path):
     assert seen['threwOnFalsy'] is False
     assert seen['storedKeys'] == []
     assert seen['storedToken'] is None
+
+# --------------------------------------------------------------------------------------
+# v1.115: and now the visitor is told.
+#
+# Everything above is about a refusal costing nothing it did not have to. This half is
+# about the one cost it does carry -- the reload-restore -- being said out loud, which is
+# what v1.114's own entry recorded as still open.
+# --------------------------------------------------------------------------------------
+
+#: A fragment of the sentence, spelled once. Long enough that nothing else on any screen
+#: could match it, short enough to survive a comma being moved.
+NOTICE_TEXT = 'not letting this page store data'
+FORM_STEPS = ['0', '1', '2', '3', '4']
+
+
+@pytest.mark.parametrize('storage', REFUSALS)
+def test_a_browser_that_refuses_to_persist_is_told_so_on_every_form_step(tmp_path, storage):
+    """The notice itself, which is the whole of this revision.
+
+    `writeSnapshot` has dropped a refused write since v1.73 and the calculator has gone on
+    working, which is right. What nobody did was *say so*, so a visitor part-way through a
+    multi-entry submission who reloaded lost all of it with no way to know their own
+    browser was the reason.
+    """
+    seen = probe(tmp_path, storage=storage, probe='notice')
+    assert seen['storageRefusesToPersist'] is True
+    for step in FORM_STEPS:
+        assert NOTICE_TEXT in seen['html'][step], f'step {step} says nothing'
+        assert 'storage-notice' in seen['html'][step]
+
+
+def test_a_browser_that_allows_storage_is_told_nothing(tmp_path):
+    """**The control, and the one that matters most here.**
+
+    A notice rendered unconditionally would satisfy every assertion above and be a
+    permanent caution on a calculator that is working perfectly. This is the only thing
+    that separates a notice from a decoration, and the mutation `notice-always` is in the
+    matrix for exactly that reason.
+    """
+    seen = probe(tmp_path, storage='working', probe='notice')
+    assert seen['storageRefusesToPersist'] is False
+    assert seen['persistenceRefused'] is False
+    for step in FORM_STEPS:
+        assert NOTICE_TEXT not in seen['html'][step], f'step {step} warns about nothing'
+        assert 'storage-notice' not in seen['html'][step]
+
+
+@pytest.mark.parametrize('storage', REFUSALS)
+def test_the_notice_stays_off_the_introduction(tmp_path, storage):
+    """Step -1 has nothing entered to lose, and is the full-bleed hero `introduction-main`
+    restyles. A caution there is a caution about nothing, in the one place on the site
+    whose layout is not built to carry a disclaimer."""
+    seen = probe(tmp_path, storage=storage, probe='notice')
+    assert NOTICE_TEXT not in seen['html']['-1']
+
+
+def test_the_probe_takes_its_own_sentinel_back_out(tmp_path):
+    """The probe is a write, so it leaves a trace unless it cleans up after itself.
+
+    A browser that allows storage must be left exactly as it was found - in particular
+    `readSnapshot` and `state.js`'s module-load read must not find a fourth key beside the
+    three keys §7.2a defines.
+    """
+    seen = probe(tmp_path, storage='working', probe='falsyToken')
+    assert seen['storedKeys'] == [], 'the probe left a key behind'
+
+
+def test_a_refused_cleanup_is_not_a_refused_write(tmp_path):
+    """**Why `setItem` and `removeItem` have a `try` each rather than sharing one.**
+
+    Here the write lands and only the sentinel's removal throws. Nothing was refused, so
+    there is nothing to tell the visitor; one shared `try` would report a working browser
+    as a blocked one and put a standing caution in front of somebody in no danger.
+    """
+    seen = probe(tmp_path, storage='refuse-cleanup', probe='notice')
+    assert seen['storageRefusesToPersist'] is False, 'a refused cleanup read as a refused write'
+    for step in FORM_STEPS:
+        assert NOTICE_TEXT not in seen['html'][step]
+
+
+def test_a_quota_the_probe_cannot_see_is_still_reported(tmp_path):
+    """**The half the module-load probe is blind to, measured rather than assumed.**
+
+    The probe stores one character, so a quota that is merely exhausted tells it yes and
+    then refuses the real document. `writeSnapshot`'s catch is the only witness, and this
+    walks the real call site: Calculate is one of the two actions that write the snapshot.
+
+    `before` is the proof that the probe really did pass - without it this case would pass
+    on a build where the probe reported every browser blocked.
+    """
+    seen = probe(tmp_path, storage='refuse-answers', probe='noticeAfterRefusedWrite')
+    assert seen['storageRefusesToPersist'] is False
+    assert NOTICE_TEXT not in seen['html']['before'], 'warned before any write was refused'
+    assert seen['persistenceRefused'] is True, 'a refused answers write went unrecorded'
+    assert NOTICE_TEXT in seen['html']['backInForm']
+
+
+def test_a_refused_result_write_is_reported_once_the_visitor_edits_their_data(tmp_path):
+    """**That the second catch is reachable at all, which is the question #187 taught.**
+
+    `writeResultSnapshot` runs on the Calculate that moves the visitor to step 5, and the
+    notice is suppressed on step 5 - so a flag set there would be unobservable unless
+    something takes the visitor back into the form. *Edit your data* does, in one press,
+    and this is that press. A guard whose effect cannot be reached is the defect v1.113
+    shipped and had to remove, and it is not being added back here.
+    """
+    seen = probe(tmp_path, storage='refuse-result', probe='noticeAfterRefusedWrite')
+    assert seen['storageRefusesToPersist'] is False
+    assert seen['stepAfterCalculate'] == 5, 'the calculation did not reach the results page'
+    assert NOTICE_TEXT not in seen['html']['atResults'], 'a caution about answers sat over the figures'
+    assert seen['persistenceRefused'] is True, 'a refused result write went unrecorded'
+    assert NOTICE_TEXT in seen['html']['backInForm'], 'the flag was set and never shown'
+
+
+@pytest.mark.parametrize('storage', REFUSALS)
+def test_the_notice_is_the_calculators_own_sentence_and_not_the_browsers(tmp_path, storage):
+    """§9.2 again, one revision later.
+
+    v1.114 stopped a `DOMException`'s `message` reaching the interface through
+    `publicError`; this is the same assertion about the screen that now deliberately
+    *does* mention storage, so the one place the subject comes up is still a sentence
+    written for end users in twenty languages.
+    """
+    seen = probe(tmp_path, storage=storage, probe='notice')
+    assert DENIED_TEXT not in json.dumps(seen)
+    assert 'setItem' not in json.dumps(seen['html'])
+
+
+@pytest.mark.parametrize('storage', REFUSALS)
+def test_the_notice_does_not_claim_the_calculation_is_broken(tmp_path, storage):
+    """The reassurance is load-bearing, not padding.
+
+    The defect v1.114 closed was a working calculation reported as a failure. A notice
+    saying only *your browser is blocking storage* would re-create that impression in
+    prose, so the sentence ends by saying the calculation works - and Calculate is still
+    offered rather than withheld, `blocked()` being what withholds it.
+    """
+    seen = probe(tmp_path, storage=storage, probe='notice')
+    assert 'works normally' in seen['html']['4']
+    assert 'data-action="calculate"' in seen['html']['4']

@@ -188,6 +188,75 @@ export const SNAPSHOT_KEY = 'kaiCalculatorAnswers'
 export const RESULT_KEY = 'kaiCalculatorResult'
 
 /**
+ * The sentinel the probe below writes and takes straight back out again.
+ *
+ * Its own key, distinct from both documents above, so a probe can never be read as a
+ * snapshot — and removed immediately, so a browser that allows the write is left exactly
+ * as it was found.
+ */
+const PROBE_KEY = 'kaiCalculatorStorageProbe'
+
+/**
+ * **Whether this browser refused to persist anything, asked once at module load.**
+ *
+ * The notice in `calculator.js` needs its answer *before* the visitor has typed anything,
+ * because the one moment a warning can prevent the loss is the moment before the work is
+ * done. So this is a **write** and not a read. `state.js`'s module-load `getItem` sits in
+ * a `try` against the same hazard, but a read answers the wrong question: a browser can
+ * hand a page `sessionStorage`, answer every `getItem` from it, and still throw on
+ * `setItem` — that is the quota, and it is what Safari's private mode did for years — and
+ * keeping the answers is a write.
+ *
+ * **The failure that counts is the `setItem`, so `removeItem` gets a `try` of its own**
+ * rather than sharing one. A cleanup that threw after a write that succeeded is not a
+ * browser refusing to persist; folding the two together would report the one as the other
+ * and put the notice in front of a visitor who is in no danger.
+ *
+ * **A constant and not a function.** Whether storage may be written is a browser setting
+ * and a tab's private-ness, neither of which changes while the tab is open, and `render()`
+ * runs on every keystroke that reaches `setState`. Asking per render would be a storage
+ * write per keystroke to re-answer a question whose answer cannot have moved.
+ */
+export const storageRefusesToPersist = (() => {
+  try {
+    sessionStorage.setItem(PROBE_KEY, '1')
+  } catch {
+    return true
+  }
+  try {
+    sessionStorage.removeItem(PROBE_KEY)
+  } catch {
+    // The write — the thing the notice is about — worked. A sentinel left behind is one
+    // key holding one character, and nothing in this module reads it or past it.
+  }
+  return false
+})()
+
+/**
+ * **What the probe above cannot know: a write refused for its size.**
+ *
+ * The probe stores one character. A quota that is merely *exhausted* passes it and then
+ * refuses the 32 KB result document, so the probe is a sound answer to "may this page
+ * persist at all" and an incomplete one to "will this write land". The two write catches
+ * below are the only witness to the second question, and they are what set this.
+ *
+ * **Read at the next render rather than announced when it happens.** `writeSnapshot` is
+ * called from the click handler *after* the `setState` that advanced the step (see
+ * `calculator.js`), so a `setState` from inside those catches would re-enter `render()`
+ * in the middle of a handler. One render's lag costs the visitor nothing — the notice is
+ * about their next reload, not about this keystroke — and the re-entrancy would cost the
+ * step transition that was in progress.
+ */
+let refusedAWrite = false
+
+/**
+ * Whether §7.2a's storage has refused this page, either on principle or in practice.
+ *
+ * @returns {boolean} True once either the module-load probe or a real write was refused.
+ */
+export const persistenceHasBeenRefused = () => storageRefusesToPersist || refusedAWrite
+
+/**
  * The schema number, **shared by both keys** so there is one integer to raise and no way
  * for the two documents to disagree about which deployment wrote them.
  *
@@ -306,7 +375,11 @@ export function writeSnapshot(state) {
     sessionStorage.setItem(SNAPSHOT_KEY, JSON.stringify({ version: SNAPSHOT_VERSION, answers }))
   } catch {
     // Private window, blocked site data, or the quota. The calculator goes on working
-    // without a snapshot, which is the whole of the fallback.
+    // without a snapshot, which is the whole of the fallback — and the visitor is now
+    // told, which is the half this catch used to swallow. See `refusedAWrite`: a write
+    // that was refused for its *size* passes the module-load probe, and this is the only
+    // place that learns of it.
+    refusedAWrite = true
   }
 }
 
@@ -342,7 +415,10 @@ export function writeResultSnapshot(state) {
   } catch {
     // Private window, blocked site data, or the quota — and this is the larger of the two
     // documents, so it is the one a quota refuses first. The results page is on screen
-    // either way; only coming back to it is lost.
+    // either way; only coming back to it is lost. **Which is why this catch sets the flag
+    // too**: at 32 KB against `writeSnapshot`'s few hundred bytes, a quota that is merely
+    // exhausted shows itself here first, and the one-character probe cannot see it at all.
+    refusedAWrite = true
   }
 }
 

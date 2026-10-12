@@ -8,7 +8,7 @@ import { t } from './i18n.js'
 import { armContribute, bindResultsSectionSpy, cancelContribute, downloadPdf, downloadResults, renderResults, resultsNavIsDocked } from './results.js'
 import { cancelImprovement, compareImprovement, openImprovement, resetImprovement, updateImprovementInput } from './improvement.js'
 import { handlePeriodBlur, handlePeriodClick, handlePeriodComposition, handlePeriodInput, handlePeriodKeydown, handlePeriodPointer, PeriodField, periodProblem, timeFrameChanged } from './period.js'
-import { DROPPED_DESTINATION, DROPPED_FOOD_CATEGORY, DROPPED_FOOD_ITEM, DROPPED_SECTOR, DROPPED_UNIT_PRESET, writeResultSnapshot, writeSnapshot } from './snapshot.js'
+import { DROPPED_DESTINATION, DROPPED_FOOD_CATEGORY, DROPPED_FOOD_ITEM, DROPPED_SECTOR, DROPPED_UNIT_PRESET, persistenceHasBeenRefused, writeResultSnapshot, writeSnapshot } from './snapshot.js'
 
 const decimalPattern = /^\d+(\.\d{1,2})?$/
 
@@ -3478,6 +3478,50 @@ function restoreNotice() {
   return `<aside class="disclaimer compact restore-notice" aria-label="${escapeHtml(t('Important information'))}"><span class="info-icon" aria-hidden="true">i</span><div><p>${escapeHtml(sentence)}</p></div></aside>`
 }
 
+/**
+ * **The notice §7.2a's storage refusal never had, and the reason v1.114 left it open.**
+ *
+ * A browser that refuses to persist takes the reload-restore away and says nothing. The
+ * calculation still runs, the result still appears, the token is still carried in memory
+ * (`storeToken` in `state.js`) — and a visitor part-way through a multi-entry submission
+ * who reloads loses every answer with no way to know their own browser is the reason.
+ * That is the degradation `writeSnapshot` has always had; what was missing is anybody
+ * saying so.
+ *
+ * **Steps 0 to 4 — the form, and exactly the screens with answers to lose.** Not the
+ * introduction (step −1): nothing has been entered yet, and the screen is the full-bleed
+ * hero `introduction-main` restyles, so a caution there is a caution about nothing. Not
+ * the results (step 5), which is `restoreNotice`'s rule above and holds here for the same
+ * reason — this sentence is about *answers*, and sitting over a set of figures it would
+ * read as a caveat on numbers that are on the screen and are correct.
+ *
+ * **No `aria-live`, for `restoreNotice`'s reason.** `render()` replaces `main.innerHTML`
+ * on every `setState`, so a live region here would re-announce the same sentence on every
+ * keystroke that reaches one. `aria-label` on the `<aside>` names the landmark instead,
+ * reusing the key the restore notice already names itself with.
+ *
+ * **No dismiss control, and that is a decision.** The improvement tip has one
+ * (`dismiss-results-improvement-tip`) because what it offers is optional; this condition
+ * holds for the whole visit and cannot be acted on from the page, so a dismissal would
+ * hide a standing fact and the next `setState` would be the only thing keeping it hidden.
+ * The compact disclaimer is one paragraph high — the same shape, and the same cost, as the
+ * restore notice that has sat in this slot since v1.73.
+ *
+ * `storage-notice` carries no stylesheet rule: the class is the hook the tests find it
+ * by, exactly as `restore-notice` is, and the aside is the compact disclaimer in full.
+ *
+ * @returns {string} The notice's markup, or `''` where it does not belong.
+ */
+function storageNotice() {
+  if (!persistenceHasBeenRefused()) return ''
+  if (state.step < 0 || state.step > 4) return ''
+  // A plain quoted literal at the `t()` call. `tests/web/i18n_keys.py` is a regex over the
+  // source, so a template literal or a constant here ships English in twenty catalogues
+  // with nothing failing — that module's own docstring states the rule and §7.7 records it.
+  const sentence = t('Your browser is not letting this page store data, so reloading or leaving this page will lose the answers you have entered. The calculation itself works normally.')
+  return `<aside class="disclaimer compact storage-notice" aria-label="${escapeHtml(t('Important information'))}"><span class="info-icon" aria-hidden="true">i</span><div><p>${escapeHtml(sentence)}</p></div></aside>`
+}
+
 export function render(main) {
   main.className = `main-content${state.step === -1 ? ' introduction-main' : ''}`
   if (state.loading && !state.taxonomy) {
@@ -3502,7 +3546,7 @@ export function render(main) {
   // The restore notice sits OUTSIDE the step's `<section>`, above it. Inside would break
   // `stepNav`'s "must stay the last child" rule by adding a sibling after it, and it
   // belongs to the page load rather than to the step.
-  main.innerHTML = restoreNotice() + (state.step === -1 ? introduction() : state.step === 5 ? renderResults(state) : screens[state.step]())
+  main.innerHTML = storageNotice() + restoreNotice() + (state.step === -1 ? introduction() : state.step === 5 ? renderResults(state) : screens[state.step]())
   // **Called at every exit from this function, including the two above that are not
   // the results page.** The floating nav's scroll-spy watches four `<section>`
   // elements that this line has just destroyed and recreated, so it is re-pointed

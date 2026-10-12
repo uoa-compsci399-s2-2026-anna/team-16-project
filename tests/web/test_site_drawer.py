@@ -27,6 +27,7 @@ import urllib.request
 
 import pytest
 
+from tests.web import i18n_keys
 from tests.web.base_url import ORIGIN
 
 # The `browser` marker is applied by `conftest.py`, by location: every module
@@ -266,6 +267,26 @@ def test_homepage_exposes_navigation_without_opening_the_drawer(browser, width, 
                 f"one current mark, which is §7.9's rule"
             )
             assert current.inner_text() == "Calculator"
+        else:
+            # **The labels, read out of the catalogue file by Python.** This block is
+            # static markup carrying `data-i18n`, and the reason it has to be is that
+            # `applyToDocument()` never walks a renderer's output: the same three links
+            # built from `calculator.js` would read English in all twenty languages with
+            # nothing failing, which is exactly what #173's `aria-label` did until v1.101
+            # found it by measuring German. Nothing else in the suite reads these three
+            # on `index.html` - `test_the_content_pages_translate_their_own_prose` drives
+            # `stats.html` and `methodology.html`.
+            strings = i18n_keys.catalogue(lang)["strings"]
+            for label, href in (
+                ("Calculator", "index.html"),
+                ("Statistics", "stats.html"),
+                ("Documentation", "methodology.html"),
+            ):
+                shown = page.inner_text('.site-header .public-nav a[href$="%s"]' % href)
+                assert shown == strings[label], (
+                    f"in {lang} the {label} link reads {shown!r} and the catalogue says "
+                    f"{strings[label]!r}"
+                )
 
         assert page.evaluate(
             "() => document.documentElement.scrollWidth <= Math.max(document.documentElement.clientWidth, 320)"
@@ -331,7 +352,7 @@ def test_the_header_navigation_is_drawn_on_the_introduction_and_nowhere_else(bro
         context.close()
 
 
-@pytest.mark.parametrize("width,height", [(1278, 983), (938, 898), (390, 700), (320, 700)])
+@pytest.mark.parametrize("width,height", [(1278, 983), (1100, 900), (938, 898), (390, 700), (320, 700)])
 def test_the_header_navigation_and_the_clear_button_never_share_a_place(browser, width, height):
     """Both are drawn on the introduction screen, and they must not be stacked.
 
@@ -351,6 +372,15 @@ def test_the_header_navigation_and_the_clear_button_never_share_a_place(browser,
     `elementFromPoint` at each link's own centre is the half of this that geometry
     alone cannot answer: boxes that merely touch are fine, and a box that is on top
     is not.
+
+    **1100px is here for the brand's track and nothing else.** It is the narrowest
+    viewport that still uses the single-row grid, so it is where the row is
+    tightest: 1042px of content against 330 + 292 + 101 + 314 and three 24px gaps.
+    `.intro-header .brand img` is a fixed 330px that does not shrink, so with the
+    brand on `minmax(0, 1fr)` - which is what every other page uses, and what this
+    one used until v1.116 - the track loses the fight at 263px and the wordmark
+    reaches 67px into the links beside it. Taking the button away hides that again,
+    which is why this width is on *this* case and not on the one above.
     """
     context, page = _open_page(browser, "/index.html", width=width, height=height)
     try:

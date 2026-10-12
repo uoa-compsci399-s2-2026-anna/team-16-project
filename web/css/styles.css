@@ -3784,6 +3784,28 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
   .intro-header .public-header-inner .brand { grid-column: 1; }
 }
 
+/* **Between 1000px and 1100px the single row is the wrong shape, and that is
+   measured rather than guessed.** One row needs the brand's 330px, the chooser's
+   314px, this nav's 292px and three 24px gaps inside a content box of
+   `100vw - 2 * clamp(20px, 2.7vw, 56px)`: 1062px in English. Below that the
+   navigation is the only track that can give, and what it does is wrap - at 1000px
+   it came to 215px wide and 92px tall, two lines pressed against the wordmark with
+   the chooser 100px clear of them on the other side.
+
+   The full-width row the `max-width: 999px` block below uses is the better shape
+   for that, so it starts 100px earlier on this screen. English is the widest of the
+   twenty at 292px; Malayalam's 531px still wraps to two lines until about 1290px and
+   is left to, because a nav that needs 1262px cannot have a breakpoint without
+   giving every other language a second row it does not need. */
+@media (min-width: 1000px) and (max-width: 1099px) {
+  .intro-header .public-header-inner .public-nav {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-self: stretch;
+    justify-content: flex-end;
+  }
+}
+
 @media (max-width: 999px) {
   .public-header-inner {
     display: grid;

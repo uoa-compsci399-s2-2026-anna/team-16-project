@@ -3518,7 +3518,7 @@ function storageNotice() {
   // A plain quoted literal at the `t()` call. `tests/web/i18n_keys.py` is a regex over the
   // source, so a template literal or a constant here ships English in twenty catalogues
   // with nothing failing — that module's own docstring states the rule and §7.7 records it.
-  const sentence = t('Your browser is not letting this page store data, so reloading or leaving this page will lose the answers you have entered. The calculation itself works normally.')
+  const sentence = t('Your browser is not letting this page store data, so reloading or leaving will lose your answers. The calculation itself works normally.')
   return `<aside class="disclaimer compact storage-notice" aria-label="${escapeHtml(t('Important information'))}"><span class="info-icon" aria-hidden="true">i</span><div><p>${escapeHtml(sentence)}</p></div></aside>`
 }
 

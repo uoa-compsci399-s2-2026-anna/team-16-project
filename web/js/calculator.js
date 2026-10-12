@@ -626,13 +626,24 @@ const hasData = () => Boolean(state.entries.length || state.sector || state.food
  * carries the language chooser, whose label sits in a white capsule - see the note over
  * `.language-bar__label` in `styles.css` for why `.intro-header` must NOT repaint it.
  *
+ * **The three site links this screen used to open with are no longer here** (v1.116).
+ * #173 put a `.intro-navigation` block at the top of `.hero-copy`, between the wordmark
+ * and the eyebrow, where it read as a stray row of underlined words in the middle of a
+ * hero rather than as the site's navigation. They are in `index.html`'s header now, as
+ * the same `.public-nav` block `stats.html` and `methodology.html` carry, and
+ * `styles.css` draws it on this screen only - the measurement that keeps a nav out of
+ * the wizard's header row is unchanged and is recorded beside the markup.
+ *
+ * Nothing replaces them here, deliberately. A second copy on this screen would be a
+ * third `navigation` landmark on a page that already has two.
+ *
  * `home.html` keeps its own static copy of the arch band and the check-list. That is
  * duplication of markup, and it is deliberate: the retired page is frozen exactly as it
  * was reviewed, so that reviving it is a routing decision rather than a rebuild.
  */
 function introduction() {
   return `<section class="hero" aria-labelledby="page-title">
-    <div class="hero-copy"><nav class="intro-navigation" aria-label="${escapeHtml(t('Main pages'))}"><a href="./index.html" aria-current="page">${escapeHtml(t('Calculator'))}</a><a href="./stats.html">${escapeHtml(t('Statistics'))}</a><a href="./methodology.html">${escapeHtml(t('Documentation'))}</a></nav><p class="eyebrow">${escapeHtml(t('For New Zealand food businesses'))}</p><h1 id="page-title">${escapeHtml(t('Food Waste Impact Calculator'))}</h1><p class="lead">${escapeHtml(t('Turn your food waste measurements into a clearer view of their potential environmental and financial impact.'))}</p><button class="button button-primary button-large" type="button" data-action="start">${escapeHtml(t('Start calculator'))}</button><p class="privacy-note">${escapeHtml(t('Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.'))}</p></div>
+    <div class="hero-copy"><p class="eyebrow">${escapeHtml(t('For New Zealand food businesses'))}</p><h1 id="page-title">${escapeHtml(t('Food Waste Impact Calculator'))}</h1><p class="lead">${escapeHtml(t('Turn your food waste measurements into a clearer view of their potential environmental and financial impact.'))}</p><button class="button button-primary button-large" type="button" data-action="start">${escapeHtml(t('Start calculator'))}</button><p class="privacy-note">${escapeHtml(t('Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.'))}</p></div>
     <div class="hero-food-pattern" aria-hidden="true"><svg class="food-arch-mask" viewBox="0 0 1500 190" preserveAspectRatio="none"><defs><mask id="food-arch-cutouts"><rect width="1500" height="190" fill="white" />${[150, 450, 750, 1050, 1350].flatMap(centre => [`<ellipse cx="${centre}" cy="190" rx="205" ry="166" fill="none" stroke="black" stroke-width="32"/>`, `<ellipse cx="${centre}" cy="190" rx="151" ry="120" fill="none" stroke="black" stroke-width="28"/>`]).join('')}${[300, 600, 900, 1200].map(x => `<path d="M ${x} 72 L ${x + 36} 126 L ${x} 181 L ${x - 36} 126 Z" fill="black"/>`).join('')}</mask></defs><rect width="1500" height="190" fill="currentColor" mask="url(#food-arch-cutouts)"/></svg></div>
     <div class="hero-support-grid"><div class="needs-panel"><h2>${escapeHtml(t('What you will need'))}</h2><ul class="check-list"><li>${escapeHtml(t('Where the waste occurred in the food supply chain'))}</li><li>${escapeHtml(t('The food category, if known'))}</li><li>${escapeHtml(t('The total waste amount — a weight, or how many containers you fill'))}</li><li>${escapeHtml(t('How that total was distributed across waste destinations'))}</li></ul></div></div>
   </section>`

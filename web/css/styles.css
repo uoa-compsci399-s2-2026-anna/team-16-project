@@ -249,12 +249,30 @@ button:disabled { cursor: not-allowed; color: rgba(0, 50, 35, 0.56); background:
   color: var(--kai-beetroot);
   text-decoration-thickness: 3px;
 }
+/* **The calculator ships `.public-nav` in its header and draws it on step -1 only.**
+   Every other screen of the wizard hides it here rather than in `calculator.js`,
+   because the markup is static: `index.html` carries the nav so that `data-i18n`
+   reaches it (`applyToDocument` never walks a renderer's output) and so that the first
+   paint already has it, the same reason that file ships `intro-header` itself.
+
+   The rule is scoped to `.calculator-page` on purpose. `stats.html` and
+   `methodology.html` are `.site-header` with no `.intro-header`, and an unscoped
+   `:not(.intro-header)` would delete the navigation from both of them. */
+.calculator-page .site-header:not(.intro-header) .public-nav { display: none; }
+/* The Kale ground, inherited whole from the `.intro-navigation` block this replaces
+   (#173, retired in v1.116) so that the screen looks the way it already looked: white
+   links, Pea for the page you are on and for hover. The comment that used to stand over
+   `.intro-header .header-inner` said there must be **no** `.intro-header .public-nav`
+   rules here because index.html carried no header navigation. It does now, and these
+   three are the rules that statement was reserving the space for. */
+.intro-header .public-nav a { color: var(--kai-white); }
+.intro-header .public-nav a[aria-current="page"] { color: var(--kai-pea); }
+.intro-header .public-nav a:hover { color: var(--kai-pea); }
 /* The introduction screen is full-bleed, so its header runs to the viewport edges rather
    than stopping at the 900px measure the wizard uses.
-   **No `.intro-header .public-nav` rules**, unlike the version this was recovered from:
-   index.html has never carried the header navigation, so a colour rule for it here
-   would be a rule with no element - and this file already carries one warning about
-   exactly that failure mode over `.language-bar__label`. */
+
+   `max-width` wins over the `1240px` in the `min-width: 1000px` block far below, and by
+   specificity rather than by order: that rule names one class and this names two. */
 .intro-header .header-inner {
   max-width: none;
   padding-inline: clamp(20px, 2.7vw, 56px);
@@ -394,27 +412,6 @@ p { line-height: 1.65; }
    browser's hyphenation dictionary for the reader's language; a missing dictionary is a
    silent return to the overflow. It can be layered on top of this, never instead of it. */
 .hero-copy h1 { margin-inline: auto; overflow-wrap: anywhere; }
-.intro-navigation {
-  width: 100%;
-  margin-block: -18px 28px;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 4px 22px;
-}
-.intro-navigation a {
-  min-height: 44px;
-  display: inline-flex;
-  align-items: center;
-  color: var(--kai-white);
-  font-weight: 700;
-  text-underline-offset: 5px;
-}
-.intro-navigation a[aria-current="page"] {
-  color: var(--kai-pea);
-  text-decoration-thickness: 3px;
-}
-.intro-navigation a:hover { color: var(--kai-pea); }
 .hero .eyebrow { color: var(--green); }
 .hero .lead { margin-inline: auto; color: rgba(255, 255, 255, 0.82); }
 .hero .needs-panel { color: var(--ink); }
@@ -3757,6 +3754,34 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
   .public-header-inner .public-nav,
   .public-header-inner #clear-button { grid-column: 2; grid-row: 1; justify-self: end; }
   .public-header-inner .language-bar { grid-column: 3; grid-row: 1; justify-self: end; }
+  /* **`.public-nav` and `#clear-button` share a cell above, and on the introduction
+     screen both can be on screen at once.** On `stats.html` and `methodology.html` they
+     cannot - those pages have no Clear button - which is why one cell was enough until
+     v1.116 moved the navigation onto `index.html`. Measured at 1278px with the button
+     shown: nav at x=599 w=292 and the button at x=790 w=101, both `justify-self: end`
+     against the same right edge, so the button sits on top of the last link. "Clear all
+     data" wins the hit test, and *Documentation* opens a confirmation instead.
+
+     It is a reachable pair rather than a theoretical one. `backTarget(0)` is `-1`, so
+     one Back from step 1 lands on the introduction with the sector already chosen,
+     `hasData()` true and `renderChrome()` unhiding the button.
+
+     A column of its own, so the two never meet. When the button is hidden its track is
+     0px wide and only `column-gap` remains. */
+  .intro-header .public-header-inner {
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+  }
+  .intro-header .public-header-inner .public-nav { grid-column: 2; grid-row: 1; }
+  .intro-header .public-header-inner #clear-button { grid-column: 3; grid-row: 1; }
+  .intro-header .public-header-inner .language-bar { grid-column: 4; grid-row: 1; }
+  /* **`auto` for the brand, not `minmax(0, 1fr)`.** `.intro-header .brand img` is a
+     fixed 330px and does not shrink, so a `1fr` track that loses the fight overflows
+     its own cell rather than squeezing: measured at 1000px in English the track came to
+     277px with the image still 330px wide, reaching 29px into the navigation beside it,
+     and 14px in German. The slack belongs to the navigation instead, which is a
+     wrapping flex row and absorbs it by taking a second line - Malayalam's three links
+     are 531px and need 1248px of viewport to stay on one. */
+  .intro-header .public-header-inner .brand { grid-column: 1; }
 }
 
 @media (max-width: 999px) {
@@ -3789,11 +3814,20 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
      wins the hit test. Tapping the right-hand end of the logo would open
      "clear all data?".
 
-     Row 3 costs nothing. `#clear-button` is only ever on index.html and
-     `.public-nav` is only ever on stats.html and methodology.html, so the two
-     never share a page and never contend for this row - and row 3 is where
-     auto-placement already put the button before any of these rules existed. */
+     Row 3 is where auto-placement already put the button before any of these
+     rules existed, so it costs nothing.
+
+     **They DO share a page now**, and this paragraph used to say they could not:
+     "`#clear-button` is only ever on index.html and `.public-nav` is only ever on
+     stats.html and methodology.html". v1.116 moved the navigation into index.html's
+     header, so on the introduction screen both can be drawn at once - and two items
+     naming row 3 is the same overlap this comment describes one paragraph up, with
+     the button over the links this time. The nav keeps row 3 and the button goes to
+     row 4 below, on the introduction screen only: `.public-nav` is hidden on every
+     other screen of the wizard, so moving the button there unconditionally would add
+     an empty 8px row to a header budget that is measured in single pixels. */
   .public-header-inner #clear-button { grid-column: 1; grid-row: 3; justify-self: end; }
+  .intro-header .public-header-inner #clear-button { grid-row: 4; }
   .public-header-inner .public-nav {
     grid-column: 1;
     grid-row: 3;

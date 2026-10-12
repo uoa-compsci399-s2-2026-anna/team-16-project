@@ -50,19 +50,17 @@
          owns the bottom edge and is what put every step's primary action above the
          fold.
 
-         **No `aria-current` in this FILE**, and since #173 that is a narrower claim
-         than it used to be. The header navigation on the two content pages carries it,
-         and a second element claiming to be the current page is a page with two current
-         pages. `tests/test_d_statistics_content.py` asserts the absence here, by parsing
-         this file.
+         **No `aria-current` in THIS block**, and as of v1.116 that is the narrowest
+         the claim has ever been. The header navigation on all three pages carries it
+         now — this page's included, a few dozen lines below — and a second element
+         claiming to be the current page is a page with two current pages.
+         `tests/test_d_statistics_content.py` counts them per file and wants exactly one.
 
-         **The rendered introduction screen does carry one**, on the hero navigation
-         `calculator.js` injects, pointing at `index.html` itself. That is correct and
-         there is still exactly one per page — but it is invisible to the assertion
-         above, which reads the static HTML and cannot see anything a renderer adds. The
-         claim about the rendered page is `test_site_drawer.py`'s, which drives a browser.
-         Until v1.101 this comment said "on the calculator nothing claims it", which had
-         been false since #173 merged.
+         Two earlier versions of this paragraph were wrong in opposite directions, which
+         is worth leaving on the record. Until v1.101 it said "on the calculator nothing
+         claims it", false from the moment #173 merged a hero navigation that did. v1.101
+         corrected it to "the rendered introduction screen does carry one", true then and
+         false now: the hero block is gone and the mark is in the file.
 
          **The page you are already on keeps its row**, as a link to itself. Dropping it
          would make this block three different blocks and lose the one property the whole
@@ -94,49 +92,56 @@
           <img id="brand-logo" src="./assets/kai-commitment-logo-white.webp" data-i18n-attr="alt" alt="Kai Commitment - Leading action on food waste">
           <span class="prototype-label" data-i18n>Impact calculator</span>
         </button>
-        <!-- **This page carries no public navigation in its header, and that is a
-             measurement rather than a preference.** stats.html and
-             methodology.html carry it in their header, where D put it.
+        <!-- **The public navigation is in this header now, and it is drawn on the
+             introduction screen only.** Until v1.116 this row carried none at all and
+             this comment said so; the three links lived in the middle of the hero,
+             injected by `calculator.js`'s `introduction()` (#173), floating between the
+             wordmark and the eyebrow where nobody looks for a site's navigation. The
+             links are the same three and the markup is now `.public-nav`, byte for byte
+             the block `stats.html` and `methodology.html` carry — so the three pages a
+             visitor can reach present their navigation in the same place, in the same
+             order, with the same accessible name.
 
-             In the header row it does not fit. §7.7.4 admitted the language
-             chooser to this row as a measured decision — the row was already
-             93px tall and carried a 67px logo, so a 44px control fitted in
-             space that was there. A third block does not: measured on this
-             build the chooser is 364px, the brand 330px and D's nav 355px
-             with four links (three now, and the measurement is not close),
-             against a content box of 1209px at 1278x983 and **887px at
-             938x898**, one of the two viewports this calculator is actually
-             demonstrated on. The nav wraps to a line of its own and the header
-             grows from 100px to 144px on every screen of the wizard, and from
-             142px to 186px at 390px.
+             **What has NOT changed is the measurement that kept it out of the wizard's
+             header**, which is why `styles.css` hides this block on every screen but
+             step -1 rather than letting it ride along. In the header row it does not
+             fit: measured on this build the chooser is 314px, the brand 330px and this
+             nav 292px in English and 531px in Malayalam, against a content box of
+             1209px at 1278x983 and **887px at 938x898**, one of the two viewports this
+             calculator is actually demonstrated on. The nav wraps to a line of its own
+             and the header grows from 92px to 136px on every screen of the wizard.
+             `test_a_short_step_is_not_floored_by_a_stale_min_height` fails by 37px when
+             it does, and in the footer the same block measured 1009px against a 983px
+             viewport and failed by 26px. Both of those are still true. The introduction
+             screen is the one screen with no step to floor and no sticky step bar
+             competing for the fold, so it is the one screen that can carry this.
 
-             In the footer it does not fit either, and that is the measurement
-             that settled it. On the shortest step at 1278x983 the document is
-             983px in a 983px viewport — exactly the viewport, with `main`
-             flexed from a 725px content floor to 757px. The page's whole slack
-             is therefore **32px**, and a navigation block whose links meet the
-             44px touch target this calculator uses everywhere needs 44. Adding
-             it in the footer measured 1009px and failed
-             `test_a_short_step_is_not_floored_by_a_stale_min_height` by 26px.
+             **The drawer is still the answer for every other screen**, and it is why
+             this is a move rather than a second navigation: `position: fixed`, costing
+             this row nothing and the footer nothing, on all three pages and all six
+             screens of the wizard.
 
-             The two ways to make it fit are to shave the footer's padding or
-             the links' touch targets, and each trades a measured guarantee for
-             a convenience link. The stylesheet already carries a "do not put
-             the constant back" warning over the arithmetic this budget came
-             from.
+             **`aria-current` is here, in the file, and that is a change of rule.**
+             `tests/test_d_statistics_content.py` used to assert that nothing static on
+             this page could claim to be the current page, because the only claim was
+             the one `introduction()` rendered and a second would have been unremovable.
+             The rendered one is gone, so the static one is now the only one, and this
+             page joins the two content pages in that test's `NAVIGATED_PAGES`. The
+             drawer below still carries no mark, for its own reason: one page, one
+             current mark.
 
-             **The gap that used to be recorded here is closed, and by the
-             second of the two answers it named.** This comment ended by saying
-             that there was no link from the calculator to Home or Statistics,
-             that it was a real gap, and that closing it wanted either 44px of
-             height somewhere on this page or an in-page control. The drawer
-             above is the in-page control: it is `position: fixed`, so it costs
-             this row nothing and costs the footer nothing, and the measurement
-             that ruled the nav out of both places still stands unchanged.
-
-             The calculator is still reachable *from* both content pages, and
-             still reaches the documentation page from its own footer and from
-             the results view's "View methodology". -->
+             Two `navigation` landmarks to the same three links remain — this one and
+             the drawer's — which §7.3a named in v1.101 and did not resolve. They are at
+             least named apart now by the same pair the content pages use, *Primary
+             navigation* here and *Site navigation* there, so a reader listing landmarks
+             gets the same two names everywhere rather than a third wording unique to
+             this page. `Main pages`, which existed only for the hero block, is retired
+             from all twenty catalogues with it. -->
+        <nav class="public-nav" data-i18n-attr="aria-label" aria-label="Primary navigation">
+          <a href="./index.html" aria-current="page" data-i18n>Calculator</a>
+          <a href="./stats.html" data-i18n>Statistics</a>
+          <a href="./methodology.html" data-i18n>Documentation</a>
+        </nav>
         <button class="text-button" id="clear-button" type="button" hidden data-i18n>Clear all data</button>
       </div>
     </header>

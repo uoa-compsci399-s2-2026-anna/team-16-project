@@ -204,40 +204,48 @@ def test_the_drawer_is_on_every_public_page_and_opens(browser, path):
 def test_homepage_exposes_navigation_without_opening_the_drawer(browser, width, lang):
     """The homepage's main destinations are visible without a hidden-menu step.
 
+    **The block this drives moved, and the test did not change its mind about
+    anything** (v1.116). Until then the three links were `.intro-navigation`,
+    rendered by `calculator.js` into the middle of `.hero-copy`; they are
+    `.public-nav` in `index.html`'s header now, the same markup `stats.html` and
+    `methodology.html` carry. Every assertion below is the one that was here
+    before, pointed at the new selector: visible without opening anything, three
+    destinations in order, a 44px touch target, one current mark, no sideways
+    scroll.
+
     **Two assertions here were worth nothing and are replaced** (v1.101).
 
     `assert page.locator("#site-drawer[open]").count() == 0` was satisfied before
-    this feature and after it: the drawer never loads open, and #173 does not touch
-    `index.html`. Measured on a build of `main` from before the row existed, it read
-    0 there too. It is gone; what it was reaching for -- *the reader does not have
-    to open anything* -- is the `nav.is_visible()` above it, which the drawer's own
-    closed state cannot satisfy.
+    the feature and after it: the drawer never loads open. It is gone; what it was
+    reaching for -- *the reader does not have to open anything* -- is the
+    `nav.is_visible()` above it, which the drawer's own closed state cannot
+    satisfy.
 
-    And **nothing asserted the thing the twenty-one new CSS lines exist for.**
-    Deleting every one of them left this test green, and shrinking `min-height` from
-    44px to 1px left the whole suite green while the targets collapsed to 22px high
-    and 32-48px wide. §7.6's touch-target rule is the only reason that block is
-    there, so it is measured here, at the widths and in the languages where it is
-    tightest -- German is the long compound, Arabic the short label, 320px the floor.
+    And **nothing asserted the thing the CSS exists for.** Deleting every one of
+    those lines left this test green, and shrinking `min-height` from 44px to 1px
+    left the whole suite green while the targets collapsed to 22px high and 32-48px
+    wide. §7.6's touch-target rule is the only reason the block is there, so it is
+    measured here, at the widths and in the languages where it is tightest --
+    German is the long compound, Arabic the short label, 320px the floor.
 
-    The width axis is **reported rather than asserted at 44**: the existing
-    `.public-nav a` on `stats.html` measures 41 and 37 in Arabic at both widths, so a
-    44 here would be a stricter rule than the site keeps elsewhere and would fail on
-    arrival. The height is the half this block actually sets.
+    The width axis is **reported rather than asserted at 44**: these same links on
+    `stats.html` measure 41 and 37 in Arabic at both widths, so a 44 here would be
+    a stricter rule than the site keeps elsewhere and would fail on arrival. The
+    height is the half the block actually sets.
     """
     context, page = _open_page(browser, f"/index.html?lang={lang}", width=width, height=900)
     try:
-        nav = page.locator(".intro-navigation")
+        nav = page.locator(".site-header .public-nav")
         assert nav.is_visible(), (
-            "the hero navigation is not visible, so the reader is back to opening a "
+            "the header navigation is not visible, so the reader is back to opening a "
             "hidden menu to find out what this site does"
         )
         assert page.eval_on_selector_all(
-            ".intro-navigation a", "els => els.map(el => el.getAttribute('href'))"
+            ".site-header .public-nav a", "els => els.map(el => el.getAttribute('href'))"
         ) == ["./index.html", "./stats.html", "./methodology.html"]
 
         measured = page.eval_on_selector_all(
-            ".intro-navigation a",
+            ".site-header .public-nav a",
             """els => els.map(el => {
               const box = el.getBoundingClientRect();
               return {text: el.textContent.trim(),
@@ -247,12 +255,12 @@ def test_homepage_exposes_navigation_without_opening_the_drawer(browser, width, 
         short = [m for m in measured if m["h"] < 44]
         assert not short, (
             f"at {width}px in {lang} these links are under the 44px touch target the "
-            f"`.intro-navigation a` block declares: {short}. That block's `min-height` "
-            f"is the only reason it exists, and nothing else in the suite reads it"
+            f"`.public-nav a` block declares: {short}. That block's `min-height` is the "
+            f"only reason it exists, and nothing else in the suite reads it"
         )
 
         if lang == "en":
-            current = page.locator('.intro-navigation a[aria-current="page"]')
+            current = page.locator('.site-header .public-nav a[aria-current="page"]')
             assert current.count() == 1, (
                 f"{current.count()} links claim to be the current page; one page has "
                 f"one current mark, which is §7.9's rule"
@@ -261,7 +269,139 @@ def test_homepage_exposes_navigation_without_opening_the_drawer(browser, width, 
 
         assert page.evaluate(
             "() => document.documentElement.scrollWidth <= Math.max(document.documentElement.clientWidth, 320)"
-        ), f"the hero navigation pushed the page sideways at {width}px in {lang}"
+        ), f"the header navigation pushed the page sideways at {width}px in {lang}"
+    finally:
+        context.close()
+
+
+@pytest.mark.parametrize("width,height", [(1278, 983), (938, 898), (390, 700)])
+def test_the_header_navigation_is_drawn_on_the_introduction_and_nowhere_else(browser, width, height):
+    """It is in the markup on every screen and painted on exactly one.
+
+    **This is the assertion the whole arrangement rests on, and nothing else in the
+    suite makes it.** `index.html` ships the block statically -- it has to, because
+    `applyToDocument()` never walks a renderer's output, so a nav built in
+    JavaScript would carry English `aria-label`s in twenty languages -- and
+    `styles.css` hides it on every screen but step -1. Delete that one
+    `display: none` rule and the links simply appear in the wizard's header, which
+    is the arrangement §7.7.4's measurement rules out: 37px over the budget
+    `test_a_short_step_is_not_floored_by_a_stale_min_height` defends, and that test
+    runs at two viewports rather than all of them.
+
+    **The second half is a control, not a restatement of the first.** "Not visible"
+    is satisfied by a block that is drawn but empty, or one pushed off screen while
+    still taking its row. So the step case also *removes the element* and
+    re-measures the header: if hiding it is working, the header was already the
+    height it is without it. A nav that was costing the row 44px fails there even
+    if `is_visible()` somehow said no.
+    """
+    context, page = _open_page(browser, "/index.html", width=width, height=height)
+    try:
+        nav = page.locator(".site-header .public-nav")
+        assert nav.count() == 1, "the header nav is not in index.html at all"
+        assert nav.is_visible(), "the introduction screen does not draw the header nav"
+
+        page.click('[data-action="start"]')
+        page.wait_for_selector(".stage-card-list", timeout=10000)
+        page.wait_for_timeout(200)
+        assert page.locator("#site-header.intro-header").count() == 0, (
+            "step 1 is still wearing the introduction header, so the rest of this "
+            "case would be measuring the introduction screen"
+        )
+        assert not nav.is_visible(), (
+            f"at {width}x{height} the header navigation is drawn on step 1. It costs "
+            f"the header row 44px there, which §7.7.4 measured and refused"
+        )
+        cost = page.evaluate(
+            """() => {
+                 const inner = document.querySelector('.header-inner');
+                 const before = Math.round(inner.getBoundingClientRect().height);
+                 const nav = document.querySelector('.site-header .public-nav');
+                 nav.remove();
+                 const after = Math.round(inner.getBoundingClientRect().height);
+                 return {before, after};
+               }"""
+        )
+        assert cost["before"] == cost["after"], (
+            f"at {width}x{height} the header is {cost['before']}px with the nav in the "
+            f"document and {cost['after']}px with it taken out, so it is costing the "
+            f"wizard {cost['before'] - cost['after']}px of header after all"
+        )
+    finally:
+        context.close()
+
+
+@pytest.mark.parametrize("width,height", [(1278, 983), (938, 898), (390, 700), (320, 700)])
+def test_the_header_navigation_and_the_clear_button_never_share_a_place(browser, width, height):
+    """Both are drawn on the introduction screen, and they must not be stacked.
+
+    **A reachable pair, not a theoretical one.** `backTarget(0)` is `-1`, so one
+    Back from step 1 lands the visitor on the introduction with the sector they
+    chose still in `state`; `hasData()` is then true and `renderChrome()` unhides
+    *Clear all data*. The route below is exactly that: start, choose, Back.
+
+    Before v1.116 the two could not meet -- `#clear-button` was only on
+    `index.html` and `.public-nav` only on the two content pages -- so
+    `styles.css` placed both in one grid cell at two of its three breakpoints.
+    Measured at 1278px with the button shown and the nav moved in: nav at x=599
+    w=292, button at x=790 w=101, both `justify-self: end` against the same right
+    edge. The button covers the last link and, being later in the DOM, wins the hit
+    test, so *Documentation* would open "clear all calculator data?".
+
+    `elementFromPoint` at each link's own centre is the half of this that geometry
+    alone cannot answer: boxes that merely touch are fine, and a box that is on top
+    is not.
+    """
+    context, page = _open_page(browser, "/index.html", width=width, height=height)
+    try:
+        page.click('[data-action="start"]')
+        page.wait_for_selector(".stage-card-list", timeout=10000)
+        page.locator('.stage-card-list input[name="sector"]').first.check()
+        page.wait_for_timeout(150)
+        page.click('[data-action="go-step"][data-step="-1"]')
+        page.wait_for_selector(".hero-copy", timeout=10000)
+        page.wait_for_timeout(300)
+
+        seen = page.evaluate(
+            """() => {
+                 const clear = document.getElementById('clear-button');
+                 const nav = document.querySelector('.site-header .public-nav');
+                 const box = el => { const b = el.getBoundingClientRect();
+                   return {x: Math.round(b.x), y: Math.round(b.y),
+                           w: Math.round(b.width), h: Math.round(b.height)}; };
+                 return {
+                   clearHidden: clear.hidden,
+                   clear: box(clear),
+                   nav: box(nav),
+                   links: [...nav.querySelectorAll('a')].map(a => {
+                     const b = a.getBoundingClientRect();
+                     const hit = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2);
+                     return {text: a.textContent.trim(),
+                             reaches: hit === a || a.contains(hit)};
+                   }),
+                 };
+               }"""
+        )
+        assert not seen["clearHidden"], (
+            "Clear all data is hidden on the introduction after Back from step 1, so "
+            "this case is no longer measuring the pair it exists for"
+        )
+        clear, nav = seen["clear"], seen["nav"]
+        overlap = not (
+            clear["x"] + clear["w"] <= nav["x"]
+            or nav["x"] + nav["w"] <= clear["x"]
+            or clear["y"] + clear["h"] <= nav["y"]
+            or nav["y"] + nav["h"] <= clear["y"]
+        )
+        assert not overlap, (
+            f"at {width}x{height} Clear all data {clear} overlaps the header "
+            f"navigation {nav}"
+        )
+        unreachable = [link for link in seen["links"] if not link["reaches"]]
+        assert not unreachable, (
+            f"at {width}x{height} a click at the centre of these links lands on "
+            f"something else: {unreachable}"
+        )
     finally:
         context.close()
 

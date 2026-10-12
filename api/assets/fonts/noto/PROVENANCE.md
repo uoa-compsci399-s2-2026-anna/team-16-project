@@ -466,3 +466,76 @@ passed every runnable selection; one test was skipped because this Windows
 host has no WeasyPrint/native PDF-renderer libraries
 (`ModuleNotFoundError: No module named 'weasyprint'`). This is a renderer
 limitation, not a glyph-test skip.
+
+## Re-cut, 2026-10-12 (the blocked-storage notice, v1.115)
+
+One new catalogue key — the sentence telling a visitor their browser will not
+keep their answers — introduced four characters absent from every embedded
+face: U+4E22 `丢` (`zh`), U+5132 `儲` and U+907A `遺` (`zh-Hant`), and U+D5C8
+`허` (`ko`). `test_no_character_in_any_catalogue_would_print_as_a_box` failed
+on exactly those four code points before this re-cut and passes after it.
+
+**Two further characters moved although nothing flagged them.** The Japanese
+sentence contains U+5E38 `常` (常どおり) and U+96E2 `離` (離れたり), both of
+which `_is_drawable` already accepted because some *other* embedded face
+carried them. The Japanese face itself did not, and `catalogue_characters`
+reads each face's own catalogue, so the re-cut added them to `jp`. The
+box test is a disjunction over all four faces and could not have reported
+this; the per-face comparison below is what shows it.
+
+Source: Debian `fonts-noto-cjk` **1:20240730+repack1-1**,
+`fonts-noto-cjk_20240730+repack1-1_all.deb`, downloaded from
+`https://deb.debian.org/debian/pool/main/f/fonts-noto-cjk/`.
+The downloaded package was 56,674,044 B and SHA256
+`f5dc28a754e17327d99f0a612134d92c8dd6187314ae967cb77f25df60860139`; the
+extracted `usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc` was
+19,484,784 B, SHA256
+`b76b0433203017ca80401b2ee0dd69350349871c4b19d504c34dbdd80541690a`. **Both
+match the 2026-10-02 entry above byte for byte**, so this is the same verified
+collection that entry describes and not a second source of trust.
+
+The `.deb` was unpacked on Windows, where `tar` does not read an `ar`
+archive: the `data.tar.xz` member was taken out by reading the archive's
+60-byte member headers directly, then
+`tar -xf data.tar.xz ./usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc`.
+From the repository root, the exact re-cut command was:
+
+```powershell
+py -3.12 api/assets/fonts/noto/recut_cjk_subsets.py --source-collection "<extract-dir>/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
+```
+
+**`fonttools` was 4.62.1 here, not the 4.63.0 of the entry above**, with
+`brotli` 1.2.0. The glyph sets are decided by the catalogues and the flags, so
+the coverage claims below do not depend on the version; the compressed bytes
+and therefore the hashes may. They are recorded as observed rather than
+presented as reproducible across versions — two consecutive runs on *this*
+toolchain produced identical SHA256 for all four outputs.
+
+Cmap counts count Unicode code points, not internal glyph IDs. Hashes are
+SHA256 of the committed WOFF2 files.
+
+| Face | Cmap before | Cmap after | Bytes after | SHA256 after |
+| --- | ---: | ---: | ---: | --- |
+| `jp` | 680 | 682 | 246,644 | `240b785533f92b82e9fc5583f469a3ea72865b5fa3c7bc382c2151a5115aaeb7` |
+| `kr` | 586 | 587 | 82,952 | `cc3f98ede04a0d98205ae1fa8778f6d225fa1e1f0432b447f4239340bdd75c1f` |
+| `sc` | 740 | 741 | 214,220 | `72643177d3643908071a745a8f536b3324fab7de98a2f837ebef386685ccda8e` |
+| `tc` | 740 | 742 | 283,756 | `3970411d64d91fd325c747a22f4498dc771d1d7f7d30503f78b5b4a1b6296d11` |
+
+Independent old/new cmap comparison, run against the faces as committed
+before this re-cut: **no face lost a single code point**, and each face's
+cmap covers every character in its own catalogue's `strings` with nothing
+missing. Gains were `jp` U+5E38 and U+96E2, `kr` U+D5C8, `sc` U+4E22, and
+`tc` U+5132 and U+907A — six additions for four reported characters, which is
+the `jp` discrepancy explained above.
+
+The four faces are embedded for the PDF only; `web/assets/fonts/` serves the
+two brand faces and no CJK face, so there is no public copy of these to keep
+in step and `test_the_embedded_faces_match_the_public_ones` does not reach
+them.
+
+`pytest tests/api/test_pdf_render.py` passed 135 and skipped 109 on this
+Windows host, which has no WeasyPrint/native PDF-renderer libraries
+(`ModuleNotFoundError: No module named 'weasyprint'`); that is a renderer
+limitation and not a glyph-test skip. Run by name,
+`test_no_character_in_any_catalogue_would_print_as_a_box` and
+`test_the_embedded_catalogues_match_the_public_ones` both passed.

@@ -213,6 +213,14 @@ CLASSES_WITH_NO_RULE_OF_THEIR_OWN: dict[str, str] = {
         "`NOTICE = '.restore-notice'`. Binds if this one disclaimer must look "
         "unlike the rest."
     ),
+    "storage-notice": (
+        "HOOK on `.disclaimer.compact`, the same arrangement as `restore-notice` "
+        "above and for the same reason: the blocked-storage notice is already the "
+        "compact disclaimer in full and has nothing of its own to declare. The third "
+        "class is how test_blocked_storage.py tells it apart from the placeholder and "
+        "restore disclaimers that can share the screen with it. Binds if a standing "
+        "caution should read differently from a one-off one."
+    ),
     "stats-list-region": (
         "HOOK on the <div> that groups an equivalence breakdown's `sr-only` "
         "heading with its `.stats-breakdown-list`. The list carries the layout and "

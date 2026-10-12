@@ -470,6 +470,12 @@ p { line-height: 1.65; }
    from the other disclaimers on the page (both hold it as `NOTICE = ".restore-notice"`).
    What would make it bind is wanting this one disclaimer to look unlike the rest.
    Declared in `tests/web/test_class_rules.py`'s `CLASSES_WITH_NO_RULE_OF_THEIR_OWN`. */
+/* **`.storage-notice` is the same arrangement** (v1.115): `class="disclaimer compact
+   storage-notice"`, a hook with nothing of its own, which `test_blocked_storage.py` finds
+   it by. It is the one disclaimer here that can be on screen for the whole visit -- a
+   browser refusing to persist does not change its mind -- so if any of them ever needs a
+   quieter treatment it is this one, and that is what would make it bind. Declared in the
+   same place as the notice above. */
 .disclaimer strong {
   display: block;
   color: var(--beetroot);

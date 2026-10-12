@@ -1,5 +1,5 @@
 import { calculate } from './api.js'
-import { calculatorGeneration, setState, draftEntry, leafDisplayName } from './state.js'
+import { calculatorGeneration, setState, storeToken, draftEntry, leafDisplayName } from './state.js'
 import { entryTotal, massToKg, rowKgString, percentageToKg, kgToPercentage, kgToUnitAmount, unitAmountToKg, unitDisplayPrecision, isPresetUnit, presetUnitCode, PRESET_UNIT } from './units.js'
 import { requestLines, submissionLeaves, submissionPayload } from './submission.js'
 import { escapeHtml, formatNumber, slug } from './view.js'
@@ -757,7 +757,7 @@ export async function compareImprovement(state, toPublicMessage = error => error
     )
     if (!current()) return
     const token = response.token || state.token
-    if (token) sessionStorage.setItem('kaiCalculatorToken', token)
+    storeToken(token)
     // The per-entry pairing `comparisons` held was read by exactly one thing — the
     // `landfill_diverted` card's cross-entry `by_destination` sum — and that card is gone.
     // Every figure this screen renders now comes from `totals`.

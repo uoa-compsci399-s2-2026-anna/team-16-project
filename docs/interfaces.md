@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-10-11 (v1.113)"
+date: "2026-10-12 (v1.114)"
 ---
 
 # 0. How to Use This Document
@@ -25,6 +25,44 @@ This document defines **what every person's code receives and what it returns.**
 
 ## 0.1 Change Log
 
+### v1.114 — 2026-10-12 (a browser that refuses to store the token discarded the calculation; affects B, C and D)
+
+**The last of the four fixes that arrived together as a single pull request.** The other three are v1.111 (a tonnes allocation compared in the wrong unit), v1.112 (a retired `unit_preset` dropping a destination row off the wire) and v1.113 (a cleared calculation coming back when its response landed); nothing here depends on any of them. The diagnosis of all four is rhua798's.
+
+**Two statements were in the wrong order, and the second `try` was the wrong one.** `submitCalculation` wrote the §5.3 dedup token to `sessionStorage` *before* the `setState` that puts the result on screen, and it did so inside the `try` whose `catch` means *the calculation failed*. §2.3 and §5.3 make one call one submission — `POST /calculate` calculates **and persists** — so by the time that write threw, the row was already in the database. `compareImprovement` had the identical two lines in the identical order.
+
+Measured on `420b71b`, one complete 10 kg submission answered 200 by the API:
+
+| | storage working | storage refused |
+| --- | --- | --- |
+| the module graph loads | yes | **yes** |
+| rows persisted | 1 | 1 |
+| `step` | 5 (results) | **4, still on the review step** |
+| result on screen | yes | **no** |
+| `errorCode` | `null` | `UNKNOWN_ERROR` |
+| what the visitor reads | nothing | **`Failed to execute 'setItem' on 'Storage': Access is denied for this document.`** |
+| `state.token` | `server-token-1` | `null` |
+
+Then the visitor, having been told it failed, presses Calculate again:
+
+| | `token` on each request | second request upserts | rows |
+| --- | --- | --- | --- |
+| storage working | `[null, "server-token-1"]` | yes | **1** |
+| storage refused | `[null, null]` | no | **2** |
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`state.js` owns `storeToken(token)`, and both call sites use it.** The write gets the treatment the module-load read has had since v1.74: its own `try`, whose `catch` says only that the copy was not kept. It lives in `state.js` rather than in either caller because `calculator.js` and `improvement.js` both need it and §5.3 keys the same row on the same token | §5.3, §7.2a |
+| 2 | **Two earlier entries claimed this was already true, and it was not.** v1.0: "All of them are wrapped, a failed write is dropped." v1.74 change 8: "Every read and write is wrapped, including `state.js`'s own module-load read of the token, which was bare." v1.74 was the revision that went looking for bare `sessionStorage` calls; it found the read and missed these two writes, and the claim has stood since. Both sentences are true as of this revision | §0, §7.2a |
+| 3 | **Losing the write is not losing the token, and that is why this fix is three lines rather than a design change.** `state.token` is where the live value lives and `submissionPayload` reads it from there (`submission.js`), on every request, in every browser. The `sessionStorage` copy buys exactly one thing — surviving a reload — and nothing beyond the tab: it is per tab and gone when the tab closes, the same lifetime the in-memory state has. So a visitor whose browser refuses site data keeps the token for as long as it is useful and loses only the restore | §5.3, §7.2a |
+| 4 | **The browser's own exception text was reaching the interface, and §9.2 forbids that shape.** `publicError`'s `default` arm is `error.message || t('The calculation could not be completed.')`. A `DOMException` carries a `message`, so the fallback copy — the one written for end users, in twenty languages — never got a chance, and the sentence a visitor read was Chrome's, untranslated, about a document rather than about their calculation | §9.2, §7.3a |
+| 5 | **The hour in §5.3 needs nothing from the front end, and holding the token in memory does not change it.** `upsert_submission` takes the expiry itself: a token whose `token_expires_at` has passed has its row's column severed and a fresh UUID4 minted, which the response carries back and `response.token || state.token` adopts. That is the same outcome for a token held in `sessionStorage` as for one held only in memory — so the question of how long a refused-storage visitor can keep theirs is answered by the server, not by the browser | §5.3 |
+| 6 | **`storeToken` ignores a falsy token rather than storing one.** Without that guard the key would hold the four characters `null`, and `state.js`'s module-scope read would hand them back as a live token on the next page load | §7.2a |
+| 7 | **`tests/web/test_blocked_storage.py`, thirteen cases, of which four pass on `origin/main`.** Two of those four are the **premise** — the calculator does start when storage is refused, which `state.js`'s guarded read is what makes true and which every other case would otherwise be assuming. The other two are the **controls**: the token is still written when the browser allows it, at both call sites. Deleting the two writes outright would satisfy every refusal case in the file and nothing else, so those two are what separate a fix from a deletion; the mutation `store-nothing` is in the matrix for that reason and fails exactly them | §0 |
+| 8 | **Both refusals are measured, because they are different.** `setItem` throwing while reads work is the quota and Safari's historical private mode; the `sessionStorage` property throwing on access is what the HTML specification prescribes for a user agent configured not to let a page persist data, which is the setting Chrome and Firefox expose as blocking site data. Every case runs under both | §0 |
+| 9 | No API field, request shape, response shape or fixture changes. Steps one and two of §0's three-step rule, not step three. The owner notifies the team | §0 |
+
+**Not fixed here, and it is a decision rather than an oversight.** With the write refused the visitor keeps working and loses only the reload-restore — the degradation `writeSnapshot` has always had for the answers — and **nothing tells them so**. A visitor part-way through a multi-entry submission who reloads loses all of it and has no way to know their browser is the reason. Saying so costs a string in **all twenty catalogues**: `api.i18n.Catalogue.gettext` raises where the browser's `t()` falls back, so a sentence coined for the PDF answers 500 to every non-English download until every catalogue carries it, and a new character may need `recut_cjk_subsets.py`. The detection is free — `state.js`'s existing `try` already knows the answer — and the notice is its own change.
 ### v1.113 — 2026-10-11 (a cleared calculation came back when its response landed; affects B, C and D)
 
 **This is one of four fixes that arrived together as a single pull request and are landing separately.** A tonnes allocation compared in the wrong unit is **v1.111** and a retired `unit_preset` dropping a destination row off the wire is **v1.112**; the fourth — a blocked `sessionStorage` discarding a successful result — **has no entry because it is not fixed anywhere yet**, and the original pull request stays open for it. Nothing here depends on any of the three. The diagnosis of all four is rhua798's.

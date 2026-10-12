@@ -27,6 +27,37 @@ const storedToken = (() => {
   }
 })()
 
+/**
+ * Keep the dedup token across a reload **when the browser allows it**.
+ *
+ * **The write, given the treatment the read above has had all along.** `storedToken`
+ * is in a `try` because a browser may refuse to hand `sessionStorage` over at all; the
+ * two writes this replaces were bare, and both of them sat inside the `try` that reports
+ * *the calculation failed*. So a refusal turned a calculation the API had already
+ * persisted (§2.3, §5.3: one call calculates and stores) into an error message — and
+ * since a `DOMException` carries a `message`, `publicError`'s default rendered the
+ * browser's own words at the visitor instead of the copy written for them (§9.2).
+ *
+ * **Losing the write is not losing the token.** `state.token` is where the live value
+ * lives and `submissionPayload` reads it from there; this copy exists only to survive a
+ * reload, which is the same scope `sessionStorage` has always had — per tab, gone when
+ * the tab closes. A visitor whose browser refuses site data therefore keeps working
+ * normally and loses the restore, exactly as `writeSnapshot` has always behaved for the
+ * answers. **What this cannot do is tell them so**; that notice needs a string in all
+ * twenty catalogues and is its own change.
+ *
+ * @param {string|null|undefined} token The token to persist; a falsy value is a no-op.
+ */
+export function storeToken(token) {
+  if (!token) return
+  try {
+    sessionStorage.setItem('kaiCalculatorToken', token)
+  } catch {
+    // Private window, blocked site data, or the quota. The calculation stands, the
+    // result stands, and only the reload-restore is lost.
+  }
+}
+
 export const state = {
   taxonomy: null,
   token: storedToken,

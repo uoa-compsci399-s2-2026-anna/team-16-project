@@ -103,6 +103,13 @@ NOT_A_BROWSER_SUITE = {
         "unit two numbers are compared in, so nothing is served and no page is "
         "opened. `updateLine`'s half of the same rule needs a real keystroke "
         "and lives in `test_card_folding_browser.py`",
+    "test_blocked_storage.py":
+        "runs `state.js`, `calculator.js` and `improvement.js` under Node against "
+        "a `sessionStorage` double that refuses, in the two ways a browser "
+        "actually refuses - `setItem` throwing, and the property itself throwing "
+        "on access. A served page cannot be put into either state from a test, "
+        "and the subject is which `catch` a refusal lands in rather than anything "
+        "that is drawn",
     "test_class_rules.py":
         "reads `web/*.html`, `web/js/*.js` and `web/css/*.css` off disk and "
         "compares the class names one side emits with the ones the other "

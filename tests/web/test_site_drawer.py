@@ -352,6 +352,147 @@ def test_the_header_navigation_is_drawn_on_the_introduction_and_nowhere_else(bro
         context.close()
 
 
+_CONTRAST = """
+(el) => {
+  const parse = s => s.match(/[\\d.]+/g).slice(0, 3).map(Number);
+  const lin = c => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+  const lum = ([r, g, b]) => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+  // The nearest ancestor that actually paints. A transparent background is not a
+  // ground, and reading one would make every ratio here a comparison with black.
+  let ground = el, paint = null;
+  while (ground) {
+    const bg = getComputedStyle(ground).backgroundColor;
+    if (bg && !/rgba\\(0, 0, 0, 0\\)|transparent/.test(bg)) { paint = bg; break; }
+    ground = ground.parentElement;
+  }
+  const a = lum(parse(getComputedStyle(el).color));
+  const b = lum(parse(paint || 'rgb(255, 255, 255)'));
+  const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  return {text: el.textContent.trim(), colour: getComputedStyle(el).color,
+          ground: paint, ratio: Math.round(ratio * 100) / 100};
+}
+"""
+
+
+@pytest.mark.parametrize("path", PAGES)
+def test_every_page_draws_its_header_navigation_and_its_links_can_be_read(browser, path):
+    """All three pages, drawn and legible, measured rather than read off the file.
+
+    **Two mutations survived everything in this repository before this case existed**,
+    and both are the shape this module's own docstring is about -- an element that is
+    in the document and does nothing for anyone.
+
+    The first is a selector. `styles.css` hides this block on the calculator's wizard
+    screens with `:not(.intro-header)`, and `.site-header` on `stats.html` and
+    `methodology.html` matches that too: drop the `.calculator-page` scope and the
+    navigation disappears from both content pages. Nothing noticed.
+    `test_the_content_pages_translate_their_own_prose` reads these three labels and
+    stayed green, because `innerText` falls back to `textContent` on an element that is
+    not rendered -- so it reports the right words about a block nobody can see.
+
+    The second is colour. The links are white on the introduction screen's Kale ground
+    and Kale on the content pages' white one; delete either rule and they are drawn in
+    the other page's colour, which on `index.html` is `#003223` on `#003223`. Every
+    geometric assertion in this file passes through that, including
+    `elementFromPoint`, because an invisible element still takes the press.
+
+    **A ratio against the painted ground, not against the declared one.** The nearest
+    ancestor with a background that is not transparent is the one the glyphs are read
+    against; walking up to `<body>` and believing its colour is how a "white on white"
+    reads as 21:1. 4.5 is §7.6's floor for body text, and the mark on the current page
+    is held to it as well -- Beetroot on white and Pea on Kale were both chosen for
+    this row and both clear it with room.
+    """
+    context, page = _open_page(browser, path, width=1278, height=983)
+    try:
+        nav = page.locator(".site-header .public-nav")
+        assert nav.count() == 1, f"{path}: no header navigation in the document"
+        assert nav.is_visible(), (
+            f"{path}: the header navigation is in the document and not drawn. On the "
+            f"content pages it is the only navigation that does not need opening"
+        )
+        assert page.get_attribute(".site-header .public-nav", "aria-label"), (
+            f"{path}: the header navigation landmark has no accessible name, so it and "
+            f"the drawer's are two unnamed `navigation` landmarks on one page"
+        )
+        links = page.eval_on_selector_all(
+            ".site-header .public-nav a",
+            """els => els.map(el => {
+                 const b = el.getBoundingClientRect();
+                 const hit = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2);
+                 return {text: el.textContent.trim(), href: el.getAttribute('href'),
+                         reaches: hit === el || el.contains(hit)};
+               })""",
+        )
+        assert [link["href"] for link in links] == [
+            "./index.html",
+            "./stats.html",
+            "./methodology.html",
+        ], f"{path}: {links}"
+        unreachable = [link for link in links if not link["reaches"]]
+        assert not unreachable, f"{path}: a click at these links' own centres lands elsewhere: {unreachable}"
+
+        measured = [
+            page.eval_on_selector(f'.site-header .public-nav a[href$="{href}"]', _CONTRAST)
+            for href in ("index.html", "stats.html", "methodology.html")
+        ]
+        faint = [m for m in measured if m["ratio"] < 4.5]
+        assert not faint, (
+            f"{path}: these links are under §7.6's 4.5:1 against the ground they are "
+            f"painted on: {faint}"
+        )
+    finally:
+        context.close()
+
+
+@pytest.mark.parametrize("width", [1000, 1050])
+@pytest.mark.parametrize("lang", ["en", "ml"])
+def test_the_narrow_desktop_gives_the_navigation_a_row_rather_than_a_column(browser, width, lang):
+    """Between 1000px and 1100px the links take the full width, on one line.
+
+    **The rule this measures is the only thing in the change that is about looks**,
+    and it survived the whole suite without this case. The single-row header needs
+    330 + 292 + 314 and three 24px gaps inside `100vw - 2 * clamp(20px, 2.7vw, 56px)`:
+    1062px in English. Below that the navigation is the one track that can give, and
+    what it does is wrap -- at 1000px it measured 215px wide and 92px tall, two lines
+    pressed against the wordmark with the chooser 100px clear on the other side.
+
+    So on this screen the full-width row starts at 1100px rather than the 1000px the
+    rest of the site uses. Both halves are asserted: **one line** is what the rule
+    buys, and **the full width** is where it has to come from, since a nav that is
+    merely one line could be one line in a column that fits nothing else.
+
+    Malayalam is here because it is the one language this does not rescue at every
+    width -- its three links are 531px and take two lines until about 1290px -- and
+    531px fits a full row at 1000px perfectly well. If the rule ever stops giving the
+    whole width, this is the parameter that says so first.
+    """
+    context, page = _open_page(browser, f"/index.html?lang={lang}", width=width, height=900)
+    try:
+        box = page.evaluate(
+            """() => {
+                 const nav = document.querySelector('.site-header .public-nav');
+                 const inner = document.querySelector('.header-inner');
+                 const n = nav.getBoundingClientRect(), i = inner.getBoundingClientRect();
+                 return {h: Math.round(n.height), w: Math.round(n.width),
+                         inner: Math.round(i.width),
+                         line: Math.round(nav.querySelector('a').getBoundingClientRect().height)};
+               }"""
+        )
+        assert box["h"] == box["line"], (
+            f"at {width}px in {lang} the three links are {box['h']}px tall against a "
+            f"{box['line']}px link, so they have wrapped onto {box['h'] // box['line']} "
+            f"lines in a column too narrow for them"
+        )
+        assert box["w"] > box["inner"] * 0.6, (
+            f"at {width}px in {lang} the navigation is {box['w']}px inside a "
+            f"{box['inner']}px header, so it is still sharing a row rather than taking "
+            f"one of its own"
+        )
+    finally:
+        context.close()
+
+
 @pytest.mark.parametrize("width,height", [(1278, 983), (1100, 900), (938, 898), (390, 700), (320, 700)])
 def test_the_header_navigation_and_the_clear_button_never_share_a_place(browser, width, height):
     """Both are drawn on the introduction screen, and they must not be stacked.
@@ -409,6 +550,15 @@ def test_the_header_navigation_and_the_clear_button_never_share_a_place(browser,
                      return {text: a.textContent.trim(),
                              reaches: hit === a || a.contains(hit)};
                    }),
+                   // **The image, not the button that holds it.** `.brand` is bounded
+                   // by its grid track; `.intro-header .brand img` is a fixed 330px
+                   // and simply paints past it when the track is narrower, which is
+                   // what a `minmax(0, 1fr)` brand track does here once the Clear
+                   // button takes its share of the row. `elementFromPoint` cannot
+                   // report it - the nav is later in the DOM and paints on top, so
+                   // every link still answers for itself while the wordmark is drawn
+                   // underneath them.
+                   wordmark: box(document.getElementById('brand-logo')),
                  };
                }"""
         )
@@ -431,6 +581,18 @@ def test_the_header_navigation_and_the_clear_button_never_share_a_place(browser,
         assert not unreachable, (
             f"at {width}x{height} a click at the centre of these links lands on "
             f"something else: {unreachable}"
+        )
+        mark = seen["wordmark"]
+        painted_over = not (
+            mark["x"] + mark["w"] <= nav["x"]
+            or nav["x"] + nav["w"] <= mark["x"]
+            or mark["y"] + mark["h"] <= nav["y"]
+            or nav["y"] + nav["h"] <= mark["y"]
+        )
+        assert not painted_over, (
+            f"at {width}x{height} the wordmark {mark} is painted into the header "
+            f"navigation {nav}. The image does not shrink, so its track has to be "
+            f"`auto` rather than a `1fr` that can lose"
         )
     finally:
         context.close()

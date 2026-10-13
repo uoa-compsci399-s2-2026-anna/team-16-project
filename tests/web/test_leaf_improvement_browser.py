@@ -597,3 +597,22 @@ def test_a_leafs_card_states_its_own_allocation_and_never_the_panels(page):
     assert _card_state(first) == {
         "strayed": True, "total": "100.00%", "state": "incomplete", "word": "Incomplete",
     }, "the re-rendered card disagrees with what the same card said while being typed into"
+
+    #: **A keystroke patches the card it belongs to, and this is the case that says so.**
+    #: Everything above types into leaf one, so a live path that looked up leaf ZERO
+    #: whatever control was being edited would be indistinguishable from the fixed one --
+    #: the mutation matrix found exactly that hole and nothing in this file noticed it.
+    #: The two cards are put on different totals first, so the figure printed in the strip
+    #: is a second witness beside the badge rather than a number both cards happen to share.
+    first.locator('.percentage-input input[type="number"]').nth(1).fill("0")
+    page.wait_for_timeout(120)
+    box.fill("60")
+    page.wait_for_timeout(120)
+    second.locator('.percentage-input input[type="number"]').first.fill("100")
+    page.wait_for_timeout(150)
+    assert _card_state(second) == {
+        "strayed": False, "total": "100.00%", "state": "complete", "word": "Complete",
+    }, "typing into leaf two did not bring leaf two's own card up to date"
+    assert _card_state(first) == {
+        "strayed": True, "total": "60.00%", "state": "incomplete", "word": "Incomplete",
+    }, "leaf one's card moved when the keystroke belonged to leaf two"

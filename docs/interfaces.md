@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-10-12 (v1.116)"
+date: "2026-10-14 (v1.117)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,31 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.117 — 2026-10-14 (a card in the improvement panel stated the whole panel's allocation, not its own; affects C and D)
+
+**On a forked chain, a food driven to exactly `100.00%` was drawn as an error and badged *Incomplete*.** The strip printed `100.00%`, the ground behind it was Beetroot, and the word above it said the card was unfinished — three statements about one card, two of them wrong, with nothing on screen to say which to believe. It held for as long as any **other** food on the panel was untouched, so on a chain of three leaves two cards carried a third card's state.
+
+Two separate defects produce that one symptom, and both are fixed here.
+
+**The strip was painted from the whole panel's answer.** `updateImprovementInput` toggled `.improvement-total.invalid` on `Boolean(improvementValidation(state))`, and that function loops every leaf and returns the **first** problem it finds. The per-leaf rules already existed — v1.55 made every rule per leaf — but they were trapped inside that loop with no way to ask them about one leaf, so the only question a card could reach was *can the whole submission be sent?*
+
+They are `leafAllocationProblem` now, and `improvementValidation` is a loop over it. The rules, their order and their sentences are unchanged; what changes is that one leaf can be asked about itself.
+
+**The badge was never rewritten at all.** That path patches the DOM instead of calling `setState`, because a re-render takes the caret out of the box mid-number — so no subscriber fires, nothing re-renders after a keystroke, and a badge drawn once when the panel opened kept that word for the rest of the visit. It only ever appeared to work because folding a card re-renders. §7.3a item 8 gave step 4 `updateCardBadges` for exactly this and stated the rule it breaks: *a badge that moves only when something else re-renders is a promise about a card the visitor has just finished filling in.* Step 5 never got one.
+
+**What does not change, deliberately.** Compare Impact and the panel's inline sentence are about the submission and still ask `improvementValidation`. A card being honest about itself must not make the button permissive about everything else.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`leafAllocationProblem(context, leaf, index)` is the only copy of the per-leaf allocation rules** and returns `''` or the sentence. `improvementValidation(state)` keeps its signature — `tests/web/test_retired_unit_preset.py` imports and calls it — and is now `firstProblem(allocationContext(state))`, the first leaf's problem in submission order | §7.3a |
+| 2 | **`allocationContext(state)` gathers what every rule reads** (presets, leaves, allocations, the blank/range sentence, the food-naming wrapper) so the panel-wide question and the per-card question cannot answer about different presets, a different unit or a different wording of one refusal. `updateImprovementInput` builds exactly one per keystroke, where the old path built one implicitly for every leaf on the panel | §7.3a |
+| 3 | **`leafCardState(context, leaf, index)` returns `{total, problem, settled, strayed}`** and is the single source of both things a card says about itself. The renderer and the keystroke path both read it, so the first paint and every later rewrite state it identically | §7.3a |
+| 4 | **The badge is live on keystroke on step 5 too.** `updateImprovementInput` rewrites `[data-card-status]` in place, found through `[data-improvement-leaf-panel]` rather than by index, mirroring `updateCardBadges`. A single-leaf panel draws no card and so has no badge to rewrite | §7.3a, §7.2 |
+| 5 | **The badge asks the question Compare Impact asks, which is stricter than what it replaced.** It was `Math.abs(total - 100) <= 0.01`; it is `!leafAllocationProblem(...)`. A card whose boxes sum to 100 with one of them left blank read *Complete* while the button beside it was disabled, and now reads *Incomplete* — the same rule steps 3 and 4 are held to | §7.3a |
+| 6 | **`strayed` keeps a `Boolean(total)` guard, and that is a decision.** A panel that has just opened sits at 0% on every card, which is a problem in the sense that it cannot be sent; painting all of it as an error before the visitor has touched anything would be a worse statement than the badge's. Untouched is not wrong, touched and unfinished is | §7.6 |
+| 7 | **Nothing on the wire moves.** No endpoint, no field, no request or response shape, no fixture, no schema, and all thirteen golden cases are byte-identical — `state.improvedAllocations` and `improvedLines` are untouched. **No catalogue key is added**: every sentence this reaches was already in all twenty, so §7.7's `Catalogue.gettext` trap and the CJK subsets are not in play. Step one and step two of §0's three-step rule, not step three; the owner notifies the team | §0 |
+| 8 | **The new case carries a witness.** `render()` replaces `main.innerHTML` wholesale, so an attribute written onto the badge before the fill and still there afterwards is proof the node was rewritten in place rather than redrawn. Without it, a `setState` slipped into this path later would make every assertion in that test pass for the wrong reason | §0 |
 
 ### v1.116 — 2026-10-12 (the site navigation moves from the middle of the hero into the header; affects C and D)
 
@@ -6046,6 +6071,12 @@ export function stepNav({step, back, backLabel = 'Back', label = 'Continue',
 > step 3's Continue is never disabled, so the badge is the only thing on the screen that
 > says, before the press, whether a card would be refused.
 >
+> **The improvement panel's cards joined them in v1.117**, through `updateImprovementInput`
+> rather than through `updateCardBadges` — that helper walks `draftLeaves()` and asks
+> `leafSettled`, which are step 3 and step 4's questions. Step 5's is
+> `leafAllocationProblem`. Until then step 5's badge was written once at render time and
+> never again, so it held whatever it said when the panel opened.
+>
 > **`.step-card` is the one element holding the card's ground** and carries no
 > `backdrop-filter`, no `transform` and no positioned descendant of its own, so #143's
 > frosted-glass token attaches there without re-laying out the card. Note what that makes
@@ -6381,7 +6412,12 @@ export function openImprovement(state);
  *  Current". */
 export function resetImprovement(state);
 /** Keystroke fast path: mirrors slider and number input, updates the running
- *  total and inline error, enables/disables Compare — all without setState. */
+ *  total and inline error, enables/disables Compare — all without setState.
+ *  **It also rewrites this leaf's card badge and its total strip** (v1.117), from
+ *  `leafCardState` and about this leaf alone. Nothing else was going to: no
+ *  setState means no re-render, so a badge drawn when the panel opened kept its
+ *  word for the visit, and the strip was being painted from the whole panel's
+ *  answer — a card at exactly 100% was an error because another one was. */
 export function updateImprovementInput(control, state);
 export function allocationTotal(allocations);
 /** '' when valid. **Every rule is per leaf since v1.55**: each leaf's own sliders
@@ -6390,7 +6426,14 @@ export function allocationTotal(allocations);
  *  nothing about whether any individual entry conserves its own mass, and it is the
  *  entry the API refuses. The message names the food when there is more than one
  *  leaf (`%(food)s: %(message)s`), because "allocations must total 100%" pointing at
- *  no particular card is unactionable on a five-column panel. */
+ *  no particular card is unactionable on a five-column panel.
+ *  **The rules themselves are `leafAllocationProblem(context, leaf, index)` since
+ *  v1.117** and this is `firstProblem(allocationContext(state))` over them — the
+ *  first leaf's problem in submission order. Module-private and worth knowing:
+ *  `allocationContext(state)` gathers what every rule reads, and
+ *  `leafCardState(context, leaf, index)` is `{total, problem, settled, strayed}`,
+ *  the one source of both things a card says about itself. The signature is kept
+ *  because `tests/web/test_retired_unit_preset.py` imports and calls it. */
 export function improvementValidation(state);         // '' when valid
 /** @param {object} state
  *  @param {(e: Error & {code?: string}) => string} [toPublicMessage]

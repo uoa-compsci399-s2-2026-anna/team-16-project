@@ -519,15 +519,12 @@ def test_a_leafs_card_states_its_own_allocation_and_never_the_panels(page):
     )
     assert names[0] != names[1], names
 
-    box = page.evaluate(
-        """() => {
-             const el = [...document.querySelectorAll('.percentage-input [data-improvement-code]')]
-               .find(e => e.tagName === 'INPUT' && e.type === 'number'
-                          && (e.dataset.improvementLeaf ?? '0') === '0');
-             return el ? el.id : null;
-           }"""
-    )
-    assert box, "leaf one has no destination box to type into"
+    #: The number boxes carry no `id` of their own -- only the slider beside each one does
+    #: (`DestinationAllocationRow`) -- so this is addressed through the card it belongs to,
+    #: which is also what keeps the fill on leaf one and off leaf two.
+    boxes = first.locator('.percentage-input input[type="number"]')
+    assert boxes.count() >= 1, "leaf one has no destination box to type into"
+    box = boxes.first
 
     #: The control for "it was not a re-render". `render()` replaces `main.innerHTML`
     #: wholesale, so a badge that survives with this attribute on it is the same node the
@@ -540,14 +537,14 @@ def test_a_leafs_card_states_its_own_allocation_and_never_the_panels(page):
 
     #: Short of 100. This card really is the one that is wrong, and it says so -- the
     #: mutation that makes the strip never paint would pass the 100% case alone.
-    page.fill(f"#{box}", "60")
+    box.fill("60")
     page.wait_for_timeout(150)
     assert _card_state(first) == {
         "strayed": True, "total": "60.00%", "state": "incomplete", "word": "Incomplete",
     }
 
     #: Exactly 100, with leaf two still untouched. This is the screenshot the owner sent.
-    page.fill(f"#{box}", "100")
+    box.fill("100")
     page.wait_for_timeout(150)
     assert _card_state(first) == {
         "strayed": False, "total": "100.00%", "state": "complete", "word": "Complete",
@@ -578,3 +575,25 @@ def test_a_leafs_card_states_its_own_allocation_and_never_the_panels(page):
     assert names[0] not in said, (
         "the panel is still complaining about the food that is finished: %s" % said
     )
+
+    #: **Stricter than the comparison it replaced, and the reason it is.** The badge asks
+    #: `leafAllocationProblem`, which is what Compare Impact asks, so boxes that SUM to 100
+    #: with one of them left blank is not a finished card -- the figure is right and the
+    #: allocation is not answered. The rule it replaced looked only at the total and called
+    #: this *Complete* while the button beside it stayed disabled.
+    first.locator('.percentage-input input[type="number"]').nth(1).fill("")
+    page.wait_for_timeout(150)
+    assert _card_state(first) == {
+        "strayed": True, "total": "100.00%", "state": "incomplete", "word": "Incomplete",
+    }, "a blank destination box was called complete because the rest of the card summed to 100"
+
+    #: **And the first paint agrees with the keystroke.** Folding the card and opening it
+    #: again is a `setState`, so this is the renderer's answer rather than the live path's.
+    #: Both come out of `leafCardState`, which is what makes them one statement instead of
+    #: two that can drift -- and drift is what this whole case is about.
+    for _ in range(2):
+        first.locator('[data-action="toggle-card"]').click()
+        page.wait_for_timeout(150)
+    assert _card_state(first) == {
+        "strayed": True, "total": "100.00%", "state": "incomplete", "word": "Incomplete",
+    }, "the re-rendered card disagrees with what the same card said while being typed into"

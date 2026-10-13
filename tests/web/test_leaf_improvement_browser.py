@@ -458,3 +458,123 @@ def test_one_unit_control_governs_every_row_of_every_leaf(page):
                 f"control says {label!r} - a per-row or per-leaf unit survived, which "
                 "is #74 arriving by another door"
             )
+
+
+def _card_state(panel):
+    """What one leaf's card says about itself: the strip, the figure and the badge."""
+    return panel.evaluate(
+        """panel => ({
+             strayed: panel.querySelector('.improvement-total').classList.contains('invalid'),
+             total: panel.querySelector('.improvement-total strong').textContent.trim(),
+             state: panel.querySelector('[data-card-status]').dataset.state,
+             word: panel.querySelector('[data-card-status-text]').textContent.trim(),
+           })"""
+    )
+
+
+def test_a_leafs_card_states_its_own_allocation_and_never_the_panels(page):
+    """A card at exactly 100% must not be told it is incomplete because another one is.
+
+    **The defect, in one sentence.** The live keystroke path painted the total strip from
+    ``improvementValidation(state)`` -- the whole *panel's* answer -- so a food driven to
+    exactly ``100.00%`` was drawn in Beetroot and badged *Incomplete* for as long as any
+    **other** food on the panel was unfinished. On a forked chain that is every card but
+    the last one finished, and the figure printed inside the strip contradicts both the
+    colour around it and the word above it.
+
+    **And the badge was never rewritten at all.** This path patches the DOM instead of
+    calling ``setState`` -- a re-render would take the caret out of the box mid-number --
+    so nothing re-renders after a keystroke and the badge held whatever it said when the
+    panel first opened. Steps 3 and 4 have ``updateCardBadges`` in ``calculator.js`` for
+    exactly this; step 5 never got one.
+
+    Both halves are measured here, so **nothing between the fill and the assertions may
+    re-render**: the cards are opened before anything is typed, and the witness below
+    fails the test if a re-render is what made the badge correct. Without it a future
+    ``setState`` slipped into this path would make the assertions pass for the wrong
+    reason, which is the failure mode this repository keeps finding.
+
+    **The panel-wide guard has to survive.** Compare Impact is about the submission, not
+    about one card, and must stay disabled with its sentence on screen while leaf two sits
+    at 0%. A fix that made the card honest by making the button permissive would be a
+    worse bug than the one it replaced, so the sentence is asserted to name the food that
+    is actually unfinished -- and not the one that is done.
+    """
+    _forked_chain(page)
+    page.click('[data-action="explore-improvements"]')
+    page.wait_for_selector('[data-action="reset-improvement"]')
+    #: Opened BEFORE anything is typed. A toggle calls `setState` and re-renders, and a
+    #: re-render is precisely what must not be the thing that makes the badge correct.
+    expand_step_cards(page)
+
+    first = page.locator('[data-improvement-leaf-panel="0"]')
+    second = page.locator('[data-improvement-leaf-panel="1"]')
+    assert first.count() == 1 and second.count() == 1, (
+        "the panel did not fork into two cards, so this test cannot measure one against "
+        "the other"
+    )
+    names = page.evaluate(
+        """() => [0, 1].map(i => document.querySelector(
+             `[data-improvement-leaf-panel="${i}"] .step-card__name`).textContent.trim())"""
+    )
+    assert names[0] != names[1], names
+
+    box = page.evaluate(
+        """() => {
+             const el = [...document.querySelectorAll('.percentage-input [data-improvement-code]')]
+               .find(e => e.tagName === 'INPUT' && e.type === 'number'
+                          && (e.dataset.improvementLeaf ?? '0') === '0');
+             return el ? el.id : null;
+           }"""
+    )
+    assert box, "leaf one has no destination box to type into"
+
+    #: The control for "it was not a re-render". `render()` replaces `main.innerHTML`
+    #: wholesale, so a badge that survives with this attribute on it is the same node the
+    #: first paint produced and was rewritten in place.
+    page.evaluate(
+        """() => { document.querySelector(
+             '[data-improvement-leaf-panel="0"] [data-card-status]'
+           ).dataset.witness = 'first-paint' }"""
+    )
+
+    #: Short of 100. This card really is the one that is wrong, and it says so -- the
+    #: mutation that makes the strip never paint would pass the 100% case alone.
+    page.fill(f"#{box}", "60")
+    page.wait_for_timeout(150)
+    assert _card_state(first) == {
+        "strayed": True, "total": "60.00%", "state": "incomplete", "word": "Incomplete",
+    }
+
+    #: Exactly 100, with leaf two still untouched. This is the screenshot the owner sent.
+    page.fill(f"#{box}", "100")
+    page.wait_for_timeout(150)
+    assert _card_state(first) == {
+        "strayed": False, "total": "100.00%", "state": "complete", "word": "Complete",
+    }, "a card holding exactly 100.00% was still being told it was incomplete"
+
+    survived = page.evaluate(
+        """() => document.querySelector(
+             '[data-improvement-leaf-panel="0"] [data-card-status]')?.dataset.witness"""
+    )
+    assert survived == "first-paint", (
+        "the badge is a different node, so the panel re-rendered and this test proves "
+        "nothing about the live keystroke path"
+    )
+
+    #: Leaf two is untouched: 0% is not an error to paint, but it is not complete either.
+    assert _card_state(second) == {
+        "strayed": False, "total": "0.00%", "state": "incomplete", "word": "Incomplete",
+    }
+
+    #: ...and the submission-wide guard is exactly where it was.
+    assert page.locator('[data-action="compare-improvement"]').is_disabled(), (
+        "Compare Impact was enabled while one leaf of the submission was at 0%"
+    )
+    sentence = page.locator("#improvement-inline-error")
+    assert sentence.is_visible()
+    said = sentence.inner_text().strip()
+    assert names[1] in said, (said, names)
+    assert names[0] not in said, (
+        "the panel is still complaining about the food that is finished: %s" % said
+    )

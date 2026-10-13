@@ -13,8 +13,10 @@ build step: the browser runs the files in this directory directly.
 - `methodology.html` — published methodology, factors and provenance
 
 Every page links to the other two through the drawer (`js/drawer.js`), which is on all
-three; `stats.html` and `methodology.html` also carry the header navigation. The
-calculator keeps its own in-page step navigation and reset controls.
+three, and all three also carry the header navigation. `index.html`'s is drawn on the
+introduction screen only - the header row has no space for it on a wizard step, which
+contract §7.7.4 measures - so the drawer is still what carries the site from step one
+onward. The calculator keeps its own in-page step navigation and reset controls.
 
 ### Retired, and why it is still here
 

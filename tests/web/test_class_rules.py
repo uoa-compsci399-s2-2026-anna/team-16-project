@@ -136,14 +136,6 @@ CLASSES_WITH_NO_RULE_OF_THEIR_OWN: dict[str, str] = {
         "says in prose why it waits on the narrower one. Binds if a server error "
         "must ever look unlike a field error."
     ),
-    "calculator-page": (
-        "NAMESPACE on <body>. `.home-page`, `.stats-page` and "
-        "`.methodology-page` each scope their own page's rules; index.html "
-        "carries this one and everything unscoped in styles.css is already the "
-        "calculator, so scoping it would be a prefix that excludes nothing. Kept "
-        "so the convention reads the same on all four pages. Binds the day a rule "
-        "must apply to the calculator and not to the other three."
-    ),
     "contribute-toggle__text": (
         "HOOK, the BEM pair of `.contribute-toggle__mark`. The toggle is a "
         "two-child flex row; only the mark has a box to describe and the text "

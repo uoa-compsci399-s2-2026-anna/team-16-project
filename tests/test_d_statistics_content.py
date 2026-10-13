@@ -289,25 +289,28 @@ def _resolve_local(owner: Path, reference: str, *, allow_image_data: bool = Fals
     return resolved
 
 
-#: The two pages that carry the public navigation in their header. It was three
-#: pages and four links until `home.html` was retired; the calculator has never
-#: been one of them.
+#: The pages that carry the public navigation in their header — all three of them
+#: since v1.116, which is a change of rule and not a relaxation.
 #:
-#: **The calculator is not one of them, and that is a measurement.** Its header
-#: row already carries the language chooser §7.7.4 admitted to it, and its whole
-#: vertical slack on the shortest step at 1278x983 is 32px against the 44px a
-#: touch-target navigation block needs. Both arrangements were measured on a
-#: real build and both broke
+#: **The calculator used to be exempt, and the measurement behind the exemption is
+#: unchanged.** Its header row carries the language chooser §7.7.4 admitted to it, and
+#: its whole vertical slack on the shortest step at 1278x983 is 32px against the 44px a
+#: touch-target navigation block needs. Both arrangements were measured on a real build
+#: and both broke
 #: `tests/web/test_step_navigation.py::test_a_short_step_is_not_floored_by_a_stale_min_height`
-#: — in the header by 37px, in the footer by 26px. The full reasoning, with the
-#: numbers, is in the comment in `web/index.html`.
+#: — in the header by 37px, in the footer by 26px. Those two numbers still hold.
 #:
-#: The exemption is bounded rather than granted: the calculator still has to be
-#: linked from every one of these three, and still has to reach the
-#: documentation page itself. That is what `test_the_calculator_is_reachable…`
-#: below asserts, so "the calculator carries no nav" can never quietly become
-#: "the calculator links nowhere".
-NAVIGATED_PAGES = ("statistics", "documentation")
+#: What changed is which screen draws it. The block is in `index.html`'s header and
+#: `styles.css` shows it on the introduction screen alone, where there is no step to
+#: floor and no sticky step bar competing for the fold; every screen the measurement was
+#: taken on still carries nothing. **So this file's assertions are about the FILE and
+#: the rendered claim is `tests/web/test_site_drawer.py`'s**, which drives a browser and
+#: is where "and it is hidden on the wizard" has to be proved.
+#:
+#: The links the calculator owes are unchanged either way: it must be linked from the
+#: other two and must reach the documentation page itself, which is what
+#: `test_the_calculator_is_reachable…` below asserts.
+NAVIGATED_PAGES = ("calculator", "statistics", "documentation")
 
 
 def test_public_page_relationships_and_accessible_shells():
@@ -342,32 +345,30 @@ def test_public_page_relationships_and_accessible_shells():
             for nav in navs
         ), f"{path.name}: every nav needs an accessible name"
 
-        if role in NAVIGATED_PAGES:
-            assert navs, f"{path.name}: needs the public navigation"
-            assert len(page.matching("a", **{"aria-current": "page"})) == 1
-            linked = _linked_page_names(page)
-            if any(urlsplit(href).path == "/" for href in page.values("a", "href")):
-                linked.add("index.html")
-            missing = expected_links - linked
-            assert not missing, f"{path.name}: public navigation is missing {sorted(missing)}"
-        else:
-            # **This parses the FILE, so it says nothing about the rendered page**,
-            # and since #173 the difference matters: `calculator.js` injects a hero
-            # navigation on the introduction screen that correctly marks
-            # `index.html` as the current page. This assertion stayed green through
-            # that, because a renderer's output is not in the file it reads — which
-            # is worth knowing before anyone reads it as "the calculator marks no
-            # current page". It does, once rendered.
-            #
-            # What it still buys: nothing may be hard-coded into the static HTML,
-            # where it would be a second claim beside the injected one and
-            # unremovable by any state change. `test_site_drawer.py` is what holds
-            # the rendered claim, in a browser.
-            assert not page.matching("a", **{"aria-current": "page"}), (
-                f"{path.name}: carries no public navigation in the file, so nothing "
-                "static may claim to be the current page — the rendered hero nav's "
-                "own mark is asserted by test_site_drawer.py"
-            )
+        # Every page is in `NAVIGATED_PAGES` since v1.116, so there is no second
+        # branch here any more. The one that used to stand in its place asserted
+        # that `index.html` carried NO static `aria-current`, because the only
+        # claim was the one `calculator.js` rendered into the hero and a second
+        # would have been unremovable by any state change. The hero block is gone
+        # and the static mark is the only one, so the rule the calculator is held
+        # to is now the same as the other two: exactly one.
+        #
+        # **This parses the FILE**, which is the whole of what it can say.
+        # Whether the block is drawn, and on which screen, is
+        # `tests/web/test_site_drawer.py`'s, in a browser.
+        assert role in NAVIGATED_PAGES, f"{role} is not covered by this assertion"
+        assert navs, f"{path.name}: needs the public navigation"
+        marks = page.matching("a", **{"aria-current": "page"})
+        assert len(marks) == 1, (
+            f"{path.name}: {len(marks)} links claim to be the current page. One page "
+            "has one current mark, and on the calculator the drawer's self-link is "
+            "deliberately not it"
+        )
+        linked = _linked_page_names(page)
+        if any(urlsplit(href).path == "/" for href in page.values("a", "href")):
+            linked.add("index.html")
+        missing = expected_links - linked
+        assert not missing, f"{path.name}: public navigation is missing {sorted(missing)}"
 
         scripts = page.matching("script")
         assert scripts and any(script["attrs"].get("type") == "module" for script in scripts)

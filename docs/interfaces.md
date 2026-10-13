@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-10-12 (v1.115)"
+date: "2026-10-12 (v1.116)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,44 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.116 — 2026-10-12 (the site navigation moves from the middle of the hero into the header; affects C and D)
+
+**#173 put the three site links in the wrong place, and the team asked for them to be moved.** They were rendered by `calculator.js`'s `introduction()` at the top of `.hero-copy`, between the wordmark and the eyebrow: a row of underlined words floating in the middle of a full-bleed hero, centred on nothing, a long way from where a reader looks for a site's navigation and a long way from where the other two pages keep theirs.
+
+They are in `index.html`'s header now, as the `.public-nav` block `stats.html` and `methodology.html` already carry. All three reachable pages present the same three links in the same place, in the same order, under the same accessible name.
+
+**The measurement that kept a navigation out of this header is unchanged, and is the reason the block is drawn on step −1 only.** §7.7.4's budget stands: a nav in the wizard's header row wraps to a line of its own and grows the header from 92px to 136px, which is the 37px that breaks `test_a_short_step_is_not_floored_by_a_stale_min_height`, and in the footer the same block measured 1009px against a 983px viewport and failed by 26px. The introduction screen is the one screen with no step to floor and no sticky `.step-nav` competing for the fold, so it is the one screen that can carry it. Every screen those numbers were taken on still carries nothing.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **The block is `index.html`'s, not `calculator.js`'s, and it has to be.** `applyToDocument()` runs in exactly two places and neither walks a renderer's output, so the same three links built in JavaScript ship English `aria-label`s in twenty catalogues with nothing failing — which is precisely what #173 did and what v1.101 found by measuring German. Static markup with `data-i18n` is the rule that mechanism already implies, and it is also what puts the links in the first paint rather than after it, the same reason that file ships `intro-header` | §7.3a, §7.7 |
+| 2 | **Drawn on the introduction screen alone**, through `.calculator-page .site-header:not(.intro-header) .public-nav { display: none }` in `styles.css` rather than a branch in `renderChrome()`. **The `.calculator-page` scope is load-bearing**: unscoped, that selector matches `stats.html` and `methodology.html` too and deletes the navigation from both | §7.3a, §7.7.4 |
+| 3 | **`Primary navigation`, the key the other two pages already ask for, and `Main pages` is retired.** v1.101 coined `Main pages` so that the hero block and the drawer would not be two landmarks with one name; reusing the content pages' key keeps that property and gives the whole site one pair of landmark names instead of a third wording unique to this page. **The key leaves all twenty catalogues in both trees** — one line out of each of forty files, nothing else touched, `web/locales/` and `api/assets/locales/` byte-identical by SHA-256 across all 21 files. **No CJK re-cut**: a subset may carry a glyph nothing asks for, and `test_no_character_in_any_catalogue_would_print_as_a_box` is a one-way check | §7.7, §7.7.9 |
+| 4 | **`aria-current="page"` moves from the rendered page into the file, and the rule it serves does not move at all.** `tests/test_d_statistics_content.py` used to assert the calculator carried *no* static mark, because the only claim was the one `introduction()` rendered and a second would have been unremovable by any state change. The rendered one is gone, so `index.html` joins `NAVIGATED_PAGES` and is held to the same count as the other two: **exactly one**. The drawer still carries none, for its own reason | §7.9, §7.3a |
+| 5 | **Two blocks that could never share a page now do, and `styles.css` had placed them on that assumption.** `.public-nav` and `#clear-button` sat in one grid cell at ≥1000px and in one row at ≤560px, on the stated grounds that the button is only on `index.html` and the nav only on the content pages. Measured at 1278px with the button shown: nav at x=599 w=292 and the button at x=790 w=101, both `justify-self: end` against the same right edge, so the button covers *Documentation* and, being later in the DOM, wins the hit test. The button takes a column of its own at ≥1000px and row 4 at ≤560px, **under `.intro-header`**, so no screen of the wizard gains a row | §7.7.4 |
+| 6 | **It is a reachable pair, checked before committing rather than after.** `backTarget(0)` is `-1`, so one Back from step 1 lands the visitor on the introduction with the sector they chose still in `state`, `hasData()` true and `renderChrome()` unhiding the button. `test_the_header_navigation_and_the_clear_button_never_share_a_place` walks exactly that route at five viewports | §7.3a |
+| 7 | **The brand's track is `auto` on this header and `minmax(0, 1fr)` everywhere else, because `.intro-header .brand img` is a fixed 330px that does not shrink.** A `1fr` track that loses the fight does not squeeze the image, it is simply narrower than it: measured at 1000px in English the track came to 277px with the image still 330px wide, reaching 29px into the links beside it, and 14px in German. The slack goes to the navigation instead, which is a wrapping flex row and takes a second line | §7.7.4 |
+| 8 | **Between 1000px and 1100px the single row is the wrong shape and the navigation gets a row of its own, 100px earlier than the rest of the site.** One row needs 330 + 292 + 314 and three 24px gaps inside `100vw − 2 × clamp(20px, 2.7vw, 56px)`: **1062px in English**. Below that the nav is the only track that can give, and at 1000px it measured 215px wide and 92px tall — two lines pressed against the wordmark with the chooser 100px clear on the other side. **Malayalam's three links are 531px and still wrap to two lines until about 1290px, and that is accepted rather than fixed**: a breakpoint wide enough for the widest of the twenty gives the other nineteen a second row they do not need | §7.7.4 |
+| 9 | **`calculator-page` leaves `CLASSES_WITH_NO_RULE_OF_THEIR_OWN`, and its own entry is what sent it.** That entry said the class would bind "the day a rule must apply to the calculator and not to the other three"; item 2's scope is that rule. `test_every_declared_exemption_still_needs_one` failed naming it, which is the register working rather than a nuisance | §7.6 |
+| 10 | **Nothing replaces the links on the hero.** A second copy on that screen would be a third `navigation` landmark on a page that already has two | §7.3a |
+| 11 | **No API field, request shape, response shape or fixture changes.** §0's step 3 is a no-op; step 2 is the owner's | §0 |
+
+**Measured on the rebuilt image, at the viewports the suite drives and the two the owner demonstrates on.** Introduction screen, English, no data:
+
+| width | header | the three links |
+| ---: | ---: | --- |
+| 1920 | 92px | one row, beside the chooser |
+| 1278 | 92px | one row |
+| 1100 | 92px | one row |
+| 1050 | 144px | its own row, right-aligned |
+| 938 | 136px | its own row |
+| 390 | 174px | its own row, reading-start |
+| 320 | 220px | two lines |
+
+And the control that matters more than any of them: on step 1 the header is **92px at both 1278 and 938, the same as before this revision**, the block reports `display: none`, and removing the element from the document changes the header's height by **0px**.
+
+**Two things this does not do.** The redundancy v1.101 named is still there — two `navigation` landmarks to the same three links, the header's and the drawer's — and removing one is a design decision the owner has not been asked for; they are at least named with the same pair as everywhere else now. And **`main.js:139` still binds the brand button to `resetCalculator()` with no confirmation**, while its own `aria-label` reads *"Clear calculator data and return to the introduction"*: one click destroys every answer. Carried from v1.113 and v1.115, untouched here.
 
 ### v1.115 — 2026-10-12 (a browser that refuses to keep the answers now says so; affects C and D)
 
@@ -6886,7 +6924,7 @@ The header row is already 93px tall and carries a 67px logo, so a 44px control f
 
 **Every header item is placed explicitly, at every breakpoint, and that is not decoration.** The grid once relied on auto-placement, which made the order of the areas a consequence of DOM order — and the chooser's DOM position is written in JavaScript, in `installLanguageChooser`. The two were changed together in one word and the header moved with no CSS having been touched. `grid-column`/`grid-row` for each item is what makes the arrangement a decision in the stylesheet rather than an emergent property of a JS module.
 
-**The calculator's "clear all data" action is a header item and is placed like one** (v1.47 item 4). Two items naming a single grid cell are **stacked**, not reflowed side by side: at 560px and below the header is one column, and putting the button in the brand's cell with `justify-self: end` slid the two together until they overlapped — 59px at 320px in Spanish, with the button later in the DOM and so winning the hit test. It takes row 3 there instead. That is free: `#clear-button` appears only on `index.html` and `.public-nav` only on the content pages, so they never contend for the same row.
+**The calculator's "clear all data" action is a header item and is placed like one** (v1.47 item 4). Two items naming a single grid cell are **stacked**, not reflowed side by side: at 560px and below the header is one column, and putting the button in the brand's cell with `justify-self: end` slid the two together until they overlapped — 59px at 320px in Spanish, with the button later in the DOM and so winning the hit test. It takes row 3 there instead. **That was free until v1.116 and is not any more**: the sentence that stood here said "`#clear-button` appears only on `index.html` and `.public-nav` only on the content pages, so they never contend for the same row", and the navigation is in `index.html`'s header now. On the introduction screen — the one screen that draws it, and reachable with data by a single Back from step 1, since `backTarget(0)` is `-1` — the two would be stacked in exactly the way this paragraph describes, with the button over the links this time. The button takes a column of its own at ≥1000px and row 4 at ≤560px, under `.intro-header` so that no screen of the wizard gains a row from it.
 
 **On the panel it is a floating capsule at the top inline-end, not a strip** (v1.34, amending v1.27 item 9; the edge moved in v1.47 with the calculator's). The panel has no above-the-fold budget to protect, so the capsule is not squeezed into an existing row the way the calculator's is; but a full-bleed white band with a rule under it is chrome the panel grew in order to hold one small control, and it is what made the chooser read as debug scaffolding. It floats on the page's own ground instead.
 
@@ -7110,7 +7148,7 @@ The second is a **plaintext bypass of the first**, and it serves `/admin` in the
 
 The drawer is **markup first and script second**, and the split is the design rather than an implementation detail.
 
-**Three destinations since v1.45.** `Home` was a fourth until `home.html` was retired; a retired page is not a destination. The row for the page the reader is already on stays, as a link to itself, so this block is byte-identical on `index.html`, `stats.html` and `methodology.html` — a reader who has opened it once knows where every row will be. It carries no `aria-current`: the two content pages mark the current page in their header navigation, and **the introduction screen's hero navigation marks it since #173** — so a claim here would give one of those pages two current marks. The clause this replaced read "the calculator deliberately marks none", which was true until #173 merged and is corrected in v1.101 rather than left standing; what is unchanged is the rule it was serving, which is **one mark per page**.
+**Three destinations since v1.45.** `Home` was a fourth until `home.html` was retired; a retired page is not a destination. The row for the page the reader is already on stays, as a link to itself, so this block is byte-identical on `index.html`, `stats.html` and `methodology.html` — a reader who has opened it once knows where every row will be. It carries no `aria-current`: **all three pages now mark the current page in their header navigation** — so a claim here would give every one of them two current marks. This clause has been corrected twice and both corrections are kept, because the rule underneath them never moved. It read "the calculator deliberately marks none", true until #173 merged a hero navigation that did; v1.101 corrected it to "the introduction screen's hero navigation marks it", true until v1.116 moved those links into `index.html`'s header. The rule each version was serving is **one mark per page**.
 
 ```html
 <details class="site-drawer" id="site-drawer">
@@ -7137,7 +7175,7 @@ The drawer is **markup first and script second**, and the split is the design ra
 export function installDrawer(root = document)
 ```
 
-**The block above is identical on all three reachable pages.** It was the whole of the navigation on `index.html` until #173, which adds a second, always-visible row of the same three links inside the introduction screen's hero — rendered by `calculator.js` at `state.step === -1` only, so the 93px header budget this section measures is untouched. `index.html` still carries no header nav (§7.3a records the measurement), and the drawer is still the only navigation on every screen after the first. It was four pages and four rows until v1.45 retired `home.html`. It sits between the skip link and `<header>`, so it is early in the tab order and before the language bar `installLanguageChooser` inserts.
+**The block above is identical on all three reachable pages.** It was the whole of the navigation on `index.html` until #173, which added a second, always-visible row of the same three links inside the introduction screen's hero; **v1.116 moved that row into the header**, where it is the `.public-nav` block the two content pages carry and is drawn at `state.step === -1` only. Either way the 93px header budget this section measures is untouched on every screen of the wizard, and the drawer is still the only navigation on every screen after the first. It was four pages and four rows until v1.45 retired `home.html`. It sits between the skip link and `<header>`, so it is early in the tab order and before the language bar `installLanguageChooser` inserts.
 
 > **It overlays; it never compresses.** `position: fixed`, `inset-inline-start: 0`, vertically centred, `z-index: 40`. Horizontal space is the binding constraint on this interface: the owner's laptop is a **938px** CSS viewport, already below the 960 breakpoint, and a destination row on step 4 has a **544px** floor — a 240px sidebar in flow would leave 698px. `tests/web/test_site_drawer.py::test_opening_the_drawer_moves_nothing_on_the_page` measures `#main-content`'s box and the document's scroll width before and after opening, at 1278×983, 938×898, 390×700 and 320px.
 
@@ -7157,7 +7195,7 @@ export function installDrawer(root = document)
 
 > **Motion is a keyframe animation, not a transition, and `prefers-reduced-motion` removes it.** A closed `<details>` does not render its content, so there is nothing for a transition to run on; the recipes that manage it need `::details-content`, `@starting-style` and `allow-discrete`, which is one engine today. An animation runs the moment the panel becomes rendered, in every engine, and the close is instant — which is what `<details>` does everywhere anyway. **The reduced-motion override lives with the drawer's own rules and not in the stylesheet's general `prefers-reduced-motion` block**: the selectors have equal specificity, so source order decides, and the general block sits earlier in the file. Written there it lost, and the panel still sprang in from the edge of the screen for exactly the readers the rule exists for.
 
-**Tests.** `tests/web/test_site_drawer.py`, nine tests in a browser. A closed `<details>` keeps a box, so `count()`, `bounding_box()` and `is_visible()` can all answer yes about a panel nobody can touch — every reachability assertion here is `document.elementFromPoint`, which is the browser's own answer to "what would a click land on". The scripting-off case drives a real click through Playwright's actionability checks and asserts the navigation happened.
+**Tests.** `tests/web/test_site_drawer.py`, sixteen test functions in a browser and 45 cases — eleven of the drawer itself and five of the header navigation beside it, which live here because *without opening the drawer* is the claim they share. The count in this line read "nine" until v1.116 and had been twelve since v1.101. A closed `<details>` keeps a box, so `count()`, `bounding_box()` and `is_visible()` can all answer yes about a panel nobody can touch — every reachability assertion here is `document.elementFromPoint`, which is the browser's own answer to "what would a click land on". The scripting-off case drives a real click through Playwright's actionability checks and asserts the navigation happened.
 
 ---
 

@@ -1,4 +1,4 @@
-import { escapeHtml, formatNumber, stepNav } from './view.js'
+import { CROSS_PATH, escapeHtml, formatNumber, ICON_BOX, stepNav } from './view.js'
 import { t, activeLanguage, isMachineTranslated, MACHINE_TRANSLATION_NOTICE } from './i18n.js'
 import { entryTotal, isPresetUnit, kgToTonnes, presetUnitCode, rowKgString } from './units.js'
 import { ComparisonResults, ImprovementScenario } from './improvement.js'
@@ -2343,7 +2343,15 @@ export function renderResults(state) {
   //: tip: it tells a reader the feature is there, and gets out of the way. The
   //: `<aside>` keeps the name on `aria-label` rather than on an `<h2>`, because a
   //: landmark's name is not a tab stop and so is not one of the three.
-  const improvementTip = state.resultsImprovementTipDismissed ? '' : `<aside class="results-improvement-tip" id="results-improvement-tip" aria-label="${escapeHtml(t('Explore Improvements'))}"><p>${escapeHtml(t('Curious what a different allocation would do? Scroll down to Explore Improvements and try one.'))}</p><button class="results-improvement-tip__dismiss" type="button" data-action="dismiss-results-improvement-tip" aria-label="${escapeHtml(t('Dismiss'))}"><span aria-hidden="true">×</span></button></aside>`
+  //:
+  //: The dismiss icon is an inline `<svg>` rather than the `×` U+00D7 it was. Its circle
+  //: is a 44px `inline-flex` box with `align-items: center`, which centred the glyph's
+  //: *line box* exactly and still drew the cross 2.8px low in the disc: in Kumbh Sans
+  //: the baseline sits about 80% of the way down the em, so the centre of a line box is
+  //: 0.37em above the baseline while `×`'s ink is centred 0.245em above it — a gap of
+  //: 0.125em, which at this control's 1.4rem is 2.8px. `CROSS_PATH` has the whole
+  //: measurement and the reason an offset was not the answer.
+  const improvementTip = state.resultsImprovementTipDismissed ? '' : `<aside class="results-improvement-tip" id="results-improvement-tip" aria-label="${escapeHtml(t('Explore Improvements'))}"><p>${escapeHtml(t('Curious what a different allocation would do? Scroll down to Explore Improvements and try one.'))}</p><button class="results-improvement-tip__dismiss" type="button" data-action="dismiss-results-improvement-tip" aria-label="${escapeHtml(t('Dismiss'))}"><svg viewBox="${ICON_BOX}" aria-hidden="true">${CROSS_PATH}</svg></button></aside>`
   return `<section class="content-section wide results-page" aria-labelledby="results-title">${resultsFloatingNavigation(state)}<p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 6 }))}</p><h1 id="results-title" tabindex="-1">${escapeHtml(t('Your estimated impact'))}</h1>${improvementTip}<p class="section-intro">${escapeHtml(entryResults.length === 1
       ? t('Results returned by the calculation service for one supply-chain entry.')
       // **`count` is entries, and an entry is a leaf.** A single forked chain is one

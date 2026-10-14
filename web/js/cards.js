@@ -19,7 +19,7 @@
  */
 
 import { state } from './state.js'
-import { escapeHtml } from './view.js'
+import { CHEVRON_PATH, escapeHtml, ICON_BOX } from './view.js'
 import { t } from './i18n.js'
 
 /**
@@ -213,8 +213,14 @@ export function collapsibleCard({ step, key, anchor, name, count, forceOpen = fa
   const fixed = cardIsFixedOpen(count)
   const open = forceOpen || cardIsOpen(step, key, count)
   const badge = `<span class="step-card__status" data-card-status data-state="${status.state}"><span class="step-card__mark" aria-hidden="true">${status.mark}</span><span data-card-status-text>${escapeHtml(status.text)}</span></span>`
+  //: The chevron is an inline `<svg>`, not the `&#8964;` (`⌄` U+2304) it used to be.
+  //: `CHEVRON_PATH` carries the measurement; the short version is that the
+  //: character's ink is drawn below the baseline, so this header's `align-items: center`
+  //: centred its box faithfully and still put the arrowhead 5.3px under the card's name.
+  //: **This one header is shared by steps 2.5, 3 and 4 and by the improvement panel**,
+  //: which is why four of the five screens the owner reported are this line.
   const header = fixed
     ? `<div class="step-card__toggle step-card__toggle--static"><span class="step-card__name">${escapeHtml(name)}</span>${badge}</div>`
-    : `<button id="card-toggle--${anchor}" class="step-card__toggle" type="button" data-action="toggle-card" data-card-step="${step}" data-card="${keyAttr(key)}" aria-expanded="${open ? 'true' : 'false'}" aria-controls="${bodyId}"><span class="step-card__chevron ${open ? 'expanded' : ''}" aria-hidden="true">&#8964;</span><span class="step-card__name">${escapeHtml(name)}</span>${badge}</button>`
+    : `<button id="card-toggle--${anchor}" class="step-card__toggle" type="button" data-action="toggle-card" data-card-step="${step}" data-card="${keyAttr(key)}" aria-expanded="${open ? 'true' : 'false'}" aria-controls="${bodyId}"><svg class="step-card__chevron ${open ? 'expanded' : ''}" viewBox="${ICON_BOX}" aria-hidden="true">${CHEVRON_PATH}</svg><span class="step-card__name">${escapeHtml(name)}</span>${badge}</button>`
   return `<fieldset class="form-panel step-card ${open ? 'step-card--open' : ''} ${extraClass}" ${dataAttr}><legend class="sr-only">${escapeHtml(name)}</legend>${header}${always}<div class="step-card__body" id="${bodyId}" ${open ? '' : 'hidden'}>${body}</div></fieldset>`
 }

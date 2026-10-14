@@ -330,8 +330,10 @@ p { margin: 0 0 2mm 0; }
 /* ---------------------------------------------------------- mock warning */
 /* DEFECT-PROOFING, NOT DECORATION. Section 2.2 makes the placeholder banner
  * mandatory and non-dismissible on every results view and export while the
- * active factor set is mock, and open item O-1 means every figure this
- * document can carry today is placeholder data.
+ * active factor set is mock. It is conditional on that flag and on nothing
+ * else: this comment used to add "and open item O-1 means every figure this
+ * document can carry today is placeholder data", which was true until O-1
+ * closed on 2026-10-15 and was never what the rule was keyed on.
  *
  * The rules below are chosen so that the banner cannot be lost to layout:
  *

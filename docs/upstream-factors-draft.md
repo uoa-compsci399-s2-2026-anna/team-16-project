@@ -1,11 +1,44 @@
 ---
 title: "Draft New Zealand upstream and downstream factors (O-1, first movement)"
 date: "2026-09-05"
-revised: "2026-09-21 — the client's corrected table 2 CO2-eq column (§4.1); 2026-09-24 — `land` (§5.8), the equivalence ladders (§7) and the item level (§5.9)"
-status: "DRAFT factor set. is_mock = true. O-1 still open. Not the deliverable's confirmed data."
+revised: "2026-09-21 — the client's corrected table 2 CO2-eq column (§4.1); 2026-09-24 — `land` (§5.8), the equivalence ladders (§7) and the item level (§5.9); 2026-10-15 — **the client accepted this configuration; O-1 closed** (see the note under the title)"
+status: "ACCEPTED BY THE CLIENT 2026-10-15. O-1 closed. `is_mock = false`. The figures are unchanged from the draft this document derives — what changed is that the client confirmed them, not any number."
 ---
 
 # Draft New Zealand factors, derived from the client's Rawtec tables
+
+> ### The client accepted this configuration on 2026-10-15, and O-1 is closed
+>
+> **The outcome was not the one this document was written to expect.** It
+> opens by calling itself the *first movement* on O-1 rather than its close,
+> and assumes the close would arrive as a different set of figures from the
+> client. It did not. At the client meeting of 2026-10-15 the client reviewed
+> the configuration derived here and **accepted it** — they judged these
+> figures meaningful. **So not one number below changed when O-1 closed.**
+> `upstream_factors_draft.json` was regenerated and compared field by field
+> against its predecessor: identical in all 822 upstream and 56 downstream
+> rows except `source_note`, and identical in `constants`, `formulas`,
+> `equivalences` and `item_level_enabled` outright. What moved was `is_mock`
+> (now `false`), the `version_label` (whose `- NOT CLIENT-CONFIRMED` suffix
+> had become a false statement printed on every results page), and 354
+> `source_note` values that had been asserting O-1 was open.
+>
+> **Everything below is a dated record and is not rewritten.** Sections 4.1,
+> 5.8, 5.9 and 7 each close with a *"what this does not settle: O-1 stays
+> open"* note. Each was true on the day it was written, and each is the
+> reason that revision was as careful as it was. Editing them out would make
+> this document look as though it had always known how the question ended.
+> Read them as of their dates.
+>
+> **What acceptance does not mean.** It does not mean these are New Zealand
+> measurements. They are the client's own tables, extended by ReFED's
+> published figures and by named public sources, with four `land` rows taken
+> from Poore & Nemecek over the client's own and one — `Nuts and seeds`,
+> §5.8 — reported rather than fixed. Every row still says which it is in its
+> own `source_note`, and that is now the *only* thing that says so, because
+> `is_mock` was always all-or-nothing. It also does not touch **O-3** (the
+> shower equivalence) or **O-6** (`0.29 kg/L`), which are sourced placeholders
+> elsewhere in the calculator and are O-1's neighbours rather than its parts.
 
 ## 1. What this is, and what it is not
 

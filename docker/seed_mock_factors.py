@@ -24,10 +24,15 @@ subcommand is the right long-term home** - see the task 2 report.
 
 The values are the ones from `tests/golden/case_01_canonical_two_entry/
 bundle.json`, extracted verbatim, minus the taxonomy sections that
-`admin/seed.py` already owns. They are placeholders (open item O-1: the client
-has not supplied real New Zealand factors), and the set is written with
-`is_mock = true`, which is what makes the mandatory non-dismissible
-placeholder-data banner appear on every results view and export.
+`admin/seed.py` already owns. **They are placeholders because they are a
+DEMONSTRATION set -- the engine's own test case -- and not because no real
+ones exist.** They did not, once: open item O-1 was the client having supplied
+no confirmed factors, and it closed on 2026-10-15 when the client accepted the
+configuration in `data/upstream-factors-draft/`. That set is not seeded and
+never will be by this script; it is loaded and published deliberately. This
+one is written with `is_mock = true`, which is what makes the mandatory
+non-dismissible placeholder-data banner appear on every results view and
+export, and that is the correct state for a stack nobody has given real data.
 
 IDEMPOTENT, AND NON-DESTRUCTIVE IN THE STRONGEST SENSE
 ------------------------------------------------------
@@ -293,10 +298,14 @@ def main() -> int:
     if data.get("is_mock", True):
         print()
         print(
-            "This is a MOCK factor set. Every value in it is a placeholder "
-            "(open item O-1). The calculator will show the non-dismissible "
-            "placeholder-data warning on every result and export until a "
-            "real factor set is published through the admin panel."
+            "This is a MOCK factor set: a demonstration set built from the "
+            "engine's own test case, and every value in it is a placeholder. "
+            "The calculator will show the non-dismissible placeholder-data "
+            "warning on every result and export until a real factor set is "
+            "published through the admin panel. The New Zealand set the "
+            "client accepted ships in data/upstream-factors-draft/ and is "
+            "loaded by load_upstream_factors_draft.py, which lands it as a "
+            "draft for you to publish from the panel."
         )
     return 0
 

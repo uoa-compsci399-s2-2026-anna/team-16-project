@@ -908,13 +908,23 @@ def test_the_foods_the_client_never_subdivided_carry_no_item_row():
 
 
 def test_every_item_row_says_what_it_is_derived_from():
-    """Open item O-1 travels on the row, not only on the set.
+    """Provenance travels on the row, not only on the set.
 
     Step 2.5 makes the calculator ask a more specific question and therefore
-    return a more authoritative-looking placeholder (design section 9), so each
-    row has to carry its own provenance: that it is the client's table 1, that
-    it is a relativity on this set's own category factor, and that it is not a
+    return a more authoritative-looking figure (design section 9), so each row
+    has to carry its own provenance: that it is the client's table 1, that it
+    is a relativity on this set's own category factor, and that it is not a
     per-food New Zealand measurement.
+
+    **This mattered when O-1 was open and it matters more now that it is
+    closed.** This test used to require the literal phrase "O-1 is still
+    open" in every one of the 342 notes, which closing O-1 on 2026-10-15 made
+    both false and unsayable. What it was really protecting is the clause
+    beside it -- that the figure is not a measurement -- because ``is_mock``
+    was the set-level disclaimer and is now off, so the row-level note is the only
+    thing left that can say which of these numbers is the client's and which
+    is a relativity computed from it. The phrase is replaced by the two claims
+    it was standing in for, which survive the item closing.
     """
     data = build_module.build()
     rows = _item_rows(data)
@@ -925,7 +935,17 @@ def test_every_item_row_says_what_it_is_derived_from():
         assert "DERIVED FROM THE CLIENT'S OWN TABLE 1" in note, where
         assert "NOT a per-food New Zealand measurement" in note, where
         assert "relativity" in note, where
-        assert "O-1 is still open" in note, where
+        #: The acceptance of 2026-10-15 is of THIS derivation, and the note has
+        #: to say so rather than leaving a reader to assume a measurement was
+        #: confirmed. Both halves: who accepted it, and that what they accepted
+        #: is the derivation.
+        assert "accepted it on 2026-10-15" in note, where
+        assert "not a measurement nobody has taken" in note, where
+        #: And it must NOT claim the item is open any more. A note is published
+        #: text (GET /factors, the methodology table, the results source
+        #: table), so a stale disclaimer here is a stale disclaimer on a page.
+        assert "O-1 is still open" not in note, where
+        assert "is_mock is still true" not in note, where
         assert row["data_quality"] in (
             "item-client-relativities",
             "item-client-refed-level",

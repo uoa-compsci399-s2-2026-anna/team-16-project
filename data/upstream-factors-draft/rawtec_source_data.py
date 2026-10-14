@@ -95,11 +95,18 @@ rows and for sewer, and 0.04 for the two redistribution rows. Compost at
 -0.11 against Landfill's 0.60 now prices composting as a saving, which is the
 direction the underlying question actually runs.
 
-*What this does not settle.* O-1 stays open. These are still the client's
-draft figures, ``is_mock`` stays ``true``, the set built from the corrected
-column is loaded as a draft and is **not** published, and the placeholder
-banner stays mandatory. The correction removes a defect; it does
-not make the data confirmed.
+*What this settled, and when.* The correction removed a defect; it did not by
+itself make the data confirmed, and for three and a half weeks it did not:
+``is_mock`` stayed ``true`` and the placeholder banner stayed mandatory. The
+set built from this corrected column was published on 2026-09-23, ran
+publicly, and is the set the client **reviewed and accepted on 2026-10-15** --
+which closed O-1. The outcome of that item was that the client judged this
+derivation meaningful, not that they supplied a different set of figures, so
+nothing above changed when it closed. What this still does not settle is
+anything O-1 was never about: these remain the client's own figures extended
+by ReFED and by named public sources, every row says which in its own
+``source_note``, and the two sourced placeholders elsewhere in this
+calculator -- O-3's shower and O-6's 0.29 kg/L -- are untouched by it.
 
 The water column is not implicated in that copy-paste -- it was identical in
 both revisions, cell for cell -- and it holds seventeen

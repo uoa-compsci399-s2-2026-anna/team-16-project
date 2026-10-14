@@ -1845,9 +1845,11 @@ def _build_item_level_upstream_rows(category_rows: list[dict]) -> list[dict]:
                         "source_note": (
                             "ITEM-LEVEL FACTOR, DERIVED FROM THE CLIENT'S OWN "
                             "TABLE 1. It is NOT a per-food New Zealand "
-                            "measurement: no such measurement exists, open item "
-                            "O-1 is still open, is_mock is still true and the "
-                            "placeholder banner still applies. What the client's "
+                            "measurement: no such measurement exists. The "
+                            "client reviewed this configuration and accepted "
+                            "it on 2026-10-15, closing open item O-1, and what "
+                            "they accepted is the derivation stated here -- not "
+                            "a measurement nobody has taken. What the client's "
                             "table supplies is one figure per food row, and this "
                             "row is that figure expressed as a relativity on "
                             "this set's own category factor, so the two cannot "
@@ -2480,8 +2482,9 @@ def build_downstream() -> list[dict]:
                     "-- food figures in destination rows, which priced "
                     "composting worse than landfill -- and that column was "
                     "used as printed on the repository owner's explicit "
-                    "instruction of 2026-09-05. It is withdrawn. Still not "
-                    "client-confirmed: O-1 stays open and is_mock stays true. "
+                    "instruction of 2026-09-05. It is withdrawn. This "
+                    "corrected column is the one the client reviewed and "
+                    "accepted on 2026-10-15, which closed open item O-1. "
                     "See docs/upstream-factors-draft.md."
                 )
             else:
@@ -2794,11 +2797,42 @@ def build() -> dict:
         #: has to displace something. The item level is what displaced
         #: "equivalence ladders" down to "ladders": 124 characters before, 124
         #: after, and the ladders are still in the notes in full.
+        #:
+        #: **"NOT CLIENT-CONFIRMED" became false on 2026-10-15**, when the
+        #: client reviewed this configuration and accepted it -- the outcome of
+        #: O-1 was that the client judged these figures meaningful, not that
+        #: they supplied a different set. The suffix now records the
+        #: confirmation and its date, and `CLIENT-DRAFT-` becomes `NZ-` because
+        #: "draft" was the other half of the same claim. The leading date is
+        #: still the data's -- when the client's revised table 2 arrived -- and
+        #: the trailing one is when it was accepted; two dates because they are
+        #: two different facts and a reader of the "Factor version" line is
+        #: entitled to both. 121 characters against the column's 128.
         "version_label": (
-            "CLIENT-DRAFT-2026-09-21 (Rawtec rev. table 2 + ReFED footprint; "
-            "ch4, cost, land; ladders; item level) - NOT CLIENT-CONFIRMED"
+            "NZ-2026-09-21 (Rawtec rev. table 2 + ReFED footprint; "
+            "ch4, cost, land; ladders; item level) - CLIENT-CONFIRMED 2026-10-15"
         ),
-        "is_mock": True,
+        #: **Off, from 2026-10-15.** This is the flag that holds up the
+        #: mandatory, non-dismissible placeholder banner on every results view
+        #: and every export, and it is off because the condition it was waiting
+        #: for is met: the client has reviewed these figures and accepted them.
+        #:
+        #: **It is still a flag on a draft, and this file still never
+        #: publishes.** `load_factor_set` does not call `publish_factor_set`,
+        #: so loading this lands a draft that shows nobody anything until
+        #: somebody publishes it from the panel. What changed is what a
+        #: publication would then say: before, a correct publication was
+        #: obliged to keep disclaiming itself.
+        #:
+        #: **The honesty this flag used to carry has not gone anywhere, and
+        #: must not.** `is_mock` is all-or-nothing and was never able to say
+        #: "these forty rows are the client's and those twelve are ReFED's" --
+        #: which is why every row carries its own `source_note` and why section
+        #: 7.3c discloses a category fallback on the page. Those are the
+        #: mechanisms that survive O-1 closing; this one was the blunt
+        #: instrument for the period when the answer was "none of it is
+        #: confirmed".
+        "is_mock": False,
         #: v1.58's release switch, and the reason this set may carry it: it has
         #: item-level `factor_upstream` rows for every food the client's own
         #: table 1 subdivides a category into (see "THE ITEM LEVEL" above), so
@@ -2833,10 +2867,15 @@ def build() -> dict:
             "2026-09-05, landfill and refuse_discard only) are also seeded "
             "-- neither client table carries either column, so both are "
             "built entirely from ReFED or public New Zealand government "
-            "sources; see docs/upstream-factors-draft.md. is_mock "
-            "stays true: these values are derived, not yet the client's "
-            "confirmed figures -- the placeholder banner must keep showing "
-            "until the owner decides otherwise. This revision carries the "
+            "sources; see docs/upstream-factors-draft.md. is_mock is FALSE "
+            "from 2026-10-15: the client reviewed this configuration and "
+            "accepted it, which closed open item O-1. The outcome of that "
+            "item was that the client judged these derived figures "
+            "meaningful, not that they supplied a different set, so what "
+            "changed is the confirmation and not one number. Provenance is "
+            "still carried row by row in source_note, which is where it "
+            "always was -- is_mock could only ever say all or nothing. "
+            "This revision carries the "
             "client's CORRECTED table 2 CO2-eq column, received 2026-09-21: "
             "the 2026-09-05 column was a verbatim copy of table 1's food "
             "figures, which priced composting worse than landfill. The set "

@@ -958,3 +958,131 @@ def test_the_expanded_charts_close_button_does_not_cover_the_food_name(browser, 
         f"leading edge rather than its established 14px, so the overlap was resolved by "
         f"MOVING the control instead of reserving its space: {measured}"
     )
+
+
+#: The header's ground and the island's, from one card, in one round trip. Read on the
+#: improvement panel rather than on step 4 because **this** is where the island is: the
+#: claim below is that the header's hover colour is not the island's, and step 4's slot
+#: is `.allocation-summary` on its own opaque tint, so the comparison there is against
+#: the wrong object and passes whatever the header does.
+HOVER_GROUNDS = """() => {
+  const card = document.querySelector('.improvement-leaf');
+  const header = card.querySelector('.step-card__toggle');
+  const island = card.querySelector(':scope > .improvement-total');
+  return {
+    header: getComputedStyle(header).backgroundColor,
+    island: getComputedStyle(island).backgroundColor,
+    isStatic: header.classList.contains('step-card__toggle--static'),
+  };
+}"""
+
+
+def _transparent(colour):
+    """`rgba(…, 0)` or `transparent`, however the browser spells it."""
+    if colour in (None, "transparent"):
+        return True
+    alpha = colour.rsplit(",", 1)[-1].strip(" )") if colour.startswith("rgba(") else "1"
+    return float(alpha) == 0
+
+
+def test_the_header_takes_a_ground_under_the_pointer_and_never_the_islands(page):
+    """The half that answers a press says so, in a colour that is not the island's.
+
+    **v1.120 delivered this and nothing measured it.** The island tells a visitor that
+    the lower half of a card is not a control; the header's hover ground is what tells
+    them the upper half is. Three mutations were written for it in advance -- take the
+    hover away, give it the island's own `--mint`, paint the header at rest instead --
+    and all three were expected to survive the whole repository, which is the same as
+    saying the affordance was written rather than delivered.
+
+    **The second assertion is the one that needed moving to find.** It was first written
+    against step 4's card, on the argument that `.step-card__toggle` is shared chrome and
+    a hover measured on any consumer is a statement about all four. True of *whether*
+    there is a hover; false of *which colour it must not be*. Step 4's slot is
+    `.allocation-summary` on its own opaque `#e9faf3`, so comparing the header's hover
+    against it passes while the header is painted `--mint` -- and `--mint` is exactly the
+    colour that must not be used. Measured: that version of this case left the mutation
+    alive. It is here now, where the island actually is.
+
+    A header that took the island's own ground on hover would erase the distinction at
+    the moment the visitor is reaching for one of the two halves: the pair would meet in
+    one colour under the pointer, which is this change's own defect re-created in the
+    hover state. `--zone` is the same green one step lighter and is already the
+    stylesheet's quiet form ground.
+
+    **At rest first.** A case that read only the hovered value would pass on a header
+    painted permanently, which is a second colour and not an affordance.
+    """
+    _improvement_panel(page)
+    at_rest = page.evaluate(HOVER_GROUNDS)
+    assert not at_rest["isStatic"], (
+        "the panel drew a lone, unfoldable card, so there is no control here to promise "
+        "anything and this case would be measuring a <div>"
+    )
+    assert _transparent(at_rest["header"]), (
+        f"the card header is painted at rest ({at_rest['header']}), so a hover ground is "
+        "not an affordance -- it is a second permanent colour"
+    )
+
+    page.hover(".improvement-leaf .step-card__toggle")
+    page.wait_for_timeout(150)
+    hovered = page.evaluate(HOVER_GROUNDS)
+
+    assert not _transparent(hovered["header"]), (
+        "the card header takes no ground under the pointer, so nothing on screen says "
+        "which half of the card answers a press -- the half the island cannot speak for"
+    )
+    assert hovered["header"] != hovered["island"], (
+        f"the header's hover ground is the island's own colour ({hovered['header']}), so "
+        "the two halves meet in one colour at exactly the moment the visitor is reaching "
+        "for one of them: this change's defect, re-created in the hover state"
+    )
+
+
+def test_a_strayed_island_is_outlined_as_well_as_worded(page):
+    """`.improvement-total.invalid` changes the island's edge, not only its text.
+
+    **Added because a mutation survived.** Deleting `border-color: var(--error)` from the
+    invalid rule left every case green: #193's card-state case asserts the `invalid`
+    class is applied and the strip's own case measures the island against the header at
+    rest, and neither looks at what the class does to the edge. A declaration nothing can
+    kill is a decoration, and this one is not meant to be: the island's outline is
+    `--border` while the figures add up and `--error` while they do not, so a strayed
+    allocation is said by the shape as well as by the words inside it -- which is what
+    carries the state to a reader who is scanning a folded panel rather than reading it.
+
+    Measured as a *change* from the resting edge rather than against a named colour, for
+    the reason the strip's own case gives: naming `rgb(135, 0, 90)` would pin a tint
+    nobody promised, and the claim is that the edge answers the state, not that it is
+    Beetroot.
+
+    The radius and the shadow are asserted to survive the state too. A strayed strip that
+    lost them would be a flat band flush with the card again -- the defect v1.120 fixed,
+    arriving the moment the figures stop adding up, which is the worst possible moment.
+    """
+    _improvement_panel(page)
+    #: The cards are drawn shut, and the box that has to be typed into is inside the
+    #: fold. The strip is not -- it is the `always` slot, which is the whole point of it
+    #: -- so this opens the card for the keystroke, not for the measurement.
+    expand_step_cards(page)
+    before = page.evaluate(HALVES)[0]
+    assert before["strip"]["borderStyle"] != "none", (
+        "the island has no edge at rest, so this case cannot say the state changed one"
+    )
+
+    #: Drive leaf one off 100% so the strip strays. 60 into the first destination is
+    #: short of the total, which is what `.invalid` means.
+    box = page.locator('[data-improvement-leaf-panel="0"] .percentage-input input[type="number"]').first
+    box.fill("60")
+    page.wait_for_timeout(200)
+
+    after = page.evaluate(HALVES)[0]
+    assert after["strip"]["borderColour"] != before["strip"]["borderColour"], (
+        "a strayed allocation left the island's edge exactly as it was, so the state is "
+        "carried by the text alone: %s then %s"
+        % (before["strip"]["borderColour"], after["strip"]["borderColour"])
+    )
+    assert after["strip"]["shadow"] == before["strip"]["shadow"], (
+        "the strayed island lost its elevation, so it is a flat band flush with the card "
+        "again at the moment the figures stop adding up"
+    )

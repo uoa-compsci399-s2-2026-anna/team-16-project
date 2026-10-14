@@ -79,10 +79,20 @@ export function slug(value) {
  * stops being true the day the font or the `font-size` changes and nothing in the suite
  * would report it. A path has no font metrics to compensate for.
  *
- * **Both shapes are symmetric about the centre of `ICON_BOX`**, so the element's box
- * centre IS the ink's centre and centring the box is all a layout has to do — and
- * `rotate(180deg)` maps the chevron onto itself, which is what lets one shape serve both
- * halves of a disclosure state (see `.step-card__chevron` in `styles.css`).
+ * **Both shapes are drawn on the centre of `ICON_BOX`**, so the element's box centre IS
+ * the ink's centre and centring the box is all a layout has to do. Both are also mirror
+ * images of themselves about that box's vertical axis, which is what lets one shape
+ * serve both halves of a disclosure state: `rotate(180deg)` leaves the *extent* exactly
+ * where it was, so the chevron turns in place and the row does not shift under it, while
+ * the shape itself flips to point the other way — which is the whole purpose of
+ * `.chevron.expanded` (see `.step-card__chevron` in `styles.css`). It does **not** map
+ * onto itself, and must not: an arrow that survived its own rotation unchanged would
+ * indicate nothing. The cross does, being symmetric on both axes, and that is incidental.
+ *
+ * `tests/web/test_icon_geometry.py` holds both claims, and it exists because the browser
+ * cases measure the element's box against the text beside it and are blind to where the
+ * ink sits inside that box — which is the defect these paths replaced, authored by hand
+ * instead of inherited from a font.
  *
  * `currentColor`, so the colour rules that already exist — `--muted` on a card
  * chevron, `--green-dark` on the dismiss — keep working with nothing new declared.

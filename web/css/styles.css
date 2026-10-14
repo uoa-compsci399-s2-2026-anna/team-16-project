@@ -2358,7 +2358,7 @@ tbody th { font-weight: 700; }
 .improvement-chart-expanded .improvement-pie-chart { width: min(720px, 100%); margin: 0 auto; }
 .improvement-chart-expanded .improvement-pie-key { max-width: 680px; margin: -18px auto 0; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 /* **The close button is absolutely positioned and the heading is not, so the heading has
-   to be GIVEN the button's space** (v1.NNN). `.improvement-chart-expanded` is
+   to be GIVEN the button's space** (v1.120). `.improvement-chart-expanded` is
    `position: relative` with `padding: 34px 44px 28px`, and `.improvement-chart-close` is
    42px square at an inset of 14px — an absolutely positioned box resolves its insets
    against its containing block's PADDING box, so the button occupies 14–56px on the
@@ -2505,7 +2505,7 @@ tbody th { font-weight: 700; }
    standing in for.
 
    **That reasoning is about one card against the NEXT card and it still holds — but it
-   says nothing about the two halves of ONE card, which is where v1.NNN found the
+   says nothing about the two halves of ONE card, which is where v1.120 found the
    defect.** "A card already has a border, a radius and a background of its own" is
    true, and it is precisely WHY the header button and the `always` strip read as one
    surface: they shared that single ground, with 18px of it between them and nothing
@@ -2525,7 +2525,7 @@ tbody th { font-weight: 700; }
    food's name now, but the expanded-chart dialog still draws an `<h3>` with this class
    (`improvement.js`'s `modal`). A rule for a class nobody emits is deliberately not
    asserted by `tests/web/test_class_rules.py`, so this one was checked by eye here
-   until v1.NNN. It is measured now:
+   until v1.120. It is measured now:
    `test_leaf_improvement_browser.py::test_the_expanded_charts_close_button_does_not_cover_the_food_name`
    reads this heading's box in both reading directions, and the second rule it has — the
    dialog's own `margin-inline-start`, further up this file — exists because of it. */
@@ -2927,7 +2927,7 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
    owed. #160 is it. Measured on this build: the computed `cursor` is `default` either
    way, and the header's box is unchanged at 500px and at 1280px. */
 .step-card__toggle--static { cursor: default; }
-/* **Which half of the card opens it, answered the moment a pointer asks** (v1.NNN).
+/* **Which half of the card opens it, answered the moment a pointer asks** (v1.120).
 
    The header is the only control a card has and the `always` strip below it is not one,
    which visitors did not know: they pressed the strip and nothing happened. The strip

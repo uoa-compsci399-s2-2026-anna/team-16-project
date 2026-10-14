@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-10-14 (v1.117)"
+date: "2026-10-14 (v1.118)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,22 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.118 — 2026-10-14 (a dismissed results tip is offered again for the next calculation; affects C and D)
+
+**v1.107 left this open in writing and called it the owner's call.** Its closing note read: "The dismissal lives only in `state.js` and the results page is restorable from `sessionStorage`, so a reload inside the same session restores the results and brings the tip back. Whether that contradicts *stays dismissed for the rest of the session* is a reading of the issue rather than of the code." Read from the other end the same sentence describes a worse defect than the one it was about: the reload brings the tip back, and **the reset does not**. `resetCalculator`'s patch names `openCards`, `expandedSectors`, `resultsNavOpen`, `restoreDropped` and a dozen more, each with a note on why it is cleared, and `resultsImprovementTipDismissed` was absent. So one × pressed on a first result silenced the pointer to *Explore Improvements* for every later calculation on that session — including the one reached through "Clear all calculator data and return to the introduction?", a question whose whole promise is that nothing of the previous calculation is carried forward. The owner's reading is taken: a new calculation is a new thing to be guided about.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`resetCalculator` clears `resultsImprovementTipDismissed`.** One key added to the patch it was missing from, with the comment the keys around it all carry. The initial-state declaration, the dismiss handler in `calculator.js` and the read in `results.js` are untouched — the flag's meaning, its value space and its absence from `snapshot.js`'s `ANSWER_KEYS` are all exactly as v1.107 item 4 recorded them | §7.2, §7.3a |
+| 2 | **A reset is not a render, and that is the whole distinction.** v1.107 item 8 holds the dismissal in state rather than by removing the node, precisely so a later `render()` cannot bring the tip back; within one calculation that is unchanged and is what `test_the_improvement_tips_dismissal_survives_a_render` still asserts. This entry says only that the boundary of "later" is the calculation and not the session. The two cases are each other's mutation: a fix that cleared the flag on every render would pass the new case and fail the old one | §7.2a, §7.3a |
+| 3 | **Three doors, one code path, one of them measured.** The header's *Clear all data*, the brand button beside it and the results page's *Start a new calculation* all call `resetCalculator`, so all three are fixed by the one line. The new browser case takes the header's Clear, because `renderChrome` unhides it whenever there is data and it is therefore the door a visitor can press while still reading the result. `test_start_a_new_calculation_on_the_results_page_removes_the_snapshot` is what fails beside it the day those three stop being one path | §7.2, §7.3a |
+| 4 | **Covered twice, and the cheap half runs without the stack.** `tests/web/test_snapshot.py::test_clearing_the_calculator_offers_the_improvement_tip_again` sets the flag and calls `resetCalculator` in the existing Node harness — the `reset` probe gains `tipDismissedBefore` / `tipDismissedAfter` and the harness destructures `setState`, because the flag is outside `ANSWER_KEYS` and so cannot arrive through `input.state`. `tests/web/test_session_restore_browser.py::test_the_improvement_tip_comes_back_for_the_next_calculation` is the other half: walk to the results, dismiss the tip, press the header's *Clear all data* through its `confirm()`, walk a second full calculation, and find the tip drawn and dismissible again. The Clear door specifically, because the flag is memory-only and a page reload cleared it anyway — which is exactly why no existing case could see this | §0, §7.2a, §7.6 |
+| 4a | **Mutations, measured on the non-browser half.** The key removed from the patch again and the key set to `true` each fail it alone, with its own message. Flipping the *initial* state's default to `true` leaves it green and is recorded as equivalent from that vantage point — the patch overwrites the default, so only the browser cases can see it, which is why the browser case opens by asserting the tip is visible before dismissing anything. Adding the flag to `ANSWER_KEYS` is caught one file over by `test_exactly_the_answer_keys_are_written_and_nothing_transient` | §0 |
+| 5 | **No new catalogue key.** The tip's sentence, its `aria-label` and its *Dismiss* label are the strings v1.107 added to all twenty catalogues under both `web/locales/` and `api/assets/locales/`; this change introduces no `t('…')` call, no `data-i18n` attribute and no new character, so the two trees are untouched and still byte-identical, and the CJK subsets need no re-cut | §7.7 |
+| 6 | No API field, request shape, response shape or fixture changes — this moves one line of front-end session state. Steps one and two of §0's three-step rule, not step three. The owner notifies the team | §0 |
+
+**What is still true and still unresolved.** v1.107's observation stands on its own terms: inside one calculation a reload *does* restore the results and bring the tip back, because the flag is memory-only by construction. Making the dismissal survive a reload would mean putting it in storage, which is a snapshot decision rather than a reset one, and §7.2a's whitelist is deliberately not where transient UI goes. Nothing here changes that, and nothing here needs to.
 
 ### v1.117 — 2026-10-14 (a card in the improvement panel stated the whole panel's allocation, not its own; affects C and D)
 

@@ -795,6 +795,70 @@ def test_the_improvement_tips_dismissal_survives_a_render(page):
     assert page.locator("#results-improvement-tip").count() == 0
 
 
+def test_the_improvement_tip_comes_back_for_the_next_calculation(page):
+    """A tip dismissed once was never offered again, not even after Clear.
+
+    **The defect.** `resultsImprovementTipDismissed` was in the initial state and in
+    `calculator.js`'s dismiss handler, and in nothing else -- `resetCalculator`'s patch
+    put `openCards`, `expandedSectors`, `resultsNavOpen` and a dozen more back to their
+    defaults and simply did not name this one. So the single × a visitor pressed on
+    their first result outlived the calculation it was guidance about: every later
+    calculation in the session opened with no pointer to Explore Improvements, and
+    "Clear all calculator data and return to the introduction?" did not put it back
+    either. The flag is not in `snapshot.js`'s `ANSWER_KEYS`, so a full page reload
+    cleared it -- which is exactly why nothing failed. The only way to see it was to
+    press Clear instead of reloading, and no case did.
+
+    **How this differs from `test_the_improvement_tips_dismissal_survives_a_render`,
+    which must keep passing.** That one presses a breakdown tab, forcing a `render()`
+    over the same calculation, and asserts the tip stays gone -- the dismissal is held
+    in state rather than by removing the node so that no re-render can undo it. This
+    one is the other edge of the same line: a *reset* is not a render. Within one
+    calculation the dismissal is permanent; across a reset it is not, because a new
+    calculation is a new thing to be guided about. A fix that cleared the flag on every
+    render would pass this case and fail that one, and a fix that cleared it nowhere
+    passes that one and fails this.
+
+    The header's *Clear all data* is the door taken here: it is the one a visitor can
+    reach while still reading the result (`renderChrome` unhides it whenever there is
+    data), and it shares `resetCalculator` with the brand button and the results page's
+    *Start a new calculation* -- the day those stop being one code path,
+    `test_start_a_new_calculation_on_the_results_page_removes_the_snapshot` fails beside
+    this.
+    """
+    _to_the_results_page(page)
+    assert page.locator("#results-improvement-tip").is_visible()
+
+    page.click('[data-action="dismiss-results-improvement-tip"]')
+    assert page.locator("#results-improvement-tip").count() == 0, (
+        "the tip was not dismissed, so nothing below says anything about a reset"
+    )
+
+    # The header's Clear, from the results page itself.
+    assert page.locator("#clear-button").is_visible(), (
+        "Clear all data is hidden on the results page, so this walk never reset anything"
+    )
+    page.once("dialog", lambda dialog: dialog.accept())
+    page.click("#clear-button")
+    page.wait_for_selector('[data-action="start"]', timeout=10000)
+    page.wait_for_timeout(250)
+
+    # A second, genuinely new calculation. The tip is guidance about this one, which
+    # the visitor has never seen and never dismissed.
+    _to_the_results_page(page)
+    tip = page.locator("#results-improvement-tip")
+    assert tip.count() == 1, (
+        "a tip dismissed on the previous calculation stayed dismissed through Clear, so "
+        "this result offers no pointer to Explore Improvements"
+    )
+    assert tip.is_visible()
+    assert "Explore Improvements" in tip.inner_text()
+    # And it is dismissible again rather than merely drawn: the handler and the flag
+    # have to still agree after the reset.
+    page.click('[data-action="dismiss-results-improvement-tip"]')
+    assert page.locator("#results-improvement-tip").count() == 0
+
+
 # ------------------------------------------------- nothing transient is restored
 
 

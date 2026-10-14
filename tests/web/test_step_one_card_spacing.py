@@ -794,26 +794,38 @@ ALIGNMENT = """() => [...document.querySelectorAll('.details-button')].map(butto
 })"""
 
 
-@pytest.mark.parametrize("width,placement", [(1280, "centred"), (320, "start")])
-def test_the_details_label_is_centred_wide_and_reading_start_narrow(step_one, width, placement):
-    """The two placements that block has always asked for, now asserted.
+def test_the_details_label_sits_at_the_reading_start_of_a_full_width_button(step_one):
+    """Below 480px the card is one column, the button spans it, and the label
+    belongs at the reading start - a short word centred in a 250px bar reads as a
+    mistake.
 
-    Wide, the button is a narrow column beside the copy and its contents are
-    centred in it. Below 480px the card is one column, the button spans it, and
-    the label belongs at the reading start - a short word centred in a 250px bar
-    reads as a mistake.
+    **This is the half of the claim that can be measured, and the other half was
+    dropped after measuring it.** The case was written as a pair, 1280 asserting
+    the contents were centred and 320 asserting they were not. At 1280 it failed
+    its own precondition, which is the precondition doing its job: `.details-button`
+    is a grid item in an `auto` track, so it **shrink-wraps to its contents** and
+    its 18px of symmetric padding is what centres them. Measured on the built page
+    at a 1707px viewport: button 110.93px, content box 74.93px, content group
+    74.26px - **0.67px of slack**. There is nothing for `justify-content` to place
+    above 480px, so a case there would have asserted the padding, not the
+    alignment, and would have passed with the property deleted.
 
-    **Measured on the insets rather than on a coordinate**, so the same two
-    assertions work at both widths and in both directions without a number from
-    either. The precondition is stated too: if the group is as wide as the
-    content box there is no slack to place it and the case would pass on
-    anything.
+    What the narrow width guards is real and was nearly lost silently: the base
+    rule is a flex row now (that is what centres the chevron on the label), and on
+    a flex container the `text-align: start` this block carried does nothing at
+    all. Nothing in this directory measured the horizontal placement of this
+    button's contents at any width, so a full-width bar with its label back in the
+    middle would have shipped with every suite green.
+
+    **Measured on the insets rather than on a coordinate**, so it needs no number
+    from the layout, and the precondition is stated rather than assumed.
 
     LTR only, deliberately. `justify-content: start` is writing-mode relative and
     `test_step_one_does_not_scroll_sideways_at_320` is what measures that the
     Arabic layout holds together; a mirrored copy of this case would assert the
     browser implements `start`, which is not this project's claim to make.
     """
+    width = 320
     page = step_one(width, state="two-sentence")
     found = page.evaluate(ALIGNMENT)
     assert len(found) == 6, _chevron_report_alignment(found, "step 1 drew no six buttons:")
@@ -824,17 +836,12 @@ def test_the_details_label_is_centred_wide_and_reading_start_narrow(step_one, wi
         f"at {width}px the contents fill the button, so there is no slack to "
         "place and this case would pass whatever the alignment were:")
 
-    if placement == "centred":
-        off = [c for c in found if abs(c["leadIn"] - c["leadOut"]) > 1.5]
-        assert not off, _chevron_report_alignment(
-            found, f"at {width}px the button's contents are not centred in it:")
-    else:
-        off = [c for c in found if c["leadIn"] > 1.5 or c["leadOut"] <= 4]
-        assert not off, _chevron_report_alignment(
-            found,
-            f"at {width}px the label is not at the reading start of a full-width "
-            "button - this is `text-align: start` back on a flex container, where "
-            "it does nothing:")
+    off = [c for c in found if c["leadIn"] > 1.5 or c["leadOut"] <= 4]
+    assert not off, _chevron_report_alignment(
+        found,
+        f"at {width}px the label is not at the reading start of a full-width "
+        "button - this is `text-align: start` back on a flex container, where "
+        "it does nothing:")
 
 
 def _chevron_report_alignment(rows, note):

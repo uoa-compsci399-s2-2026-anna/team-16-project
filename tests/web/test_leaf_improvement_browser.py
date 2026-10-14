@@ -619,7 +619,7 @@ def test_a_leafs_card_states_its_own_allocation_and_never_the_panels(page):
 
 
 # ===========================================================================
-# v1.NNN: the card's two halves, and the dialog's own two boxes.
+# v1.120: the card's two halves, and the dialog's own two boxes.
 #
 # **Appended as separate functions on purpose.** Another branch is in this file
 # at the same time; keeping these at the end and self-contained means the two
@@ -727,7 +727,7 @@ def _improvement_panel(page):
 
 
 def test_the_total_strip_does_not_read_as_the_cards_own_lower_half(page):
-    """**v1.NNN. The card had two halves and one surface.**
+    """**v1.120. The card had two halves and one surface.**
 
     `collapsibleCard` draws three siblings inside the `<fieldset>`: the header
     button, the `always` strip, and the `hidden` body. On this panel the strip is
@@ -888,7 +888,7 @@ def _expanded_chart(browser, lang):
 
 @pytest.mark.parametrize("lang,direction", [("en", "ltr"), ("ar", "rtl")])
 def test_the_expanded_charts_close_button_does_not_cover_the_food_name(browser, lang, direction):
-    """**v1.NNN. The dialog's close button was on top of its own heading.**
+    """**v1.120. The dialog's close button was on top of its own heading.**
 
     `.improvement-chart-expanded` is `position: relative` with
     `padding: 34px 44px 28px`; `.improvement-chart-close` is 42px square at an

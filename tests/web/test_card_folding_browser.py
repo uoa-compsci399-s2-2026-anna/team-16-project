@@ -1234,9 +1234,9 @@ HALVES = """() => [...document.querySelectorAll('.step-card')].map(card => {
 
 def test_the_remaining_strip_is_a_distinct_object_and_not_a_second_control(opened):
     """**The `always` slot's contract, measured on the consumer that always had it
-    right** (v1.NNN).
+    right** (v1.120).
 
-    v1.NNN fixed the improvement panel's slot, where the strip was
+    v1.120 fixed the improvement panel's slot, where the strip was
     `rgba(255, 255, 255, 0.8)` on a white card and so looked like the card's own
     lower half -- visitors pressed it and nothing happened, because the header
     button is the only control. **Step 4's slot never had that defect**:
@@ -1244,7 +1244,7 @@ def test_the_remaining_strip_is_a_distinct_object_and_not_a_second_control(opene
     and a shadow since it landed, and `test_step_navigation.py`'s
     `test_the_allocation_summary_is_opaque_in_both_states` pins that composite to
     the byte because the strip is `position: sticky` and the rows scroll under it.
-    So the v1.NNN change was scoped to `.improvement-total` and this file's
+    So the v1.120 change was scoped to `.improvement-total` and this file's
     consumer was deliberately left alone.
 
     **This case is what makes "deliberately left alone" checkable.** Two things
@@ -1307,3 +1307,85 @@ def test_the_remaining_strip_is_a_distinct_object_and_not_a_second_control(opene
         f"the HEADER does not open its card either, so the press above measured a dead "
         f"page rather than a strip that is correctly inert: {after}"
     )
+
+
+#: The header's ground at rest and under the pointer, plus the island's, read off the
+#: same card in one round trip so the three can be compared without a second navigation.
+HOVER_GROUNDS = """(selector) => {
+  const card = document.querySelector('.step-card');
+  const header = card.querySelector('.step-card__toggle');
+  const strip = card.querySelector(':scope > ' + selector);
+  return {
+    header: getComputedStyle(header).backgroundColor,
+    strip: strip ? getComputedStyle(strip).backgroundColor : null,
+    isStatic: header.classList.contains('step-card__toggle--static'),
+  };
+}"""
+
+
+def test_the_header_takes_a_ground_under_the_pointer_and_the_island_does_not_lend_it(opened):
+    """The clickable half says so when the pointer is on it, in a colour that is not the
+    island's.
+
+    **This case exists because the mutation list said it did not.** The change that made
+    the improvement panel's total strip an island (v1.120) came with a second half: the
+    card header takes `var(--zone)` on hover, so the half that answers a press has a
+    visible boundary and the half that does not is the one without it. Nothing measured
+    it. Three mutations in that list -- take the hover away, give it the island's own
+    `--mint`, promise it on a header that is not a control -- were all expected to
+    survive the whole repository, which is the same as saying the affordance was not
+    delivered, only written.
+
+    **The second assertion is the one worth having.** `--mint` is the island's ground
+    now. A header that took `--mint` on hover would erase the distinction at exactly the
+    moment the visitor is reaching for it: the two halves would meet in one colour under
+    the pointer, which is the defect this whole change is about, re-created in the
+    hover state. `--zone` is the same green one step lighter and is already this file's
+    quiet form ground. So the rule is not "the header changes colour" but "the header
+    changes to a colour that is not the island's".
+
+    **At rest the header is transparent**, and that is asserted first: a case that only
+    read the hovered value would pass on a header painted `--zone` permanently, which is
+    a different defect and not an affordance at all.
+
+    Step 4's card is the subject because `.step-card__toggle` is shared chrome -- steps
+    2.5, 3, 4 and the improvement panel all draw this one header -- so a hover measured
+    on any of them is a statement about all four. The improvement panel's own island is
+    measured in `test_leaf_improvement_browser.py`; what is measured here is the header
+    they have in common.
+    """
+    page = opened()
+    _to_step_four(page, 2)
+
+    at_rest = page.evaluate(HOVER_GROUNDS, ".allocation-summary")
+    assert not at_rest["isStatic"], (
+        "step 4 drew a lone, unfoldable card, so there is no control here to promise "
+        "anything and this case would be measuring a `<div>`"
+    )
+    assert _transparent(at_rest["header"]), (
+        f"the card header is painted at rest ({at_rest['header']}), so a hover ground "
+        "would not be an affordance -- it would be a second permanent colour"
+    )
+
+    page.hover(".step-card .step-card__toggle")
+    page.wait_for_timeout(120)
+    hovered = page.evaluate(HOVER_GROUNDS, ".allocation-summary")
+
+    assert not _transparent(hovered["header"]), (
+        "the card header takes no ground under the pointer, so nothing on screen says "
+        "which half of the card answers a press -- which is the half of v1.120 that the "
+        "island cannot say on its own"
+    )
+    assert hovered["header"] != hovered["strip"], (
+        f"the header's hover ground is the strip's own colour ({hovered['header']}), so "
+        "the two halves meet in one colour at exactly the moment the visitor is reaching "
+        "for one of them -- this is the defect v1.120 fixed, re-created in the hover state"
+    )
+
+
+def _transparent(colour):
+    """`rgba(…, 0)` or `transparent`, however the browser spells it."""
+    if colour in (None, "transparent"):
+        return True
+    alpha = colour.rsplit(",", 1)[-1].strip(" )") if colour.startswith("rgba(") else "1"
+    return float(alpha) == 0

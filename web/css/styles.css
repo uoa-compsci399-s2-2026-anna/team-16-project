@@ -2357,6 +2357,35 @@ tbody th { font-weight: 700; }
 .improvement-chart-expanded { position: relative; width: min(860px, 92vw); max-height: 92vh; overflow: auto; padding: 34px 44px 28px; border-radius: 20px; background: #fff; box-shadow: 0 24px 70px rgba(0, 20, 14, 0.32); }
 .improvement-chart-expanded .improvement-pie-chart { width: min(720px, 100%); margin: 0 auto; }
 .improvement-chart-expanded .improvement-pie-key { max-width: 680px; margin: -18px auto 0; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+/* **The close button is absolutely positioned and the heading is not, so the heading has
+   to be GIVEN the button's space** (v1.NNN). `.improvement-chart-expanded` is
+   `position: relative` with `padding: 34px 44px 28px`, and `.improvement-chart-close` is
+   42px square at an inset of 14px — an absolutely positioned box resolves its insets
+   against its containing block's PADDING box, so the button occupies 14–56px on the
+   inline axis while the `<h3>` begins at the content edge, 44px. Measured before this
+   rule: the two boxes overlapped by **12 x 20.8px** and `document.elementFromPoint` at
+   the heading's leading edge answered `improvement-chart-close`, so the button was
+   genuinely on top of the first characters of the food's name rather than merely close
+   to them.
+
+   **26px is arithmetic, not a nudge:** 56 (the button's far edge) + 14 (the same air the
+   button is given against the dialog's own edge) − 44 (what the dialog's padding already
+   supplies) = 26, putting the heading's leading edge at 70px with 14px of clearance.
+
+   **`margin-inline-start`, and both halves of that choice carry weight.** LOGICAL,
+   because `inset-inline-start` puts the button on the RIGHT under `dir="rtl"` — Arabic
+   and Urdu ship — so a physical `padding-left` would reserve the space on the side the
+   button is no longer on and move the collision rather than fix it;
+   `test_i18n_web.py::test_the_stylesheet_carries_no_physical_direction_left` refuses it
+   outright and the RTL case in `test_leaf_improvement_browser.py` measures it. A MARGIN
+   rather than a padding because the claim is about the BOXES: padding sits inside the
+   heading's border box, so `padding-inline-start: 26px` would read correctly on screen
+   while `getBoundingClientRect()` still began at 44 and still overlapped the button by
+   12px — a fix that looks right and leaves the measurement wrong.
+
+   The button is not moved. Its corner is an established control location and moving it
+   is a separate decision nobody has asked for. */
+.improvement-chart-expanded .improvement-leaf__heading { margin-inline-start: 26px; }
 .improvement-chart-close { position: absolute; z-index: 1; inset-block-start: 14px; inset-inline-start: 14px; width: 42px; height: 42px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 50%; color: var(--green-dark); background: #fff; font-size: 1.8rem; line-height: 1; cursor: pointer; }
 .improvement-chart-close:hover { background: rgba(0, 50, 35, 0.07); }
 .improvement-allocation-list { overflow: hidden; border-radius: 14px; background: #fff; }
@@ -2403,7 +2432,65 @@ tbody th { font-weight: 700; }
    The per-control statement of the unit that is left is each input's own `aria-label`
    (see `DestinationAllocationRow`), which is text and is not clipped by anything. */
 
-.improvement-total { margin-top: 18px; padding: 16px 18px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 20px; border-radius: 12px; background: rgba(255, 255, 255, 0.8); }
+/* **THE RUNNING TOTAL IS AN ISLAND ON THE CARD, NOT THE CARD'S OWN LOWER HALF.**
+
+   `collapsibleCard` puts this strip in its `always` slot, so on a forked panel it is a
+   SIBLING of the header button and of the `hidden` body — visible while the card is
+   shut, and deliberately not a control. It was `background: rgba(255, 255, 255, 0.8)`
+   with a 12px radius and no border, and a 0.8-alpha white fill on a white card
+   (`.needs-panel, .form-panel, .review-block` is `#fff`) is all but invisible: measured
+   on the real page, the gap between the header button's bottom and this strip's top is
+   18px and nothing else distinguished them, so the two read as one continuous white
+   surface. Visitors pressed the strip expecting the card to open and nothing happened,
+   because the header button is the only clickable part — which is correct and STAYS
+   correct (`test_leaf_improvement_browser.py` asserts the strip is not a control, so
+   nobody "fixes" this by making it one). The fix is to stop the lower half LOOKING like
+   the card.
+
+   **Three declarations do it and each is doing a different job:**
+
+   * `background: var(--mint)` — the Pea tint this stylesheet already uses for a light
+     panel ground, so the strip is a kind of object the page has established rather than
+     a new colour. `.contribute-block` on this same results page is `--mint` with a Pea
+     border and a 14px radius; `.combined-total` (step 3) and `.allocation-summary`
+     (step 4) are that tint resolved opaque over white. This is the third running total
+     on the journey and it now looks like the other two.
+   * `border: 1px solid var(--border)` — this file's own hairline token, which draws the
+     island's edge without competing with the fill for attention.
+   * `box-shadow` — the elevation, and the only part that is new to the vocabulary.
+     **It is on the STRIP and never on the card**, which is the distinction the
+     glass-token note at the top of this file makes: "a card must not be handed an
+     elevation that claims it floats". A card does not float; a strip sitting ON a card
+     does, and a floating island is what the owner asked for. It is deliberately heavier
+     than the card's own `--shadow` (`0 8px 24px` at 0.055 alpha) — an island whose
+     shadow is softer than its ground's cannot read as lifted off it. The colour is
+     `rgba(0, 50, 35, …)`, which is Kale, the shadow colour every other rule here uses.
+
+   **Scoped to `.improvement-total` and NOT to `always` slots in general**, which is a
+   decision and not an oversight. Step 4's slot is `.allocation-summary`, and it has
+   carried a Pea hairline, an opaque `#e9faf3` ground and a shadow of its own since long
+   before this — it is already an island and never had the defect. It is also
+   `position: sticky` with rows scrolling under it, and
+   `test_step_navigation.py::test_the_allocation_summary_is_opaque_in_both_states` pins
+   its composite to the byte for that reason. A sweep over
+   `.step-card > :not(.step-card__toggle, .step-card__body)` would have restyled the one
+   slot that was already right and broken that assertion to do it.
+
+   Contrast measured rather than assumed, both on the `--mint` ground: `--ink` (Kale)
+   12.69:1 for the label and the percentage, `--muted` (the Total mass figure, below)
+   6.29:1. The `.invalid` state replaces this ground and has its own note. */
+.improvement-total {
+  margin-top: 18px;
+  padding: 16px 18px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 20px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--mint);
+  box-shadow: 0 6px 18px rgba(0, 50, 35, 0.16);
+}
 .improvement-total-mass { color: var(--muted); font-size: 0.9rem; }
 /* One food's editor, when the chain forked. A single-leaf panel renders no wrapper at
    all, so none of this applies to the commonest journey. Logical properties throughout,
@@ -2417,6 +2504,18 @@ tbody th { font-weight: 700; }
    own edge. What remains is the gap between cards, which is what the hairline was
    standing in for.
 
+   **That reasoning is about one card against the NEXT card and it still holds — but it
+   says nothing about the two halves of ONE card, which is where v1.NNN found the
+   defect.** "A card already has a border, a radius and a background of its own" is
+   true, and it is precisely WHY the header button and the `always` strip read as one
+   surface: they shared that single ground, with 18px of it between them and nothing
+   else to tell them apart, so visitors pressed the half that is not a control. The
+   answer is still not a hairline between them — a line drawn across a card's own ground
+   says "one surface, ruled" rather than "two objects". It is to give the strip a ground,
+   an edge and an elevation of ITS OWN, so it reads as an object on the card instead of
+   as the card's lower half: `.improvement-total` above. The gap is still what separates
+   one card from the next, and nothing here has been put back.
+
    `:first-of-type` went with it, and that is worth saying because it would have changed
    meaning silently: these are `<fieldset>`s now, not `<section>`s, so the selector that
    used to mean "the first food block" would have started matching the first fieldset on
@@ -2425,14 +2524,30 @@ tbody th { font-weight: 700; }
    `.improvement-leaf__heading` STAYS and is still live: the card header carries the
    food's name now, but the expanded-chart dialog still draws an `<h3>` with this class
    (`improvement.js`'s `modal`). A rule for a class nobody emits is deliberately not
-   asserted by `tests/web/test_class_rules.py`, so this one is checked by eye here and
-   by that dialog's own test. */
+   asserted by `tests/web/test_class_rules.py`, so this one was checked by eye here
+   until v1.NNN. It is measured now:
+   `test_leaf_improvement_browser.py::test_the_expanded_charts_close_button_does_not_cover_the_food_name`
+   reads this heading's box in both reading directions, and the second rule it has — the
+   dialog's own `margin-inline-start`, further up this file — exists because of it. */
 .improvement-leaf { margin-block-start: 14px; }
 .improvement-leaf__heading { margin-block: 0; font-size: 1.05rem; }
 .improvement-leaf .improvement-editor { margin-block-start: 14px; padding-inline: 20px; }
 .improvement-leaf .improvement-total { margin-inline: 20px; }
 .improvement-submission-mass { margin-block-start: 18px; color: var(--muted); font-size: 0.9rem; text-align: end; }
-.improvement-total.invalid { color: var(--error); background: rgba(135, 0, 90, 0.06); }
+/* **The strayed state, and it has to stay legible on the island's new ground.** This
+   rule replaces `background` outright, so the Beetroot tint still composites over the
+   CARD's white rather than over `--mint`: `rgba(135, 0, 90, 0.06)` over `#fff` is
+   `#f8f0f5`, and `--error` (Beetroot `#87005a`) measures **8.62:1** on it — well past
+   the 4.5:1 text needs. The tint is deliberately unchanged: nothing was wrong with it,
+   and restating it opaque would be a redesign nobody asked for.
+
+   `border-color` is the one declaration added. The island's edge is `--border` while
+   the figures add up and `--error` while they do not, so a strayed allocation is said
+   by the island's outline as well as by its text — 9.64:1 against the card's white
+   behind it, past the 3:1 a non-text indicator needs. The radius and the shadow are
+   inherited from the rule above, so a strayed strip is still an island and not a flat
+   band suddenly flush with the card again. */
+.improvement-total.invalid { color: var(--error); border-color: var(--error); background: rgba(135, 0, 90, 0.06); }
 .improvement-actions { margin-top: 22px; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 12px; }
 
 /* 144px chart + 440px controls + 24px gap needs 608px inside the panel.  A 700px
@@ -2812,6 +2927,32 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
    owed. #160 is it. Measured on this build: the computed `cursor` is `default` either
    way, and the header's box is unchanged at 500px and at 1280px. */
 .step-card__toggle--static { cursor: default; }
+/* **Which half of the card opens it, answered the moment a pointer asks** (v1.NNN).
+
+   The header is the only control a card has and the `always` strip below it is not one,
+   which visitors did not know: they pressed the strip and nothing happened. The strip
+   now says what it is by being an island (`.improvement-total`); this is the other half
+   of the pair — the header takes a ground under the pointer, so the clickable region has
+   a visible boundary and that boundary is the header's.
+
+   **`--zone` and NOT `--mint`, although `--mint` is this file's usual hover ground**
+   (`.result-explanation__trigger`, `td.period-day[data-day]`, `.period-caption`,
+   `.period-clock-stage`): `--mint` is the improvement island's own ground now, and a
+   header that took the island's colour on hover would erase the distinction at exactly
+   the moment the visitor is reaching for it. `--zone` is the same green one step
+   lighter and is already this file's quiet form ground.
+
+   `:not(.step-card__toggle--static)` because a lone card's header is a `<div>` that can
+   never be pressed — the same exclusion the `cursor: default` above makes, for the same
+   reason: a hover state is a promise of a control, and promising one that does not
+   exist is the defect `cardIsFixedOpen` was written to avoid.
+
+   **No geometry changes.** One `background-color` and nothing else, so no card header
+   grows by a pixel at the 320px and 390px widths `test_horizontal_overflow.py` gates,
+   and the at-rest affordance is still `.step-card__chevron`, which was always there.
+   What was missing was any feedback that the header, and not the strip, is the part
+   that answers. */
+.step-card__toggle:not(.step-card__toggle--static):hover { background: var(--zone); }
 .step-card__name {
   flex: 1 1 auto;
   min-width: 0;

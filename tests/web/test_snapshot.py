@@ -92,7 +92,7 @@ globalThis.sessionStorage = {
 
 import { readFileSync, writeFileSync } from 'node:fs'
 const snapshot = await import(process.argv[2])
-const { leafKey, resetCalculator, state, taxonomyForResult } = await import(process.argv[3])
+const { leafKey, resetCalculator, setState, state, taxonomyForResult } = await import(process.argv[3])
 // A sibling of `state.js`, imported off its own URL so that `probe()` keeps the
 // signature every test above passes. `submission.js` is where the PDF request body
 // is built, and it has to convert a container count with the RESULT's `kg_per_unit`.
@@ -153,15 +153,22 @@ const probes = {
     store.set('kaiCalculatorToken', 'a-token')
     const before = store.has(snapshot.SNAPSHOT_KEY)
     const resultBefore = store.has(snapshot.RESULT_KEY)
+    // The results page's session-level preferences, set by hand because they are not
+    // in `ANSWER_KEYS` and so cannot arrive through `input.state`. They are read back
+    // off `state` below, which is the only place they ever live.
+    setState({ resultsImprovementTipDismissed: true })
+    const tipDismissedBefore = state.resultsImprovementTipDismissed
     resetCalculator()
     return {
       before,
       resultBefore,
+      tipDismissedBefore,
       snapshotAfter: store.has(snapshot.SNAPSHOT_KEY),
       resultAfter: store.has(snapshot.RESULT_KEY),
       tokenAfter: store.has('kaiCalculatorToken'),
       step: state.step,
       resultTaxonomyAfter: state.resultTaxonomy,
+      tipDismissedAfter: state.resultsImprovementTipDismissed,
     }
   },
 
@@ -1120,6 +1127,39 @@ def test_clearing_the_calculator_removes_the_result_snapshot_too(tmp_path):
         "back on a calculator the visitor had just emptied"
     )
     assert result["resultTaxonomyAfter"] is None
+
+
+@node
+def test_clearing_the_calculator_offers_the_improvement_tip_again(tmp_path):
+    """A results tip dismissed once was never offered again, Clear included.
+
+    `resultsImprovementTipDismissed` is set by the tip's own × and read by
+    `results.js` on every render, and `resetCalculator`'s patch -- which names
+    `openCards`, `expandedSectors`, `resultsNavOpen` and a dozen more, each with a
+    note on why it is cleared -- simply did not name it. So one × on a first result
+    silenced the pointer to *Explore Improvements* for every later calculation in the
+    session, including the one reached through "Clear all calculator data and return
+    to the introduction?".
+
+    **Why nothing failed, and why this case can say so without a browser.** The flag
+    is deliberately outside `ANSWER_KEYS`, so it is memory-only and a page reload
+    cleared it anyway -- every existing route to a second calculation went through a
+    reload and could not see this. The reset is the one route that does not, and the
+    reset is a function call, which is all this needs.
+
+    The browser half is
+    `test_session_restore_browser.py::test_the_improvement_tip_comes_back_for_the_next_calculation`,
+    which presses the real Clear and walks a real second calculation. This one is the
+    half that runs without the stack, and it is the one that fails first.
+    """
+    result = probe(tmp_path, "reset", state=_state())
+    assert result["tipDismissedBefore"] is True, (
+        "the dismissal was never set, so this test says nothing about clearing it"
+    )
+    assert result["tipDismissedAfter"] is False, (
+        "Clear left the improvement tip dismissed, so the next calculation offers no "
+        "pointer to Explore Improvements"
+    )
 
 
 # ------------------------------------------------ the result, and its taxonomy

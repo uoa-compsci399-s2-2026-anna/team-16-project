@@ -755,8 +755,18 @@ export function resetCalculator() {
     // decide which cards are open for a calculation that no longer exists.
     openCards: [],
     resultBreakdownTab: 'stage',
+    // Cleared with the result it was guidance about. The dismissal is held in state
+    // precisely so no later render can bring the tip back (v1.107 item 8), and left out
+    // of this patch that same durability outlived the calculation: one visitor pressing
+    // × once meant every subsequent calculation on the session opened with no pointer to
+    // Explore Improvements, including the one reached through "Clear all calculator data
+    // and return to the introduction?" — a question that promises the opposite.
+    // **A reset is not a render**, which is the whole distinction: a new calculation is a
+    // new thing to be guided about, so the tip is offered again, and within one
+    // calculation the dismissal still holds for every tab press and every keystroke.
+    resultsImprovementTipDismissed: false,
     lastChangedDestination: null,
-  lastChangedLeaf: null,
+    lastChangedLeaf: null,
     improvementOpen: false,
     improvedAllocations: [],
     improvementChartExpanded: null,

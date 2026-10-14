@@ -952,8 +952,10 @@ To calculate without persisting, send **`X-Dry-Run: true`**. Staff tuning a form
 dozens of experimental calculations would otherwise land in the public statistics.
 
 Rate limits (`docs/interfaces.md` §6.5): **600 `GET`s an hour** per caller, and **120**
-calculations and PDF exports. Past either the API answers 429, which is why a browser test
-suite does not fit inside one window — see [Tests](#tests).
+for `calculate`, `contribute` and `export/pdf` **sharing one bucket between them** — a PDF
+runs the engine exactly as a calculation does, so asking for one is not a way around the
+budget. Past either limit the API answers 429 with `RATE_LIMITED`, which is why a browser
+test suite does not fit inside one window — see [Tests](#tests).
 
 `gwp_horizon` is `20` or `100` and defaults to 100. It binds `const_GWP_CH4` to either
 `GWP_CH4_20` or `GWP_CH4_100`; formulas reference the constant and never hard-code a

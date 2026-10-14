@@ -37,10 +37,13 @@ public page and the exported document cannot drift into different type.
 
 ## What the files are
 
-Both are **228-glyph Latin subsets** of their upstream families, not the full
-faces: the panel and the calculator set Latin text, and the full families are
-several times the size for glyphs neither will ever render. A subset is a
-Modified Version under the OFL, which permits it.
+Both are subsets of their upstream families: **228 mapped codepoints each**,
+268 glyphs in Geologica Bold and 241 in Kumbh Sans Regular once composites and
+ligatures that no codepoint reaches directly are counted. Measured with
+``fontTools``, not taken from the stylesheet. The panel and the calculator set
+Latin text, and the full families are several times the size for glyphs neither
+will ever render. A subset is a Modified Version under the OFL, which permits
+it.
 
 | File | SHA-256 | Bytes |
 | --- | --- | --- |

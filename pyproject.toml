@@ -1,5 +1,8 @@
 [build-system]
-requires = ["setuptools>=68"]
+# 77, not 68, because `project.license` below is a PEP 639 SPDX expression and
+# 77.0.0 is the first release that reads one. An older back-end rejects it as
+# "must be a dict" rather than ignoring it, so this floor is load-bearing.
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -53,6 +56,23 @@ readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "UoA COMPSCI 399 Team 16 (502 Bad Gateway)" }]
 keywords = ["food-waste", "impact-calculator", "new-zealand", "kai-commitment"]
+
+# GNU General Public License v3.0 or later. `LICENSE` at the repository root
+# carries the text; the README's own "Licence" section says what it covers and,
+# more usefully, what it does not - the client's brand, the client's emissions
+# factors and the vendored MIT and SIL OFL components are each somebody else's
+# and none of them are relicensed by it.
+#
+# AN SPDX EXPRESSION, NOT A `License ::` CLASSIFIER AND NOT A TABLE. PEP 639
+# made the expression the declaration and deprecated both of the other forms,
+# so a classifier here would be metadata a new build back-end warns about and
+# an old one is merely tolerant of. This is why `[build-system]` requires
+# setuptools 77 rather than 68: 77.0.0 is the release that reads this key.
+#
+# `license-files` is deliberately absent. Its default already globs LICEN[CS]E*
+# at the project root, which is exactly the one file there is, and a pattern
+# stated by hand would be a second place for that to be wrong.
+license = "GPL-3.0-or-later"
 classifiers = [
     "Private :: Do Not Upload",
     "Framework :: FastAPI",
@@ -213,6 +233,13 @@ api = [
     "templates/*.html.j2",
     "templates/*.css",
     "assets/fonts/*.woff2",
+    # The brand faces' own licence and provenance, by the rule stated three
+    # paragraphs up and applied there only to `noto/`: the SIL OFL requires
+    # the licence to travel with the font, and `assets/fonts/*.woff2` above is
+    # a redistribution of two OFL families. They went without one until the
+    # repository was licensed, which is when the omission became visible.
+    "assets/fonts/*.txt",
+    "assets/fonts/*.md",
     "assets/fonts/noto/*.woff2",
     "assets/fonts/noto/*.txt",
     "assets/fonts/noto/*.md",
@@ -259,6 +286,12 @@ admin = [
     # one directory over, and just as invisible from the checkout.
     "static/*.js",
     "static/fonts/*.woff2",
+    # And their licence and provenance, for the api package's reason: this is
+    # the panel's own redistributed copy of two SIL OFL families, and clause 2
+    # of that licence makes the text part of the copy rather than an optional
+    # courtesy beside it.
+    "static/fonts/*.txt",
+    "static/fonts/*.md",
     # The translation catalogues (contract O-8). Same failure mode as the
     # guidance blocks above, one directory over: admin/i18n.py reads these at
     # import, so a wheel built without this line ships a panel whose language

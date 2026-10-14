@@ -554,7 +554,6 @@ export function updateImprovementInput(control, state) {
   // stale ceiling on THIS row either, because this row's own ceiling never moves: typing
   // past it (allowed on the box) mirrors straight onto the slider up to the fixed maximum,
   // exactly as before, with no ordering to get wrong.
-  const total = allocationTotal(allocations[leafIndex])
   // Mirrors the *raw* value, not the percentage just computed: every control sharing this
   // code **and this leaf** is rendered in the panel's one unit
   // (§ `ImprovementScenario`), so the slider and the number box always agree on which unit
@@ -569,11 +568,37 @@ export function updateImprovementInput(control, state) {
   within.querySelectorAll(`[data-improvement-code="${CSS.escape(code)}"]`).forEach(input => {
     if (input !== control) input.value = raw
   })
-  const error = improvementValidation(state)
+  // **One context, then two different questions of it.** The panel's sentence and the
+  // Compare button are about the whole submission and stay that way; this card's strip and
+  // badge are about this card and nothing else. They were the same question before, which
+  // is the defect: `Boolean(improvementValidation(state))` painted a leaf sitting at
+  // exactly 100.00% in Beetroot and left its badge reading *Incomplete* because a food
+  // further down the panel had not been touched yet.
+  const context = allocationContext(state)
+  const error = firstProblem(context)
+  const card = leafCardState(context, leaves[leafIndex], leafIndex)
   const totalPanel = within.querySelector ? within.querySelector('.improvement-total') : null
-  ;(totalPanel || document.querySelector('.improvement-total'))?.classList.toggle('invalid', Boolean(error))
+  ;(totalPanel || document.querySelector('.improvement-total'))?.classList.toggle('invalid', card.strayed)
+  // **The badge has to be rewritten here, and nothing else was going to do it.** This
+  // function patches the DOM instead of calling `setState` (the caret), so no subscriber
+  // fires and no re-render follows a keystroke: a badge drawn once at render time stayed
+  // on whatever it said when the panel opened, for the whole visit. That is step 3 and
+  // step 4's `updateCardBadges` in `calculator.js`, and the reason given there holds here
+  // word for word — a badge that moves only when some *other* thing re-renders is a
+  // promise about a card the visitor has just finished filling in.
+  //
+  // A single-leaf panel draws no card and so has no badge; `within` is `document` there and
+  // the query simply finds nothing.
+  const badge = within.querySelector ? within.querySelector('[data-card-status]') : null
+  if (badge) {
+    const status = cardStatus(card.settled)
+    badge.dataset.state = status.state
+    const mark = badge.querySelector('.step-card__mark')
+    if (mark) mark.textContent = status.mark
+    badge.querySelector('[data-card-status-text]').textContent = status.text
+  }
   const totalValue = document.getElementById(`improvement-total-value--${leafIndex}`) || document.getElementById('improvement-total-value')
-  if (totalValue) totalValue.textContent = `${total.toFixed(2)}%`
+  if (totalValue) totalValue.textContent = `${card.total.toFixed(2)}%`
   // This path deliberately patches the DOM rather than re-rendering (a re-render would take
   // the caret out of the box mid-number), so the donut has to be redrawn by hand or it would
   // show the allocation as it stood before the keystroke.
@@ -597,13 +622,13 @@ export function allocationTotal(allocations) {
 }
 
 /**
- * '' when the improvement scenario can be submitted.
+ * The parts of `state` every allocation rule reads, gathered once.
  *
- * The mass check is §6.2's own rule, applied in kilograms to the lines that will actually
- * be sent. A percentage tolerance is a different rule at every tonnage: 0.01 percentage
- * points is 0.15 kg on a 1,500 kg entry, fifteen times §6.2's limit, so the panel enabled
- * Compare on a submission the server then refused with a 400 — after the user had left the
- * screen where the numbers are.
+ * The panel-wide question and the per-card question below are the same rules asked over a
+ * different number of leaves, so they take one object rather than each building their own:
+ * a context built twice is two chances for the panel's inline error and a card's own badge
+ * to answer about different presets, a different unit, or a different wording of one
+ * refusal. `updateImprovementInput` runs a keystroke at a time and builds exactly one.
  *
  * **The blank/range message names the unit on screen, not the one stored.** The state
  * this checks is always a percentage (see `updateImprovementInput`), but a visitor working
@@ -618,60 +643,122 @@ export function allocationTotal(allocations) {
  * say what the panel already says on screen — and "the unit shown" now points at a single
  * unambiguous control rather than at whichever row the visitor is looking at.
  */
-export function improvementValidation(state) {
+function allocationContext(state) {
   const presets = state.taxonomy?.unit_presets || []
+  const leaves = submissionEntries(state)
   const rangeMessage = panelUnit(state, presets) !== 'percentage'
     ? t('Enter an amount from 0 up to the total, in the unit shown, for every destination.')
     : t('Enter a percentage from 0 to 100 for every destination.')
-  const leaves = submissionEntries(state)
-  const allocations = leafAllocations(state)
-  // **Every rule is per leaf, since the fork.** Each leaf's own sliders must total 100% of
-  // *its* mass, which is what the server checks per entry — one submission-wide total of
-  // 100% says nothing about whether any individual entry conserves its own mass, and it is
-  // the entry the API refuses.
-  //
   // The message names the food when there is more than one, because "allocations must
   // total 100%" pointing at no particular card is unactionable on a five-column panel.
   const named = (leaf, message) => (leaves.length === 1
     ? message
     : t('%(food)s: %(message)s', { food: leafDisplayName(leaf, state.taxonomy), message }))
-  for (const [index, leaf] of leaves.entries()) {
-    const mine = allocations[index] || {}
-    const values = Object.values(mine)
-    if (!values.length) return named(leaf, rangeMessage)
-    if (values.some(value => value === '' || !Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > 100)) return named(leaf, rangeMessage)
-    const total = allocationTotal(mine)
-    const mismatch = t('Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.', { total: total.toFixed(2) })
-    if (Math.abs(total - 100) > 0.01) return named(leaf, mismatch)
-    const currentKg = leafAllocatableKg(leaf, presets)
-    // **The panel must not redistribute a mass smaller than the one the visitor
-    // declared.** Every figure below this line is a share of `currentKg`, which is the
-    // sum of the rows that can actually be sent — so a row the taxonomy revalidation has
-    // emptied (a retired `unit_preset`, §7.2a) takes the sliders, the *Total mass* line
-    // and the whole alternative scenario down with it, and Compare Impact upserts on the
-    // same token under §5.3. **Reachable**: `restoredPatch` restores step 5 when there is
-    // a result to draw, so Explore Improvements is one press from a pruned form.
-    //
-    // Step 4 is gated on the allocation matching the declared total exactly (v1.99), so
-    // in a form the visitor has walked through these two agree by construction and this
-    // can only fire on a chain something changed underneath. `MASS_TOLERANCE_KG` is the
-    // tolerance already derived for this comparison in this module — each line is rounded
-    // to 3 dp and §6.2 caps a scenario at 20 lines — and it is one-directional, because
-    // only the shortfall direction is reachable by pruning.
-    //
-    // The message is step 3's own, already in all twenty catalogues: no new key, which
-    // is what keeps this clear of §7.7's `Catalogue.gettext` trap. It is reported through
-    // `improvementValidation`, so Compare Impact is **disabled** rather than merely
-    // failing on press — the refusal is the guarantee, the sentence is the explanation.
-    const declared = entryTotal(leaf, presets)
-    const declaredKg = massToKg(declared.amount, declared.unit)
-    if (declaredKg !== null && declaredKg - currentKg > MASS_TOLERANCE_KG) {
-      return named(leaf, t('There is still %(short)s %(unit)s to place. Every destination amount together has to add up to the waste you entered.', { short: (declaredKg - currentKg).toFixed(2), unit: 'kg' }))
-    }
-    const improvedKg = sumQtyKg(improvedLines(leaf, mine, presets))
-    if (Math.abs(improvedKg - currentKg) > MASS_TOLERANCE_KG) return named(leaf, mismatch)
+  return { presets, leaves, allocations: leafAllocations(state), rangeMessage, named }
+}
+
+/**
+ * '' when ONE leaf's allocation can be sent, or the sentence that says why it cannot.
+ *
+ * **Every rule is per leaf, since the fork.** Each leaf's own sliders must total 100% of
+ * *its* mass, which is what the server checks per entry — one submission-wide total of
+ * 100% says nothing about whether any individual entry conserves its own mass, and it is
+ * the entry the API refuses.
+ *
+ * **So this is the whole of the rule, and `improvementValidation` is a loop over it.** It
+ * was the other way round: the per-leaf rules lived inside that loop and nothing could ask
+ * them about one leaf, so the only question a card could reach was "can the whole panel be
+ * submitted?" — and every card on a forked chain was painted with the first unfinished
+ * card's answer. See `leafCardState`.
+ *
+ * The mass check is §6.2's own rule, applied in kilograms to the lines that will actually
+ * be sent. A percentage tolerance is a different rule at every tonnage: 0.01 percentage
+ * points is 0.15 kg on a 1,500 kg entry, fifteen times §6.2's limit, so the panel enabled
+ * Compare on a submission the server then refused with a 400 — after the user had left the
+ * screen where the numbers are.
+ */
+function leafAllocationProblem({ presets, allocations, rangeMessage, named }, leaf, index) {
+  const mine = allocations[index] || {}
+  const values = Object.values(mine)
+  if (!values.length) return named(leaf, rangeMessage)
+  if (values.some(value => value === '' || !Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > 100)) return named(leaf, rangeMessage)
+  const total = allocationTotal(mine)
+  const mismatch = t('Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.', { total: total.toFixed(2) })
+  if (Math.abs(total - 100) > 0.01) return named(leaf, mismatch)
+  const currentKg = leafAllocatableKg(leaf, presets)
+  // **The panel must not redistribute a mass smaller than the one the visitor
+  // declared.** Every figure below this line is a share of `currentKg`, which is the
+  // sum of the rows that can actually be sent — so a row the taxonomy revalidation has
+  // emptied (a retired `unit_preset`, §7.2a) takes the sliders, the *Total mass* line
+  // and the whole alternative scenario down with it, and Compare Impact upserts on the
+  // same token under §5.3. **Reachable**: `restoredPatch` restores step 5 when there is
+  // a result to draw, so Explore Improvements is one press from a pruned form.
+  //
+  // Step 4 is gated on the allocation matching the declared total exactly (v1.99), so
+  // in a form the visitor has walked through these two agree by construction and this
+  // can only fire on a chain something changed underneath. `MASS_TOLERANCE_KG` is the
+  // tolerance already derived for this comparison in this module — each line is rounded
+  // to 3 dp and §6.2 caps a scenario at 20 lines — and it is one-directional, because
+  // only the shortfall direction is reachable by pruning.
+  //
+  // The message is step 3's own, already in all twenty catalogues: no new key, which
+  // is what keeps this clear of §7.7's `Catalogue.gettext` trap. It is reported through
+  // `improvementValidation`, so Compare Impact is **disabled** rather than merely
+  // failing on press — the refusal is the guarantee, the sentence is the explanation.
+  const declared = entryTotal(leaf, presets)
+  const declaredKg = massToKg(declared.amount, declared.unit)
+  if (declaredKg !== null && declaredKg - currentKg > MASS_TOLERANCE_KG) {
+    return named(leaf, t('There is still %(short)s %(unit)s to place. Every destination amount together has to add up to the waste you entered.', { short: (declaredKg - currentKg).toFixed(2), unit: 'kg' }))
+  }
+  const improvedKg = sumQtyKg(improvedLines(leaf, mine, presets))
+  if (Math.abs(improvedKg - currentKg) > MASS_TOLERANCE_KG) return named(leaf, mismatch)
+  return ''
+}
+
+/**
+ * The two things one leaf's card says about itself, from one question asked once.
+ *
+ * `settled` is the badge's word and `strayed` is whether the always-visible total strip is
+ * painted as an error. Both are about THIS leaf and nothing else on the panel, which is
+ * the whole of the fix: the strip used to be painted from `improvementValidation`, the
+ * submission-wide answer, so a card sitting at exactly 100.00% was drawn in Beetroot and
+ * badged *Incomplete* because a different food further down had not been touched yet.
+ *
+ * **`settled` asks `leafAllocationProblem`, which is what Compare Impact asks**, so a card
+ * cannot promise something the disabled button then refuses. That is step 3 and step 4's
+ * rule — see `updateCardBadges` in `calculator.js`, whose docstring states it — applied to
+ * the one step that never got it. It is stricter than the comparison it replaced: a card
+ * whose boxes sum to 100 with one of them left blank now reads *Incomplete*, which is what
+ * Compare Impact already thought of it.
+ *
+ * **`strayed` keeps its `Boolean(total)` guard.** A panel that has just opened sits at 0%
+ * on every card, which is a problem in the sense that it cannot be sent, and painting all
+ * of it as an error before the visitor has touched anything would be a worse statement
+ * than the badge's. Untouched is not wrong; touched and unfinished is.
+ */
+function leafCardState(context, leaf, index) {
+  const total = allocationTotal(context.allocations[index] || {})
+  const problem = leafAllocationProblem(context, leaf, index)
+  return { total, problem, settled: !problem, strayed: Boolean(total) && Boolean(problem) }
+}
+
+function firstProblem(context) {
+  for (const [index, leaf] of context.leaves.entries()) {
+    const problem = leafAllocationProblem(context, leaf, index)
+    if (problem) return problem
   }
   return ''
+}
+
+/**
+ * '' when the improvement scenario can be submitted.
+ *
+ * The whole panel's answer, which is the first leaf's problem in submission order; the
+ * rules themselves are `leafAllocationProblem`'s. It keeps `state` as its only argument
+ * because `tests/web/test_retired_unit_preset.py` imports and calls it that way.
+ */
+export function improvementValidation(state) {
+  return firstProblem(allocationContext(state))
 }
 
 // The alternative redistributes the mass the entry's *current* scenario describes, not the
@@ -902,9 +989,12 @@ function DestinationAllocationRow({ destination, current, improved, unit, totalK
  */
 const IMPROVEMENT_CARD_STEP = 5
 
-function LeafAllocationEditor({ state, leaf, index, count, single, current, allocation, unit, presets }) {
+function LeafAllocationEditor({ state, context, leaf, index, count, single, current, allocation, unit, presets }) {
   const totalKg = leafAllocatableKg(leaf, presets)
-  const total = allocationTotal(allocation)
+  // **This card's own answer about itself**, not the panel's. `updateImprovementInput`
+  // rewrites both of these in place on a keystroke and reads them from the same function,
+  // so the first paint and every later one state them identically.
+  const { total, settled, strayed } = leafCardState(context, leaf, index)
   const leafIndex = single ? null : index
   // **One `unit`, passed down from `ImprovementScenario` and not looked up per row** (#74).
   // Every row of every leaf's card is drawn in it, which is what makes the panel's figures
@@ -926,7 +1016,7 @@ function LeafAllocationEditor({ state, leaf, index, count, single, current, allo
   // total off. With several leaves each total is its own element, suffixed by the leaf.
   const totalId = single ? 'improvement-total-value' : `improvement-total-value--${index}`
   const massId = single ? ' id="improvement-total-kg"' : ''
-  const totalPanel = `<div class="improvement-total ${total && Math.abs(total - 100) > 0.01 ? 'invalid' : ''}" aria-live="polite"><span>${escapeHtml(t('Total allocation'))}</span><strong id="${totalId}">${total.toFixed(2)}%</strong><span class="improvement-total-mass">${escapeHtml(t('Total mass'))}: <strong${massId}>${formatNumber(totalKg, 2)}</strong> kg</span></div>`
+  const totalPanel = `<div class="improvement-total ${strayed ? 'invalid' : ''}" aria-live="polite"><span>${escapeHtml(t('Total allocation'))}</span><strong id="${totalId}">${total.toFixed(2)}%</strong><span class="improvement-total-mass">${escapeHtml(t('Total mass'))}: <strong${massId}>${formatNumber(totalKg, 2)}</strong> kg</span></div>`
   if (single) return editor + totalPanel
   //: **One collapsible card per food type** (v1.100), for #134's reason on a fourth
   //: screen: a chain of five foods draws five pie charts and five stacks of fourteen
@@ -947,10 +1037,10 @@ function LeafAllocationEditor({ state, leaf, index, count, single, current, allo
   //: goes — the card header carries the name now — and that class stays in the
   //: stylesheet because the expanded-chart dialog still draws one.
   //:
-  //: The badge is `cardStatus` over the same comparison the total strip already makes,
-  //: so the tick and the strip cannot say different things about one card. A card at
-  //: 0% reads `Incomplete`, which is true: nothing has been redistributed yet.
-  const settled = Math.abs(total - 100) <= 0.01
+  //: The badge and the total strip both come out of `leafCardState`, so the tick and the
+  //: strip cannot say different things about one card, and neither can say anything about
+  //: a different one. A card at 0% reads `Incomplete`, which is true: nothing has been
+  //: redistributed yet.
   return collapsibleCard({
     step: IMPROVEMENT_CARD_STEP,
     key: String(index),
@@ -970,7 +1060,10 @@ export function ImprovementScenario(state) {
   const leaves = submissionEntries(state)
   const current = currentAllocationPercentages(state)
   const allocations = leafAllocations(state)
-  const error = improvementValidation(state)
+  // One context for the panel's own sentence and for every card's badge below, so the
+  // disabled Compare button and the card that explains it are answering the same question.
+  const context = allocationContext(state)
+  const error = firstProblem(context)
   // Item ⑧: a site manager thinks in tonnes or bins diverted, not in percentage points.
   // This decides only what the sliders and boxes below *display* — see the note on
   // `updateImprovementInput` for why the stored allocation is unaffected either way.
@@ -1009,7 +1102,7 @@ export function ImprovementScenario(state) {
   const unitField = `<div class="form-field improvement-mode-field"><label for="improvement-mode">${escapeHtml(t('Unit'))}</label><select id="improvement-mode" title="${escapeHtml(unitDisplayName(unit, presets))}">${unitOptionsHtml(presets, unit)}</select></div>`
   const single = leaves.length === 1
   const editors = leaves.map((leaf, index) => LeafAllocationEditor({
-    state, leaf, index, count: leaves.length, single,
+    state, context, leaf, index, count: leaves.length, single,
     current: current[index] || {}, allocation: allocations[index] || {}, unit, presets,
   })).join('')
   // The intro says what is being redistributed. On a forked chain the answer is "each

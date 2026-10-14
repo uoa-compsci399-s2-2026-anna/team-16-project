@@ -39,6 +39,80 @@ export function slug(value) {
 }
 
 /**
+ * The two icon shapes the interface draws by hand, and the box their coordinates live in.
+ *
+ * **They are paths rather than characters because a character's vertical position is a
+ * property of the font, and nothing in this repository can hold a font to it.** The
+ * disclosure chevron was `⌄` U+2304 DOWN ARROWHEAD and the dismiss was `×` U+00D7, and
+ * both are present in Kumbh Sans — `document.fonts.check` says so and the advance width
+ * is not the fallback's, so this was never a missing-glyph fallback. It is where the ink
+ * sits inside the em. Measured in Kumbh Sans at a 100-unit em, ink relative to the
+ * baseline:
+ *
+ *     glyph           ink top   ink bottom   ink centre
+ *     ⌄ U+2304             12      -22          -5   (below the baseline)
+ *     × U+00D7             45        4        24.5
+ *     x (reference)        49        0        24.5
+ *     D (reference)        74        0          37
+ *
+ * `⌄`'s ink is drawn almost entirely *under* the baseline, so every box a layout can
+ * centre — the line box, the inline box, the flex item — puts the arrowhead below the
+ * word it labels: 4.88px low on step 1's *Details* button and 5.3px low in a card
+ * header, measured on the built page.
+ *
+ * `×` has the same defect in a milder form, and it is worth stating because it shows the
+ * cause is not "a broken glyph". Kumbh Sans is ascent 0.99em / descent 0.25em, so the
+ * baseline sits about 80% of the way down the em and the centre of a line box is
+ * (0.99 − 0.25) / 2 = 0.37em above the baseline. `×`'s ink is centred 0.245em above it —
+ * so any box-centring layout draws it 0.125em low, which on the dismiss control's
+ * 1.4rem is the 2.8px measured off the centre of its 44px circle.
+ *
+ * `x` and `D` are in the table because they are what makes that number legible rather
+ * than arbitrary: `x` shares `×`'s ink centre exactly (0.245em), and `D`'s cap centre is
+ * 0.37em — the line box's own centre, to the unit. **So centring a box on a line of text
+ * puts the box's centre on the cap height of that text**, which is the right answer for
+ * an icon beside a capitalised label and is the mechanism the three rules in
+ * `styles.css` now use. What it could never be made to do is rescue a glyph whose ink is
+ * 22 units under the baseline.
+ *
+ * A `translateY` would fix either one for one font at one size, which is a number that
+ * stops being true the day the font or the `font-size` changes and nothing in the suite
+ * would report it. A path has no font metrics to compensate for.
+ *
+ * **Both shapes are drawn on the centre of `ICON_BOX`**, so the element's box centre IS
+ * the ink's centre and centring the box is all a layout has to do. Both are also mirror
+ * images of themselves about that box's vertical axis, which is what lets one shape
+ * serve both halves of a disclosure state: `rotate(180deg)` leaves the *extent* exactly
+ * where it was, so the chevron turns in place and the row does not shift under it, while
+ * the shape itself flips to point the other way — which is the whole purpose of
+ * `.chevron.expanded` (see `.step-card__chevron` in `styles.css`). It does **not** map
+ * onto itself, and must not: an arrow that survived its own rotation unchanged would
+ * indicate nothing. The cross does, being symmetric on both axes, and that is incidental.
+ *
+ * `tests/web/test_icon_geometry.py` holds both claims, and it exists because the browser
+ * cases measure the element's box against the text beside it and are blind to where the
+ * ink sits inside that box — which is the defect these paths replaced, authored by hand
+ * instead of inherited from a font.
+ *
+ * `currentColor`, so the colour rules that already exist — `--muted` on a card
+ * chevron, `--green-dark` on the dismiss — keep working with nothing new declared.
+ *
+ * Here rather than at the three call sites (`calculator.js`'s *Details* button,
+ * `cards.js`'s card header, `results.js`'s improvement tip) because the geometry is one
+ * decision and the coordinates are meaningless without the viewBox they are in: sharing
+ * the path and restating the box at each site is how the two drift apart. Each site
+ * still writes its own `class` attribute as a literal, which is what keeps those class
+ * names visible to `tests/web/test_class_rules.py`.
+ */
+export const ICON_BOX = '0 0 24 24'
+
+/** A chevron pointing down, 10 units wide and 6 deep, centred on `ICON_BOX`. */
+export const CHEVRON_PATH = '<path d="M 5 9 L 12 15 L 19 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
+
+/** A cross on the diagonals of `ICON_BOX`, centred on it by construction. */
+export const CROSS_PATH = '<path d="M 7 7 L 17 17 M 17 7 L 7 17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+
+/**
  * The six screens the wizard names, in order.
  *
  * Lives here rather than in `calculator.js` because `results.js` needs the same

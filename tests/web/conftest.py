@@ -96,6 +96,15 @@ HERE = pathlib.Path(__file__).resolve().parent
 #: `test_suite_isolation.py` fails on an entry whose file does in fact reach
 #: Playwright - so the list cannot outlive the reason it was written for.
 NOT_A_BROWSER_SUITE = {
+    "test_icon_geometry.py":
+        "reads the two icon path constants out of `web/js/view.js` and measures "
+        "their declared extent against `ICON_BOX`. The subject is the path data, "
+        "which is a constant in the source, so there is nothing to serve and "
+        "nothing to paint. It exists because the browser cases beside it measure "
+        "the icon's ELEMENT BOX against the text, and a path drawn off-centre "
+        "inside a correctly placed box is invisible to all of them -- measured, "
+        "not predicted: that mutation was run against a rebuilt image and killed "
+        "nothing",
     "test_allocation_unit_granularity.py":
         "runs `calculator.js`'s own `render()` and `bindCalculator` click "
         "handler under Node over a leaf it sets up itself, and reads the "

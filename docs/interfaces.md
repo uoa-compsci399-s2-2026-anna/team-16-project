@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-10-14 (v1.118)"
+date: "2026-10-14 (v1.119)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,56 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.119 — 2026-10-14 (five screens drew an icon below the text it labelled; one root cause, replaced with inline SVG; affects C and D)
+
+**The owner reported five separate complaints and they are one defect.** Four of them are the disclosure chevron sitting visibly below the word it labels — on step 1's *Details* button, and on the collapsible card header that steps 2.5, 3 and 4 and the results page's improvement panel all share. The fifth is the improvement tip's dismiss `×` drawn off-centre in its 44px circle.
+
+**It was never a missing-glyph fallback, and that mattered because the obvious reading was the wrong one.** Kumbh Sans — the self-hosted body face — contains both characters: `document.fonts.check` returns true for `⌄` U+2304 and the glyph's advance width is not the fallback's. What was wrong is where the ink sits inside the em. Measured in Kumbh Sans at a 100-unit em, relative to the baseline:
+
+| glyph | ink top | ink bottom | ink centre |
+| --- | ---: | ---: | ---: |
+| `⌄` U+2304 DOWN ARROWHEAD | 12 | **−22** (below the baseline) | **−5** (below the baseline) |
+| `×` U+00D7 | 45 | 4 | 24.5 |
+| `x` (reference) | 49 | 0 | 24.5 |
+| `D` (reference) | 74 | 0 | 37 |
+
+The face is ascent 0.99em / descent 0.25em, so the baseline sits about 80% of the way down the em and the centre of a line box is (0.99 − 0.25) / 2 = **0.37em above the baseline**. `D`'s cap centre is 0.37em — the same point — which is why centring a box on a line of text is the right rule for an icon beside a capitalised label. `x` and `×` are centred 0.245em above the baseline, 0.125em low. And `⌄` is centred *five units under the baseline*, which no box-centring layout can rescue, because the ink is not inside the box being centred.
+
+On the built page, before this revision:
+
+| control | rule | measured |
+| --- | --- | --- |
+| step 1 `.chevron` | `font-size: 1.2rem; line-height: 0` | ink centre **4.88px below** the *Details* text's x-height centre, **and a box of height 0** |
+| `.step-card__chevron` | `font-size: 1.1rem; line-height: 1`, in a `display: flex; align-items: center` header | ink centre **5.3px below** the card name's x-height centre |
+| `.results-improvement-tip__dismiss` | 44px `inline-flex`, `place-items: center`, `line-height: 1; font-size: 1.4rem` | ink centre **2.8px below** the circle's centre — which is exactly 0.125em at 1.4rem |
+
+`line-height: 0` on `.chevron` is the worst of it and is a separate fault from the glyph: it collapsed that element's inline box to **height 0**, so the arrowhead was painted entirely outside the box the layout was positioning. There was no centre to put anywhere.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **All three icons are hand-written inline SVG, and the geometry is authored once.** `view.js` gains `ICON_BOX` (`0 0 24 24`), `CHEVRON_PATH` (`M 5 9 L 12 15 L 19 9`) and `CROSS_PATH` (`M 7 7 L 17 17 M 17 7 L 7 17`), all stroked with `currentColor`. Both shapes are **symmetric about the centre of `ICON_BOX`**, so the element's box centre *is* the ink's centre and a layout has only to centre the box. The viewBox is interpolated from the same constant at all three call sites rather than restated, because coordinates without their box are the drift this would otherwise introduce | §7.3a |
+| 2 | **An SVG rather than a `translateY` of the measured offset, and that is the decision this entry is really recording.** 5.3px is correct for Kumbh Sans at 1.1rem and for nothing else: change the face, change the `font-size`, and the number is silently wrong with nothing in the suite able to report it. A path has no font metrics to compensate for. There is precedent in this tree — `calculator.js` already draws the hero's food-arch mask by hand and `charts.js` draws SVG — so this is not a new technique and no library is added | §7.3a, §7.6 |
+| 3 | **Every class name is unchanged**: `.chevron`, `.chevron.expanded`, `.step-card__chevron`, `.step-card__chevron.expanded`, `.results-improvement-tip__dismiss`. The `class` attribute stays a literal plus a ternary of literals at each site, which is what keeps those names visible to `tests/web/test_class_rules.py`'s scan; a shared `icon(classes)` helper would have hidden them behind an unresolvable expression and cost the gate three real names. The dismiss icon is selected as `.results-improvement-tip__dismiss svg`, by element, for the same reason: a new class would have to earn a register entry and this disc can contain nothing else | §7.6 |
+| 4 | **The rotation mechanism is preserved, reasoning and all.** `.chevron.expanded` and `.step-card__chevron.expanded` still apply `transform: rotate(180deg)`, which works on an `<svg>` element unchanged, and the stylesheet's standing note — *one shape in the markup, so the chevron cannot disagree with `aria-expanded` about which way it points* — is still true and is now **stronger**: a half turn maps `CHEVRON_PATH` onto itself, so the open state occupies the same box as the shut one | §7.3a |
+| 5 | **`.details-button` becomes `display: flex; align-items: center; justify-content: center; gap: 5px`, and the flex is the centring mechanism rather than a layout preference.** `align-items: center` puts the icon's box centre on the line box's centre, which per the table above is the cap centre of the `D` the label starts with. `justify-content` restores the centring the button's default `text-align` was doing, and `gap` replaces a literal space character in the markup plus `.chevron`'s `margin-inline-start: 5px` — one authored number, and not one that depends on whether flex trimmed a trailing space | §7.3a |
+| 6 | **The `max-width: 480px` block's `text-align: start` on `.details-button` becomes `justify-content: start`.** `text-align` does not place a flex row, so the start alignment that block has always asked for would have gone silently back to centred below 480px. Same intent, on the property that now carries it; `start` rather than `flex-start` so it still mirrors from `dir` alone | §7.3a |
+| 7 | **`line-height: 0` leaves `.chevron` and `line-height: 1` leaves `.step-card__chevron` and `.results-improvement-tip__dismiss`.** The first was the zero-height box. The other two are dead declarations once the child is not text: those elements are flex items or flex containers with no line box for a line height to describe. `display: inline-block` and `margin-inline-start` leave `.chevron` for the same reason and item 5 respectively | §7.3a |
+| 8 | **`font-size` stays on all three, and the comments say why**, because it now reads as a leftover: it is the unit the `em` sizing reads, so it is still what makes each icon track the scale of the text beside it. Every icon is `inline-size: 1em; block-size: 1em` | §7.3a |
+| 9 | **`currentColor`, so no colour is declared twice.** `--muted` on the card chevron and `--green-dark` on the dismiss still reach the shape through the rules that already existed, and the dismiss's hover still changes ground alone. A `stroke="#..."` in the markup would look identical on this build and stop tracking the token, so the two browser cases read the icon's computed `color` back | §7.3a |
+| 10 | **`aria-hidden="true"` stays on all three icons.** They are decoration; the state is carried by `aria-expanded` and by the badge's own words (#134), and the dismiss's name is its `aria-label`. The dismiss case asserts the control's `innerText` is **empty**, which a character would not satisfy — a screen reader must be given a word, not a glyph | §7.3a |
+| 11 | **No catalogue key is added, removed or changed, and no translatable string is introduced.** Path data is not copy. `tests/web/i18n_keys.py` is a regex over the source and would not have seen a string moved into a template literal, so this was checked rather than assumed: `tests/web/test_i18n_web.py` passes, 194 cases with `test_class_rules.py` and `test_js_syntax.py`. **No CJK re-cut is needed** — the change removes two characters from the markup and adds none | §7.7 |
+| 12 | **No API field, request shape, response shape or fixture changes.** §0's step 3 is a no-op; step 2 is the owner's | §0 |
+| 13 | **Seven new browser cases, and the geometric claim in each is a rule rather than a number**: *the icon's rendered box is vertically centred on the text it sits beside, within 1px*. `test_step_one_card_spacing.py` gains the *Details* button's (centred, and the arrow reverses on open); `test_step_card_collapse_browser.py` gains the card header's two; `test_results_export.py` gains the dismiss disc's, on both axes because a circle's horizontal centring is as visible as its vertical. Each measures the box's **existence** before its centre, because a zero-height box is centred on everything and the `line-height: 0` defect would otherwise read as fixed | §0 |
+| 13a | **One of the seven exists only because of item 6**, and it is the one worth naming. Nothing in `tests/web/` measured the horizontal placement of the *Details* button's contents at any width, so `text-align: start` quietly doing nothing on a flex container was a regression this change would have introduced with no witness. `test_the_details_label_is_centred_wide_and_reading_start_narrow` asserts both placements at 1280px and 320px, as a pair of insets rather than a coordinate so neither width is hard-coded, and it states its own slack precondition so it cannot pass vacuously on a button its contents fill | §0 |
+| 13b | **Each icon's `stroke` is compared against the element's computed `color`, not read on its own.** That is what `stroke="currentColor"` actually claims, and a `stroke="#003223"` written into the path renders identically on this build — on the dismiss disc it is identical by construction, since the rule declares the same token. It is the one mutation in this change that is invisible to the eye and visible only to a test | §0 |
+| 14 | **The card-header case asserts its own precondition.** `.step-card__toggle` is `flex-wrap: wrap` for the 320px guard, and once the name takes its own flex line the two items are centred in *different* lines and the comparison says nothing. `sameLine` fails the case rather than letting it pass vacuously | §0 |
+
+**Out of scope, and stated because it looks like the same thing and is not.** The site drawer's handle chevron is drawn in CSS as a `::after`, not as a character, and `tests/web/test_site_drawer.py` measures its rotation in both LTR and RTL. It is a different mechanism and it is correct. It is untouched.
+
+**What this does not do, and the limit is in the assertions rather than in the fix.** The seven cases measure the icon's **box**, which is the right subject for a layout defect and is what every one of the five complaints was. They cannot see a path drawn off-centre *inside* a correctly placed box: moving `CHEVRON_PATH` to `M 5 12 L 12 18 L 19 12` shifts the ink by 3/24 of the icon and fails nothing. The guard against that is the symmetry being stated in `view.js` and in both stylesheet comments, and the fact that a path pushed far enough off-centre is clipped by the outermost `<svg>`'s `overflow: hidden` and visible on one look. A case that could catch it would have to read pixels, which this suite does nowhere.
+
+And `.step-card__chevron` transitions `transform` while still being absent from the `prefers-reduced-motion: reduce` block, which carries `.chevron` only. That is a pre-existing gap in a rule this revision did not write and is left for whoever owns that block; it is named here so it is not rediscovered as part of this change.
 
 ### v1.118 — 2026-10-14 (a dismissed results tip is offered again for the next calculation; affects C and D)
 

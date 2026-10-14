@@ -5364,3 +5364,103 @@ def test_the_screen_and_the_file_carry_the_identical_period_sentence(tmp_path):
             f"{time_frame}: the page and the file word the period differently.\n"
             f"file: {sentence!r}"
         )
+
+
+# ----------------------------------------------- the tip's dismiss, in its disc
+
+#: The dismiss icon's box against the circle that holds it.
+#:
+#: Both axes, because the control is a circle: a disc is the one shape whose
+#: horizontal centring is as visible as its vertical, and the horizontal
+#: assertion costs nothing while being the thing that would catch a path drawn
+#: off-centre sideways in its viewBox. `padding` is read back as well, since a
+#: button with asymmetric padding could satisfy a centring assertion that
+#: compared against the content box rather than the border box.
+DISMISS = """() => {
+  const button = document.querySelector('.results-improvement-tip__dismiss');
+  if (!button) return null;
+  const icon = button.querySelector('svg');
+  if (!icon) return {tag: null, label: button.getAttribute('aria-label')};
+  const b = button.getBoundingClientRect(), i = icon.getBoundingClientRect();
+  const style = getComputedStyle(button);
+  const round = v => Math.round(v * 100) / 100;
+  return {
+    tag: icon.tagName.toLowerCase(),
+    label: button.getAttribute('aria-label'),
+    text: button.innerText.trim(),
+    circle: [round(b.width), round(b.height)],
+    icon: [round(i.width), round(i.height)],
+    offsetY: round((i.top + i.height / 2) - (b.top + b.height / 2)),
+    offsetX: round((i.left + i.width / 2) - (b.left + b.width / 2)),
+    radius: style.borderRadius,
+    colour: getComputedStyle(icon).color,
+    stroke: getComputedStyle(icon.querySelector('path')).stroke,
+  };
+}"""
+
+
+@pytest.mark.browser
+def test_the_tips_dismiss_icon_sits_in_the_centre_of_its_circle(results_page):
+    """**The fifth of the owner's five reports, and the same root cause.**
+
+    The other four are the disclosure chevron; this one is the `×` in the
+    improvement tip's dismiss disc, and it is the same defect with the sign
+    reversed. The circle is `inline-flex` with `align-items: center` and
+    `justify-content: center`, which was already centring its one child exactly
+    — and the cross still drew 2.8px low, because what a flex line centres is
+    the child's box. In Kumbh Sans the baseline sits about 80% of the way down
+    the em, so a line box's centre is 0.37em above the baseline while `×`'s ink
+    is centred 0.245em above it; the 0.125em difference is 2.8px at this
+    control's 1.4rem.
+
+    **So the assertion is that the icon is centred in the disc within a pixel,
+    on both axes, and that is a rule rather than a number.** An offset of
+    2.8px would have been correct for Kumbh Sans at 1.4rem and for nothing
+    else, and nothing in this suite would have reported it stale — which is why
+    the fix is an inline `<svg>` whose ink is symmetric about its own box.
+
+    `text` is asserted empty on purpose: the control's accessible name is
+    `aria-label="Dismiss"` and the icon is `aria-hidden`, so a screen reader
+    must still be given a word rather than a character. Replacing the path with
+    a glyph again would put something in `innerText` and fail here as well as
+    on the geometry.
+    """
+    found = results_page.evaluate(DISMISS)
+    assert found, "the results page drew no improvement tip to dismiss"
+    assert found["tag"] == "svg", (
+        f"the dismiss icon is not an inline <svg>, so its position is a property of "
+        f"the font again: {found}"
+    )
+    assert found["label"] == "Dismiss", found
+    assert found["text"] == "", (
+        f"the dismiss control has visible text, so the icon is a character again and "
+        f"a screen reader is being offered it alongside the label: {found}"
+    )
+
+    #: The disc first: a 44px target is WCAG 2.5.5 and the centring assertions
+    #: below would be satisfied by a circle that had collapsed.
+    assert found["circle"] == [44.0, 44.0], f"the dismiss disc is not 44x44: {found}"
+    assert "50%" in found["radius"] or found["radius"].startswith("22"), found
+    assert found["icon"][0] > 1 and found["icon"][1] > 1, (
+        f"the icon has no box to centre: {found}"
+    )
+
+    assert abs(found["offsetY"]) <= 1, (
+        f"the dismiss icon is not vertically centred in its circle (positive is below; "
+        f"2.8px was the measurement before this was fixed): {found}"
+    )
+    assert abs(found["offsetX"]) <= 1, (
+        f"the dismiss icon is not horizontally centred in its circle, which on a disc "
+        f"is as visible as the vertical: {found}"
+    )
+
+    #: `currentColor` in the path is the whole of why `--green-dark` still
+    #: reaches the shape; a hard-coded `stroke` would look identical here and
+    #: stop tracking the token.
+    assert found["colour"] not in ("", "rgb(0, 0, 0)"), (
+        f"the icon is not taking the control's own colour any more: {found}"
+    )
+    assert found["stroke"] == found["colour"], (
+        f"the path's stroke has left the element's colour, so `currentColor` has been "
+        f"replaced by a literal that looks identical on this build: {found}"
+    )

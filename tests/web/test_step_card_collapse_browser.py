@@ -606,3 +606,165 @@ def test_the_combined_total_is_live_whether_the_cards_are_open_or_shut(forked):
         "belongs to the step"
     )
     assert "1,000.00" in page.inner_text(".combined-total"), page.inner_text(".combined-total")
+
+
+# ------------------------------------------------------ the header's chevron
+
+#: The header chevron's box against the card name's, per card.
+#:
+#: Both are flex items of the same `align-items: center` header, so the claim
+#: this measures is exactly the one the stylesheet makes: their box centres are
+#: the same point. The glyph this replaced satisfied that and still looked
+#: wrong, because what a flex line centres is the span's box and `⌄` U+2304
+#: draws its ink 22 units BELOW the baseline at a 100-unit em in Kumbh Sans -
+#: so the box was centred and the arrowhead was 5.3px under the name.
+#:
+#: `sameLine` is here to refuse a reading rather than to make one. The header is
+#: `flex-wrap: wrap` for the 320px guard, and once the name takes its own flex
+#: line the two centres are centred in DIFFERENT lines and comparing them says
+#: nothing. The measurement is only valid while they share a line.
+CHEVRON = """() => [...document.querySelectorAll('.step-card__toggle')].map(toggle => {
+  const icon = toggle.querySelector('.step-card__chevron');
+  const name = toggle.querySelector('.step-card__name');
+  if (!icon) return {tag: null, legend: name.textContent.trim()};
+  const i = icon.getBoundingClientRect(), n = name.getBoundingClientRect();
+  const round = v => Math.round(v * 100) / 100;
+  return {
+    tag: icon.tagName.toLowerCase(),
+    legend: name.textContent.trim(),
+    width: round(i.width),
+    height: round(i.height),
+    nameHeight: round(n.height),
+    offset: round((i.top + i.height / 2) - (n.top + n.height / 2)),
+    sameLine: Math.abs(i.top - n.top) < Math.max(i.height, n.height),
+    colour: getComputedStyle(icon).color,
+    stroke: getComputedStyle(icon.querySelector('path')).stroke,
+    rotation: getComputedStyle(icon).transform,
+    expanded: toggle.getAttribute('aria-expanded'),
+  };
+})"""
+
+
+def _chevron_report(icons, note):
+    """A geometry failure prints what it measured, in full.
+
+    Running this file costs a `docker compose build web` and a recreate, so a
+    failure reported as `False != True` costs the whole measuring run again.
+    """
+    lines = [note, f"{'tag':>5} {'w':>6} {'h':>6} {'name':>6} {'offset':>7} {'1line':>6}  legend"]
+    for icon in icons:
+        lines.append(
+            f"{str(icon['tag']):>5} {icon.get('width', '-'):>6} {icon.get('height', '-'):>6} "
+            f"{icon.get('nameHeight', '-'):>6} {icon.get('offset', '-'):>7} "
+            f"{str(icon.get('sameLine')):>6}  {icon['legend'][:28]}")
+    return "\n".join(lines)
+
+
+def test_the_header_chevron_sits_on_the_centre_of_the_card_name(forked):
+    """**Four of the five screens the owner reported are this one header.**
+
+    `collapsibleCard` draws it for steps 2.5, 3 and 4 and for the results page's
+    improvement panel, so an arrow sitting below the name it labels was one
+    defect reported four times. Measured here, on step 3, because step 3 is
+    where the chrome was built and `test_card_folding_browser.py` says in its own
+    docstring that it does not repeat what this file already proves.
+
+    **The assertion is a rule, not the number that was wrong.** "Centred on the
+    name, within a pixel" survives a change of font and of `font-size`; the
+    5.3px measured before this would have had to be re-measured on both, and
+    nothing would have reported it stale. That is the reason the fix is an inline
+    `<svg>` and not a `translateY` of 5.3px.
+
+    The icon's `color` comes back as well, because `currentColor` in the path is
+    the whole of why `--muted` still reaches the shape: a `fill="#..."` in the
+    markup would look identical on this build and stop tracking the token.
+    """
+    page = forked(leaves=2)
+    found = page.evaluate(CHEVRON)
+    assert len(found) == 2, _chevron_report(found, "step 3 did not draw two collapsible cards:")
+
+    #: A lone card has no toggle and so no chevron by design (decision 2), which
+    #: is a legitimate `None` - but not here, with two leaves.
+    missing = [c for c in found if c["tag"] is None]
+    assert not missing, _chevron_report(found, "a shut card drew no chevron at all:")
+
+    wrong = [c for c in found if c["tag"] != "svg"]
+    assert not wrong, _chevron_report(
+        found,
+        "the chevron is a text glyph again, so its vertical position is a "
+        "property of the font rather than of this layout:")
+
+    flat = [c for c in found if c["height"] < 1 or c["width"] < 1]
+    assert not flat, _chevron_report(found, "the chevron has no box to centre:")
+
+    #: The precondition, stated rather than assumed: at this width the name and
+    #: the chevron share a flex line, and the comparison below is meaningless if
+    #: they do not.
+    wrapped = [c for c in found if not c["sameLine"]]
+    assert not wrapped, _chevron_report(
+        found,
+        "the header wrapped, so the name and the chevron are centred in "
+        "different flex lines and this case is measuring nothing - widen the "
+        "fixture rather than relaxing the assertion:")
+
+    off = [c for c in found if abs(c["offset"]) > 1]
+    assert not off, _chevron_report(
+        found,
+        "the chevron is not vertically centred on the card's name (positive is "
+        "below, which is the defect the owner reported; 5.3px was the "
+        "measurement before this was fixed):")
+
+    flat_colour = [c for c in found if c["colour"] in ("", "rgb(0, 0, 0)")]
+    assert not flat_colour, _chevron_report(
+        found,
+        f"the chevron is not taking `--muted` any more ({[c['colour'] for c in found]}), "
+        "which is what the rule in `styles.css` declares:")
+
+    #: And the path follows that colour rather than restating it. The two reads
+    #: are a pair on purpose: the one above passes against a path with
+    #: `stroke="#003223"` written into it, which is `--muted` abandoned while
+    #: looking identical on this build.
+    detached = [c for c in found if c["stroke"] != c["colour"]]
+    assert not detached, _chevron_report(
+        found,
+        f"the path's stroke has left the element's colour "
+        f"({[(c['stroke'], c['colour']) for c in found]}), so `currentColor` has "
+        "been replaced by a literal:")
+
+
+def test_the_header_chevron_turns_and_stays_centred(forked):
+    """One shape rotated, so the arrow cannot disagree with `aria-expanded`.
+
+    The stylesheet's note over `.step-card__chevron` has always claimed that and
+    the claim survives the glyph becoming a path: `CHEVRON_PATH` is symmetric
+    about the centre of its viewBox, so a half turn maps it onto itself and the
+    box it occupies does not move.
+
+    **Both halves are asserted and the second is the one that is new.** That the
+    rotation happens was already implicit in `.step-card__chevron.expanded`; that
+    the icon is still on the name's centre *after* turning is what a path drawn
+    off-centre in its own viewBox would break - and it would break it only in
+    the open state, which is the half of a disclosure nobody screenshots.
+    """
+    page = forked(leaves=2)
+    shut = page.evaluate(CHEVRON)
+    assert all(c["expanded"] == "false" for c in shut), _chevron_report(
+        shut, "the cards were not shut to begin with, so there is no turn to measure:")
+
+    page.click(f"#{page.evaluate(CARDS)[0]['toggleId']}")
+    page.wait_for_timeout(260)
+    opened = page.evaluate(CHEVRON)
+    assert opened[0]["expanded"] == "true", _chevron_report(opened, "the card did not open:")
+
+    assert opened[0]["rotation"] != shut[0]["rotation"], _chevron_report(
+        opened,
+        "the chevron points the same way open as shut, so the only visible "
+        f"statement of the card's state is gone (shut was {shut[0]['rotation']!r}):")
+    assert opened[0]["rotation"].startswith("matrix(-1"), _chevron_report(
+        opened, "the open chevron is not a half turn of the shut one:")
+    assert abs(opened[0]["offset"]) <= 1 and opened[0]["height"] > 1, _chevron_report(
+        opened, "the chevron left the name's centre when it turned:")
+    #: The card that was not clicked did not move either - a rotation written
+    #: against the wrong element would show up here and nowhere else.
+    assert opened[1]["rotation"] == shut[1]["rotation"], _chevron_report(
+        opened, "opening one card turned the other card's chevron:")

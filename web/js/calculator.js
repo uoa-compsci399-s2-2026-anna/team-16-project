@@ -2,7 +2,7 @@ import { calculate } from './api.js'
 import { state, setState, calculatorGeneration, storeToken, resetCalculator, entryResultsFrom, draftEntry, draftLeafFigures, EMPTY_LEAF, entryLeaves, leafDisplayName, leafFigures, leafKey } from './state.js'
 import { containerKg, countLimit, entryTotal, isPlainDecimal, isPresetUnit, kgToTonnes, massToKg, PRESET_UNIT, presetUnitCode, rowKgString, unitDisplayPrecision } from './units.js'
 import { requestLines, submissionLeaves, submissionPayload } from './submission.js'
-import { escapeHtml, formatNumber, slug, stepNav } from './view.js'
+import { CHEVRON_PATH, escapeHtml, formatNumber, ICON_BOX, slug, stepNav } from './view.js'
 import { cardId, cardIsFixedOpen, cardIsOpen, cardStatus, collapsibleCard, keyAttr, openedCard } from './cards.js'
 import { t } from './i18n.js'
 import { armContribute, bindResultsSectionSpy, cancelContribute, downloadPdf, downloadResults, renderResults, resultsNavIsDocked } from './results.js'
@@ -750,7 +750,13 @@ function sectorStep() {
       const expanded = state.expandedSectors.includes(sector.code)
       const id = `sector-${slug(sector.code)}`
       const { lead, rest } = sectorCopy(sector.description)
-      return `<div class="stage-card ${isSelected ? 'selected' : ''}"><label class="stage-select" for="${id}"><input id="${id}" name="sector" type="radio" value="${escapeHtml(sector.code)}" ${isSelected ? 'checked' : ''}><span class="stage-copy"><span class="stage-title">${escapeHtml(sector.name)}</span><span class="stage-description">${escapeHtml(lead)}</span></span>${isSelected ? `<span class="selected-label" aria-hidden="true">✓ ${escapeHtml(t('Selected'))}</span>` : ''}</label>${rest ? `<button class="details-button" type="button" data-action="toggle-sector" data-sector="${escapeHtml(sector.code)}" aria-expanded="${expanded}" aria-controls="${id}-details" aria-label="${escapeHtml(expanded ? t('Hide details for %(name)s', { name: sector.name }) : t('Show details for %(name)s', { name: sector.name }))}">${escapeHtml(t('Details'))} <span class="chevron ${expanded ? 'expanded' : ''}" aria-hidden="true">⌄</span></button><div class="stage-details" id="${id}-details" ${expanded ? '' : 'hidden'}><p>${escapeHtml(rest)}</p></div>` : ''}</div>`
+      //: The chevron is an inline `<svg>` rather than the `⌄` it used to be, for the
+      //: reason `CHEVRON_PATH` carries in full: that character's ink is drawn below the
+      //: baseline, so it rendered 4.88px under the centre of the word *Details* and no
+      //: box a layout can centre would have brought it up. `.chevron` keeps its name and
+      //: `.chevron.expanded` keeps turning it half a revolution, so `aria-expanded` and
+      //: the direction the arrow points still come from the one attribute below.
+      return `<div class="stage-card ${isSelected ? 'selected' : ''}"><label class="stage-select" for="${id}"><input id="${id}" name="sector" type="radio" value="${escapeHtml(sector.code)}" ${isSelected ? 'checked' : ''}><span class="stage-copy"><span class="stage-title">${escapeHtml(sector.name)}</span><span class="stage-description">${escapeHtml(lead)}</span></span>${isSelected ? `<span class="selected-label" aria-hidden="true">✓ ${escapeHtml(t('Selected'))}</span>` : ''}</label>${rest ? `<button class="details-button" type="button" data-action="toggle-sector" data-sector="${escapeHtml(sector.code)}" aria-expanded="${expanded}" aria-controls="${id}-details" aria-label="${escapeHtml(expanded ? t('Hide details for %(name)s', { name: sector.name }) : t('Show details for %(name)s', { name: sector.name }))}">${escapeHtml(t('Details'))}<svg class="chevron ${expanded ? 'expanded' : ''}" viewBox="${ICON_BOX}" aria-hidden="true">${CHEVRON_PATH}</svg></button><div class="stage-details" id="${id}-details" ${expanded ? '' : 'hidden'}><p>${escapeHtml(rest)}</p></div>` : ''}</div>`
     }).join('')}</div>${state.error ? `<p class="field-error" role="alert">${escapeHtml(state.error)}</p>` : ''}</fieldset>${stepNav({ step: 0, back: backTarget(0) })}</section>`
 }
 

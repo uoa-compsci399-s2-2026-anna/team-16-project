@@ -600,3 +600,255 @@ def test_step_one_does_not_scroll_sideways_at_320(step_one, lang):
         f"{lang} rendered dir={direction!r}, so this is not the direction it claims to test")
     scroll_width, inner_width = page.evaluate(SIDEWAYS)
     assert scroll_width <= inner_width, f"step 1 scrolls sideways in {lang}: {scroll_width} > {inner_width}"
+
+
+# ------------------------------------------------------- the Details chevron
+
+def _chevron_report(icons, note):
+    """`_report`'s job for the chevron cases, which measure a different shape.
+
+    The spacing grid above and this one share nothing but the habit: a geometry
+    failure prints everything it measured, because the alternative is the next
+    person running the whole stack again to find out what the numbers were.
+    """
+    lines = [note, f"{'tag':>5} {'w':>6} {'h':>6} {'line':>6} {'offset':>7} {'aria':>6}  label"]
+    for icon in icons:
+        lines.append(
+            f"{icon['tag']:>5} {icon['width']:>6} {icon['height']:>6} "
+            f"{icon['textHeight']:>6} {icon['offset']:>7} {str(icon['expanded']):>6}  "
+            f"{icon['label'][:30]}")
+    return "\n".join(lines)
+
+
+
+#: Where the chevron's box sits against the word it labels, per card.
+#:
+#: **The label is a bare text node**, not an element, so it is reached with a
+#: `Range` the way `MEASURE` reaches the title's first line box - and for a
+#: related reason. A `Range` over the text gives the line box the glyphs are
+#: set in, which is the box the button's `align-items: center` is centring the
+#: icon against; measuring the button's own content box instead would pass on a
+#: button whose padding happened to be symmetric while the icon sat anywhere.
+#:
+#: `width` and `height` come back as well as the offset, because the defect had
+#: two halves and the offset alone would have missed the worse one: `.chevron`
+#: carried `line-height: 0`, which collapsed its box to height 0. A zero-height
+#: box is centred on everything - its centre and its edges are the same point -
+#: so an offset assertion on its own would have read 0 and called it fixed.
+CHEVRON = """() => [...document.querySelectorAll('.details-button')].map(button => {
+  const icon = button.querySelector('.chevron');
+  const label = [...button.childNodes].find(
+    node => node.nodeType === Node.TEXT_NODE && node.textContent.trim());
+  const range = document.createRange();
+  range.selectNodeContents(label);
+  const text = range.getClientRects()[0];
+  const box = icon.getBoundingClientRect();
+  const round = n => Math.round(n * 100) / 100;
+  return {
+    tag: icon.tagName.toLowerCase(),
+    label: label.textContent.trim(),
+    width: round(box.width),
+    height: round(box.height),
+    textHeight: round(text.height),
+    offset: round((box.top + box.height / 2) - (text.top + text.height / 2)),
+    rotation: getComputedStyle(icon).transform,
+    expanded: button.getAttribute('aria-expanded'),
+    // `stroke` against the element's own `color`, never either on its own: that
+    // is the claim `stroke="currentColor"` makes, and a hard-coded
+    // `stroke="#003223"` would render identically on this build while silently
+    // leaving the token.
+    colour: getComputedStyle(icon).color,
+    stroke: getComputedStyle(icon.querySelector('path')).stroke,
+  };
+})"""
+
+
+def test_the_details_chevron_sits_on_the_centre_of_its_label(step_one):
+    """**The owner's complaint, as a geometry: the arrow was below the word.**
+
+    It was reported on five screens and is one root cause. `⌄` U+2304 DOWN
+    ARROWHEAD draws its ink from 12 units above the baseline to 22 *below* it at
+    a 100-unit em in Kumbh Sans, so its ink centre is 5 units under the baseline
+    and every box a layout can centre puts the arrowhead under the word. It is
+    not a missing glyph: Kumbh Sans has U+2304, `document.fonts.check` returns
+    true for it and the advance width is not the fallback's.
+
+    **Asserted as a rule and not as a number, which is the whole reason the fix
+    is an `<svg>` rather than a `translateY`.** A measured offset is correct for
+    one font at one size; "centred on its label, within a pixel" stays true
+    across both. 1px is the tolerance because sub-pixel layout rounding is real
+    and 5.3px - what this measured before - is not within it.
+
+    Two claims, and the order matters: the box has to EXIST before its centre
+    means anything. `.chevron` carried `line-height: 0`, which gave it a box of
+    height 0 that painted its glyph entirely outside itself, and a zero-height
+    box would satisfy the offset assertion trivially.
+    """
+    page = step_one(1280, state="two-sentence")
+    found = page.evaluate(CHEVRON)
+    assert len(found) == 6, _chevron_report(found, "step 1 did not draw six Details buttons:")
+
+    #: An inline `<svg>` rather than a character is the mechanism, so it is
+    #: stated: a `<span>` back in here means the font metrics are back too.
+    wrong = [c for c in found if c["tag"] != "svg"]
+    assert not wrong, _chevron_report(found, "the chevron is not an inline <svg> any more:")
+
+    flat = [c for c in found if c["height"] < 1 or c["width"] < 1]
+    assert not flat, _chevron_report(
+        found,
+        "the chevron's box has collapsed - this is `line-height: 0` back on "
+        "`.chevron`, which paints the icon outside the box the layout places:")
+
+    #: The label's own line box has to be a real one too, or the comparison
+    #: below is against a degenerate rect rather than against the text.
+    assert all(c["textHeight"] > 1 for c in found), _chevron_report(
+        found, "the Details label measured no line box at all:")
+
+    off = [c for c in found if abs(c["offset"]) > 1]
+    assert not off, _chevron_report(
+        found,
+        "the chevron is not vertically centred on the word it labels (positive "
+        "is below, which is the defect; 4.88px was the measurement before this "
+        "was fixed):")
+
+    #: `currentColor` is the whole of why the button's own `--green-dark` reaches
+    #: the shape, and why this fix declared no colour at all. A literal `stroke`
+    #: in the path would render identically here and stop tracking the token, so
+    #: the two are compared rather than either being read on its own.
+    detached = [c for c in found if c["stroke"] != c["colour"]]
+    assert not detached, _chevron_report(
+        found,
+        f"the path's stroke has left the element's colour "
+        f"({[(c['stroke'], c['colour']) for c in found]}), so `currentColor` has "
+        "been replaced by a literal and the icon no longer follows the token:")
+
+
+def test_the_details_chevron_reverses_when_the_panel_opens(step_one):
+    """One shape, turned, so it cannot disagree with `aria-expanded`.
+
+    The stylesheet's note over `.step-card__chevron` states that property and
+    `.chevron` inherits the reasoning; nothing measured it for this button until
+    now, so deleting `.chevron.expanded` would have left an arrow pointing down
+    at an open panel with the whole suite green.
+
+    The transform is read rather than the class, because a class that stopped
+    being matched by any rule is exactly the failure this is for. A half turn in
+    a matrix is `-1, 0, 0, -1`; the collapsed state is `none` or the identity.
+    """
+    page = step_one(1280, state="two-sentence")
+    shut = page.evaluate(CHEVRON)
+    assert all(c["expanded"] == "false" for c in shut), _chevron_report(
+        shut, "a Details panel was already open before anything was clicked:")
+
+    page.click(".stage-card:first-child .details-button")
+    page.wait_for_timeout(300)
+    opened = page.evaluate(CHEVRON)
+    assert opened[0]["expanded"] == "true", _chevron_report(opened, "the panel did not open:")
+
+    assert opened[0]["rotation"] != shut[0]["rotation"], _chevron_report(
+        opened,
+        "the chevron points the same way open as shut, so `aria-expanded` and "
+        f"the arrow now disagree (shut was {shut[0]['rotation']!r}):")
+    assert opened[0]["rotation"].startswith("matrix(-1"), _chevron_report(
+        opened,
+        "the open chevron is not a half turn, so it is not the same shape "
+        "rotated - and a shape that is nearly reversed reads as a mistake:")
+    #: And the icon it turned is still the one measured above: a rotation
+    #: applied to a collapsed box would satisfy the assertions above it.
+    assert opened[0]["height"] > 1 and abs(opened[0]["offset"]) <= 1, _chevron_report(
+        opened, "the chevron left its label's centre when it turned:")
+
+
+#: The label-and-icon group's inset from each end of the button's content box.
+#:
+#: **This exists because the fix moved the property that does the aligning.**
+#: `.details-button` is a flex row now - that is what centres the chevron on the
+#: label - and on a flex container `text-align` no longer places the row, so the
+#: `text-align: start` the `max-width: 480px` block carried became a dead
+#: declaration and had to become `justify-content: start`. Nothing in this
+#: directory measured the horizontal placement of this button's contents at any
+#: width, so the regression would have been silent: a full-width button below
+#: 480px with its label back in the middle.
+#:
+#: Measured as a pair of insets rather than as a position, so one assertion
+#: covers both states and neither hard-codes a width.
+ALIGNMENT = """() => [...document.querySelectorAll('.details-button')].map(button => {
+  const icon = button.querySelector('.chevron');
+  const label = [...button.childNodes].find(
+    node => node.nodeType === Node.TEXT_NODE && node.textContent.trim());
+  const range = document.createRange();
+  range.selectNodeContents(label);
+  const text = range.getBoundingClientRect();
+  const i = icon.getBoundingClientRect(), b = button.getBoundingClientRect();
+  const style = getComputedStyle(button);
+  const contentLeft = b.left + parseFloat(style.paddingLeft) + parseFloat(style.borderLeftWidth || 0);
+  const contentRight = b.right - parseFloat(style.paddingRight) - parseFloat(style.borderRightWidth || 0);
+  const round = v => Math.round(v * 100) / 100;
+  return {
+    label: label.textContent.trim(),
+    buttonWidth: round(b.width),
+    groupWidth: round(Math.max(text.right, i.right) - Math.min(text.left, i.left)),
+    leadIn: round(Math.min(text.left, i.left) - contentLeft),
+    leadOut: round(contentRight - Math.max(text.right, i.right)),
+  };
+})"""
+
+
+def test_the_details_label_sits_at_the_reading_start_of_a_full_width_button(step_one):
+    """Below 480px the card is one column, the button spans it, and the label
+    belongs at the reading start - a short word centred in a 250px bar reads as a
+    mistake.
+
+    **This is the half of the claim that can be measured, and the other half was
+    dropped after measuring it.** The case was written as a pair, 1280 asserting
+    the contents were centred and 320 asserting they were not. At 1280 it failed
+    its own precondition, which is the precondition doing its job: `.details-button`
+    is a grid item in an `auto` track, so it **shrink-wraps to its contents** and
+    its 18px of symmetric padding is what centres them. Measured on the built page
+    at a 1707px viewport: button 110.93px, content box 74.93px, content group
+    74.26px - **0.67px of slack**. There is nothing for `justify-content` to place
+    above 480px, so a case there would have asserted the padding, not the
+    alignment, and would have passed with the property deleted.
+
+    What the narrow width guards is real and was nearly lost silently: the base
+    rule is a flex row now (that is what centres the chevron on the label), and on
+    a flex container the `text-align: start` this block carried does nothing at
+    all. Nothing in this directory measured the horizontal placement of this
+    button's contents at any width, so a full-width bar with its label back in the
+    middle would have shipped with every suite green.
+
+    **Measured on the insets rather than on a coordinate**, so it needs no number
+    from the layout, and the precondition is stated rather than assumed.
+
+    LTR only, deliberately. `justify-content: start` is writing-mode relative and
+    `test_step_one_does_not_scroll_sideways_at_320` is what measures that the
+    Arabic layout holds together; a mirrored copy of this case would assert the
+    browser implements `start`, which is not this project's claim to make.
+    """
+    width = 320
+    page = step_one(width, state="two-sentence")
+    found = page.evaluate(ALIGNMENT)
+    assert len(found) == 6, _chevron_report_alignment(found, "step 1 drew no six buttons:")
+
+    slack = [c for c in found if c["leadIn"] + c["leadOut"] < 8]
+    assert not slack, _chevron_report_alignment(
+        found,
+        f"at {width}px the contents fill the button, so there is no slack to "
+        "place and this case would pass whatever the alignment were:")
+
+    off = [c for c in found if c["leadIn"] > 1.5 or c["leadOut"] <= 4]
+    assert not off, _chevron_report_alignment(
+        found,
+        f"at {width}px the label is not at the reading start of a full-width "
+        "button - this is `text-align: start` back on a flex container, where "
+        "it does nothing:")
+
+
+def _chevron_report_alignment(rows, note):
+    """The alignment grid, printed in full on failure."""
+    lines = [note, f"{'btn':>7} {'group':>7} {'in':>7} {'out':>7}  label"]
+    for row in rows:
+        lines.append(
+            f"{row['buttonWidth']:>7} {row['groupWidth']:>7} {row['leadIn']:>7} "
+            f"{row['leadOut']:>7}  {row['label'][:24]}")
+    return "\n".join(lines)

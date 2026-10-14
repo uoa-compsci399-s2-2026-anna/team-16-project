@@ -1202,3 +1202,108 @@ def test_step_four_does_not_scroll_sideways_shut_or_open(opened, width):
         assert measured["scrollWidth"] <= max(measured["clientWidth"], 320), (
             f"step 4 scrolls sideways at {width}px with the cards {state}: {measured}"
         )
+
+
+#: The two halves of a step 4 card: the header button and the `always` strip.
+#: Deliberately the same shape as `test_leaf_improvement_browser.py`'s `HALVES`,
+#: so a failure on either consumer of the slot reads like a failure on the other.
+HALVES = """() => [...document.querySelectorAll('.step-card')].map(card => {
+  const header = card.querySelector('.step-card__toggle');
+  const strip = card.querySelector(':scope > .allocation-summary');
+  const read = element => {
+    if (!element) return null;
+    const style = getComputedStyle(element);
+    return {
+      background: style.backgroundColor,
+      borderWidth: style.borderTopWidth,
+      borderStyle: style.borderTopStyle,
+      shadow: style.boxShadow,
+    };
+  };
+  return {
+    expanded: header.getAttribute('aria-expanded'),
+    stripOutsideFold: Boolean(strip),
+    stripInsideToggle: Boolean(strip && strip.closest('.step-card__toggle')),
+    stripIsButton: Boolean(strip && (strip.tagName === 'BUTTON' || strip.closest('button'))),
+    stripAction: strip ? strip.getAttribute('data-action') : null,
+    header: read(header),
+    strip: read(strip),
+  };
+})"""
+
+
+def test_the_remaining_strip_is_a_distinct_object_and_not_a_second_control(opened):
+    """**The `always` slot's contract, measured on the consumer that always had it
+    right** (v1.120).
+
+    v1.120 fixed the improvement panel's slot, where the strip was
+    `rgba(255, 255, 255, 0.8)` on a white card and so looked like the card's own
+    lower half -- visitors pressed it and nothing happened, because the header
+    button is the only control. **Step 4's slot never had that defect**:
+    `.allocation-summary` has carried a Pea hairline, an opaque `#e9faf3` ground
+    and a shadow since it landed, and `test_step_navigation.py`'s
+    `test_the_allocation_summary_is_opaque_in_both_states` pins that composite to
+    the byte because the strip is `position: sticky` and the rows scroll under it.
+    So the v1.120 change was scoped to `.improvement-total` and this file's
+    consumer was deliberately left alone.
+
+    **This case is what makes "deliberately left alone" checkable.** Two things
+    could undo it from the other direction, and neither would fail anything above:
+
+    * a sweep over `.step-card > :not(.step-card__toggle, .step-card__body)` that
+      restyled every `always` slot, flattening this one into the card;
+    * the other remedy for the improvement panel's complaint -- making the slot
+      CLICKABLE inside `collapsibleCard`, which would hand step 4 a second control
+      over one disclosure as a side effect, on a strip that is an `aria-live`
+      region with three figures in it.
+
+    The last press is the control: a test that only showed that pressing the strip
+    changes nothing would pass on a page where pressing anything changes nothing.
+    """
+    page = opened()
+    _to_step_four(page, 2)
+    before = page.evaluate(HALVES)
+
+    assert len(before) == 2, f"two food types drew {len(before)} cards: {before}"
+    assert all(card["stripOutsideFold"] for card in before), (
+        f"a food type's Total/Allocated/Remaining strip is not a child of its "
+        f"`<fieldset>` any more: {before}"
+    )
+    assert [card["expanded"] for card in before] == ["false", "false"], before
+    for index, card in enumerate(before):
+        header, strip = card["header"], card["strip"]
+        assert strip["background"] != header["background"], (
+            f"card {index}'s header and its Remaining strip compute the same ground "
+            f"({strip['background']}), so the half that opens the card and the half "
+            f"that does not look alike: {card}"
+        )
+        assert strip["shadow"] != "none" and header["shadow"] == "none", (
+            f"card {index}'s strip is no longer lifted off the card's own surface: "
+            f"{card}"
+        )
+        assert strip["borderStyle"] == "solid" and strip["borderWidth"] != "0px", (
+            f"card {index}'s strip has lost its own edge: {card}"
+        )
+        assert not card["stripInsideToggle"] and not card["stripIsButton"], (
+            f"card {index}'s strip has been moved inside the header button, so the "
+            f"three siblings `collapsibleCard` documents have become two: {card}"
+        )
+        assert card["stripAction"] is None, (
+            f"card {index}'s strip carries a `data-action`, so the `always` slot is a "
+            f"second control over the card's one disclosure: {card}"
+        )
+
+    page.locator(".step-card").nth(0).locator(".allocation-summary").click()
+    page.wait_for_timeout(200)
+    pressed = page.evaluate(HALVES)
+    assert [card["expanded"] for card in pressed] == ["false", "false"], (
+        f"pressing the Remaining strip opened a card: {pressed}"
+    )
+
+    page.locator('.step-card__toggle[aria-expanded="false"]').first.click()
+    page.wait_for_timeout(250)
+    after = page.evaluate(HALVES)
+    assert [card["expanded"] for card in after] == ["true", "false"], (
+        f"the HEADER does not open its card either, so the press above measured a dead "
+        f"page rather than a strip that is correctly inert: {after}"
+    )

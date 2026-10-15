@@ -1,29 +1,55 @@
-# team-16-project
+# Kai Commitment Food Waste Impact Calculator
 
-COMPSCI 399 project repository for Team 16 - 502 Bad Gateway.
+A New Zealand food waste impact calculator, built for the **Kai Commitment** — an
+initiative of the New Zealand Food Waste Champions 12.3 Trust — as the COMPSCI 399
+capstone project of **Team 16, "502 Bad Gateway"**, at the University of Auckland.
 
-**Kai Commitment Food Waste Impact Calculator** — a New Zealand food waste impact
-calculator built for the Kai Commitment, an initiative of the New Zealand Food Waste
-Champions 12.3 Trust.
+A visitor says what happens to their food waste today and what could happen instead. The
+calculator prices both and reports the difference across six metrics — greenhouse gases,
+methane, water, land, mass, and **the economic cost, which the US ReFED calculator this
+one is modelled on does not provide**. It uses New Zealand data and New Zealand (Ministry
+for the Environment) definitions throughout, and nothing it computes is compiled in: the
+factors, the formulas themselves and the whole taxonomy are rows in a database that staff
+edit through an admin panel.
 
-> ### The factors currently shipped are placeholder data
+| | |
+| --- | --- |
+| **Live site** | **<https://kai.99991314.xyz/>** — see [Where it is deployed](#where-it-is-deployed) |
+| **Project board** | **[502 team planning](https://github.com/orgs/uoa-compsci399-s2-2026-anna/projects/3)** — GitHub Projects; visible to members of the course organisation |
+| **Final report** | *linked here once it is submitted* |
+| **Client** | Juliet Gerrard, with the Kai Commitment (New Zealand Food Waste Champions 12.3 Trust) |
+| **Course** | University of Auckland COMPSCI 399 Capstone, Project 18 |
+| **Team** | Team 16 — 502 Bad Gateway, five members |
+| **Licence** | [GNU General Public License v3.0 or later](LICENSE) — see [Licence](#licence) for what it does and does not cover |
+
+> ### Which factors you are looking at
 >
-> The client has not yet supplied real New Zealand emissions factors (open item **O-1**).
-> Everything in this repository runs on a mock factor set so the full pipeline could be
-> built and exercised end to end. While a mock factor set is the published one, a
-> **non-dismissible placeholder-data banner appears on every results view and every
-> export**, and that behaviour cannot be switched off. The numbers the calculator
-> produces today are structurally correct and substantively meaningless. Do not quote
-> them.
+> **The deployed calculator runs the client-reviewed factor set.** It is derived from the
+> Kai Commitment's own Rawtec tables, with ReFED's published figures and named public
+> sources filling the cells those tables do not cover, and **the client reviewed and
+> accepted it on 15 October 2026** — which closed open item **O-1**, this project's one
+> hard blocker from its first week to its last. `docs/upstream-factors-draft.md` derives
+> every figure and names the source of each, including the four it takes from a public
+> source over the client's own and why.
 >
-> Replacing them is a data task, not a code task: load a real factor set through the
-> admin panel and publish it. Nothing needs to be rebuilt or redeployed.
+> **A fresh `docker compose up` does not.** The set a new stack seeds and publishes is a
+> demonstration set derived from the engine's own canonical test case — structurally
+> correct, numerically meaningless — and it is flagged `is_mock = true`. While a set so
+> flagged is the published one, a **non-dismissible placeholder-data banner appears on
+> every results view and every export** and nothing can switch it off. That is a guard,
+> not a defect; [The factors](#the-factors) is how you replace it.
 
 **Contents**
 
 - [What this is](#what-this-is)
+- [Technologies](#technologies) — languages, libraries, pinned versions
 - [How to run it](#how-to-run-it) — Docker, one command
+- [Usage](#usage) — the calculator, the API, the admin panel, the factors
+- [Where it is deployed](#where-it-is-deployed)
 - [How to develop on it](#how-to-develop-on-it)
+- [Future plan](#future-plan)
+- [Acknowledgements](#acknowledgements)
+- [Licence](#licence)
 - [Where the real documentation lives](#where-the-real-documentation-lives)
 
 ---
@@ -61,17 +87,101 @@ records is merged into `other` on the server before it is published.
 What runs today:
 
 - a public calculator at `/` — a six-step wizard, dual scenario, results and comparison
-  screens, and a published-methodology page at `/methodology.html`;
-- a public JSON API at `/api/v1/` — `taxonomy`, `calculate`, `factors`, `stats`;
+  screens, a text download and a server-rendered PDF, in twenty languages;
+- three public content pages — a home page at `/home.html`, the aggregate **statistics**
+  at `/stats.html` with its charts, and the published methodology at `/methodology.html`;
+- a public JSON API at `/api/v1/` — `taxonomy`, `calculate`, `factors`, `stats`,
+  `export/pdf`;
 - a staff admin panel at `/admin` — the taxonomy, the factor sets and their
   draft/publish/rollback lifecycle, editable formulas, the audit log, staff accounts with
   TOTP two-factor authentication, and an IP blocklist.
 
-The public statistics page and its charts are not built. One known defect in the deployed
-system is recorded as open item **O-6** (the seeded bucket-to-kilogram conversions are
-placeholders too). **O-9** — `/admin/try`, the staff dry-run view, answering
-`UNAUTHORIZED` in a deployed stack — was closed on 2026-08-12. See
-`docs/architecture.md` §10 for the full list.
+**All five streams have landed and the work since has been refinement rather than
+construction.** `docs/architecture.md` §10 is the live list of what is still open and
+carries the reasoning for each; [Future plan](#future-plan) below is the short form. The
+one that mattered most, **O-1** — no confirmed emissions factors — closed on
+15 October 2026. What is left is mostly data nobody has measured yet rather than code
+nobody has written: **O-6**, the 0.29 kg/L that turns a bin into a mass, and **O-3**, the
+shower equivalence, are both sourced placeholders that say so on their own rows.
+
+---
+
+## Technologies
+
+**Languages.** Python 3.11 — the version both images run and the version CI tests, so it
+is a floor in `pyproject.toml` and a fact everywhere else. SQL (MySQL 8). And plain
+JavaScript: ES modules, no transpiler, with hand-written HTML and CSS. There is **no
+Node.js, no React and no build step** — what is in `web/` is what the browser runs.
+
+**Runtime dependencies.** Every version below is the one pinned in
+`docker/constraints.txt`, which is to say the one the images were built and verified with.
+`pyproject.toml` states each as a `>=` floor and the constraint file fixes which version
+was tested; installing without it is not a slower install, it is a different one, and
+[Getting a checkout running](#getting-a-checkout-running) records what that cost once.
+
+| | Version | What it does here |
+| --- | --- | --- |
+| FastAPI | 0.141.1 | the public JSON API |
+| Starlette | 1.6.0 | ASGI, sessions and middleware, under FastAPI |
+| Pydantic | 2.13.4 | request and response validation |
+| Uvicorn | 0.52.1 | the ASGI server |
+| SQLAlchemy | 2.0.51 | the ORM, and the repository that is the only code allowed to use it |
+| Alembic | 1.19.1 | 21 schema migrations |
+| PyMySQL | 1.2.0 | pure-Python MySQL driver — no build toolchain on a team split across Windows and macOS |
+| sqladmin | 0.31.0 | the staff admin panel |
+| WeasyPrint | 69.0 | the server-rendered PDF export, with Pango and HarfBuzz doing the shaping, the bidi and the line breaking |
+| Jinja2 | 3.1.6 | the export template, and the panel's own |
+| bcrypt | 5.0.0 | staff password hashing, used directly rather than through the unmaintained `passlib` |
+| cryptography | 50.0.0 | Fernet, for TOTP secrets at rest |
+| PyOTP | 2.10.0 | TOTP two-factor authentication |
+| qrcode | 8.2 | the enrolment QR, SVG factory only — no Pillow |
+| itsdangerous | 2.2.0 | signed session cookies |
+| python-multipart | 0.0.32 | form posts |
+| python-dotenv | 1.2.2 | `.env` loading |
+
+**The calculation engine has no third-party dependency at all, and `simpleeval` is
+deliberately absent.** Formula evaluation is written over the standard library's `ast`, so
+that `admin/expressions.py` — which validates a formula when staff save it — can be the
+static twin of `engine/evaluator.py`, which evaluates it when the calculator runs, and one
+test corpus can hold the two to the same verdict. Eight divergences have been found that
+way.
+
+**Front-end libraries: one, and it is vendored rather than fetched.**
+
+| | Version | |
+| --- | --- | --- |
+| Chart.js | 4.5.1 | the statistics page's charts — `web/vendor/chart.umd.min.js`, wrapped for `stats.js` by `web/js/charts.js` |
+
+It is self-hosted because `docs/interfaces.md` §7.6 rule 7 forbids a public page from
+fetching any runtime asset off a third-party host, so the one-line CDN `<script>` was
+never available and neither was a second charting library.
+`web/vendor/chart.js.SOURCE.md` records the npm registry integrity hash, the tarball the
+file was extracted from and the SHA-256 of the bytes actually served. The results page's
+own bars are CSS width on `<span>` elements and every icon is hand-written inline SVG.
+
+**Fonts**, self-hosted for that same rule: **Geologica Bold** and **Kumbh Sans Regular**
+(the brand's two faces, 228-glyph Latin subsets) for the browser and the panel, and twelve
+**Noto** faces for the PDF — without which an Arabic, Tamil or Japanese export is a page
+of empty boxes — the four CJK ones cut down to the characters the twenty translation
+catalogues actually use. All are SIL Open Font License 1.1 and the licences travel with
+them; `PROVENANCE.md` sits beside each set.
+
+**Infrastructure**, pinned by digest in the Dockerfiles rather than by tag, so that a
+build in six months is the build that was verified:
+
+| | Version |
+| --- | --- |
+| MySQL | 8.0 |
+| nginx | 1.27-alpine |
+| Python base image | 3.11-slim |
+| Docker Compose | v2 |
+
+**Development and test only**, and stated as floors because none of it ships: pytest 8.3+
+with `pytest-asyncio`, **Playwright** 1.49+ driving Chromium for `tests/web`, and `pypdf`
+5.1+ to pull the text back out of a rendered PDF and assert on it — a test that only
+checked the bytes start with `%PDF-` would have passed the defect that export exists to
+fix, which produced a perfectly valid PDF that said *"K?mara"*. GitHub Actions runs the
+whole suite against a real MySQL 8 on every push and pull request, on Python 3.11.
 
 ---
 
@@ -762,6 +872,159 @@ behaviour, architectures and the error messages each failure produces are in
 
 ---
 
+## Usage
+
+### The calculator, end to end
+
+Open **<http://localhost:18080/>** and press *Start the calculator*. Six steps, and the
+first question is deliberately not about food:
+
+1. **Who you are** — one of six supply-chain sectors: primary production, processing,
+   wholesale and retail, household, hospitality, institution. The sector decides the
+   production footprint a kilogram of waste arrives carrying, which is usually larger
+   than anything that happens to it afterwards.
+2. **The reporting period** — `one_week` … `one_year`, or a custom interval. It is a
+   **label**: nothing in `engine/` reads it, and a test walks the engine's source to keep
+   it that way.
+3. **What you waste** — one or more of nine food categories (or an unspecified mix), by
+   mass or in a container you actually have: the 23 L kerbside food-scraps bin, an 80,
+   120, 140 or 240 L wheelie bin, a 660 or 1100 L commercial front-loader, or one of
+   three buckets and crates.
+4. **Which foods** (optional) — 47 named foods inside those categories. A food with no
+   factor row of its own falls through to its category's average, which is a defined
+   figure rather than a guess, and the results page says on the page that it did.
+5. **Where it goes today** — the *current* scenario, allocated across fourteen
+   destinations, from `food_redistribution` down to `landfill` and `sewer`.
+6. **What could happen instead** — the *alternative* scenario, on the improvement panel.
+   Wasting less is `prevention`, a destination whose factors are all zero, so the two
+   scenarios always move the same mass and a net benefit cannot be inflated by quietly
+   assuming less waste in the alternative.
+
+The results page reports six metrics — greenhouse gases (kg CO2e), methane (kg CH4),
+water (L), land use (m²), mass (kg) and cost (NZD) — for both scenarios and for the
+difference between them, with equivalences a reader can picture (*"that is n cars off the
+road for a year"*), each carrying its own source note; a table of where every factor came
+from; a text download; and a server-rendered PDF. The interface, the PDF and the
+equivalences are in **twenty languages**.
+
+### The API
+
+Everything the calculator does is a public JSON API. The front end calculates nothing but
+unit conversion — every other number on the screen came from here.
+
+```bash
+# What can be asked about: sectors, food categories, foods, destinations, metrics,
+# container presets, and which factor set is live.
+curl -s http://localhost:18080/api/v1/taxonomy | python -m json.tool | head -40
+
+# The published factors and the formulas themselves.
+curl -s http://localhost:18080/api/v1/factors | python -m json.tool | head -30
+
+# A calculation: a tonne of vegetables, landfilled today, composted instead.
+# DECIMALS ARE STRINGS on the wire -- JavaScript's Number is a double.
+curl -s -X POST http://localhost:18080/api/v1/calculate \
+  -H 'Content-Type: application/json' \
+  -d '{
+        "sector_code": "consumer_household",
+        "time_frame": "one_year",
+        "gwp_horizon": 100,
+        "entries": [{
+          "food_category_code": "vegetables",
+          "qty_kg": "1000.000",
+          "current":     [{"destination_code": "landfill", "share_percent": "100.00"}],
+          "alternative": [{"destination_code": "compost",  "share_percent": "100.00"}]
+        }]
+      }' | python -m json.tool
+
+# The anonymised public aggregate the statistics page draws.
+curl -s http://localhost:18080/api/v1/stats | python -m json.tool | head -30
+```
+
+`POST /api/v1/calculate` **calculates and persists in the same call**: one calculation is
+one anonymous submission, and those submissions are what the statistics are built from.
+There is no consent checkbox and no separate *contribute* button, because there is nothing
+to consent to — **no IP address, no user agent and no browser fingerprint is ever
+stored.** Deduplication uses a session token the server mints and nulls an hour later,
+which identifies a draft record rather than a person. Any statistical bucket with fewer
+than five records is merged into `other` **on the server**, before it is published.
+
+To calculate without persisting, send **`X-Dry-Run: true`**. Staff tuning a formula must:
+dozens of experimental calculations would otherwise land in the public statistics.
+
+Rate limits (`docs/interfaces.md` §6.5): **600 `GET`s an hour** per caller, and **120**
+for `calculate`, `contribute` and `export/pdf` **sharing one bucket between them** — a PDF
+runs the engine exactly as a calculation does, so asking for one is not a way around the
+budget. Past either limit the API answers 429 with `RATE_LIMITED`, which is why a browser
+test suite does not fit inside one window — see [Tests](#tests).
+
+`gwp_horizon` is `20` or `100` and defaults to 100. It binds `const_GWP_CH4` to either
+`GWP_CH4_20` or `GWP_CH4_100`; formulas reference the constant and never hard-code a
+horizon.
+
+### The admin panel
+
+<http://localhost:18080/admin>. The two initial passwords are printed **once**, into the
+`migrate` service's log —
+[Read the initial administrator passwords](#6-read-the-initial-administrator-passwords).
+
+Staff edit the taxonomy, the constants, the equivalences and **the formulas themselves**;
+run a calculation against an unpublished draft without touching the public statistics
+(`/admin/try`); and move factor sets through `draft → published → archived`, with
+rollback. At most one set is published at any time, enforced transactionally. Every
+submission stamps the set it was calculated against, so a historical result stays
+reproducible after a rollback. Every write produces an audit-log entry. There is TOTP
+two-factor authentication, recovery codes, and an IP blocklist.
+
+### The factors
+
+**Replacing the factors is a data task, not a code task.** Nothing is rebuilt and nothing
+is redeployed:
+
+1. **Clone** the published set. The clone is a draft and carries the original's every
+   column, `is_mock` included.
+2. **Edit** the draft — the factors, the formulas, the constants, the version label.
+3. **Publish** it. The set that was live is archived, and can be rolled back to.
+
+The client-reviewed New Zealand set is in this repository and loads in one command:
+
+```bash
+DATABASE_URL=mysql+pymysql://... python data/upstream-factors-draft/load_upstream_factors_draft.py
+```
+
+It lands as a **draft** and never publishes itself, because publishing archives whatever
+is currently live and that is not a loader's decision to take. Reach it through
+`/admin/try` first; publish it from the panel.
+
+**The placeholder-data warning is its own control, and it is the only one in the panel
+that takes a disclaimer off something the public is reading.** *Clear placeholder flag*
+works on a set of any status — the published one included — and asks for the current
+password or a live TOTP code before it will act. That combination is deliberate: the real
+workflow is to publish the real factors, let them run publicly for a day or two and check
+them, and only then take the warning off. Forcing a clone at that point would manufacture
+a new factor set, and a new version label, for a change in which not one factor value
+differs. The opposite direction, *Flag as placeholder data*, is always safe and always
+allowed and needs no proof at all. Both land in the audit log under their own action name,
+so *when did the warning come off, and who took it off* has an answer.
+
+---
+
+## Where it is deployed
+
+**<https://kai.99991314.xyz/>** — the team's own demonstration deployment, and the one the
+client has been reviewing all semester. It runs the images this repository builds, behind
+nginx on a small AWS instance with Cloudflare in front, and `docs/deployment.md` is the
+procedure that puts a release on it, traps included.
+
+**It is a demonstration, not a handover artefact.** The contracted deliverable is source
+code and documentation; DNS, certificates, hosting and post-semester operation are out of
+scope and were never the team's to promise. The site is kept available until the final
+mark is released. Where the Kai Commitment eventually runs this is the client's decision,
+and nothing in the code assumes this host — every origin is configuration
+(`KAICALC_PUBLIC_ORIGIN`, `KAICALC_API_ORIGIN`, `KAICALC_NEWS_ORIGIN`), which is what
+[What to set in the environment](#what-to-set-in-the-environment) is for.
+
+---
+
 ## How to develop on it
 
 ### The stack
@@ -772,8 +1035,9 @@ panel / `pytest`.
 The front end is plain HTML, CSS and JavaScript ES modules. **No React, no Node.js, no
 build step** — what is in `web/` is what the browser runs. The team had no front-end
 framework experience, and with no framework there is no build tooling, so the stack closes
-cleanly on Python. Chart.js is the charting library `docs/architecture.md` §2 selects, but
-nothing in `web/` imports it yet; the charts belong to the unbuilt statistics page.
+cleanly on Python. The one front-end library is Chart.js, vendored at
+`web/vendor/chart.umd.min.js` and wrapped for `stats.js` by `web/js/charts.js` — see
+[Technologies](#technologies) for why it is served from here rather than from a CDN.
 
 Expression evaluation is hand-rolled over the standard library's `ast`, deliberately not
 `simpleeval` — see below.
@@ -947,7 +1211,7 @@ Two directories carry more weight than the rest:
 - **`tests/fixtures/*.json` — the executable form of the contract.** Backend contract
   tests assert that real responses match these shapes, and the front end develops against
   them directly. A contract change that does not reach these files is not finished.
-- **`tests/golden/case_*/` — the correctness suite.** Nine cases, three files each
+- **`tests/golden/case_*/` — the correctness suite.** Thirteen cases, three files each
   (`bundle.json`, `request.json`, `expected.json`). Every engine change must leave all of
   them passing. This suite is the only evidence that the calculator computes correctly.
 
@@ -968,12 +1232,157 @@ project.
 
 ---
 
+## Future plan
+
+The hard blocker is gone: the client reviewed and accepted the factor configuration on
+**15 October 2026**, closing **O-1**, which had constrained this project from its first
+week to its last. `docs/architecture.md` §10 is the live list of what is still open and
+carries the reasoning for each item. What a next release would take first:
+
+**Data that is sourced but not measured.** Two numbers on the site are honest placeholders
+that say so in their own `source_note`, and neither can be fixed by writing code:
+
+- **O-6** — the **0.29 kg/L** that turns a bin into a mass. It is the Food Loss & Waste
+  Protocol's figure, appearing there twice independently for the two halves of this
+  calculator's audience, and it stands in for a New Zealand measurement nobody has taken.
+  MfE's own *Solid Waste Analysis Protocol* publishes none and declines to, on the
+  grounds that converting volume to weight by a standard density "creates an opportunity
+  for error" — a caution about this exact conversion. Its exposure has grown: a container
+  can now be the unit every figure on the improvement panel is read in, so one unsourced
+  density sits behind a whole screen rather than one row.
+- **O-3** — the **shower** equivalence: ten minutes at nine litres a minute, both halves
+  assumptions. Equivalences are what a reader actually remembers, so they deserve New
+  Zealand sources more than most figures here, not fewer.
+
+**Localisation past language (O-4).** Twenty languages ship, but every date on the site is
+pinned `en-NZ` — in `stats.js`, `home.js` and `period.js` alike, with the reason in a
+comment beside each one. `Intl` would localise them for free; taking that would settle O-4
+on one screen while the rest of the site did not. Units, number formats and date formats
+are one decision and it is still open.
+
+**The taxonomy question (O-5).** The seed carries nine food categories and §2.1's prose
+says eight. One of the two is wrong and only the client can say which. It is also what
+keeps `eggs` filed under `staples` rather than given a category of its own.
+
+**Navigation out of the calculator (O-10).** The three content pages carry a four-link
+public navigation; the calculator does not. Measured at contract v1.29, the language
+chooser (364px), the brand lockup (330px) and that navigation (355px) do not share the
+calculator's 938px header row, and the footer had 32px of slack against a 44px touch
+target. It was recorded rather than closed by shrinking a target below the floor.
+
+**Three defects already named and measured, and not yet taken.** Each is in a pull-request
+body rather than in somebody's head:
+
+- `main.js:139` binds the brand button to `resetCalculator()` **with no confirmation**,
+  while its own `aria-label` reads *"Clear calculator data and return to the
+  introduction"*. One click destroys every answer a visitor has given.
+- In the **single-leaf** expanded-chart dialog there is no `<h3>`, so the space reserved
+  for the close button on the heading is reserved on nothing: at a 390px viewport a 92vw
+  dialog gives a 270px donut starting at x=44 while the button ends at 56, and the chart
+  itself runs under it.
+- `.step-card__chevron` transitions `transform` while being absent from the
+  `prefers-reduced-motion: reduce` block, which carries `.chevron` only.
+
+**Packaging.** `pip install kaicalc` gives the code, the `kaicalc-admin` command and the
+migration tree, but **nothing in the package creates a factor set** — only
+`docker/seed_mock_factors.py` does, as step 3 of the `migrate` service — and with no
+published set `GET /taxonomy` and `POST /calculate` both fail, so the calculator cannot
+even draw its dropdowns. Moving that into `kaicalc-admin seed-mock-factors` is what would
+make the wheel self-sufficient.
+
+**Not planned, deliberately: a front-end framework and a build step.** The team had no
+framework experience, the stack closes cleanly on Python, and `web/` being exactly what
+the browser runs is worth more to whoever maintains this next than a framework would buy.
+
+---
+
+## Acknowledgements
+
+**Juliet Gerrard and the Kai Commitment**, New Zealand Food Waste Champions 12.3 Trust —
+the client. For the brief, for the Rawtec tables this calculator's factors are derived
+from, for the revised destination figures in September that corrected a column which had
+priced composting as twice as bad as landfill, and for reviewing and accepting the
+configuration in October.
+
+**Asma Shakil and the COMPSCI 399 teaching team** at the University of Auckland, for the
+capstone, its supervision and its scaffolding.
+
+**ReFED** (United States), whose Impact Calculator this one is modelled on. Their
+published per-sector figures supply the shape between supply-chain stages where the
+client's own tables give only a total, and their destination list is what fourteen
+destinations here were matched against. `docs/refed-comparison.md` sets the two
+methodologies side by side and says where this one deliberately differs — the economic
+cost metric most of all.
+
+**The Ministry for the Environment**, whose food loss and waste definitions, destination
+groupings and *Solid Waste Analysis Protocol* this calculator follows rather than
+inventing its own — including where the Protocol declines to supply a number.
+
+**Poore & Nemecek (2018)**, via *Our World in Data*, for the public land-use and
+farm-stage figures used where the client's tables publish none, and as the cross-check
+that caught four land rows which, taken as printed, inverted into a vegetable's footprint
+for a chicken.
+
+**The Food Loss & Waste Protocol**, for the container-density guidance behind the bin
+presets, and for being explicit enough about its own uncertainty that O-6 could be written
+honestly.
+
+**Open source.** FastAPI, Starlette, Pydantic, SQLAlchemy, Alembic, sqladmin, WeasyPrint
+with Pango and HarfBuzz, Chart.js, Playwright and pytest carry most of the weight here.
+The Noto, Geologica and Kumbh Sans faces are served out of this repository under the SIL
+Open Font License.
+
+---
+
+## Licence
+
+**GNU General Public License v3.0 or later.** The full text is in
+[`LICENSE`](LICENSE).
+
+Copyright © 2026 Team 16 — 502 Bad Gateway. Written for COMPSCI 399 at the University of
+Auckland, which does not retain the intellectual property in it; the course is the context
+this was built in, not the holder of the copyright.
+
+This program is free software: you can redistribute it and/or modify it under the terms of
+the GNU General Public License as published by the Free Software Foundation, either
+version 3 of the License, or (at your option) any later version. It is distributed in the
+hope that it will be useful, but **WITHOUT ANY WARRANTY** — without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+Public License for more details.
+
+**What it covers, and what it does not.** This matters more than usual here, because three
+of the things in this repository are not the team's to license:
+
+- **It covers the code, the configuration, the tests and the documentation under
+  `docs/`** — everything this team wrote.
+- **It does not cover the Kai Commitment's name, logo or brand.** The logo and hero image
+  under `web/assets/`, and the brand guidelines, are the client's property, used with the
+  client's permission for the client's own calculator. The GPL grants no trademark rights
+  (§7(e)), and the guidelines are explicit that the logo may not be altered in any way.
+  Fork the code freely; replace the branding.
+- **It does not cover the emissions factors.** They are derived from the Kai Commitment's
+  own Rawtec tables and from ReFED's published figures. The derivation is open in
+  `docs/upstream-factors-draft.md` and names its source row by row, but the underlying
+  data belongs to the client and to ReFED respectively.
+- **Third-party components keep their own licences, which travel with them in this
+  repository.** Chart.js is MIT (`web/vendor/chart.js.LICENSE.md`); the Geologica, Kumbh
+  Sans and Noto faces are SIL Open Font License 1.1 (`LICENCE-fonts-*.txt` beside each
+  set, with `PROVENANCE.md`). All are GPL-compatible, and the OFL requires its text to
+  accompany every redistributed copy — which is why it sits in all three font directories
+  rather than once at the root.
+
+No source file carries a per-file licence header. The GPL recommends them and does not
+require them; one `LICENSE`, this section, and the `License-Expression` in
+`pyproject.toml` say the same thing without a header on each of three hundred files.
+
+---
+
 ## Where the real documentation lives
 
 | File | What it is |
 | --- | --- |
 | **`docs/interfaces.md`** | **The contract.** Database schema, engine domain objects, repository signatures, the full REST request and response shapes, front-end module signatures, error codes, fixture conventions. The single source of truth. |
-| **`docs/architecture.md`** | System layering, the calculation model, factor-set versioning, the team split, implementation order (§9), deployment notes (§9.1), and the **open items (§10)** — including O-1, the missing real factors. |
+| **`docs/architecture.md`** | System layering, the calculation model, factor-set versioning, the team split, implementation order (§9), deployment notes (§9.1), and the **open items (§10)** — the live list of what is unfinished, and why. |
 | `.env.example` | Every setting, with the failure each one prevents. |
 | `docker/compose.yaml`, `docker/nginx.conf` | The deployment topology and the routing, both heavily commented. |
 | `docker/compose.deploy.yaml`, `docs/docker-images.md` | The same topology run from the published images, and everything about pulling them: token scopes, which tags exist, and what each error message means. |

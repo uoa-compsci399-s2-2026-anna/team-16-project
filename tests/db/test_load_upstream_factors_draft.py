@@ -174,7 +174,15 @@ def test_the_item_level_switch_and_the_item_rows_both_reach_the_database(session
     #: `publish_factor_set` and whether this set goes live is the owner's
     #: decision.
     assert factor_set.status.value == "draft"
-    assert factor_set.is_mock is True
+    #: `is_mock` is read out of the file for the reason the docstring above
+    #: gives for the item count: a test that hard-codes it asserts what
+    #: somebody believed on the day they wrote it. This line said `is True`
+    #: until 2026-10-15, when the client reviewed the configuration and
+    #: accepted it, O-1 closed and the file went to `false` -- and it would
+    #: then have failed for the one reason that is not a defect.
+    #:
+    #: What the loader actually owes is tested next door, in both directions.
+    assert factor_set.is_mock is draft_data["is_mock"]
 
     items = {row.id: row.code for row in session.scalars(select(FoodItem)).all()}
     stored = session.scalars(
@@ -192,6 +200,70 @@ def test_the_item_level_switch_and_the_item_rows_both_reach_the_database(session
     #: and a row with one and not the other is what section 2.2's chain cannot
     #: resolve.
     assert all(row.food_category_id is not None for row in stored)
+
+
+@pytest.mark.parametrize("flag", [True, False])
+def test_the_files_placeholder_flag_is_the_one_that_lands(session, draft_data, flag):
+    """Whichever way the file's ``is_mock`` points, the loaded set points the
+    same way. Both directions, because only one of them is dangerous and it is
+    not the obvious one.
+
+    This flag is what the mandatory, non-dismissible placeholder-data banner
+    hangs on, on every results view and every export (contract section 7.6
+    rule 2). The loader had no test for it at all while it was hard-coded
+    ``True`` in the file -- so a mutation replacing ``data.get("is_mock",
+    True)`` with a bare ``True`` would have left every test in this file
+    green, and would have made the loader incapable of landing a confirmed
+    set. That is the direction this parametrisation exists for: ``False`` is
+    the case nothing covered, because ``False`` was the case that had never
+    happened.
+
+    The label is REPLACED rather than suffixed, and that is not cosmetic:
+    ``load_factor_set`` refuses a label already in the database -- deliberately,
+    so that two different sets cannot wear one name in the "Factor version"
+    line a visitor reads -- so each case needs its own, and the column is
+    ``VARCHAR(128)`` against a real file label of 121 characters. Appending to
+    it raises ``DataError(1406)`` rather than failing the assertion, which is
+    how the first draft of this test failed.
+    """
+    _seeded(session)
+
+    data = dict(draft_data)
+    data["is_mock"] = flag
+    data["version_label"] = f"TEST-is-mock-{flag}"
+
+    set_id, _ = loader.load_factor_set(session, data)
+    session.flush()
+
+    factor_set = session.get(FactorSet, set_id)
+    assert factor_set.is_mock is flag
+    #: And it is still only ever a draft. A loader that published would have
+    #: archived the live set as a side effect of loading a file.
+    assert factor_set.status.value == "draft"
+
+
+def test_a_file_that_omits_the_placeholder_flag_is_treated_as_placeholder(
+    session, draft_data
+):
+    """The absent case, and the safe direction.
+
+    The two directions are not symmetric. A set wrongly flagged as placeholder
+    data disclaims figures that did not need it, which is visible and
+    embarrassing; a set wrongly **not** flagged publishes unconfirmed numbers
+    as though somebody had checked them, which is neither. So a file with no
+    opinion gets the banner, and this test is here because the default is one
+    character away from the other answer.
+    """
+    _seeded(session)
+
+    data = dict(draft_data)
+    del data["is_mock"]
+    data["version_label"] = "TEST-is-mock-absent"
+
+    set_id, _ = loader.load_factor_set(session, data)
+    session.flush()
+
+    assert session.get(FactorSet, set_id).is_mock is True
 
 
 def test_an_unknown_food_item_code_stops_the_load(session, draft_data):

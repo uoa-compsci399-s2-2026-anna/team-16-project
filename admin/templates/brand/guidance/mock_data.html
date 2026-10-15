@@ -1,10 +1,17 @@
 {# Declared by FactorSetAdmin.guidance_blocks (admin/factor_views.py).
 
-   Open item O-1: the client has not supplied real emissions factors, so
-   everything runs on placeholders and the banner is mandatory and
-   non-dismissible (contract §2.2, §7.6.2 - web/js/calculator.js,
-   results.js, improvement.js and methodology.js each render it from
-   `factor_set.is_mock`).
+   The banner is mandatory and non-dismissible while `is_mock` (contract
+   §2.2, §7.6.2 - web/js/calculator.js, results.js, improvement.js and
+   methodology.js each render it from `factor_set.is_mock`).
+
+   This used to open "Open item O-1: the client has not supplied real
+   emissions factors, so everything runs on placeholders". O-1 closed on
+   2026-10-15 - the client reviewed the configuration derived from their own
+   tables and accepted it - so the first paragraph below no longer states as
+   a fact that THIS panel is looking at placeholders. It cannot know: the
+   copy is static and the answer is the Is Mock column, which is what it now
+   points at. A freshly installed stack IS still seeded with a mock set, so
+   the paragraph still says that much.
 
    The procedure at the end is the one this panel's owners will need first
    and the one nothing else in the tree writes down. It stopped being
@@ -31,9 +38,13 @@
         <summary>{{ _("What the Is Mock flag does, and how to turn it off once the real numbers are in") }}</summary>
         <div class="guidance-disclosure__body">
         <p>
-          The calculator is running on placeholder factors. They are the right
-          shape and the wrong values, and nothing calculated from them is a
-          scientific result.
+          A factor set can be flagged as placeholder data: the right shape and
+          the wrong values, with nothing calculated from it a scientific
+          result. A newly installed stack is seeded with exactly such a set,
+          built from the engine's own test case, so unless somebody has
+          replaced it that is what this panel is looking at. Whether it is
+          flagged is the <strong>Is Mock</strong> column on this list, and that
+          column is the answer — not this paragraph.
         </p>
         <p>
           <strong>Is Mock</strong> on a factor set is what says so — the column
@@ -65,7 +76,7 @@
             somebody who had taken your session would also have.
           </li>
         </ul>
-        <p><strong>When the client supplies the real factors:</strong></p>
+        <p><strong>When you replace the factors with real ones:</strong></p>
         <ol>
           <li>
             Clone the published set. The clone is a draft, and it is still

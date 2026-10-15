@@ -23,10 +23,16 @@ WHAT IT GUARANTEES
 One session, one commit. The factor set lands whole or not at all.
 
 It leaves the new set as a **draft** and never calls
-``publish_factor_set``. Publishing would archive whatever is currently live,
-and this data has not been confirmed by the client -- ``is_mock`` stays
-``true`` for the same reason. Reach it through the admin panel's dry-run view
-once it exists in the database.
+``publish_factor_set``, because publishing archives whatever is currently
+live and that is not a loader's decision to take. Reach it through the admin
+panel's dry-run view once it exists in the database, then publish it there.
+
+``is_mock`` comes from the file. It read ``true`` until the client reviewed
+this configuration and accepted it on 2026-10-15, which closed open item O-1,
+and the file says ``false`` from that date. A file that omits the key
+altogether is still treated as placeholder data, which is the only safe
+direction for a flag that drives a public disclaimer -- see the comment at
+the assignment in ``load_factor_set``.
 """
 
 from __future__ import annotations
@@ -97,6 +103,15 @@ def load_factor_set(session: Session, data: dict) -> tuple[int, dict[str, int]]:
     factor_set = FactorSet(
         version_label=label,
         status=FactorSetStatus.draft,
+        #: **The file's answer, and TRUE when the file has no answer.** This is
+        #: the flag the mandatory, non-dismissible placeholder banner hangs on,
+        #: and the two directions are not symmetric: a set wrongly flagged as
+        #: placeholder data disclaims figures that did not need it, which is
+        #: visible and embarrassing, while a set wrongly not flagged publishes
+        #: unconfirmed numbers as though somebody had checked them. The default
+        #: therefore goes the first way. It stopped being the value this
+        #: repository's own file carries on 2026-10-15, when the client
+        #: reviewed the configuration and accepted it and O-1 closed.
         is_mock=bool(data.get("is_mock", True)),
         #: v1.58's release switch for step 2.5, read the same way
         #: ``docker/seed_mock_factors.py`` reads it and defaulting the same

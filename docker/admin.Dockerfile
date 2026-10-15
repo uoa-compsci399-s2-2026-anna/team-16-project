@@ -38,6 +38,10 @@ WORKDIR /src
 # so that nothing can be swept in by accident - .dockerignore is the second
 # line of defence here, not the only one.
 COPY pyproject.toml MANIFEST.in ./
+# LICENSE, for docker/api.Dockerfile's reason: the wheel declares
+# `License-Expression: GPL-3.0-or-later` and without this line the image ships
+# a wheel naming a licence it does not carry.
+COPY LICENSE ./
 COPY alembic.ini ./
 COPY alembic/ ./alembic/
 COPY admin/ ./admin/

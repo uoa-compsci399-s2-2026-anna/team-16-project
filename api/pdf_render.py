@@ -120,10 +120,17 @@ _FONT_PLACEHOLDERS = {
 # --------------------------------------------------------------------------
 #
 # Section 2.2: the placeholder-data warning is MANDATORY AND NON-DISMISSIBLE on
-# every results view and export while the active factor set has `is_mock`. Open
-# item O-1 - the client has supplied no real emissions factors - means that is
-# true of every calculation this system can currently perform, so every figure
-# this document can carry today is placeholder data.
+# every results view and export while the active factor set has `is_mock`.
+#
+# THAT CONDITION IS THE WHOLE RULE, and this comment used to lean on a second
+# fact instead: open item O-1, the client having supplied no real emissions
+# factors, which made it true of every calculation the system could perform.
+# O-1 closed on 2026-10-15 and the rule did not move, because it was never
+# written as `if O-1` - see `test_a_real_factor_set_carries_no_warning`, which
+# exists because an unconditional version of this warning once made a real
+# published set describe itself as placeholder data. A fresh install still
+# seeds a mock set, so the banner is still what most readers of this file will
+# see; it is no longer what every reader will see.
 #
 # A PDF is the artefact most likely to be read months later, elsewhere, by
 # someone who was not in the room and cannot ask. PR #46's warning survived

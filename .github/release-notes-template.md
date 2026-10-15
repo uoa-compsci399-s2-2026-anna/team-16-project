@@ -193,24 +193,52 @@ the panel logs a warning at start-up for as long as it is false. That warning
 is the only thing that will remind you, so it is worth reading
 `docker compose logs admin` once after any change to the front of the stack.
 
-### 5. The emissions factors in this release are placeholders
+### 5. The factors this release *seeds* are placeholders. The ones the client accepted are not
 
-The Kai Commitment has not yet supplied the real New Zealand emissions factors
-(tracked as open item O-1). Everything this release computes is arithmetically
-correct and **numerically meaningless**: the seeded factor set is derived from
-the engine's canonical test case, not from published New Zealand data.
+Two different factor sets, and the distinction is the whole of this section.
 
-That factor set is flagged `is_mock = true`, and while it is, the placeholder
-warning banner on every results view and every export is **mandatory and
-non-dismissible**. Do not remove it, do not make it dismissible, and do not
-publish a screenshot of a result without it.
+**What a fresh install of this release publishes is a demonstration set**,
+derived from the engine's own canonical test case rather than from published
+New Zealand data. Everything computed from it is arithmetically correct and
+**numerically meaningless**. It is flagged `is_mock = true`, and while a set so
+flagged is the published one, the placeholder warning banner on every results
+view and every export is **mandatory and non-dismissible**. Do not remove it,
+do not make it dismissible, and do not publish a screenshot of a result drawn
+from it without it.
 
-Replacing the factors is a data task in the admin panel and needs no code
-change and no new release: clone the published set into a new draft, edit the
-factors, turn `is_mock` off **on the draft**, then publish it. In that order —
-the panel refuses to change `is_mock` on a set that is already published,
-precisely so that nobody can switch the banner off while the numbers
-underneath are still placeholders.
+**The New Zealand set the client reviewed and accepted on 2026-10-15 ships in
+this repository and is not seeded.** It lives in
+`data/upstream-factors-draft/`, is derived from the Kai Commitment's own Rawtec
+tables with ReFED and named public sources filling what those tables do not
+cover, and carries `is_mock = false` with every row's provenance in its own
+`source_note`. Load it with
+`data/upstream-factors-draft/load_upstream_factors_draft.py` and it lands as a
+**draft**: the loader never publishes, because publishing archives whatever is
+currently live and that is not a script's decision to take. Publish it from the
+panel. That closed open item **O-1**, which blocked this project from its first
+week to its last.
+
+**Replacing the factors is a data task in the admin panel and needs no code
+change and no new release:** clone the published set into a draft, edit it,
+publish the clone. The set that was live is archived and can be rolled back to,
+and every submission stamps the set it was calculated against, so a historical
+result stays reproducible across both.
+
+**The placeholder flag is its own control and does not need a clone.** This
+paragraph used to say the opposite — that `is_mock` has to come off *on the
+draft* because the panel refuses to change it on a published set. **That rule
+changed and this template did not.** *Clear placeholder flag* works on a set of
+any status, the published one included, and asks for the current password or a
+live TOTP code first; *Flag as placeholder data*, the safe direction, asks for
+nothing. The reason is the workflow the old rule was refusing: staff publish
+the real factors, let them run publicly for a day or two and check them, and
+only then take the warning off. Forcing a clone at that point manufactures a
+new factor set, and a new version label, for a change in which not one factor
+value differs — and every submission recorded during those verification days
+stamps the old id, so it is a version discontinuity created by the workflow
+rather than by the data. Both directions write `audit_log` under their own
+action name, so *when did the warning come off, and who took it off* has an
+answer.
 
 ---
 
@@ -235,11 +263,19 @@ run the system.**
 
 ## Known limitations in this release
 
-* **The factors are mock** (O-1, above). Every release until the client
-  supplies real data ships placeholder numbers behind a mandatory banner.
-* **The cost metric is waste levy and disposal cost only** (O-2). Whether the
-  value of the wasted food itself is included, and at what price, is
-  unresolved; the food-value constant defaults to zero.
+* **What a release *seeds* is mock; what the client accepted is not**
+  (section 5, above). O-1 closed on 2026-10-15 — the client reviewed the
+  configuration derived from their own tables and accepted it — but **a fresh
+  install still publishes the demonstration set and still shows the banner**,
+  and that is correct rather than left over. The accepted set ships in
+  `data/upstream-factors-draft/` and has to be loaded and published
+  deliberately.
+* **The cost metric is waste levy and disposal cost only** (O-2). This was
+  written as unresolved and has been **decided since contract v1.48**: the
+  value of the wasted food itself stays out of the formula, and the food-value
+  constant sits at zero *because that was the decision* rather than because
+  nobody took it. Before raising it, read `docs/architecture.md` §10's note —
+  nothing in the suite would report the wrong fix.
 * **The unit presets are placeholder conversions too** (O-6). The bucket and
   wheelie-bin sizes that convert a volume to kilograms have not been measured
   by the client. Every one of those rows says so in its `source_note`, but

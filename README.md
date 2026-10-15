@@ -15,7 +15,7 @@ edit through an admin panel.
 | | |
 | --- | --- |
 | **Live site** | **<https://kai.99991314.xyz/>** — see [Where it is deployed](#where-it-is-deployed) |
-| **Project board** | **[502 team planning](https://github.com/orgs/uoa-compsci399-s2-2026-anna/projects/3)** — GitHub Projects, 197 items; visible to members of the course organisation |
+| **Project board** | **[502 team planning](https://github.com/orgs/uoa-compsci399-s2-2026-anna/projects/3)** — GitHub Projects; visible to members of the course organisation |
 | **Final report** | *linked here once it is submitted* |
 | **Client** | Juliet Gerrard, with the Kai Commitment (New Zealand Food Waste Champions 12.3 Trust) |
 | **Course** | University of Auckland COMPSCI 399 Capstone, Project 18 |

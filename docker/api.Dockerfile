@@ -38,6 +38,14 @@ WORKDIR /src
 # so that nothing can be swept in by accident - .dockerignore is the second
 # line of defence here, not the only one.
 COPY pyproject.toml MANIFEST.in ./
+# LICENSE, although `.dockerignore` excludes the rest of the documentation and
+# this image carries none of it. The wheel declares
+# `License-Expression: GPL-3.0-or-later`, and setuptools puts the file it finds
+# at the project root into `dist-info/licenses/`. Without this line the image
+# ships a wheel that NAMES a licence it does not carry, which is the one piece
+# of documentation the GPL itself requires to travel with the work. It costs no
+# cache either: LICENSE does not change.
+COPY LICENSE ./
 COPY alembic.ini ./
 COPY alembic/ ./alembic/
 COPY admin/ ./admin/

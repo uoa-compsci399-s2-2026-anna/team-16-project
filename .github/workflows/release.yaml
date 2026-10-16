@@ -32,7 +32,7 @@
 # and `_build-images.yaml` take a `ref` for exactly this - so the suite, the
 # images, the wheel and the Release page are all statements about one tree.
 #
-# CI's alpha path still stamps, because `<base>.dev0+<short-sha>` is never
+# CI's alpha path still stamps, because `<base>.dev0+g<short-sha>` is never
 # committed: it is derived per build and sorts below every release. See the
 # `version` job in ci.yaml for why it is not simply `<base>+<sha>`.
 
@@ -119,7 +119,7 @@ jobs:
           # Strictly X.Y.Z. No `v` prefix (the git tag adds one; the image tag
           # must not have one), no pre-release suffix, no build metadata: this
           # project has one release channel, and the alpha channel is CI's
-          # `.dev0+<sha>` images, which are produced by a different workflow
+          # `.dev0+g<sha>` images, which are produced by a different workflow
           # and cannot be requested here.
           #
           # STRICTER THAN `^[0-9]+\.[0-9]+\.[0-9]+$` IN ONE RESPECT, on

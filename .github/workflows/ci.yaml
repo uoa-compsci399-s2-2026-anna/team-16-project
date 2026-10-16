@@ -176,7 +176,81 @@ jobs:
               exit 1
               ;;
           esac
-          VERSION="${BASE}.dev0+${SHA}"
+
+          # THE `g` BEFORE THE SHA IS LOAD-BEARING, and it is here because the
+          # merge of #198 turned `main` red without a line of application code
+          # being wrong.
+          #
+          # That commit's short SHA was `0739392`: seven hex characters that
+          # happen to be seven DECIMAL digits, with a leading zero. PEP 440
+          # compares a local version segment made entirely of digits
+          # NUMERICALLY, so it normalises one - `0.0.0.dev0+0739392` is the
+          # same version as `0.0.0.dev0+739392` and the shorter spelling is the
+          # canonical one. The stamp below writes the long form into
+          # pyproject.toml, the wheel's metadata comes out carrying the short
+          # one, and `_build-images.yaml`'s "does the image say what we asked
+          # for" assertion compared the two as strings and failed. Nothing was
+          # built wrong; the check was holding the version to a spelling PEP
+          # 440 does not allow it to keep.
+          #
+          # A segment with a letter in it is not numeric and is left alone, so
+          # prefixing the SHA fixes it at the source rather than teaching the
+          # assertion to normalise - which would have left the image saying
+          # `739392` while its own registry tag said `0739392`. `g` for git is
+          # setuptools_scm's convention for exactly this reason, so the shape
+          # `0.0.0.dev0+g0739392` is one a reader has likely seen before.
+          #
+          # This had been waiting for a one-in-268 commit: P(first character is
+          # `0`) x P(the other six are all digits) = 1/16 x (10/16)^6. The same
+          # trap is already documented twenty lines into `release.yaml`, where
+          # the version regex forbids `01.0.0` for the identical reason - the
+          # knowledge was in the repository, applied to the public segment and
+          # not to the local one. `tests/test_ci_alpha_version.py` now holds
+          # both halves.
+          #
+          # The docker tags are unaffected: they come from `sha_tag` below,
+          # which is the bare SHA and is not a PEP 440 anything.
+          VERSION="${BASE}.dev0+g${SHA}"
+
+          # AND CHECK IT HERE, in a job that takes five seconds, rather than
+          # letting the image build find it forty minutes later. #198's merge
+          # failed twice at the far end of the pipeline - in `Images / Build
+          # amd64` and `arm64`, after both had built three images - and then a
+          # third time in `Alpha tag`, which had nothing to assemble because
+          # neither build pushed. All three were this one string.
+          #
+          # The property: the local segment must not be made entirely of
+          # digits. That is DELIBERATELY BROADER than the failure - PEP 440
+          # only rewrites an all-digit segment that has a leading zero, so
+          # `+1234567` would have been fine - and broader is the right
+          # direction for a tripwire. With the `g` above, the segment can
+          # never be all digits, so this cannot refuse a build that would have
+          # worked; it can only catch the `g` going missing, which is the one
+          # edit that brings #198 back. A guard calibrated to the exact
+          # failure would have passed six commits in seven of the class the
+          # failure comes from.
+          #
+          # No `packaging` import - it is not guaranteed on a runner's python3
+          # and `case` needs nothing.
+          LOCAL="g${SHA}"
+          case "$LOCAL" in
+            *[!0-9]*) ;;
+            *)
+              echo "::error title=The alpha version would be renormalised::local segment ${LOCAL} is all digits, so PEP 440 reads it as a number and ${VERSION} is not the spelling the wheel will carry. Nothing has been built."
+              exit 1
+              ;;
+          esac
+          # Lowercase alphanumerics only, for the same reason one step further
+          # out: PEP 440 lowercases a local segment and rewrites `_` and `-` as
+          # `.`, so anything else here is another spelling that would not
+          # survive the round trip. A git short SHA is already lowercase hex;
+          # this holds the line if the derivation ever stops being one.
+          case "$LOCAL" in
+            *[!0-9a-z]*)
+              echo "::error title=The alpha version would be renormalised::local segment ${LOCAL} has a character outside [0-9a-z]. PEP 440 lowercases a local segment and rewrites separators, so ${VERSION} is not what the wheel will carry. Nothing has been built."
+              exit 1
+              ;;
+          esac
 
           echo "version=$VERSION"     >> "$GITHUB_OUTPUT"
           echo "sha_tag=$SHA"         >> "$GITHUB_OUTPUT"

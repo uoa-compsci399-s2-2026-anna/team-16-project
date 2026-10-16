@@ -26,7 +26,7 @@ inputs:
   version:
     description: >-
       The exact PEP 440 version to write. Not derived here - the caller decides
-      whether this is a release (1.2.0) or an alpha (1.0.0.dev0+abc1234).
+      whether this is a release (1.2.0) or an alpha (1.0.0.dev0+gabc1234).
     required: true
 
 outputs:
@@ -52,7 +52,7 @@ runs:
         want = os.environ["STAMP_VERSION"]
 
         # PEP 440, restricted to the two shapes this project produces: a
-        # release (1.2.0) and an alpha (1.0.0.dev0+abc1234). Validated HERE as
+        # release (1.2.0) and an alpha (1.0.0.dev0+gabc1234). Validated HERE as
         # well as at the workflow's own entry point, because this action is the
         # last thing standing between a typo and a published artefact - and the
         # alpha string is COMPUTED rather than typed, so it has no human check
@@ -63,6 +63,17 @@ runs:
                 "produces. Expected N.N.N, optionally .devN, optionally "
                 "+<local>."
             )
+
+        # WHAT THIS DELIBERATELY DOES NOT CHECK: whether `want` is the
+        # CANONICAL spelling of itself. `0.0.0.dev0+0739392` matches the
+        # pattern above and is a perfectly legal version - it is simply not the
+        # one PEP 440 will give back, because an all-digit local segment is
+        # compared numerically and loses its leading zero. The read-back below
+        # cannot see it either: it compares TOML strings, and the string went
+        # in exactly as asked. That is how #198 reached the image build before
+        # anything noticed. The check that catches it now lives where the alpha
+        # version is composed, in ci.yaml's `version` job, and in
+        # tests/test_ci_alpha_version.py.
 
         path = pathlib.Path("pyproject.toml")
         text = path.read_text(encoding="utf-8")

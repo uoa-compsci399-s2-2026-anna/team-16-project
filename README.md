@@ -827,14 +827,21 @@ step even mid-experiment.
   three multi-architecture images tagged `X.Y.Z` and `latest`, and attaches a wheel and an
   sdist to a GitHub Release.
 - **CI** (`.github/workflows/ci.yaml`) runs the same test suite on every push to `main`
-  and to `build/**`, and on `main` publishes alpha images tagged `alpha` and by short
-  commit SHA. Alpha versions are `<base>.dev0+<sha>`, which sorts *below* every release
-  and can never be mistaken for one. **There is deliberately no `pull_request` trigger** —
-  a pull request publishes nothing, so every one of them cost eighteen minutes of the
-  allowance for a run whose only output was a verdict. `workflow_dispatch` is the
-  mitigation and works on any branch; run it by hand before merging anything you want
-  verified first. The trade is stated plainly: a change that breaks the suite now turns
-  `main` red rather than the pull request.
+  and to `build/**`, on every pull request, and on demand through `workflow_dispatch`;
+  on `main` it publishes alpha images tagged `alpha` and by short commit SHA. A pull
+  request publishes nothing — its image jobs still build, in about a minute, but push
+  nothing, and `Alpha tag` skips entirely — so the verdict is all it costs. The trigger
+  was removed in August, when Actions minutes were rationed and eighteen minutes a pull
+  request was the whole allowance, and came back on 2026-10-07 once the repository went
+  public and standard runners became free. What its absence accepted had by then come
+  true: a change that broke the suite turned `main` red instead of the pull request.
+- Alpha versions are `<base>.dev0+g<short-sha>`, which sorts *below* every release and
+  can never be mistaken for one. **The `g` carries its weight.** A short SHA can come
+  out as seven decimal digits — `0739392` did, merging #198 — and PEP 440 compares an
+  all-digit local segment *numerically*, so it drops the leading zero and the wheel
+  reports a version nobody asked for. The build's own "does this image say what we
+  asked for" check then fails on a correctly built image. A segment with a letter in it
+  is left alone; `g` for git is `setuptools_scm`'s convention for the same reason.
 - Images are `ghcr.io/uoa-compsci399-s2-2026-anna/team-16-project/kaicalc-{api,admin,web}`.
   Deployers should pin the version tag rather than `latest`.
 

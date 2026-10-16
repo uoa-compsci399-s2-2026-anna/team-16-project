@@ -21,9 +21,12 @@ name = "kaicalc"
 # version the tag names. Editing it manually is not forbidden, but it will be
 # overwritten by the next release and it is not how a version gets recorded.
 #
-# Alpha builds never touch it: CI derives `<this>.dev0+<short-sha>` per build,
+# Alpha builds never touch it: CI derives `<this>.dev0+g<short-sha>` per build,
 # which sorts BELOW this version in PEP 440 and so can never be mistaken for,
-# or preferred over, a release.
+# or preferred over, a release. The `g` is not decoration - without it a
+# short SHA of all digits makes the local segment a number, PEP 440
+# renormalises it, and the wheel ends up carrying a version nobody asked
+# for. `.github/workflows/ci.yaml` has the whole story.
 version = "0.0.0"
 description = "Kai Commitment food waste impact calculator - New Zealand impact calculator API, calculation engine and staff admin panel"
 # The wheel's and the sdist's long description.

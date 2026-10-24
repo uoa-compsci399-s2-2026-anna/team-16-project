@@ -48,8 +48,8 @@ from admin.factor_lifecycle import (
 )
 from admin.runtime import get_runtime
 from admin.factor_models import (
-    Constant, Equivalence, FactorDownstream, FactorSet, FactorSetStatus,
-    FactorUpstream, Formula,
+    MAX_VERSION_LABEL_LENGTH, Constant, Equivalence, FactorDownstream,
+    FactorSet, FactorSetStatus, FactorUpstream, Formula,
 )
 from admin.importing import AuditedImport
 from admin.models import AuditLog, StaffRole
@@ -1557,21 +1557,67 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
         except ValueError:
             raise LifecycleError(f"'{raw[0]}' is not a valid factor set id.")
 
+    #: What a generated clone label ends in, and what is trimmed off the
+    #: source to make room for it.
+    _CLONE_MARK = " (copy)"
+
+    #: ASCII, deliberately, not U+2026. A `version_label` is printed into the
+    #: exported PDF (`api/pdf_render.py`'s `factor_set` line), whose CJK fonts
+    #: are subsets cut to the characters the catalogues use - a character
+    #: outside that cut prints as a box, and this one would be arriving from
+    #: the database rather than from a catalogue, where
+    #: `test_no_character_in_any_catalogue_would_print_as_a_box` could not see
+    #: it. Three dots cost nothing and raise no question.
+    _TRIM_MARK = "..."
+
     def _unique_clone_label(self, session, source_label: str) -> str:
-        """`f"{source_label} (copy)"`, or that with a numeric suffix if the
-        plain form is already taken. clone_factor_set (admin/factor_lifecycle.py)
-        refuses a duplicate label outright rather than generating one itself
-        - the staff member did not type this label, so it is this view's job
-        to hand it one that is actually free."""
-        base = f"{source_label} (copy)"
-        label = base
-        suffix = 2
-        while session.scalar(
-            select(FactorSet).where(FactorSet.version_label == label)
-        ) is not None:
-            label = f"{base} {suffix}"
-            suffix += 1
-        return label
+        """`f"{source_label} (copy)"`, trimmed to fit the column, with a
+        numeric suffix if that form is already taken.
+
+        clone_factor_set (admin/factor_lifecycle.py) refuses a duplicate
+        label, and now an over-length one, outright rather than generating
+        one itself - the staff member did not type this label, so it is this
+        view's job to hand it one that is actually free and actually fits.
+
+        **It did not fit, and that was a 500.** This composed
+        `f"{source_label} (copy)"` and handed it over unexamined;
+        `version_label` is VARCHAR(128) and the mark is seven characters, so
+        any source label over 121 produced one MySQL refused outright. It
+        reached the deployed panel on 2026-10-24 on a 124-character label -
+        and on the PUBLISHED set, which made contract §5.2's recommended
+        clone → edit → publish path unstartable, not merely ugly.
+
+        **The trim comes off the tail.** These labels carry the vintage at the
+        front ("CLIENT-DRAFT-2026-09-21 (Rawtec rev. table 2 ...") and a
+        status marker at the end ("- NOT CLIENT-CONFIRMED"), and losing the
+        front would make two clones of different sets indistinguishable in
+        the list. Losing the end costs legibility only: the banner every
+        export and results view shows reads `is_mock`, never this string, so
+        a trimmed marker cannot make a placeholder set look real.
+
+        **Uniqueness is decided after the trim, not before.** Two different
+        over-length labels can trim to the same head, so checking the
+        database against the untrimmed form would compose the same string
+        twice and trade 1406 for 1062 - a different number, the same 500.
+        Each iteration re-derives the head from the suffix it is about to
+        use, because a longer suffix leaves the head less room.
+        """
+        suffix_n = None
+        while True:
+            mark = (
+                self._CLONE_MARK if suffix_n is None
+                else f"{self._CLONE_MARK} {suffix_n}"
+            )
+            budget = MAX_VERSION_LABEL_LENGTH - len(mark)
+            head = source_label
+            if len(head) > budget:
+                head = head[:budget - len(self._TRIM_MARK)].rstrip() + self._TRIM_MARK
+            label = f"{head}{mark}"
+            if session.scalar(
+                select(FactorSet).where(FactorSet.version_label == label)
+            ) is None:
+                return label
+            suffix_n = 2 if suffix_n is None else suffix_n + 1
 
     async def _refused(self, request, message: str):
         """Contract §8.2/§9.1: renders the same brand/action_refused.html

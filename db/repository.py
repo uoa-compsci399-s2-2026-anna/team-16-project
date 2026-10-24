@@ -1536,6 +1536,21 @@ def _transition_factor_set(
 def clone_factor_set(
     session: Session, source_id: int, new_label: str, actor: str
 ) -> int:
+    #: **`new_label` is the caller's to validate, and that is deliberate.**
+    #: This function checks neither that the label is non-empty nor that it is
+    #: unique, and it does not check its length either: it is the low-level
+    #: half of the pair, and `admin/factor_lifecycle.clone_factor_set` - the
+    #: one the panel calls - is where all three checks live, because that is
+    #: where a staff-facing message can be returned.
+    #:
+    #: The length is the one worth naming, because it is not obvious and it
+    #: has already cost a 500: `version_label` is
+    #: `MAX_VERSION_LABEL_LENGTH` (`db.models` re-exports it) and MySQL runs
+    #: in STRICT_TRANS_TABLES, so an over-length label is `DataError` 1406
+    #: out of the flush below rather than a silent truncation. A caller that
+    #: composes a label by appending to an existing one - "X (copy)", say -
+    #: has to bound the result; see `admin/factor_views._unique_clone_label`,
+    #: which did not, and the comment there.
     source = session.get(FactorSet, source_id)
     if source is None:
         raise FactorSetNotFoundError(f"Unknown factor set id: {source_id}")

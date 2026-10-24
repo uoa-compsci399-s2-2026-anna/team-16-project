@@ -67,6 +67,7 @@ from db.base import BIGINT_PK, Base
 # suite, exactly like the duplicate-table crash these re-exports replaced. The
 # three model modules must stay leaves.
 from admin.factor_models import (  # noqa: E402
+    MAX_VERSION_LABEL_LENGTH,
     Constant,
     Equivalence,
     FactorDownstream,
@@ -87,6 +88,7 @@ from admin.taxonomy_models import (  # noqa: E402
 )
 
 __all__ = [
+    "MAX_VERSION_LABEL_LENGTH",
     "AuditLog",
     "BIGINT_PK",
     "Constant",

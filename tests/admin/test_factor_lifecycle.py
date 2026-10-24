@@ -31,8 +31,8 @@ from admin.factor_lifecycle import (
     rollback_to, set_placeholder_flag,
 )
 from admin.factor_models import (
-    Constant, Equivalence, FactorDownstream, FactorSet, FactorSetStatus,
-    FactorUpstream, Formula,
+    MAX_VERSION_LABEL_LENGTH, Constant, Equivalence, FactorDownstream,
+    FactorSet, FactorSetStatus, FactorUpstream, Formula,
 )
 from admin.models import utcnow
 #: The *second* implementation of the same operation — see
@@ -327,6 +327,58 @@ def test_an_empty_label_is_refused(_committed_session, populated_set):
     session = _committed_session
     with pytest.raises(LifecycleError):
         clone_factor_set(session, populated_set.id, "   ", actor="kim")
+
+
+def test_the_label_limit_is_the_column_width(_committed_session):
+    """The two numbers that must never disagree, pinned together.
+
+    ``MAX_VERSION_LABEL_LENGTH`` exists to be the column width; a constant
+    that drifted below it would refuse labels the database would have taken,
+    and one that drifted above it would let the 1406 back through
+    ``session.flush()`` as a 500. Read the width off the mapper rather than
+    repeating 128 a third time.
+    """
+    assert (
+        MAX_VERSION_LABEL_LENGTH
+        == FactorSet.__table__.c.version_label.type.length
+    )
+
+
+def test_a_label_longer_than_the_column_is_refused(_committed_session, populated_set):
+    """The floor under every caller, whatever label it composed.
+
+    Before this, an over-length label reached ``session.flush()`` and came
+    back as ``DataError`` 1406 — which ``clone_action`` does not catch, so the
+    panel answered 500. A ``LifecycleError`` is what its ``except`` clause
+    already turns into the brand refusal page, so the guard belongs here
+    rather than in the view, beside the empty-label and duplicate-label
+    checks that were already here.
+    """
+    session = _committed_session
+    too_long = "x" * (MAX_VERSION_LABEL_LENGTH + 1)
+
+    with pytest.raises(LifecycleError) as excinfo:
+        clone_factor_set(session, populated_set.id, too_long, actor="kim")
+
+    message = str(excinfo.value)
+    assert str(MAX_VERSION_LABEL_LENGTH) in message
+    assert str(len(too_long)) in message
+
+
+def test_a_label_exactly_the_column_width_is_accepted(_committed_session, populated_set):
+    """The off-by-one in the direction that costs work rather than crashing.
+
+    A guard written ``>=`` would refuse a label the column holds perfectly
+    well, and nothing else in this suite uses a label anywhere near the
+    limit, so nothing else would notice.
+    """
+    session = _committed_session
+    exactly = "y" * MAX_VERSION_LABEL_LENGTH
+
+    new_id = clone_factor_set(session, populated_set.id, exactly, actor="kim")
+
+    session.flush()
+    assert session.get(FactorSet, new_id).version_label == exactly
 
 
 def test_cloning_a_set_that_does_not_exist_is_refused(_committed_session):

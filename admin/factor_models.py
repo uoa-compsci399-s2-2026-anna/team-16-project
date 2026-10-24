@@ -30,6 +30,28 @@ class FactorSetStatus(str, enum.Enum):
     archived = "archived"
 
 
+#: Longest ``version_label`` a factor set can carry, matching
+#: ``factor_set.version_label``'s VARCHAR(128) in
+#: ``alembic/versions/0005_factors.py``.
+#:
+#: **Here rather than in the view that needed it first**, for the same reason
+#: ``admin/accounts.py``'s ``MAX_DEVICE_NAME_LENGTH`` sits beside the account
+#: service rather than in the security screen: a limit written out in the view
+#: that composes a label and a column width declared in the model are two
+#: numbers waiting to disagree. When they disagreed here, a clone of any set
+#: whose label was over 121 characters raised ``DataError`` 1406 out of
+#: ``session.flush()`` and the panel answered 500 — including on the published
+#: set, so contract §5.2's recommended clone → edit → publish path could not
+#: be started at all. ``test_the_label_limit_is_the_column_width`` pins the
+#: two together; nothing else can.
+#:
+#: ``api/schemas.py``'s ``factor_set_version`` carries its own ``max_length``
+#: of 128. That one bounds an *inbound* dry-run field rather than describing
+#: this column, and the API does not import from ``admin``, so it is left
+#: where it is and named here only so the next reader knows it exists.
+MAX_VERSION_LABEL_LENGTH = 128
+
+
 class FactorSet(Base):
     """One version of every number in the calculator. Contract §2.2.
 

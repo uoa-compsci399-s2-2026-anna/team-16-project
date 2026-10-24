@@ -41,8 +41,8 @@ from sqlalchemy.orm import Session
 from admin.audit import row_to_dict, write_audit
 from admin.expressions import ExpressionError, validate_expression
 from admin.factor_models import (
-    Constant, Equivalence, FactorDownstream, FactorSet, FactorSetStatus,
-    FactorUpstream, Formula,
+    MAX_VERSION_LABEL_LENGTH, Constant, Equivalence, FactorDownstream,
+    FactorSet, FactorSetStatus, FactorUpstream, Formula,
 )
 from admin.models import utcnow
 from admin.taxonomy_rules import TaxonomyInvariantError
@@ -143,6 +143,27 @@ def clone_factor_set(session, source_id: int, new_label: str, actor: str) -> int
     label = (new_label or "").strip()
     if not label:
         raise LifecycleError("A version label is required to clone a factor set.")
+
+    #: The floor under every caller, whatever label it composed.
+    #:
+    #: `version_label` is VARCHAR(128) and MySQL runs in STRICT_TRANS_TABLES,
+    #: so an over-length label does not truncate - it comes out of
+    #: `session.flush()` below as `DataError` 1406. Nothing on the way up
+    #: catches that (`clone_action` catches `LifecycleError` and nothing else),
+    #: so it reached the browser as a 500 on 2026-10-24, from a label the
+    #: panel had composed itself. A `LifecycleError` is what that `except`
+    #: clause already turns into the brand refusal page.
+    #:
+    #: Here beside the empty-label and duplicate-label checks rather than in
+    #: the view, because those two are here for the same reason: a caller
+    #: cannot be relied on to have bounded what it hands over, and this is
+    #: the one place every caller passes through.
+    if len(label) > MAX_VERSION_LABEL_LENGTH:
+        raise LifecycleError(
+            f"That version label is {len(label)} characters. The longest a "
+            f"factor set can carry is {MAX_VERSION_LABEL_LENGTH}, so this one "
+            "would not fit in the database. Shorten it and try again."
+        )
 
     source = session.get(FactorSet, source_id)
     if source is None:

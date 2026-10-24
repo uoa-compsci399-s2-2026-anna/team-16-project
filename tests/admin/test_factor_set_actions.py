@@ -22,8 +22,10 @@ import re
 import pytest
 from sqlalchemy import select
 
-from admin.factor_models import FactorSet, FactorSetStatus
-from tests.admin.conftest import _add_formula, _resync
+from admin.factor_models import (
+    MAX_VERSION_LABEL_LENGTH, FactorSet, FactorSetStatus,
+)
+from tests.admin.conftest import _add_formula, _make_set, _resync
 
 pytestmark = pytest.mark.db
 
@@ -260,6 +262,210 @@ async def test_cloning_twice_generates_a_unique_suffix(
     ).all())
     assert f"{populated_set.version_label} (copy)" in labels
     assert f"{populated_set.version_label} (copy) 2" in labels
+
+
+# --- A label too long to extend ----------------------------------------
+#
+# `_unique_clone_label` composed `f"{source_label} (copy)"` with no regard for
+# the column it was about to be written to. `version_label` is VARCHAR(128)
+# and " (copy)" is seven characters, so every source label over 121 characters
+# produced one MySQL refused: DataError 1406 out of `clone_factor_set`'s
+# `session.flush()`, which `clone_action` does not catch, so the panel
+# answered 500.
+#
+# It was found on the deployed panel on 2026-10-24, on a set labelled 124
+# characters. Four of the fourteen factor sets on the development database
+# were in that state and two of the six on the deployment, and in both cases
+# ONE OF THEM WAS THE PUBLISHED SET - so contract 5.2's recommended clone,
+# edit, publish path could not be started at all, which is the part that
+# mattered more than the error page.
+#
+# Why the suite did not have this already: `test_cloning_twice_generates_a_
+# unique_suffix` above pins the collision algorithm, which was the novel part,
+# and every factor-set fixture is labelled something like "e6-source" - nine
+# characters. The length dimension was never reached. These tests run against
+# the same real MySQL in STRICT_TRANS_TABLES that the panel does, so they fail
+# for the real reason rather than modelling one.
+
+#: The label the deployed published set actually carried, 124 characters.
+#: Verbatim, and used by the length assertion below rather than written to the
+#: database - see `_long_label` for why the rows these tests commit carry this
+#: directory's cleanup prefix instead.
+_DEPLOYED_LABEL = (
+    "CLIENT-DRAFT-2026-09-21 (Rawtec rev. table 2 + ReFED footprint; ch4, "
+    "cost, land; ladders; item level) - NOT CLIENT-CONFIRMED"
+)
+
+
+def _long_label(length: int, fill: str = "L") -> str:
+    """A label of exactly `length` characters, behind the "e6-" prefix
+    tests/admin/conftest.py::_cleanup_e6_rows matches on.
+
+    The prefix is load-bearing twice over. That cleanup is what keeps a
+    hard-committing fixture from leaving rows behind for the next test, and it
+    matches the FRONT of the label - which is the end truncation keeps, so the
+    clone these tests generate is swept up with the source that produced it
+    even though nothing here can predict what it will be called. A label
+    without the prefix survives the run, and its `equivalence` rows then block
+    the taxonomy teardown with a foreign-key error in an unrelated test.
+    """
+    assert length >= 3
+    return "e6-" + fill * (length - 3)
+
+
+def test_the_pre_fix_composition_really_did_overflow():
+    """Anti-vacuity, and a tripwire on the column width.
+
+    Every test below would pass against a panel that had never had this bug,
+    which is the state a regression test is least useful in. If the column is
+    ever widened, this fails and says so rather than leaving five green tests
+    guarding nothing.
+    """
+    assert len(_DEPLOYED_LABEL) == 124
+    assert len(f"{_DEPLOYED_LABEL} (copy)") > MAX_VERSION_LABEL_LENGTH
+    assert len(_DEPLOYED_LABEL) <= MAX_VERSION_LABEL_LENGTH, (
+        "the label was one the column held perfectly well; it was only the "
+        "generated clone label that did not fit"
+    )
+
+
+@pytest.mark.asyncio
+async def test_cloning_a_published_set_at_the_deployed_length_now_works(
+    session, admin_client, taxonomy_for_factors
+):
+    """The incident, named: a published set labelled 124 characters.
+
+    Published rather than draft on purpose. The error page was the visible
+    half; the half that mattered was that 5.2's clone, edit, publish could not
+    be started on the live set, which is the only way to change the
+    calculator's numbers through the panel.
+    """
+    source = _make_set(session, _long_label(len(_DEPLOYED_LABEL)),
+                       FactorSetStatus.published, taxonomy_for_factors,
+                       populated=True)
+    session.commit()
+
+    response = await admin_client.get(f"/admin/factor-set/action/clone?pks={source.id}")
+
+    assert response.status_code in (200, 302)
+    _resync(session)
+    clone = session.scalar(
+        select(FactorSet).where(FactorSet.version_label != source.version_label)
+    )
+    assert clone is not None
+    assert clone.status is FactorSetStatus.draft
+    assert len(clone.version_label) <= MAX_VERSION_LABEL_LENGTH
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("length", [121, 122, 128])
+async def test_no_source_label_the_column_can_hold_produces_one_it_cannot(
+    session, admin_client, taxonomy_for_factors, length
+):
+    """The boundary, from the last length that always fitted upwards.
+
+    121 is the longest source `" (copy)"` could be appended to, so it has to
+    keep working unchanged; 122 is the first that could not; 128 is a source
+    already filling the column, which leaves the generator no room at all and
+    is the case a fix that only trimmed "a bit" would still fail on.
+    """
+    source = _make_set(session, _long_label(length), FactorSetStatus.draft,
+                       taxonomy_for_factors, populated=False)
+    session.commit()
+
+    response = await admin_client.get(f"/admin/factor-set/action/clone?pks={source.id}")
+
+    assert response.status_code in (200, 302)
+    _resync(session)
+    clone = session.scalar(
+        select(FactorSet).where(FactorSet.version_label != source.version_label)
+    )
+    assert clone is not None, f"no clone was created for a {length}-character label"
+    assert len(clone.version_label) <= MAX_VERSION_LABEL_LENGTH
+
+
+@pytest.mark.asyncio
+async def test_a_shortened_clone_label_says_that_it_was_shortened(
+    session, admin_client, taxonomy_for_factors
+):
+    """Staff have to be able to tell a trimmed label from a name somebody
+    chose, because the label is the only identity a factor set has - it
+    carries no `code` column, and it is what the compare, publish and
+    rollback screens all show."""
+    source = _make_set(session, _long_label(124), FactorSetStatus.draft,
+                       taxonomy_for_factors, populated=False)
+    session.commit()
+
+    await admin_client.get(f"/admin/factor-set/action/clone?pks={source.id}")
+
+    _resync(session)
+    clone = session.scalar(
+        select(FactorSet).where(FactorSet.version_label != source.version_label)
+    )
+    assert clone.version_label.endswith(" (copy)")
+    assert "..." in clone.version_label
+    #: The front of the label is what identifies the vintage - "CLIENT-DRAFT-
+    #: 2026-09-21 (Rawtec rev. table 2 ..." - so that is the end that has to
+    #: survive. It is also what this directory's cleanup matches on.
+    assert clone.version_label.startswith("e6-")
+
+
+@pytest.mark.asyncio
+async def test_a_short_label_is_still_extended_whole(
+    session, admin_client, taxonomy_for_factors
+):
+    """The common case must not pay for the fix.
+
+    Nothing should be trimmed, and no ellipsis should appear, on a label with
+    room to spare - a generator that trimmed unconditionally would rename
+    every clone anyone has ever made.
+    """
+    source = _make_set(session, "e6-short", FactorSetStatus.draft,
+                       taxonomy_for_factors, populated=False)
+    session.commit()
+
+    await admin_client.get(f"/admin/factor-set/action/clone?pks={source.id}")
+
+    _resync(session)
+    clone = session.scalar(
+        select(FactorSet).where(FactorSet.version_label != "e6-short")
+    )
+    assert clone.version_label == "e6-short (copy)"
+
+
+@pytest.mark.asyncio
+async def test_two_sources_that_shorten_to_the_same_head_still_differ(
+    session, admin_client, taxonomy_for_factors
+):
+    """Uniqueness has to be decided after trimming, not before.
+
+    Two 128-character labels differing only in their last character trim to
+    the same head, so a generator that picked a free label before trimming
+    would compose the same string twice and hit the UNIQUE constraint - the
+    1406 traded for a 1062, still a 500.
+    """
+    head = _long_label(127)
+    first = _make_set(session, head + "A", FactorSetStatus.draft,
+                      taxonomy_for_factors, populated=False)
+    second = _make_set(session, head + "B", FactorSetStatus.draft,
+                       taxonomy_for_factors, populated=False)
+    session.commit()
+
+    r1 = await admin_client.get(f"/admin/factor-set/action/clone?pks={first.id}")
+    _resync(session)
+    r2 = await admin_client.get(f"/admin/factor-set/action/clone?pks={second.id}")
+    _resync(session)
+
+    assert r1.status_code in (200, 302)
+    assert r2.status_code in (200, 302)
+    labels = session.scalars(
+        select(FactorSet.version_label).where(
+            FactorSet.version_label.notin_([head + "A", head + "B"])
+        )
+    ).all()
+    assert len(labels) == 2, f"expected two clones, got {labels}"
+    assert len(set(labels)) == 2, f"the two clones share a label: {labels}"
+    assert all(len(label) <= MAX_VERSION_LABEL_LENGTH for label in labels)
 
 
 # --- Fix wave: archive -------------------------------------------------
